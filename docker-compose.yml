@@ -1,0 +1,67 @@
+# Full stack for a machine with Docker available.
+# The default `make setup && make dev` path needs none of this - it runs on SQLite.
+name: pmvl
+
+services:
+  postgres:
+    image: postgres:17-alpine
+    environment:
+      POSTGRES_USER: pmvl
+      POSTGRES_PASSWORD: pmvl
+      POSTGRES_DB: pmvl
+    ports:
+      - "5432:5432"
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U pmvl -d pmvl"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  api:
+    build:
+      context: .
+      dockerfile: services/api/Dockerfile
+    environment:
+      DATABASE_URL: postgresql+psycopg://pmvl:pmvl@postgres:5432/pmvl
+      API_CORS_ORIGINS: http://localhost:3000
+    env_file:
+      - path: .env
+        required: false
+    depends_on:
+      postgres:
+        condition: service_healthy
+    ports:
+      - "8000:8000"
+    command: >
+      sh -c "alembic upgrade head &&
+             uvicorn pmvl_api.main:app --host 0.0.0.0 --port 8000"
+
+  worker:
+    build:
+      context: .
+      dockerfile: services/worker/Dockerfile
+    environment:
+      DATABASE_URL: postgresql+psycopg://pmvl:pmvl@postgres:5432/pmvl
+    env_file:
+      - path: .env
+        required: false
+    depends_on:
+      api:
+        condition: service_started
+    command: pmvl schedule
+
+  web:
+    build:
+      context: ./apps/web
+    environment:
+      # Browser-side calls must reach the host-published port, not the compose DNS name.
+      NEXT_PUBLIC_API_BASE: http://localhost:8000
+    depends_on:
+      - api
+    ports:
+      - "3000:3000"
+
+volumes:
+  pgdata:
