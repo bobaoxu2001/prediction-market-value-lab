@@ -70,7 +70,15 @@ def orderbook_priority(market: NormalizedMarket) -> tuple[int, Decimal]:
 def select_for_orderbooks(
     markets: Sequence[NormalizedMarket], limit: int
 ) -> list[NormalizedMarket]:
-    """Pick the markets worth spending an orderbook request on."""
+    """Pick the markets worth spending an orderbook request on.
+
+    Selection is **event-aware**. Once a market is chosen, its event siblings are
+    pulled in with it, because multi-outcome arbitrage can only be assessed on a
+    complete basket: pricing four buckets of an eleven-bucket temperature event is
+    not a partial answer, it is no answer at all, and the scanner will (correctly)
+    refuse to evaluate it. Volume-ranked selection alone almost never lands every
+    outcome of an event, so without this the multi-outcome scanner never runs.
+    """
     settings = get_settings()
     eligible = [
         m
@@ -81,7 +89,26 @@ def select_for_orderbooks(
         and (m.volume_24h or Decimal("0")) >= settings.min_volume_24h_usd
     ]
     eligible.sort(key=orderbook_priority)
-    return eligible[:limit]
+
+    by_event: dict[str, list[NormalizedMarket]] = {}
+    for market in markets:
+        if market.platform_event_id and market.status == MarketStatus.OPEN:
+            by_event.setdefault(market.platform_event_id, []).append(market)
+
+    chosen: dict[str, NormalizedMarket] = {}
+    for market in eligible:
+        if len(chosen) >= limit:
+            break
+        group = by_event.get(market.platform_event_id or "", [market])
+        # Only pull in the whole event if the remaining budget can cover it;
+        # otherwise take the single market and leave the event for a later cycle.
+        if len(chosen) + len(group) <= limit:
+            for sibling in group:
+                chosen.setdefault(sibling.platform_market_id, sibling)
+        else:
+            chosen.setdefault(market.platform_market_id, market)
+
+    return list(chosen.values())[:limit]
 
 
 async def fetch_platform(
@@ -96,17 +123,40 @@ async def fetch_platform(
     events: list[Any] = []
     books: dict[str, OrderBook] = {}
 
-    try:
-        markets = await provider.list_active_markets(limit=market_limit)
-    except Exception as exc:  # noqa: BLE001 - one venue failing must not kill the run
-        errors.append(f"{provider.platform.value} markets: {exc}")
-        log.error("market fetch failed for %s: %s", provider.platform.value, exc)
-        return markets, books, events, errors
+    if isinstance(provider, KalshiProvider):
+        # Nested-event discovery first: it yields broad category coverage and the
+        # authoritative outcome count per event, which the multi-outcome arbitrage
+        # scanner needs. The flat time-ordered listing is then merged in to pick up
+        # near-dated markets whose events fell outside the event page budget.
+        try:
+            events, markets = await provider.list_events_with_markets(
+                limit=min(600, market_limit)
+            )
+        except Exception as exc:  # noqa: BLE001
+            errors.append(f"{provider.platform.value} nested events: {exc}")
 
-    try:
-        events = await provider.list_events(limit=min(300, market_limit))
-    except Exception as exc:  # noqa: BLE001
-        errors.append(f"{provider.platform.value} events: {exc}")
+        try:
+            flat = await provider.list_active_markets(limit=market_limit)
+            seen = {m.platform_market_id for m in markets}
+            markets.extend(m for m in flat if m.platform_market_id not in seen)
+        except Exception as exc:  # noqa: BLE001
+            errors.append(f"{provider.platform.value} markets: {exc}")
+
+        if not markets:
+            log.error("no markets fetched for %s", provider.platform.value)
+            return markets, books, events, errors
+    else:
+        try:
+            markets = await provider.list_active_markets(limit=market_limit)
+        except Exception as exc:  # noqa: BLE001 - one venue failing must not kill the run
+            errors.append(f"{provider.platform.value} markets: {exc}")
+            log.error("market fetch failed for %s: %s", provider.platform.value, exc)
+            return markets, books, events, errors
+
+        try:
+            events = await provider.list_events(limit=min(300, market_limit))
+        except Exception as exc:  # noqa: BLE001
+            errors.append(f"{provider.platform.value} events: {exc}")
 
     targets = select_for_orderbooks(markets, orderbook_limit)
     if targets:

@@ -172,6 +172,8 @@ class NormalizedEvent(StrictModel):
     negative_risk: bool = False
     mutually_exclusive: bool = False
     exhaustive: bool = False
+    #: Outcome count as reported by the venue. 0 means unknown.
+    outcome_count: int = 0
     market_ids: list[str] = Field(default_factory=list)
     provenance: DataProvenance = DataProvenance.LIVE
     raw: dict[str, Any] | None = None

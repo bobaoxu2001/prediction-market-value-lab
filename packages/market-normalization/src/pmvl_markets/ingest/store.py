@@ -74,6 +74,9 @@ def upsert_events(session: Session, events: Sequence[NormalizedEvent]) -> int:
         row.negative_risk = ev.negative_risk
         row.mutually_exclusive = ev.mutually_exclusive
         row.exhaustive = ev.exhaustive
+        # Never let a later, thinner fetch erase a known count with 0 (unknown).
+        if ev.outcome_count:
+            row.outcome_count = ev.outcome_count
         row.provenance = ev.provenance.value
         row.raw_payload = ev.raw
         row.updated_at = now

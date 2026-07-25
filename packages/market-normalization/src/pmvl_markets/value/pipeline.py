@@ -47,6 +47,11 @@ from .ranking import RankingConfig, build_candidate, horizon_of, rank_candidates
 
 log = get_logger(__name__)
 
+#: Minimum verifier confidence for a cross-platform match to be used as an
+#: independent prior. Below this the pairing is recorded for inspection but is not
+#: allowed to influence a probability estimate, and therefore cannot create edge.
+MIN_PRIOR_MATCH_CONFIDENCE = D("0.6")
+
 
 @dataclass
 class ScoringReport:
@@ -109,9 +114,15 @@ def build_cross_platform_quotes(
 ) -> dict[int, dict[str, Decimal]]:
     """For each market, the mid-prices of its verified matches on other venues.
 
-    Only matches whose rule compatibility is at least ``similar`` are used. A pairing
-    the verifier rejected is not evidence about this market's probability - feeding
-    it in would create an "independent prior" out of an unrelated question.
+    Only ``identical`` and ``equivalent`` matches qualify. ``similar`` is explicitly
+    excluded: by definition at least one material term differs, and in live data that
+    bucket contained pairs like Kalshi's "finish top 10 in Round 3" against
+    Polymarket's "finish in the Top 10 at the tournament" - related, but not the same
+    question. Feeding such a price in as an *independent prior* would inject a
+    different market's probability and then treat the resulting gap as edge.
+
+    A high ``match_confidence`` is additionally required, so a weakly-evidenced
+    equivalent match cannot quietly become the basis of a recommendation.
     """
     if not market_ids:
         return {}
@@ -119,7 +130,8 @@ def build_cross_platform_quotes(
     id_set = set(market_ids)
     matches = session.scalars(
         select(MarketMatch).where(
-            MarketMatch.rule_compatibility.in_(("identical", "equivalent", "similar"))
+            MarketMatch.rule_compatibility.in_(("identical", "equivalent")),
+            MarketMatch.match_confidence >= MIN_PRIOR_MATCH_CONFIDENCE,
         )
     ).all()
 

@@ -77,6 +77,12 @@ class Event(Base, TimestampMixin):
     negative_risk: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
     mutually_exclusive: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
     exhaustive: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
+    #: Number of outcomes the *venue* says this event has. Counting the rows we
+    #: happen to have ingested instead would be circular: a partially-ingested event
+    #: would look complete to us and its cheap subset would be reported as a
+    #: guaranteed complete set. 0 means "unknown", which blocks any completeness
+    #: claim rather than assuming one.
+    outcome_count: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
     provenance: Mapped[str] = mapped_column(
         String(16), nullable=False, default=DataProvenance.LIVE, index=True
     )

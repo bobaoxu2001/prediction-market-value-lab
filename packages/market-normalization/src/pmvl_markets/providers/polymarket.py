@@ -228,6 +228,7 @@ class PolymarketProvider:
             # exhaustive: exactly one outcome pays out.
             mutually_exclusive=neg_risk,
             exhaustive=neg_risk,
+            outcome_count=len(markets),
             market_ids=[str(m.get("id")) for m in markets if isinstance(m, dict) and m.get("id")],
             raw=row,
         )

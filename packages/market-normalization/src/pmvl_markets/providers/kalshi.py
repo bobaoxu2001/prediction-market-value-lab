@@ -22,7 +22,7 @@ from __future__ import annotations
 import asyncio
 from datetime import datetime
 from decimal import Decimal
-from typing import Any, Iterable
+from typing import Any, Iterable, Sequence
 
 from pmvl_shared.config import get_settings
 from pmvl_shared.enums import Category, DataProvenance, MarketStatus, Platform
@@ -83,6 +83,9 @@ KALSHI_TAKER_RATE = Decimal("0.07")
 #: Maker rate for ``quadratic_with_maker_fees`` series ("$0.02 - $0.44 per 100").
 KALSHI_MAKER_RATE = Decimal("0.0175")
 
+#: Maximum rows per page accepted by /events. Larger values return 400 bad_request.
+KALSHI_EVENTS_MAX_PAGE = 200
+
 
 def _dollars(payload: dict[str, Any], key: str) -> Decimal | None:
     """Read a ``*_dollars`` fixed-point string field."""
@@ -135,9 +138,21 @@ class KalshiProvider:
 
     # ------------------------------------------------------------- pagination
     async def _paginate(
-        self, path: str, *, key: str, params: dict[str, Any], limit: int
+        self,
+        path: str,
+        *,
+        key: str,
+        params: dict[str, Any],
+        limit: int,
+        max_page_size: int = 1000,
     ) -> list[dict[str, Any]]:
         """Follow Kalshi's opaque cursor until ``limit`` rows or exhaustion.
+
+        ``max_page_size`` differs per endpoint: ``/markets`` accepts up to 1000 but
+        ``/events`` rejects anything above 200 with a bare ``400 bad_request``. That
+        400 is not retryable, but the surrounding retry budget still gets consumed
+        and the follow-up request is then rate limited - so the cap has to be correct
+        per endpoint rather than discovered at runtime.
 
         Kalshi returns an empty ``cursor`` at the end, but has also been observed
         echoing the same cursor back; the seen-set guards against looping forever.
@@ -145,7 +160,7 @@ class KalshiProvider:
         out: list[dict[str, Any]] = []
         cursor: str | None = None
         seen_cursors: set[str] = set()
-        page_size = min(1000, max(1, limit))
+        page_size = min(max_page_size, max(1, limit))
 
         while len(out) < limit:
             page_params = {**params, "limit": min(page_size, limit - len(out))}
@@ -228,6 +243,83 @@ class KalshiProvider:
         markets = [self._normalize_market(r) for r in rows]
         return [m for m in markets if m is not None]
 
+    async def list_series_by_category(self, category: str) -> list[str]:
+        """Series tickers in one Kalshi category."""
+        try:
+            data = await self._client.get_json(
+                "/series", params={"category": category}, allow_404=True
+            )
+        except ProviderError as exc:
+            log.debug("series listing failed for %s: %s", category, exc)
+            return []
+        series = (data or {}).get("series") or []
+        out = []
+        for entry in series:
+            if isinstance(entry, dict) and entry.get("ticker"):
+                self._series_cache.setdefault(entry["ticker"], entry)
+                out.append(entry["ticker"])
+        return out
+
+    async def list_events_with_markets(
+        self,
+        *,
+        limit: int = 400,
+        categories: Sequence[str] | None = None,
+    ) -> tuple[list[NormalizedEvent], list[NormalizedMarket]]:
+        """Discover events and their nested markets in one pass.
+
+        Preferred over the flat ``/markets`` listing for three reasons:
+
+        1. **Category coverage.** The flat listing is ordered by close time and is
+           dominated by whatever expires soonest - in practice hundreds of golf and
+           motorsport player props with no Polymarket counterpart. A scan built only
+           from those finds no cross-platform matches and therefore no independent
+           priors, so nothing can ever be recommended.
+        2. **Efficiency.** Fanning out per series is not viable - Kalshi publishes
+           over two thousand series in Politics alone. Nested events return up to a
+           full page of markets per request.
+        3. **Completeness.** The nested response gives the true number of outcomes in
+           each event, which the multi-outcome arbitrage scanner requires before it
+           can assert a basket is a complete set.
+        """
+        wanted = {c.lower() for c in categories} if categories else None
+        rows = await self._paginate(
+            "/events",
+            key="events",
+            params={"status": "open", "with_nested_markets": "true"},
+            limit=limit,
+            max_page_size=KALSHI_EVENTS_MAX_PAGE,
+        )
+
+        events: list[NormalizedEvent] = []
+        markets: list[NormalizedMarket] = []
+        market_rows: list[dict[str, Any]] = []
+
+        for row in rows:
+            if wanted and str(row.get("category", "")).lower() not in wanted:
+                continue
+            nested = [
+                m for m in (row.get("markets") or [])
+                if isinstance(m, dict) and not m.get("mve_collection_ticker")
+            ]
+            if not nested:
+                continue
+            event = self._normalize_event(row)
+            event.outcome_count = len(nested)
+            event.market_ids = [m.get("ticker", "") for m in nested]
+            events.append(event)
+            market_rows.extend(nested)
+
+        await self.prefetch_series(
+            {self.series_ticker_from_event(r.get("event_ticker")) for r in market_rows}
+        )
+        for row in market_rows:
+            market = self._normalize_market(row)
+            if market is not None:
+                markets.append(market)
+
+        return events, markets
+
     async def get_market(self, platform_market_id: str) -> NormalizedMarket | None:
         data = await self._client.get_json(f"/markets/{platform_market_id}", allow_404=True)
         row = (data or {}).get("market")
@@ -242,6 +334,7 @@ class KalshiProvider:
             key="events",
             params={"status": "open", "with_nested_markets": "false"},
             limit=limit,
+            max_page_size=KALSHI_EVENTS_MAX_PAGE,
         )
         return [self._normalize_event(r) for r in rows]
 
