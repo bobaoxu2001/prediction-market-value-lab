@@ -154,14 +154,26 @@ class CryptoThresholdModel(ProbabilityModel):
         if product is None:
             return no_opinion("no recognised crypto asset in market text")
 
-        strike = market.floor_strike if market.floor_strike is not None else market.cap_strike
-        if strike is None:
-            from ...normalize.text import extract_features
+        # Same three shapes as the weather board, and the same trap: a `between`
+        # market ("$72,000 to $73,000") priced as a one-sided threshold would be
+        # wildly overstated.
+        comparator = (market.strike_type or "").lower()
+        floor_strike = market.floor_strike
+        cap_strike = market.cap_strike
 
-            features = extract_features(market.title, subtitle=market.subtitle)
-            strike = features.primary_threshold
-        if strike is None or strike <= 0:
-            return no_opinion("no numeric strike could be established")
+        if comparator == "between":
+            if floor_strike is None or cap_strike is None:
+                return no_opinion("between-market missing one of its two bounds")
+            strike = floor_strike
+        else:
+            strike = floor_strike if floor_strike is not None else cap_strike
+            if strike is None:
+                from ...normalize.text import extract_features
+
+                features = extract_features(market.title, subtitle=market.subtitle)
+                strike = features.primary_threshold
+            if strike is None or strike <= 0:
+                return no_opinion("no numeric strike could be established")
 
         resolution = market.expected_resolution_time or market.close_time
         tau = years_until(resolution, now=ctx.now or utcnow())
@@ -174,25 +186,37 @@ class CryptoThresholdModel(ProbabilityModel):
             return no_opinion(f"coinbase data unavailable for {product}")
         sigma, n_returns = vol
 
-        p_above = gbm_probability_above(spot, float(strike), sigma, tau)
-
         # Direction: a "below/less than" market pays YES when the threshold is NOT
         # exceeded. Getting this backwards would invert every crypto recommendation.
-        comparator = (market.strike_type or "").lower()
-        is_below = comparator.startswith("less") or bool(
-            re.search(r"\bbelow\b|\bunder\b|\bless than\b|\bat or below\b", text, re.I)
+        is_below = comparator.startswith("less") or (
+            comparator not in ("greater", "between")
+            and bool(re.search(r"\bbelow\b|\bunder\b|\bless than\b|\bat or below\b", text, re.I))
         )
-        probability = (1.0 - p_above) if is_below else p_above
+
+        def probability_at(vol: float) -> float:
+            if comparator == "between":
+                # P(a < S_T <= b) = P(S_T > a) - P(S_T > b)
+                above_low = gbm_probability_above(spot, float(floor_strike), vol, tau)
+                above_high = gbm_probability_above(spot, float(cap_strike), vol, tau)
+                return max(0.0, above_low - above_high)
+            above = gbm_probability_above(spot, float(strike), vol, tau)
+            return (1.0 - above) if is_below else above
+
+        probability = probability_at(sigma)
 
         # Interval from volatility estimation error: sigma_hat has standard error
         # sigma / sqrt(2n), which propagates into the probability by re-evaluating
-        # the model at +/- 1 standard error of vol.
+        # the model at +/- one standard error of vol.
         vol_se = sigma / math.sqrt(2 * n_returns)
-        p_lo_vol = gbm_probability_above(spot, float(strike), max(1e-6, sigma - vol_se), tau)
-        p_hi_vol = gbm_probability_above(spot, float(strike), sigma + vol_se, tau)
-        if is_below:
-            p_lo_vol, p_hi_vol = 1.0 - p_lo_vol, 1.0 - p_hi_vol
+        p_lo_vol = probability_at(max(1e-6, sigma - vol_se))
+        p_hi_vol = probability_at(sigma + vol_se)
         stdev = abs(p_hi_vol - p_lo_vol) / 2.0
+
+        strike_label = (
+            f"{float(floor_strike):,.0f}-{float(cap_strike):,.0f}"
+            if comparator == "between"
+            else f"{'<' if is_below else '>'}{float(strike):,.0f}"
+        )
 
         # Confidence degrades with horizon: a 30-day GBM extrapolation from 3 days of
         # hourly returns is much weaker than a 6-hour one.
@@ -209,16 +233,17 @@ class CryptoThresholdModel(ProbabilityModel):
             stdev=max(D(str(stdev)), Decimal("0.01")),
             independent=True,
             detail=(
-                f"GBM {product}: spot={spot:,.2f} strike={float(strike):,.2f} "
+                f"GBM {product}: spot={spot:,.2f} strike {strike_label} "
                 f"sigma={sigma:.1%}/yr tau={hours:.1f}h -> P={probability:.3f}"
             ),
             data_freshness_seconds=0,
             data={
                 "product": product,
                 "spot": f"{spot:.2f}",
-                "strike": str(strike),
+                "strike": strike_label,
                 "sigma_annual": f"{sigma:.4f}",
                 "tau_hours": f"{hours:.2f}",
+                "comparator": comparator or "unknown",
                 "direction": "below" if is_below else "above",
                 "n_returns": n_returns,
                 "model": "driftless_gbm",

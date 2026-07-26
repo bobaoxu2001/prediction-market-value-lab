@@ -70,6 +70,10 @@ MODEL_VERSION = "ensemble-v1.0.0"
 
 _EPS = Decimal("1e-9")
 
+#: Ceiling on a single component's log-odds sigma. 3.0 is already a factor-of-20
+#: uncertainty on the odds; beyond that the component is saying nothing at all.
+MAX_COMPONENT_LOG_ODDS_SIGMA = 3.0
+
 
 def to_log_odds(p: Decimal) -> Decimal:
     p = clamp_prob(p)
@@ -237,44 +241,76 @@ class ProbabilityEnsemble:
         )
 
         # ---- interval -------------------------------------------------------
-        # (1) weighted average of components' own stated uncertainty
+        # Built in LOG-ODDS space, the same space the mean is pooled in.
+        #
+        # An additive band in probability space is wrong near the boundaries and was
+        # silently destroying every low-probability estimate: a contract with a fair
+        # value of 1.5% and a 0.02 sigma got `low = 0.015 - 0.25 -> 0`, so its
+        # conservative EV was always negative and it could never be recommended no
+        # matter how good the model was. Working in log-odds gives an asymmetric band
+        # that respects [0, 1] and stays informative in the tails.
+        #
+        # Component sigmas are stated in probability units, so they are converted by
+        # the delta method: d(logit)/dp = 1 / (p(1-p)).
         component_sigma = ZERO
         for _model, result in opinions:
             weight = safe_div(result.confidence, total_weight)
-            component_sigma += weight * (result.stdev or Decimal("0.08"))
+            probability = result.probability or mean
+            p_float = float(probability)
+            slope = max(p_float * (1.0 - p_float), 1e-4)
+            # A component's stated probability-space sigma is only meaningful up to
+            # the Bernoulli scale at its own mean: claiming sigma = 0.08 around a mean
+            # of 0.0004 is not a coherent statement, and the delta method turns it
+            # into a log-odds sigma of 200, which flattens the interval to [0, 1] and
+            # makes every tail estimate unusable.
+            stated = float(result.stdev or Decimal("0.08"))
+            bounded = min(stated, math.sqrt(slope))
+            sigma_logit = min(bounded / slope, MAX_COMPONENT_LOG_ODDS_SIGMA)
+            component_sigma += weight * D(str(sigma_logit))
 
-        # (2) weighted dispersion between components
+        # Dispersion between components, also in log-odds.
+        mean_log_odds = to_log_odds(mean)
         dispersion_sq = ZERO
         for _model, result in opinions:
             weight = safe_div(result.confidence, total_weight)
-            diff = (result.probability or mean) - mean  # type: ignore[operator]
+            diff = to_log_odds(result.probability or mean) - mean_log_odds
             dispersion_sq += weight * (diff * diff)
-        dispersion = D(str(math.sqrt(max(0.0, float(dispersion_sq)))))
+        dispersion_logit = D(str(math.sqrt(max(0.0, float(dispersion_sq)))))
 
-        sigma = component_sigma + dispersion
+        sigma = component_sigma + dispersion_logit
 
-        # (3) staleness penalty
+        # Staleness penalty.
         max_age = max(freshness) if freshness else 0
         if max_age > 3600:
             sigma *= D("1.3")
         elif max_age > 900:
             sigma *= D("1.15")
 
-        # (4) low aggregate confidence must widen the band, never narrow it
+        # Dispersion for the confidence calculation is reported in probability units,
+        # where the 0.15 half-life used by aggregate_confidence is calibrated.
+        dispersion_prob = ZERO
+        for _model, result in opinions:
+            weight = safe_div(result.confidence, total_weight)
+            diff = (result.probability or mean) - mean
+            dispersion_prob += weight * (diff * diff)
+        dispersion_prob = D(str(math.sqrt(max(0.0, float(dispersion_prob)))))
+
         confidence = aggregate_confidence(
-            [r.confidence for _, r in opinions], dispersion=dispersion
+            [r.confidence for _, r in opinions], dispersion=dispersion_prob
         )
-        sigma = max(sigma, (ONE - confidence) * D("0.25"))
+        # Low aggregate confidence must widen the band, never narrow it. One log-odds
+        # unit at zero confidence is roughly a factor-of-e uncertainty on the odds.
+        sigma = max(sigma, (ONE - confidence) * D("1.0"))
         # An estimate resting only on the market's own price gets a floor wide enough
         # that no edge can survive the conservative lower bound.
         if not has_independent:
-            sigma = max(sigma, D("0.15"))
+            sigma = max(sigma, D("2.0"))
 
         # 1.28 sigma ~ an 80% band; deliberately not 1.96, because the components are
         # not independent draws and a 95% claim would overstate rigour.
         half_width = D("1.2816") * sigma
-        low = quantize_prob(clamp_prob(mean - half_width))
-        high = quantize_prob(clamp_prob(mean + half_width))
+        low = quantize_prob(from_log_odds(mean_log_odds - half_width))
+        high = quantize_prob(from_log_odds(mean_log_odds + half_width))
 
         research_result = self._research_model.last_result
         evidence_quality = (

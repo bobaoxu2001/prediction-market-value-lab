@@ -13,7 +13,7 @@ from decimal import Decimal
 from typing import Any, Sequence
 
 from pmvl_shared.config import get_settings
-from pmvl_shared.enums import MarketStatus, Platform
+from pmvl_shared.enums import Category, MarketStatus, Platform
 from pmvl_shared.logging_setup import get_logger
 from pmvl_shared.schemas import NormalizedMarket, OrderBook
 from pmvl_shared.timeutil import horizons_for, utcnow
@@ -55,16 +55,32 @@ class IngestReport:
         }
 
 
-def orderbook_priority(market: NormalizedMarket) -> tuple[int, Decimal]:
+#: Categories with an independent probability model behind them. A market outside
+#: these can still be ingested and browsed, but it can never clear the independence
+#: gate on its own, so it should not outrank a modellable market for a book fetch.
+MODELLABLE_CATEGORIES = frozenset({Category.CRYPTO, Category.WEATHER, Category.FINANCE})
+
+#: No single series may take more than this share of one cycle's orderbook budget.
+MAX_SERIES_BUDGET_SHARE = 0.2
+#: ...but every series that qualifies at all gets at least this many, so a small
+#: board (a 12-strike temperature event) is never squeezed out entirely.
+MIN_PER_SERIES_BOOKS = 14
+
+
+def orderbook_priority(market: NormalizedMarket) -> tuple[int, int, Decimal]:
     """Sort key deciding which markets get a book fetch.
 
-    Ordered by (horizon bucket, 24h volume). Markets resolving sooner are ranked
-    first because their recommendations are the most time-sensitive; within a bucket,
-    traded volume is the best available proxy for whether a quote is real.
+    Ordered by (modellable, horizon bucket, 24h volume).
+
+    Modellability leads because the orderbook budget is the scarce resource and a
+    book is only *useful* if the market can also be scored. Ranking purely by volume
+    spent the entire budget on sports and politics - markets that are then rejected
+    for having no independent prior, so the fetch bought nothing.
     """
+    modellable = 0 if market.category in MODELLABLE_CATEGORIES else 1
     horizons = horizons_for(market.expected_resolution_time)
     bucket = {"24h": 0, "7d": 1, "30d": 2}.get(horizons[0] if horizons else "", 3)
-    return (bucket, -(market.volume_24h or Decimal("0")))
+    return (modellable, bucket, -(market.volume_24h or Decimal("0")))
 
 
 def select_for_orderbooks(
@@ -95,18 +111,51 @@ def select_for_orderbooks(
         if market.platform_event_id and market.status == MarketStatus.OPEN:
             by_event.setdefault(market.platform_event_id, []).append(market)
 
+    # Cap how much of the budget any one series may take.
+    #
+    # A pure priority sort lets the deepest series monopolise everything: Kalshi's
+    # daily Bitcoin board publishes hundreds of strikes that are all liquid and all
+    # in the 24h bucket, so it consumed the entire allocation and every weather
+    # market got zero coverage. Spending the whole budget on 125 near-identical BTC
+    # strikes is also poor value in its own right - they are one bet, not 125.
+    per_series_cap = max(MIN_PER_SERIES_BOOKS, int(limit * MAX_SERIES_BUDGET_SHARE))
+    series_used: dict[str, int] = {}
     chosen: dict[str, NormalizedMarket] = {}
+
+    def series_key(market: NormalizedMarket) -> str:
+        return market.series_ticker or market.platform_event_id or market.platform_market_id
+
+    def take(market: NormalizedMarket) -> None:
+        key = series_key(market)
+        if market.platform_market_id in chosen:
+            return
+        chosen[market.platform_market_id] = market
+        series_used[key] = series_used.get(key, 0) + 1
+
     for market in eligible:
         if len(chosen) >= limit:
             break
+        key = series_key(market)
+        if series_used.get(key, 0) >= per_series_cap:
+            continue
+
+        # Event-aware: multi-outcome arbitrage can only be assessed on a complete
+        # basket, so an event is taken whole or not at all when the budget allows.
         group = by_event.get(market.platform_event_id or "", [market])
-        # Only pull in the whole event if the remaining budget can cover it;
-        # otherwise take the single market and leave the event for a later cycle.
-        if len(chosen) + len(group) <= limit:
+        if len(chosen) + len(group) <= limit and (
+            series_used.get(key, 0) + len(group) <= per_series_cap
+        ):
             for sibling in group:
-                chosen.setdefault(sibling.platform_market_id, sibling)
+                take(sibling)
         else:
-            chosen.setdefault(market.platform_market_id, market)
+            take(market)
+
+    # Any leftover budget goes back to the priority order, cap ignored.
+    if len(chosen) < limit:
+        for market in eligible:
+            if len(chosen) >= limit:
+                break
+            take(market)
 
     return list(chosen.values())[:limit]
 
@@ -124,17 +173,29 @@ async def fetch_platform(
     books: dict[str, OrderBook] = {}
 
     if isinstance(provider, KalshiProvider):
-        # Nested-event discovery first: it yields broad category coverage and the
-        # authoritative outcome count per event, which the multi-outcome arbitrage
-        # scanner needs. The flat time-ordered listing is then merged in to pick up
-        # near-dated markets whose events fell outside the event page budget.
+        # Modellable series FIRST. General discovery is ordered by close time and
+        # event volume and never reaches the daily crypto and weather boards, which
+        # are the only Kalshi markets with an independent model behind them. Fetching
+        # them last-or-never is why the ranker had nothing it was allowed to
+        # recommend.
         try:
-            events, markets = await provider.list_events_with_markets(
+            markets = await provider.list_modellable_markets()
+        except Exception as exc:  # noqa: BLE001
+            errors.append(f"{provider.platform.value} modellable series: {exc}")
+
+        # Nested-event discovery: broad category coverage plus the authoritative
+        # outcome count per event, which the multi-outcome scanner requires.
+        try:
+            events, nested = await provider.list_events_with_markets(
                 limit=min(600, market_limit)
             )
+            seen = {m.platform_market_id for m in markets}
+            markets.extend(m for m in nested if m.platform_market_id not in seen)
         except Exception as exc:  # noqa: BLE001
             errors.append(f"{provider.platform.value} nested events: {exc}")
 
+        # Flat time-ordered listing picks up near-dated markets whose events fell
+        # outside the event page budget.
         try:
             flat = await provider.list_active_markets(limit=market_limit)
             seen = {m.platform_market_id for m in markets}

@@ -45,26 +45,44 @@ from .http import HttpClient, ProviderError
 
 log = get_logger(__name__)
 
-#: Kalshi's ``category`` strings mapped onto our controlled vocabulary.
-_CATEGORY_MAP = {
-    "climate": Category.WEATHER,
-    "weather": Category.WEATHER,
-    "sports": Category.SPORTS,
-    "economics": Category.ECONOMICS,
-    "crypto": Category.CRYPTO,
-    "financials": Category.FINANCE,
-    "finance": Category.FINANCE,
-    "politics": Category.POLITICS,
-    "elections": Category.POLITICS,
-    "world": Category.GEOPOLITICS,
-    "culture": Category.CULTURE,
-    "entertainment": Category.CULTURE,
-    "science and technology": Category.TECH,
-    "technology": Category.TECH,
-    "companies": Category.FINANCE,
-    "health": Category.OTHER,
-    "transportation": Category.OTHER,
-}
+#: Kalshi ``category`` fragments mapped onto our controlled vocabulary, matched as
+#: **substrings** and tried longest-first.
+#:
+#: Exact-match lookup silently failed on Kalshi's real label "Climate and Weather",
+#: dropping the entire NWS temperature board into ``other``. That cost those markets
+#: their orderbook-fetch priority and left the one category with a genuinely strong
+#: independent model unscored. Substring matching survives that class of relabelling.
+_CATEGORY_FRAGMENTS: tuple[tuple[str, Category], ...] = (
+    ("science and technology", Category.TECH),
+    ("climate and weather", Category.WEATHER),
+    ("transportation", Category.OTHER),
+    ("entertainment", Category.CULTURE),
+    ("technology", Category.TECH),
+    ("financials", Category.FINANCE),
+    ("economics", Category.ECONOMICS),
+    ("elections", Category.POLITICS),
+    ("companies", Category.FINANCE),
+    ("politics", Category.POLITICS),
+    ("climate", Category.WEATHER),
+    ("weather", Category.WEATHER),
+    ("culture", Category.CULTURE),
+    ("finance", Category.FINANCE),
+    ("health", Category.OTHER),
+    ("crypto", Category.CRYPTO),
+    ("sports", Category.SPORTS),
+    ("world", Category.GEOPOLITICS),
+)
+
+
+def map_category(raw: str | None) -> Category:
+    """Map a venue category label onto the controlled vocabulary."""
+    text = (raw or "").strip().lower()
+    if not text:
+        return Category.OTHER
+    for fragment, category in _CATEGORY_FRAGMENTS:
+        if fragment in text:
+            return category
+    return Category.OTHER
 
 _STATUS_MAP = {
     "active": MarketStatus.OPEN,
@@ -85,6 +103,24 @@ KALSHI_MAKER_RATE = Decimal("0.0175")
 
 #: Maximum rows per page accepted by /events. Larger values return 400 bad_request.
 KALSHI_EVENTS_MAX_PAGE = 200
+
+#: Series the platform has a genuine *independent* probability model for.
+#:
+#: General discovery is ordered by close time and by event volume, and in practice
+#: returns thousands of politics/sports/culture markets while never surfacing the
+#: daily crypto and weather boards - the only two categories with a real model behind
+#: them. Fetching these explicitly is what makes it possible to produce a recommendation
+#: at all; without it the independence gate correctly rejects everything.
+#:
+#: Deliberately a short, auditable list rather than a category sweep: adding a series
+#: here is a claim that a model can price it, and that claim should be reviewed.
+MODELLABLE_SERIES: tuple[str, ...] = (
+    # Crypto daily/hourly settlement boards -> CryptoThresholdModel (Coinbase spot + RV)
+    "KXBTCD", "KXBTC", "KXETHD", "KXETH", "KXSOLD", "KXXRPD", "KXDOGED",
+    # NWS daily high-temperature boards -> WeatherThresholdModel (api.weather.gov)
+    "KXHIGHNY", "KXHIGHCHI", "KXHIGHMIA", "KXHIGHAUS", "KXHIGHDEN",
+    "KXHIGHLAX", "KXHIGHPHIL",
+)
 
 
 def _dollars(payload: dict[str, Any], key: str) -> Decimal | None:
@@ -260,6 +296,49 @@ class KalshiProvider:
                 out.append(entry["ticker"])
         return out
 
+    async def list_modellable_markets(
+        self,
+        *,
+        series: Sequence[str] = MODELLABLE_SERIES,
+        per_series_limit: int = 300,
+        max_close_days: int = 30,
+    ) -> list[NormalizedMarket]:
+        """Fetch every open market in the series the platform can actually model.
+
+        See :data:`MODELLABLE_SERIES`. One request per series, run concurrently, so
+        the whole set costs roughly a dozen requests.
+        """
+        max_close_ts = int(utcnow().timestamp() + max_close_days * 86400)
+
+        async def fetch(ticker: str) -> list[dict[str, Any]]:
+            try:
+                return await self._paginate(
+                    "/markets",
+                    key="markets",
+                    params={
+                        "status": "open",
+                        "series_ticker": ticker,
+                        "max_close_ts": max_close_ts,
+                    },
+                    limit=per_series_limit,
+                )
+            except ProviderError as exc:
+                # A retired or renamed series must not fail the whole scan.
+                log.debug("modellable series %s unavailable: %s", ticker, exc)
+                return []
+
+        batches = await asyncio.gather(*(fetch(t) for t in series), return_exceptions=True)
+        rows: list[dict[str, Any]] = []
+        for batch in batches:
+            if isinstance(batch, list):
+                rows.extend(r for r in batch if not r.get("mve_collection_ticker"))
+
+        await self.prefetch_series(
+            {self.series_ticker_from_event(r.get("event_ticker")) for r in rows}
+        )
+        markets = [self._normalize_market(r) for r in rows]
+        return [m for m in markets if m is not None]
+
     async def list_events_with_markets(
         self,
         *,
@@ -340,7 +419,7 @@ class KalshiProvider:
 
     def _normalize_event(self, row: dict[str, Any]) -> NormalizedEvent:
         title = row.get("title") or row.get("sub_title") or ""
-        category = _CATEGORY_MAP.get(str(row.get("category", "")).lower(), Category.OTHER)
+        category = map_category(row.get("category"))
         return NormalizedEvent(
             platform=Platform.KALSHI,
             platform_event_id=row.get("event_ticker", ""),
@@ -374,9 +453,7 @@ class KalshiProvider:
         rules_secondary = row.get("rules_secondary") or ""
         rules_raw = "\n\n".join(p for p in (rules_primary, rules_secondary) if p)
 
-        category = _CATEGORY_MAP.get(
-            str(series.get("category", "")).lower(), Category.OTHER
-        )
+        category = map_category(series.get("category"))
 
         settlement_sources = series.get("settlement_sources") or []
         settlement_source = ", ".join(

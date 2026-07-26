@@ -116,10 +116,14 @@ class ExtremePriceSanityModel(ProbabilityModel):
     upper = Decimal("0.98")
 
     async def estimate(self, ctx: ModelContext) -> ModelEstimate:
-        market = ctx.market
-        price = market.best_yes_ask or market.last_trade_price
+        from ..consensus import reference_price
+
+        # Must use the same usable-price logic as the reference prior. Reading
+        # `best_yes_ask or last_trade_price` treated a never-traded market's 0.0000
+        # last price as a real tail price and anchored the estimate at zero.
+        price = reference_price(ctx)
         if price is None:
-            return no_opinion("no reference price")
+            return no_opinion("no usable reference price")
         if self.lower <= price <= self.upper:
             return no_opinion("price is not in the extreme tails")
 

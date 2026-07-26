@@ -38,7 +38,14 @@ from pmvl_shared.schemas import (
     OrderBook,
     ValueCandidate,
 )
-from pmvl_shared.timeutil import Horizon, age_seconds, hours_until, horizons_for, utcnow
+from pmvl_shared.timeutil import (
+    Horizon,
+    age_seconds,
+    ensure_utc,
+    horizons_for,
+    hours_until,
+    utcnow,
+)
 
 from ..pricing.execution import (
     STANDARD_SIZES,
@@ -155,6 +162,22 @@ def build_candidate(
     return candidate
 
 
+def event_already_occurred(
+    market: NormalizedMarket, *, now: datetime | None = None
+) -> bool:
+    """Whether the underlying event has happened but the market is awaiting settlement.
+
+    Both venues keep a market open through a settlement window after the outcome is
+    determined. During that window the market price reflects the *known* result while
+    any model is still estimating, so a disagreement is not edge - it is the model
+    being wrong about something the market can already see.
+    """
+    occurrence = ensure_utc(market.event_occurrence_time)
+    if occurrence is None:
+        return False
+    return occurrence <= (now or utcnow())
+
+
 def collect_risk_flags(
     market: NormalizedMarket,
     book: OrderBook,
@@ -194,6 +217,8 @@ def collect_risk_flags(
     hours = hours_until(market.expected_resolution_time, now=now)
     if hours is not None and hours < 1:
         flags.append("imminent_settlement")
+    if event_already_occurred(market, now=now):
+        flags.append("event_already_occurred")
     if market.expected_resolution_time and market.close_time:
         if market.expected_resolution_time < market.close_time:
             # Kalshi routinely expects to settle before the market's outer close.
@@ -291,6 +316,11 @@ def passes_gates(candidate: ValueCandidate, config: RankingConfig) -> tuple[bool
         return False, f"model confidence {candidate.fair.model_confidence} too low"
     if candidate.executable_size <= 0:
         return False, "no executable size"
+    if "event_already_occurred" in candidate.risk_flags:
+        return False, (
+            "the underlying event has already occurred; the market knows the outcome "
+            "and the model does not"
+        )
     return True, ""
 
 

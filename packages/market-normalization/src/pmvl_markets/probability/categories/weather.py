@@ -159,9 +159,25 @@ class WeatherThresholdModel(ProbabilityModel):
             return no_opinion("no supported NWS station in market text")
         token, (office, grid_x, grid_y) = station
 
-        strike = market.floor_strike if market.floor_strike is not None else market.cap_strike
-        if strike is None:
-            return no_opinion("no numeric temperature strike")
+        # Kalshi runs three shapes per station and they are NOT interchangeable:
+        #   greater  floor=88            -> P(T > 88)
+        #   less     cap=81              -> P(T < 81)
+        #   between  floor=87 cap=88     -> P(87 <= T <= 88)
+        # Collapsing a `between` bucket to a one-sided threshold was the original
+        # behaviour and is badly wrong: on the NYC board it would price the "87-88"
+        # bucket as P(T > 87) ~ 0.35 against a 2c market, inventing an enormous
+        # edge on a contract that is genuinely worth about two cents.
+        comparator = (market.strike_type or "").lower()
+        floor_strike = market.floor_strike
+        cap_strike = market.cap_strike
+
+        if comparator == "between":
+            if floor_strike is None or cap_strike is None:
+                return no_opinion("between-market missing one of its two bounds")
+        else:
+            strike = floor_strike if floor_strike is not None else cap_strike
+            if strike is None:
+                return no_opinion("no numeric temperature strike")
 
         target = ensure_utc(
             market.event_occurrence_time or market.expected_resolution_time or market.close_time
@@ -169,7 +185,20 @@ class WeatherThresholdModel(ProbabilityModel):
         if target is None:
             return no_opinion("no target date")
         now = ctx.now or utcnow()
-        lead_days = max(0, (target.date() - now.date()).days)
+        lead_days = (target.date() - now.date()).days
+
+        if lead_days < 0:
+            # The observation window has closed: the day's high is already an
+            # established fact and the market has it, while a forecast does not.
+            # Kalshi keeps these open for a settlement window after the event, so
+            # without this check the model "forecasts" a day that already happened
+            # and reports an enormous edge against a market that simply knows the
+            # answer. That is the textbook case of the market holding information
+            # the model lacks, and it must produce no opinion at all.
+            return no_opinion(
+                f"observation window closed {-lead_days}d ago; the outcome is already "
+                "determined and a forecast is not evidence about a past day"
+            )
         if lead_days > _MAX_LEAD_DAYS:
             return no_opinion(f"lead time {lead_days}d exceeds forecast skill horizon")
 
@@ -179,24 +208,41 @@ class WeatherThresholdModel(ProbabilityModel):
         forecast_f, issued = result
 
         sigma = forecast_sigma(lead_days)
-        strike_f = float(strike)
 
-        # Kalshi phrases these as ">= X" (yes_sub_title "X or above") or "<= X".
-        comparator = (market.strike_type or "").lower()
-        is_below = comparator.startswith("less") or bool(
-            re.search(r"\bbelow\b|\bor lower\b|\bless than\b|\b<\b", text, re.I)
-        )
+        def probability_at(scale: float) -> float:
+            """Model probability with the forecast-error sigma scaled by ``scale``."""
+            s = sigma * scale
+            if comparator == "between":
+                # Kalshi's daily-high buckets are integer-degree bands, and the
+                # settled value is a whole degree. "87 to 88" therefore covers the
+                # half-open interval [86.5, 88.5) once rounding is accounted for;
+                # using [87, 88] would understate the bucket by a full degree of
+                # probability mass.
+                lo = (float(floor_strike) - 0.5 - forecast_f) / s
+                hi = (float(cap_strike) + 0.5 - forecast_f) / s
+                return max(0.0, normal_cdf(hi) - normal_cdf(lo))
+            if comparator.startswith("less"):
+                # "80 or below" with cap=81 means T <= 80, i.e. below 80.5.
+                return normal_cdf((float(cap_strike) - 0.5 - forecast_f) / s)
+            # "89 or above" with floor=88 means T >= 89, i.e. above 88.5.
+            return 1.0 - normal_cdf((float(floor_strike) + 0.5 - forecast_f) / s)
 
-        z = (strike_f - forecast_f) / sigma
-        p_above = 1.0 - normal_cdf(z)
-        probability = (1.0 - p_above) if is_below else p_above
+        probability = probability_at(1.0)
 
-        # Sensitivity of the answer to the assumed sigma, used as the interval width.
-        p_tight = 1.0 - normal_cdf((strike_f - forecast_f) / (sigma * 0.75))
-        p_wide = 1.0 - normal_cdf((strike_f - forecast_f) / (sigma * 1.35))
-        if is_below:
-            p_tight, p_wide = 1.0 - p_tight, 1.0 - p_wide
+        # Sensitivity to the assumed sigma, used as the interval half-width.
+        p_tight = probability_at(0.75)
+        p_wide = probability_at(1.35)
         stdev = abs(p_tight - p_wide) / 2.0
+
+        strike_label = (
+            f"{float(floor_strike):.0f}-{float(cap_strike):.0f}F"
+            if comparator == "between"
+            else (
+                f"<={float(cap_strike) - 1:.0f}F"
+                if comparator.startswith("less")
+                else f">={float(floor_strike) + 1:.0f}F"
+            )
+        )
 
         confidence = float(self.max_confidence) * max(0.3, 1.0 - 0.11 * lead_days)
         age_hours = (now - ensure_utc(issued)).total_seconds() / 3600 if issued else 0
@@ -209,7 +255,7 @@ class WeatherThresholdModel(ProbabilityModel):
             stdev=max(D(str(stdev)), Decimal("0.02")),
             independent=True,
             detail=(
-                f"NWS {token}: forecast high {forecast_f:.1f}F vs strike {strike_f:.0f}F, "
+                f"NWS {token}: forecast high {forecast_f:.1f}F vs {strike_label}, "
                 f"lead {lead_days}d, sigma {sigma:.1f}F -> P={probability:.3f}"
             ),
             data_freshness_seconds=int(age_hours * 3600),
@@ -217,10 +263,10 @@ class WeatherThresholdModel(ProbabilityModel):
                 "station": token,
                 "office": office,
                 "forecast_high_f": f"{forecast_f:.2f}",
-                "strike_f": f"{strike_f:.2f}",
+                "strike": strike_label,
                 "lead_days": lead_days,
                 "sigma_f": f"{sigma:.2f}",
-                "direction": "below" if is_below else "above",
+                "comparator": comparator or "unknown",
                 "model": "gaussian_forecast_error",
             },
         )

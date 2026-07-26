@@ -122,24 +122,11 @@ class ReferencePrior(ProbabilityModel):
     max_confidence = Decimal("0.9")
 
     async def estimate(self, ctx: ModelContext) -> ModelEstimate:
-        book = ctx.target_book
         market = ctx.market
-
-        mid: Decimal | None = None
-        if book is not None:
-            bid = book.best_bid("yes")
-            ask = book.best_ask("yes")
-            if bid is not None and ask is not None:
-                mid = (bid + ask) / D(2)
-            elif ask is not None:
-                mid = ask
+        mid = reference_price(ctx)
         if mid is None:
-            if market.best_yes_bid is not None and market.best_yes_ask is not None:
-                mid = (market.best_yes_bid + market.best_yes_ask) / D(2)
-            elif market.last_trade_price is not None:
-                mid = market.last_trade_price
-        if mid is None:
-            return no_opinion("no quote available on the target market")
+            return no_opinion("no usable quote on the target market")
+        book = ctx.target_book
 
         now = ctx.now or utcnow()
         age = age_seconds(market.quote_observed_at, now=now)
@@ -147,6 +134,15 @@ class ReferencePrior(ProbabilityModel):
         # A tight, deep, recently-updated book is a more reliable statement of
         # consensus than a wide one on a market nobody trades.
         confidence = Decimal("0.55")
+        # A one-sided quote is real information but a weaker consensus statement than
+        # a two-sided market, so it must not carry full weight.
+        two_sided = (
+            book is not None
+            and book.best_bid("yes") is not None
+            and book.best_ask("yes") is not None
+        ) or (market.best_yes_bid is not None and market.best_yes_ask is not None)
+        if not two_sided:
+            confidence = Decimal("0.4")
         spread = market.spread
         if spread is not None:
             if spread <= Decimal("0.01"):
@@ -203,16 +199,50 @@ class RelatedMarketPrior(ProbabilityModel):
         )
 
 
-def implied_from_orderbook(ctx: ModelContext) -> Decimal | None:
-    """Market-implied probability of YES, for display next to the model's estimate."""
+def _usable(price: Decimal | None) -> Decimal | None:
+    """A price of exactly 0 or 1 from a summary field is 'no data', not a price.
+
+    Kalshi reports ``last_price_dollars = 0.0000`` on a market that has never traded.
+    Reading that as "the market thinks this is worthless" is how a deep in-the-money
+    contract with a 98c resting bid came to be scored as P(YES) = 0.
+    """
+    if price is None or price <= 0 or price >= ONE:
+        return None
+    return price
+
+
+def reference_price(ctx: ModelContext) -> Decimal | None:
+    """The market's own implied probability of YES, from the best evidence available.
+
+    Preference order, most to least informative:
+
+    1. Book mid, when both sides are quoted.
+    2. A **one-sided** quote. A lone 98c bid with no offer is still a strong
+       statement about value; discarding it and falling through to a stale or absent
+       last trade throws away the market's actual opinion.
+    3. The venue's summary bid/ask, then last trade - each only if it is a real price.
+    """
     book = ctx.target_book
     if book is not None:
-        bid, ask = book.best_bid("yes"), book.best_ask("yes")
+        bid, ask = _usable(book.best_bid("yes")), _usable(book.best_ask("yes"))
         if bid is not None and ask is not None:
             return quantize_prob((bid + ask) / D(2))
         if ask is not None:
             return quantize_prob(ask)
+        if bid is not None:
+            return quantize_prob(bid)
+
     m = ctx.market
-    if m.best_yes_bid is not None and m.best_yes_ask is not None:
-        return quantize_prob((m.best_yes_bid + m.best_yes_ask) / D(2))
-    return m.last_trade_price
+    bid, ask = _usable(m.best_yes_bid), _usable(m.best_yes_ask)
+    if bid is not None and ask is not None:
+        return quantize_prob((bid + ask) / D(2))
+    if ask is not None:
+        return quantize_prob(ask)
+    if bid is not None:
+        return quantize_prob(bid)
+    return _usable(m.last_trade_price)
+
+
+def implied_from_orderbook(ctx: ModelContext) -> Decimal | None:
+    """Market-implied probability of YES, for display next to the model's estimate."""
+    return reference_price(ctx)
