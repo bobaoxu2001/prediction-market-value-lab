@@ -1,0 +1,36 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  color-scheme: light dark;
+}
+
+@layer base {
+  html { -webkit-text-size-adjust: 100%; }
+  body {
+    @apply bg-white text-neutral-900 antialiased;
+    @apply dark:bg-neutral-950 dark:text-neutral-100;
+    font-feature-settings: "tnum" 1; /* tabular numerals keep price columns aligned */
+  }
+  /* Numeric cells are monospace so digits line up down a column. */
+  .num { @apply font-mono tabular-nums; }
+}
+
+@layer components {
+  .card {
+    @apply rounded-lg border border-neutral-200 bg-white
+           dark:border-neutral-800 dark:bg-neutral-900;
+  }
+  .metric-label {
+    @apply text-[11px] uppercase tracking-wide text-neutral-500 dark:text-neutral-400;
+  }
+  .metric-value { @apply num text-sm font-semibold; }
+  .chip {
+    @apply inline-flex items-center rounded px-1.5 py-0.5 text-[11px] font-medium;
+  }
+  .table-wrap { @apply w-full overflow-x-auto; }
+  th { @apply whitespace-nowrap px-3 py-2 text-left text-[11px] uppercase tracking-wide
+              text-neutral-500 dark:text-neutral-400; }
+  td { @apply whitespace-nowrap px-3 py-2 text-sm; }
+}

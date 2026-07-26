@@ -209,10 +209,13 @@ def load_snapshots(
     window_start: datetime | None = None,
     window_end: datetime | None = None,
     settled_only: bool = True,
+    provenance: str | None = None,
 ) -> list[RecommendationSnapshot]:
     stmt = select(RecommendationSnapshot).order_by(
         RecommendationSnapshot.snapshot_date, RecommendationSnapshot.rank
     )
+    if provenance is not None:
+        stmt = stmt.where(RecommendationSnapshot.provenance == provenance)
     if settled_only:
         stmt = stmt.where(RecommendationSnapshot.final_result.is_not(None))
     if window_start:
@@ -458,19 +461,41 @@ def run_backtest(
     """Run every strategy over the settled snapshot history."""
     now = now or utcnow()
     strategies = strategies or default_strategies()
-    snapshots = load_snapshots(
-        session, window_start=window_start, window_end=window_end, settled_only=True
-    )
 
-    if not snapshots:
+    # Run each provenance separately. Pooling live and demo snapshots into one run
+    # would blend synthetic history into a real performance figure, and the resulting
+    # run could only be tagged with one provenance - so the mixture would be
+    # mislabelled whichever tag it got.
+    present = [
+        value
+        for (value,) in session.execute(
+            select(RecommendationSnapshot.provenance).distinct()
+        )
+    ]
+    if not present:
         log.info(
             "backtest has no settled snapshots yet; this is expected until published "
             "recommendations reach their resolution date"
         )
+        return [run_strategy(session, s, [], now=now) for s in strategies]
 
-    results = [run_strategy(session, s, snapshots, now=now) for s in strategies]
-    log.info(
-        "backtest complete: %d strategies, %d settled snapshots available",
-        len(results), len(snapshots),
-    )
+    results: list[BacktestResult] = []
+    for provenance in sorted(present):
+        snapshots = load_snapshots(
+            session,
+            window_start=window_start,
+            window_end=window_end,
+            settled_only=True,
+            provenance=provenance,
+        )
+        if not snapshots:
+            continue
+        results.extend(run_strategy(session, s, snapshots, now=now) for s in strategies)
+        log.info(
+            "backtest: %d strategies over %d settled '%s' snapshots",
+            len(strategies), len(snapshots), provenance,
+        )
+
+    if not results:
+        results = [run_strategy(session, s, [], now=now) for s in strategies]
     return results

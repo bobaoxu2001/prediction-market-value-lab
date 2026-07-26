@@ -54,9 +54,19 @@ class SnapshotReport:
         }
 
 
-def latest_batch_id(session: Session) -> str | None:
+def latest_batch_id(
+    session: Session, *, provenance: str = DataProvenance.LIVE.value
+) -> str | None:
+    """Most recent batch of the requested provenance.
+
+    Scoped to live by default. Taking the newest batch regardless of provenance meant
+    that with a demo dataset present, the scheduled snapshot job froze *demo*
+    recommendations into the track record instead of the real ones - the rows stayed
+    correctly labelled, but the day's genuine recommendations went unrecorded.
+    """
     return session.scalar(
         select(Recommendation.batch_id)
+        .where(Recommendation.provenance == provenance)
         .order_by(Recommendation.created_at.desc())
         .limit(1)
     )
@@ -68,6 +78,7 @@ def write_daily_snapshot(
     batch_id: str | None = None,
     now: datetime | None = None,
     force: bool = False,
+    provenance: str = DataProvenance.LIVE.value,
 ) -> SnapshotReport:
     """Freeze the current recommendation batch into the immutable record.
 
@@ -78,7 +89,7 @@ def write_daily_snapshot(
     now = now or utcnow()
     report = SnapshotReport(snapshot_date=now.date())
 
-    batch_id = batch_id or latest_batch_id(session)
+    batch_id = batch_id or latest_batch_id(session, provenance=provenance)
     if not batch_id:
         log.info("no recommendations to snapshot")
         return report

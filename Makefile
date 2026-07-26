@@ -16,7 +16,8 @@ PIP_ARGS  := $(if $(PIP_INDEX),-i $(PIP_INDEX) --trusted-host $(shell echo $(PIP
 
 .PHONY: help setup setup-web dev api web worker ingest orderbooks rank arbitrage \
         score settle snapshot backtest test test-unit test-integration lint \
-        migrate revision reset-db lock docker-up docker-down clean status
+        migrate revision reset-db lock docker-up docker-down clean status \
+        seed-demo purge-demo pipeline typecheck build-web
 
 help: ## Show available targets
 	@grep -hE '^[a-zA-Z_-]+:.*?## ' $(MAKEFILE_LIST) \
@@ -86,6 +87,15 @@ backtest: ## Walk-forward backtest across all strategies
 status: ## Show job health and row counts
 	$(PMVL) status
 
+seed-demo: ## Seed a SYNTHETIC, clearly-labelled demo history (provenance=demo)
+	$(PMVL) seed-demo
+
+purge-demo: ## Delete every demo-provenance row; live data untouched
+	$(PMVL) purge-demo
+
+pipeline: ## Full daily sequence: ingest -> rank -> arbitrage -> snapshot -> settle -> backtest
+	$(PMVL) pipeline
+
 # ----------------------------------------------------------------- quality
 test: ## Run the full test suite
 	$(PYTEST) -q
@@ -98,6 +108,12 @@ test-integration: ## Integration tests (fixtures + sqlite, still no live network
 
 lint: ## Compile-check every Python module
 	$(PY) -m compileall -q packages services tests && echo "✓ lint ok"
+
+typecheck: ## TypeScript check for the web app
+	cd $(WEB) && npx tsc --noEmit && echo "✓ typecheck ok"
+
+build-web: ## Production build of the web app
+	cd $(WEB) && npm run build
 
 # ----------------------------------------------------------------- database
 migrate: ## Apply migrations

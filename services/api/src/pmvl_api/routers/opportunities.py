@@ -167,8 +167,18 @@ def list_opportunities(
 
 
 @router.get("/summary")
-def summary(db: Session = DbDep, mode: DataMode = ModeDep) -> dict[str, Any]:
-    """Counts per horizon for the latest batch, for the home page tabs."""
+def summary(
+    include_inactive: bool = Query(False),
+    db: Session = DbDep,
+    mode: DataMode = ModeDep,
+) -> dict[str, Any]:
+    """Counts per horizon for the latest batch, for the home page tabs.
+
+    Applies the *same* state filter as the listing endpoint. Counting all
+    recommendations while the list showed only actionable ones produced tabs
+    advertising opportunities next to an empty page - the tab count must mean the
+    same thing as the list beneath it.
+    """
     latest_batch = db.scalar(
         apply_provenance(
             select(Recommendation.batch_id).order_by(Recommendation.created_at.desc()),
@@ -183,6 +193,15 @@ def summary(db: Session = DbDep, mode: DataMode = ModeDep) -> dict[str, Any]:
             Recommendation.provenance,
             mode,
         )
+        if not include_inactive:
+            stmt = stmt.where(
+                Recommendation.state.in_(
+                    (
+                        RecommendationState.STILL_ACTIONABLE.value,
+                        RecommendationState.EDGE_REDUCED.value,
+                    )
+                )
+            )
         for rec in db.scalars(stmt):
             counts[rec.horizon] = counts.get(rec.horizon, 0) + 1
     return envelope(counts, mode, batch_id=latest_batch)

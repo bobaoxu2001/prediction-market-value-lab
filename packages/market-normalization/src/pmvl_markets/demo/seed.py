@@ -71,15 +71,25 @@ DEMO_ID_PREFIX = "DEMO-"
 
 DEMO_MODEL_VERSION = "ensemble-v1.0.0-demo"
 
-_TEMPLATES: list[tuple[str, Category, Platform]] = [
-    ("Will BTC close above ${strike:,} on {date}?", Category.CRYPTO, Platform.KALSHI),
-    ("Will ETH close above ${strike:,} on {date}?", Category.CRYPTO, Platform.POLYMARKET),
-    ("Will the high temp in NYC exceed {strike}F on {date}?", Category.WEATHER, Platform.KALSHI),
-    ("Will CPI year-over-year exceed {strike}% in the {date} print?", Category.ECONOMICS, Platform.KALSHI),
-    ("Will the Fed hold rates at the {date} meeting?", Category.ECONOMICS, Platform.POLYMARKET),
-    ("Will Team Alpha beat Team Beta on {date}?", Category.SPORTS, Platform.POLYMARKET),
-    ("Will the incumbent lead the {date} national poll?", Category.POLITICS, Platform.POLYMARKET),
-    ("Will the S&P 500 close above {strike:,} on {date}?", Category.FINANCE, Platform.KALSHI),
+#: (template, category, venue, strike choices). Strikes are paired with their
+#: template so the generated titles are internally plausible - a shared strike pool
+#: produced nonsense like "will the high temp in NYC exceed 4800F".
+_TEMPLATES: list[tuple[str, Category, Platform, tuple[int, ...]]] = [
+    ("Will BTC close above ${strike:,} on {date}?", Category.CRYPTO, Platform.KALSHI,
+     (60000, 65000, 70000, 75000)),
+    ("Will ETH close above ${strike:,} on {date}?", Category.CRYPTO, Platform.POLYMARKET,
+     (2600, 2800, 3000, 3200)),
+    ("Will the high temp in NYC exceed {strike}F on {date}?", Category.WEATHER, Platform.KALSHI,
+     (78, 82, 85, 88, 91)),
+    ("Will CPI year-over-year exceed {strike}% in the {date} print?", Category.ECONOMICS,
+     Platform.KALSHI, (2, 3, 4)),
+    ("Will the Fed hold rates at the {date} meeting?", Category.ECONOMICS,
+     Platform.POLYMARKET, (0,)),
+    ("Will Team Alpha beat Team Beta on {date}?", Category.SPORTS, Platform.POLYMARKET, (0,)),
+    ("Will the incumbent lead the {date} national poll?", Category.POLITICS,
+     Platform.POLYMARKET, (0,)),
+    ("Will the S&P 500 close above {strike:,} on {date}?", Category.FINANCE, Platform.KALSHI,
+     (5200, 5400, 5600, 5800)),
 ]
 
 
@@ -91,6 +101,7 @@ class DemoReport:
     snapshots: int = 0
     settlements: int = 0
     days: int = 0
+    open_recommendations: int = 0
     win_rate: float = 0.0
     total_pnl: str = "0"
 
@@ -104,6 +115,7 @@ class DemoReport:
             "snapshots": self.snapshots,
             "settlements": self.settlements,
             "days": self.days,
+            "open_recommendations": self.open_recommendations,
             "win_rate": round(self.win_rate, 4),
             "total_pnl": self.total_pnl,
         }
@@ -187,7 +199,7 @@ def seed_demo_history(
         snapshot_day: date = published_at.date()
 
         for rank in range(1, per_day + 1):
-            template, category, platform = _TEMPLATES[rng.randrange(len(_TEMPLATES))]
+            template, category, platform, strikes = _TEMPLATES[rng.randrange(len(_TEMPLATES))]
             horizon = rng.choice(["24h", "24h", "7d", "7d", "30d"])
             hours_ahead = {"24h": rng.uniform(2, 24), "7d": rng.uniform(24, 168),
                            "30d": rng.uniform(168, 720)}[horizon]
@@ -198,7 +210,7 @@ def seed_demo_history(
                 if resolution_at >= now:
                     continue
 
-            strike = rng.choice([60000, 65000, 70000, 85, 3, 5200, 4800])
+            strike = rng.choice(strikes)
             title = template.format(
                 strike=strike, date=(published_at + timedelta(days=1)).strftime("%b %d, %Y")
             )
@@ -434,6 +446,13 @@ def seed_demo_history(
             if realized > 0:
                 wins += 1
 
+    # A current, still-open batch so the home page has something to render. Without
+    # it the demo dataset is entirely settled history and the "today" view is empty,
+    # which defeats the point of having a demo dataset at all.
+    report.open_recommendations = _seed_open_batch(
+        session, event_id=event.id, rng=rng, now=now, per_horizon=4
+    )
+
     session.flush()
     report.win_rate = wins / graded if graded else 0.0
     report.total_pnl = str(quantize_usd(total_pnl))
@@ -444,3 +463,184 @@ def seed_demo_history(
         report.recommendations, days, report.win_rate * 100, report.total_pnl,
     )
     return report
+
+
+def _seed_open_batch(
+    session: Session,
+    *,
+    event_id: int,
+    rng: random.Random,
+    now: datetime,
+    per_horizon: int = 4,
+) -> int:
+    """A batch of currently-open demo recommendations for the 'today' view.
+
+    These resolve in the future and carry ``state=still_actionable``, so the home
+    page has populated cards. They are still ``provenance=demo`` and still excluded
+    from live mode.
+    """
+    batch_id = f"demo-open-{now:%Y%m%d}"
+    horizons = {"24h": (3, 22), "7d": (30, 160), "30d": (200, 700)}
+    written = 0
+
+    for horizon, (lo, hi) in horizons.items():
+        for rank in range(1, per_horizon + 1):
+            template, category, platform, strikes = _TEMPLATES[rng.randrange(len(_TEMPLATES))]
+            resolution_at = now + timedelta(hours=rng.uniform(lo, hi))
+            strike = rng.choice(strikes)
+            title = template.format(
+                strike=strike, date=resolution_at.strftime("%b %d, %Y")
+            )
+
+            market_p = clamp_prob(D(str(round(rng.uniform(0.2, 0.75), 4))))
+            half_spread = D(str(rng.choice([0.005, 0.01])))
+            yes_ask = quantize_price(clamp_prob(market_p + half_spread))
+            yes_bid = quantize_price(clamp_prob(market_p - half_spread))
+
+            side = Side.YES
+            entry = yes_ask
+            contracts = D(100)
+            fee_rate = D("0.07") if platform == Platform.KALSHI else D("0.05")
+            fee = safe_div(taker_fee(platform, contracts, entry, rate=fee_rate), contracts)
+            transfer = D("0.005") if platform == Platform.POLYMARKET else ZERO
+            total_cost = quantize_usd(entry + fee + D("0.01") + transfer)
+
+            # Build the estimate FROM the cost, not independently of it. Sampling a
+            # probability and hoping it clears the cost produced demo cards with a
+            # negative conservative EV sitting in the published list, which
+            # contradicts the very admission gate this page is meant to illustrate.
+            margin = D(str(round(rng.uniform(0.01, 0.05), 4)))
+            low = clamp_prob(total_cost + margin)
+            interval = D(str(round(rng.uniform(0.03, 0.07), 4)))
+            model_p = clamp_prob(low + interval)
+            high = clamp_prob(model_p + interval)
+
+            net_ev = quantize_usd(model_p - total_cost)
+            conservative_ev = quantize_usd(low - total_cost)
+            confidence = D(str(round(rng.uniform(0.4, 0.85), 4)))
+
+            market_id = f"{DEMO_ID_PREFIX}OPEN-{horizon}-{rank:02d}"
+            market = Market(
+                platform=platform.value,
+                platform_market_id=market_id,
+                event_id=event_id,
+                title=f"[DEMO] {title}",
+                subtitle="synthetic",
+                normalized_title=title.lower(),
+                description="Synthetic demo market. Not a real market on any venue.",
+                category=category.value,
+                outcomes=["Yes", "No"],
+                open_time=now - timedelta(days=2),
+                close_time=resolution_at,
+                expected_resolution_time=resolution_at,
+                settlement_source="synthetic demo source",
+                settlement_rules_raw="Synthetic demo market with no real settlement source.",
+                settlement_rules_normalized="demo",
+                status=MarketStatus.OPEN.value,
+                accepting_orders=True,
+                tick_size=D("0.01"),
+                fee_rate=fee_rate,
+                fee_type="quadratic" if platform == Platform.KALSHI else "general_fees",
+                best_yes_bid=yes_bid,
+                best_yes_ask=yes_ask,
+                best_no_bid=quantize_price(ONE - yes_ask),
+                best_no_ask=quantize_price(ONE - yes_bid),
+                spread=quantize_price(yes_ask - yes_bid),
+                volume_24h=D(str(rng.randint(5000, 120000))),
+                total_volume=D(str(rng.randint(50000, 900000))),
+                orderbook_depth_usd=D(str(rng.randint(800, 40000))),
+                last_trade_price=market_p,
+                quote_observed_at=now,
+                provenance=DataProvenance.DEMO.value,
+                created_at=now,
+            )
+            session.add(market)
+            session.flush()
+
+            prediction = ModelPrediction(
+                market_id=market.id,
+                model_version=DEMO_MODEL_VERSION,
+                fair_probability_mean=model_p,
+                fair_probability_low=low,
+                fair_probability_high=high,
+                model_confidence=confidence,
+                data_freshness_seconds=rng.randint(60, 3600),
+                evidence_quality=D(str(round(rng.uniform(0, 0.6), 3))),
+                has_independent_prior=True,
+                market_implied_probability=market_p,
+                components=[{"name": "demo_synthetic", "probability": str(model_p)}],
+                explanation="Synthetic demo prediction. Not a real estimate.",
+                category=category.value,
+                provenance=DataProvenance.DEMO.value,
+                created_at=now,
+            )
+            session.add(prediction)
+            session.flush()
+
+            executable = D(str(rng.randint(150, 3000)))
+            session.add(
+                Recommendation(
+                    batch_id=batch_id,
+                    market_id=market.id,
+                    prediction_id=prediction.id,
+                    horizon=horizon,
+                    rank=rank,
+                    side=side.value,
+                    entry_price=entry,
+                    executable_size=executable,
+                    total_cost_per_contract=total_cost,
+                    fair_probability=model_p,
+                    fair_probability_low=low,
+                    fair_probability_high=high,
+                    net_ev_per_contract=net_ev,
+                    conservative_net_ev=conservative_ev,
+                    net_roi=quantize_usd(safe_div(net_ev, total_cost)),
+                    expected_profit_10=quantize_usd(net_ev * D(10)),
+                    expected_profit_50=quantize_usd(net_ev * D(50)),
+                    expected_profit_100=quantize_usd(net_ev * D(100)),
+                    expected_profit_per_100_usd=expected_profit_per_100_usd(net_ev, total_cost),
+                    fractional_kelly=fractional_kelly(low, total_cost),
+                    recommended_position_cap=executable,
+                    composite_score=quantize_usd(conservative_ev * D(str(rng.uniform(2, 8)))),
+                    model_confidence=confidence,
+                    spread=quantize_price(yes_ask - yes_bid),
+                    liquidity_usd=market.orderbook_depth_usd,
+                    risk_flags=["demo_data"],
+                    cost_breakdown={
+                        "entry_price": str(entry),
+                        "platform_fee": str(quantize_usd(fee)),
+                        "estimated_slippage": "0.0100",
+                        "transfer_cost": str(transfer),
+                    },
+                    model_version=DEMO_MODEL_VERSION,
+                    expected_resolution_time=resolution_at,
+                    state=RecommendationState.STILL_ACTIONABLE.value,
+                    current_price=entry,
+                    current_net_ev=net_ev,
+                    state_checked_at=now,
+                    provenance=DataProvenance.DEMO.value,
+                    created_at=now,
+                )
+            )
+            written += 1
+
+    # Re-rank each horizon by composite score so rank #1 is genuinely the top pick,
+    # matching how the real publisher orders a batch.
+    from sqlalchemy import select as _select
+
+    for horizon in horizons:
+        rows = list(
+            session.scalars(
+                _select(Recommendation).where(
+                    Recommendation.batch_id == batch_id,
+                    Recommendation.horizon == horizon,
+                )
+            )
+        )
+        for position, row in enumerate(
+            sorted(rows, key=lambda r: r.composite_score, reverse=True), start=1
+        ):
+            row.rank = position
+
+    session.flush()
+    return written
