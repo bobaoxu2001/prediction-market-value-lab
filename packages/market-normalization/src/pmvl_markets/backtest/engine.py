@@ -155,6 +155,8 @@ class BacktestResult:
     walk_forward: bool = True
     notes: str = ""
     by_slice: dict[str, dict[str, Any]] = field(default_factory=dict)
+    #: Inherited from the snapshots consumed; never assumed.
+    provenance: DataProvenance = DataProvenance.LIVE
 
     def as_dict(self) -> dict[str, Any]:
         return {
@@ -166,6 +168,7 @@ class BacktestResult:
             "window_start": self.window_start.isoformat() if self.window_start else None,
             "window_end": self.window_end.isoformat() if self.window_end else None,
             "walk_forward": self.walk_forward,
+            "provenance": self.provenance.value,
             "metrics": self.metrics,
             "by_slice": self.by_slice,
             "notes": self.notes,
@@ -320,6 +323,15 @@ def run_strategy(
     result.n_settled = len(observations)
     result.metrics = summarize(observations)
     result.data_quality = _worst_quality(qualities)
+    # A run inherits the provenance of the snapshots it consumed. Hardcoding LIVE
+    # here would let a backtest computed entirely from synthetic demo history appear
+    # under the production (live) filter - precisely the leak the provenance column
+    # exists to prevent. Any demo input makes the whole run demo.
+    result.provenance = (
+        DataProvenance.DEMO
+        if any(s.provenance == DataProvenance.DEMO.value for s in eligible)
+        else DataProvenance.LIVE
+    )
     result.window_start = min(
         (s.recommendation_created_at for s in eligible), default=None
     )
@@ -426,7 +438,7 @@ def _persist_run(
                 "by_slice": result.by_slice,
             },
             notes=result.notes,
-            provenance=DataProvenance.LIVE.value,
+            provenance=result.provenance.value,
             created_at=now,
         )
     )

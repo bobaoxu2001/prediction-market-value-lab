@@ -1,0 +1,368 @@
+"""System health, data sources, methodology, and the compliance surface."""
+
+from __future__ import annotations
+
+from typing import Any
+
+from fastapi import APIRouter, Query
+from sqlalchemy import func, select
+from sqlalchemy.orm import Session
+
+from pmvl_shared.config import get_settings
+from pmvl_shared.enums import DataProvenance
+from pmvl_shared.timeutil import utcnow
+
+from pmvl_markets.db_models import (
+    ArbitrageOpportunity,
+    BacktestRun,
+    EvidenceItem,
+    JobRun,
+    Market,
+    MarketMatch,
+    ModelPrediction,
+    OrderbookSnapshot,
+    Recommendation,
+    RecommendationSnapshot,
+    Settlement,
+    Trade,
+)
+from pmvl_markets.probability.ensemble import MODEL_VERSION
+
+from ..deps import DataMode, DbDep, ModeDep, envelope
+
+router = APIRouter(tags=["system"])
+
+
+@router.get("/health")
+def health() -> dict[str, Any]:
+    return {"status": "ok", "time": utcnow().isoformat().replace("+00:00", "Z")}
+
+
+@router.get("/system")
+def system(db: Session = DbDep, mode: DataMode = ModeDep) -> dict[str, Any]:
+    settings = get_settings()
+
+    counts: dict[str, Any] = {}
+    for model in (
+        Market, OrderbookSnapshot, Trade, EvidenceItem, ModelPrediction, MarketMatch,
+        Recommendation, RecommendationSnapshot, ArbitrageOpportunity, Settlement,
+        BacktestRun,
+    ):
+        counts[model.__tablename__] = db.scalar(
+            select(func.count()).select_from(model)
+        )
+
+    # Live vs demo split, so the operator can see at a glance whether the database
+    # contains synthetic rows at all.
+    provenance_split = {}
+    for table, model in (("markets", Market), ("recommendations", Recommendation)):
+        provenance_split[table] = {
+            value: db.scalar(
+                select(func.count()).select_from(model).where(model.provenance == value)
+            )
+            for value in (DataProvenance.LIVE.value, DataProvenance.DEMO.value)
+        }
+
+    latest = (
+        select(JobRun.job_name, func.max(JobRun.started_at).label("latest"))
+        .group_by(JobRun.job_name)
+        .subquery()
+    )
+    jobs = [
+        {
+            "job_name": j.job_name,
+            "status": j.status,
+            "started_at": j.started_at,
+            "finished_at": j.finished_at,
+            "duration_seconds": j.duration_seconds,
+            "records_written": j.records_written,
+            "error": j.error[:500] if j.error else "",
+            "details": j.details or {},
+        }
+        for j in db.scalars(
+            select(JobRun).join(
+                latest,
+                (JobRun.job_name == latest.c.job_name)
+                & (JobRun.started_at == latest.c.latest),
+            ).order_by(JobRun.job_name)
+        )
+    ]
+
+    freshest_quote = db.scalar(select(func.max(Market.quote_observed_at)))
+
+    return envelope(
+        {
+            "environment": settings.environment,
+            "model_version": MODEL_VERSION,
+            "row_counts": counts,
+            "provenance_split": provenance_split,
+            "jobs": jobs,
+            "freshest_quote_observed_at": freshest_quote,
+            "data_sources": [
+                {
+                    "name": "Kalshi Trade API v2",
+                    "base_url": settings.kalshi_api_base,
+                    "auth_required": False,
+                    "used_for": "markets, events, series, orderbooks, trades, candlesticks, settlement",
+                    "docs": "https://docs.kalshi.com",
+                },
+                {
+                    "name": "Polymarket Gamma API",
+                    "base_url": settings.polymarket_gamma_base,
+                    "auth_required": False,
+                    "used_for": "market and event discovery, rules, fee schedule, negative risk",
+                    "docs": "https://docs.polymarket.com",
+                },
+                {
+                    "name": "Polymarket CLOB API",
+                    "base_url": settings.polymarket_clob_base,
+                    "auth_required": False,
+                    "used_for": "per-token orderbooks, midpoint, spread, price history",
+                    "docs": "https://docs.polymarket.com",
+                },
+                {
+                    "name": "Polymarket Data API",
+                    "base_url": settings.polymarket_data_base,
+                    "auth_required": False,
+                    "used_for": "public trade prints",
+                    "docs": "https://docs.polymarket.com",
+                },
+                {
+                    "name": "Coinbase Exchange",
+                    "base_url": settings.coinbase_api_base,
+                    "auth_required": False,
+                    "used_for": "spot price and realised volatility for the crypto threshold model",
+                    "docs": "https://docs.cdp.coinbase.com/exchange/docs/welcome",
+                },
+                {
+                    "name": "National Weather Service",
+                    "base_url": settings.nws_api_base,
+                    "auth_required": False,
+                    "used_for": "gridpoint temperature forecasts for the weather model",
+                    "docs": "https://www.weather.gov/documentation/services-web-api",
+                },
+                {
+                    "name": "Anthropic (research agent)",
+                    "base_url": "https://api.anthropic.com",
+                    "auth_required": True,
+                    "configured": bool(settings.anthropic_api_key),
+                    "enabled": settings.research_enabled,
+                    "used_for": "structured evidence extraction; disabled by default",
+                    "docs": "https://docs.anthropic.com",
+                },
+            ],
+            "update_frequencies": {
+                "market_discovery": "10 minutes",
+                "orderbook_refresh": "3 minutes",
+                "arbitrage_scan": "1 minute",
+                "probability_scoring": "2 hours",
+                "ranking": "1 hour",
+                "settlement_sync": "30 minutes",
+                "daily_snapshot": (
+                    f"{settings.daily_snapshot_hour_utc:02d}:"
+                    f"{settings.daily_snapshot_minute_utc:02d} UTC"
+                ),
+                "backtest": "daily, one hour after the snapshot",
+            },
+            "trading_execution_enabled": settings.trading_execution_enabled,
+        },
+        mode,
+    )
+
+
+@router.get("/system/config")
+def config(mode: DataMode = ModeDep) -> dict[str, Any]:
+    """Effective configuration with every secret reduced to a presence boolean."""
+    return envelope(get_settings().redacted(), mode)
+
+
+@router.get("/system/eligibility")
+def eligibility(
+    region: str | None = Query(
+        None, description="ISO country or subdivision code, e.g. US-NY, GB, ON"
+    ),
+) -> dict[str, Any]:
+    """Geographic eligibility check for the *future* trading surface.
+
+    Research access is read-only and unrestricted - reading published market data is
+    not a regulated activity. This endpoint exists so that when an execution service
+    is added it has a gate to consult, and so restricted regions can be told up front
+    that trading will not be enabled for them.
+    """
+    settings = get_settings()
+    restricted = settings.restricted_region_list
+    normalized = (region or "").strip().upper()
+    is_restricted = bool(normalized) and any(
+        normalized == r or normalized.startswith(f"{r}-") or r.startswith(f"{normalized}-")
+        for r in restricted
+    )
+
+    return {
+        "region": normalized or None,
+        "research_access": "allowed",
+        "trading_execution_available": False,
+        "trading_execution_reason": (
+            "This release has no execution service. It holds no funds, stores no "
+            "wallet keys, and places no orders."
+        ),
+        "would_be_restricted_for_trading": is_restricted,
+        "restricted_regions_configured": restricted,
+        "note": (
+            "Polymarket restricts trading access by jurisdiction and Kalshi is a "
+            "CFTC-regulated US exchange. Confirm your own eligibility with each venue "
+            "before trading anywhere."
+        ),
+    }
+
+
+@router.get("/methodology")
+def methodology(mode: DataMode = ModeDep) -> dict[str, Any]:
+    """The formulas and decision rules the platform actually uses."""
+    return envelope(
+        {
+            "model_version": MODEL_VERSION,
+            "executable_price": {
+                "rule": (
+                    "Entry price is the volume-weighted average of the ask ladder at "
+                    "the requested size. Last-trade prices and midpoints are never "
+                    "used as entry prices."
+                ),
+                "yes_side": "Buying YES consumes the YES ask ladder.",
+                "no_side": "Buying NO consumes the NO ask ladder.",
+                "kalshi_note": (
+                    "Kalshi publishes bids only. Asks are derived: "
+                    "YES ask = $1.00 - best NO bid, NO ask = $1.00 - best YES bid."
+                ),
+                "polymarket_note": (
+                    "YES and NO are separate ERC-1155 tokens with independent order "
+                    "books; both are fetched. A missing side is reported as empty "
+                    "rather than synthesised."
+                ),
+            },
+            "fees": {
+                "kalshi_taker": "ceil_to_cent(0.07 x multiplier x C x P x (1-P))",
+                "kalshi_maker": "ceil_to_cent(0.0175 x multiplier x C x P x (1-P))",
+                "polymarket_taker": "round_5dp(C x rate x P x (1-P)), rate per market from the API",
+                "polymarket_maker": "zero - makers are never charged",
+                "note": (
+                    "Kalshi ceils the fee to the whole cent on the whole order, which "
+                    "makes the per-contract fee size-dependent. Small orders are "
+                    "disproportionately expensive and the model reflects that."
+                ),
+            },
+            "cost_stack": [
+                "executable entry price (VWAP at size)",
+                "platform fee",
+                "fee rounding",
+                "estimated slippage (measured book impact + latency pad)",
+                "transfer cost (Polygon bridge/gas, amortised; zero on Kalshi)",
+                "capital cost until expected resolution",
+                "execution risk penalty (cross-venue legs only)",
+            ],
+            "value": {
+                "gross_expected_profit_per_contract": "P(win) - executable entry price",
+                "net_ev_per_contract": "P(win) - total executable cost",
+                "conservative_net_ev": "fair_probability_low - total executable cost",
+                "admission_rule": (
+                    "conservative_net_ev must exceed the configured threshold AND the "
+                    "fair probability must rest on an independent prior."
+                ),
+                "no_side_bound": (
+                    "For a NO recommendation the conservative bound is 1 - "
+                    "fair_probability_high, not 1 - low. Using the latter would be the "
+                    "optimistic bound and would systematically overstate NO-side edge."
+                ),
+                "ranking": (
+                    "Multiplicative composite of conservative edge scaled by realisable "
+                    "capacity, then discounted for liquidity, spread, model confidence, "
+                    "data freshness and time to resolution. Ranking on ROI alone would "
+                    "let a 1-cent contract with no depth dominate permanently."
+                ),
+            },
+            "probability": {
+                "combination": "log-odds pooling weighted by component confidence",
+                "independence_rule": (
+                    "A model may not use the target market's own price to justify "
+                    "trading against that same price. When every contributing "
+                    "component derives from that price, has_independent_prior is false "
+                    "and no recommendation can be produced."
+                ),
+                "independent_components": [
+                    "cross-platform consensus (verified equivalent matches only)",
+                    "sibling coherence on mutually exclusive exhaustive events",
+                    "crypto driftless-GBM threshold model on Coinbase spot + realised vol",
+                    "weather model on NWS gridpoint forecasts",
+                    "research agent (capped, evidence-weighted)",
+                ],
+                "non_independent_components": [
+                    "target market reference prior",
+                    "extreme price sanity anchor",
+                ],
+                "unmodelled_categories": (
+                    "Sports, macro and politics return NO OPINION rather than a guess, "
+                    "and name the credentialed data feed that would be required."
+                ),
+                "interval": (
+                    "Explicitly a conservative uncertainty band, not a formal confidence "
+                    "interval: components are not independent draws from a common "
+                    "distribution. Built from component uncertainty, inter-component "
+                    "disagreement, a staleness penalty and a low-confidence floor."
+                ),
+            },
+            "arbitrage": {
+                "executable_definition": [
+                    "every leg has sufficient depth right now",
+                    "all fees, slippage and capital costs deducted",
+                    "settlement conditions substantively identical (rule compatibility = identical)",
+                    "cutoff, timezone, measurement basis and settlement source agree",
+                    "net profit still strictly greater than zero",
+                ],
+                "other_labels": (
+                    "Everything failing any precondition is labelled Theoretical, Rule "
+                    "Mismatch Risk, Execution Risk, Stale Quote, Insufficient "
+                    "Liquidity, Not Guaranteed, or Logical Mispricing."
+                ),
+                "multi_outcome_guard": (
+                    "A complete set is only priced when the number of legs equals the "
+                    "venue's own reported outcome count. Partial baskets are refused."
+                ),
+                "logical_constraints": (
+                    "Monotonicity and probability-sum violations are reported as "
+                    "mispricings. They are only upgraded when a complete executable "
+                    "hedge clears its costs."
+                ),
+            },
+            "backtest": {
+                "look_ahead_prevention": (
+                    "The engine reads only immutable snapshots frozen at publication. "
+                    "It never queries live markets, never re-runs the model, and never "
+                    "re-prices an entry. Selection is applied within each publication "
+                    "day."
+                ),
+                "data_quality": DATA_QUALITY_NOTE,
+                "benchmark": (
+                    "Brier improvement versus the market's own implied probability. A "
+                    "model that cannot beat the market price adds no information."
+                ),
+            },
+            "limitations": [
+                "Sports, macro and politics have no independent model in this release.",
+                "Cross-platform matching requires an exact rule match before any "
+                "arbitrage claim; genuinely identical pairs across these two venues "
+                "are rare.",
+                "Polymarket expected resolution adds a fixed oracle-latency estimate to "
+                "endDate; actual UMA settlement time varies.",
+                "Slippage beyond measured book impact is a fixed tick pad, not a "
+                "fitted market-impact model.",
+                "The backtest cannot model queue position or partial fills.",
+            ],
+        },
+        mode,
+    )
+
+
+DATA_QUALITY_NOTE = (
+    "Each simulated trade records how its fill price was derived, and a run's overall "
+    "data quality is the worst quality of any trade in it. Candlestick-derived fills "
+    "are never presented as orderbook-derived."
+)

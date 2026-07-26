@@ -1,0 +1,18 @@
+[build-system]
+requires = ["setuptools>=68", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "pmvl-api"
+version = "0.1.0"
+description = "Read-only research API for the Prediction Market Value Lab"
+requires-python = ">=3.11"
+dependencies = [
+    "pmvl-shared",
+    "pmvl-markets",
+    "fastapi>=0.115,<1",
+    "uvicorn[standard]>=0.32,<1",
+]
+
+[tool.setuptools.packages.find]
+where = ["src"]

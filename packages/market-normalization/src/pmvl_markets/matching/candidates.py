@@ -82,9 +82,10 @@ def build_token_index(
     ceiling = max(
         MIN_TOKEN_POSTING_CEILING, int(len(markets) * MAX_TOKEN_DOCUMENT_FRACTION)
     )
-    return {
-        token: keys for token, keys in postings.items() if 1 < len(keys) <= ceiling
-    }
+    # Only the UPPER bound filters. A token appearing in exactly one market is the
+    # most discriminating signal there is - it points at a unique counterpart - so
+    # excluding singletons would suppress precisely the matches worth finding.
+    return {token: keys for token, keys in postings.items() if len(keys) <= ceiling}
 
 
 def times_are_plausible(a: NormalizedMarket, b: NormalizedMarket) -> bool:
