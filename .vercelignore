@@ -1,3 +1,9 @@
+# NOTE: Vercel's uploader also honours .gitignore, so anything gitignored must be
+# re-included here explicitly. The database snapshot is gitignored (a 20MB binary
+# that goes stale immediately) but is REQUIRED in the function bundle - omitting it
+# is what took production down: the API cannot start without it.
+!data/pmvl-snapshot.db
+
 apps/
 services/worker/
 tests/
@@ -8,5 +14,3 @@ data/pmvl.db-wal
 data/pmvl.db-shm
 data/raw/
 data/processed/
-requirements-dev.txt.bak
-requirements.txt.vercel

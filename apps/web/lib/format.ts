@@ -165,3 +165,65 @@ export function platformLabel(platform: string | null | undefined): string {
   if (platform === "demo") return "Demo";
   return platform ?? "—";
 }
+
+/**
+ * Human-readable labels for internal strategy keys.
+ *
+ * The table used to render the raw key (`top10_equal_10usd`), which is a database
+ * identifier, not something a reader should have to decode. The key is still shown
+ * in the per-strategy detail panel so it stays traceable back to the run record.
+ */
+export const STRATEGY_LABELS: Record<string, string> = {
+  top1_10usd: "Top 1 · $10",
+  top3_equal_10usd: "Top 3 · $10 each",
+  top10_equal_10usd: "Top 10 · $10 each",
+  top10_equal_25usd: "Top 10 · $25 each",
+  top10_fractional_kelly: "Top 10 · Fractional Kelly",
+  high_confidence_only: "High confidence only",
+  resolves_within_24h: "Resolves within 24h",
+  kalshi_only: "Kalshi only",
+  polymarket_only: "Polymarket only",
+  cross_platform_combined: "Both venues combined",
+};
+
+export function strategyLabel(key: string): string {
+  return STRATEGY_LABELS[key] ?? key.replace(/_/g, " ");
+}
+
+/**
+ * One-line plain-English definitions for the quant metrics.
+ *
+ * Rendered next to a tappable "?" rather than a hover tooltip: hover does not exist
+ * on touch devices, so a hover-only explanation is no explanation on mobile.
+ */
+export const METRIC_HELP: Record<string, string> = {
+  brier:
+    "Brier score measures probability accuracy — the average squared error between " +
+    "forecast and outcome. Lower is better; 0.25 is what you get by always guessing 50%.",
+  log_loss:
+    "Log loss also measures probability accuracy but punishes confident mistakes far " +
+    "more harshly than Brier does. Lower is better.",
+  vs_market:
+    "How much the model's Brier score beat the market's own implied probability. " +
+    "Positive means the model added information; zero or negative means it did not, " +
+    "regardless of whether the strategy made money.",
+  profit_factor:
+    "Gross winnings divided by gross losses. Above 1 means the winners outweigh the " +
+    "losers; below 1 means the reverse.",
+  sharpe_like:
+    "Average profit per bet divided by its standard deviation — a rough " +
+    "return-per-unit-of-risk figure. It is not an annualised Sharpe ratio.",
+  max_drawdown:
+    "The largest peak-to-trough fall in cumulative profit — the worst losing streak " +
+    "you would have had to sit through.",
+  roi: "Net profit divided by total money staked.",
+  win_rate:
+    "Share of settled recommendations that made money. On its own it says little: " +
+    "a strategy can win often and still lose money if the losses are larger.",
+  settled:
+    "Recommendations that have reached their resolution date and been graded. Small " +
+    "samples cannot distinguish skill from luck.",
+  calibration:
+    "Compares forecast probability against how often those forecasts actually came " +
+    "true. A well-calibrated model's 70% predictions happen about 70% of the time.",
+};

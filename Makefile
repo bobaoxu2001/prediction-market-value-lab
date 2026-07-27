@@ -128,14 +128,30 @@ reset-db: ## Drop and rebuild the local database (destructive)
 	@echo "✓ database reset"
 
 # ----------------------------------------------------------------- docker
-snapshot-build: ## Build the slim read-only DB used by the hosted demo
-	$(PY) scripts/build_snapshot.py
+API_URL ?= https://pmvl-api.vercel.app
+WEB_URL ?= https://pmvl-web.vercel.app
 
-deploy-api: snapshot-build ## Deploy the read-only API to Vercel
+snapshot-build: ## Build + verify the deployable demo snapshot (deterministic)
+	$(PY) scripts/build_demo_snapshot.py --from-live
+
+smoke: ## Smoke-test the deployed API and web app
+	$(PY) scripts/smoke_test.py --api $(API_URL) --web $(WEB_URL)
+
+smoke-api: ## Smoke-test the deployed API only
+	$(PY) scripts/smoke_test.py --api $(API_URL)
+
+deploy-api: snapshot-build ## Build the snapshot, deploy the API, verify it answers
 	vercel deploy --prod --yes
+	@echo "waiting for the deployment to become reachable..."
+	@sleep 10
+	$(MAKE) smoke-api
 
-deploy-web: ## Deploy the frontend to Vercel
+deploy-web: deploy-api ## Deploy the frontend, but only after the API passes
 	cd $(WEB) && vercel deploy --prod --yes
+	@sleep 10
+	$(MAKE) smoke
+
+deploy: deploy-web ## Full gated deploy: snapshot -> API -> smoke -> web -> smoke
 
 docker-up: ## Start Postgres + API + worker + web in Docker
 	docker compose up --build -d

@@ -207,6 +207,102 @@ def summary(
     return envelope(counts, mode, batch_id=latest_batch)
 
 
+@router.get("/funnel")
+def funnel(
+    horizon: str = Query("24h", pattern="^(24h|7d|30d)$"),
+    db: Session = DbDep,
+    mode: DataMode = ModeDep,
+) -> dict[str, Any]:
+    """How many markets survived each stage of the filter, and why the rest did not.
+
+    An empty recommendation list is the normal result, but a paragraph explaining
+    that reads as an excuse. The counts are the actual evidence: they show the system
+    looked at everything and declined on stated grounds, which is the point of it.
+    """
+    now = utcnow()
+
+    scanned = db.scalar(
+        apply_provenance(
+            select(func.count()).select_from(Market), Market.provenance, mode
+        )
+    ) or 0
+
+    open_markets = list(
+        db.scalars(
+            apply_provenance(
+                select(Market).where(Market.status == MarketStatus.OPEN.value),
+                Market.provenance,
+                mode,
+            )
+        )
+    )
+    in_horizon = [
+        m for m in open_markets
+        if horizons_for(m.expected_resolution_time, now=now)[:1] == (horizon,)
+    ]
+    with_book = [m for m in in_horizon if m.orderbook_depth_usd is not None]
+
+    market_ids = {m.id for m in with_book}
+    predictions = {}
+    if market_ids:
+        latest = (
+            select(
+                ModelPrediction.market_id,
+                func.max(ModelPrediction.created_at).label("latest_at"),
+            )
+            .where(ModelPrediction.market_id.in_(market_ids))
+            .group_by(ModelPrediction.market_id)
+            .subquery()
+        )
+        for prediction in db.scalars(
+            select(ModelPrediction).join(
+                latest,
+                (ModelPrediction.market_id == latest.c.market_id)
+                & (ModelPrediction.created_at == latest.c.latest_at),
+            )
+        ):
+            predictions[prediction.market_id] = prediction
+
+    scored = [m for m in with_book if m.id in predictions]
+    independent = [m for m in scored if predictions[m.id].has_independent_prior]
+
+    recommended = db.scalar(
+        apply_provenance(
+            select(func.count())
+            .select_from(Recommendation)
+            .where(Recommendation.horizon == horizon),
+            Recommendation.provenance,
+            mode,
+        )
+    ) or 0
+
+    stages = [
+        {"label": "Markets tracked", "count": scanned,
+         "note": "across both venues"},
+        {"label": "Open and resolving in this window", "count": len(in_horizon),
+         "note": f"expected to settle within {horizon}"},
+        {"label": "With a live orderbook", "count": len(with_book),
+         "note": "a quote nobody can trade against is not a price"},
+        {"label": "Scored by a probability model", "count": len(scored),
+         "note": "requires a model that covers the category"},
+        {"label": "With an independent prior", "count": len(independent),
+         "note": "estimate does not come from the market's own price"},
+        {"label": "Positive edge after all costs", "count": recommended,
+         "note": "fees, slippage, transfer and capital cost deducted"},
+    ]
+
+    return envelope(
+        stages, mode,
+        horizon=horizon,
+        recommended=recommended,
+        conclusion=(
+            "No actionable opportunities right now."
+            if recommended == 0
+            else f"{recommended} opportunit{'y' if recommended == 1 else 'ies'} cleared every filter."
+        ),
+    )
+
+
 @router.get("/watchlist")
 def watchlist(
     horizon: str = Query("24h", pattern="^(24h|7d|30d)$"),

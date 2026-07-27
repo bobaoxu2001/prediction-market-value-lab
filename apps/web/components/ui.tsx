@@ -64,8 +64,15 @@ export function EmptyState({
 export function ApiDown() {
   return (
     <EmptyState
-      title="API unavailable"
-      body="Could not reach the research API. Start it with `make api` (or `make dev` to run the API and this site together), then reload."
+      title="Data temporarily unavailable"
+      body={
+        // The old copy told visitors to run `make api`, a local-development
+        // instruction that means nothing to someone opening the hosted site - and
+        // it appeared on every page during an outage.
+        process.env.NODE_ENV === "development"
+          ? "Could not reach the research API. Start it with `make api` (or `make dev` to run the API and this site together), then reload."
+          : "We could not load market data just now. This is a problem on our side, not with your connection. Please try again in a moment."
+      }
     />
   );
 }
@@ -237,6 +244,67 @@ export function SnapshotBanner({
         (<code className="font-mono text-xs">make ingest &amp;&amp; make rank</code>)
         for current data.
       </span>
+    </div>
+  );
+}
+
+/** Tappable inline explanation. Not hover-only — hover does not exist on touch. */
+export function HelpDot({ text }: { text: string }) {
+  return (
+    <details className="group relative inline-block align-middle">
+      <summary
+        className="ml-1 inline-flex h-4 w-4 cursor-pointer list-none items-center justify-center rounded-full border border-neutral-300 text-[10px] leading-none text-neutral-500 hover:border-neutral-500 hover:text-neutral-900 dark:border-neutral-700 dark:hover:border-neutral-400 dark:hover:text-neutral-100"
+        aria-label="What does this mean?"
+      >
+        ?
+      </summary>
+      <span className="absolute left-0 top-6 z-30 block w-64 rounded-lg border border-neutral-200 bg-white p-3 text-xs font-normal normal-case leading-relaxed text-neutral-700 shadow-lg dark:border-neutral-700 dark:bg-neutral-900 dark:text-neutral-300">
+        {text}
+      </span>
+    </details>
+  );
+}
+
+/**
+ * Three-state numeric tone.
+ *
+ * The previous logic coloured anything non-positive red, so a genuine zero and an
+ * unavailable value both rendered as a loss. Zero means "no difference" and unknown
+ * means "no answer"; neither is bad news.
+ */
+export function toneFor(value: number | null | undefined): string {
+  if (value == null || Number.isNaN(value)) return "text-neutral-500";
+  if (value > 0) return "text-edge dark:text-edge-dark";
+  if (value < 0) return "text-risk dark:text-risk-dark";
+  return "text-neutral-500";
+}
+
+/** Headline answer card for the top of a results page. */
+export function VerdictCard({
+  label,
+  value,
+  sub,
+  tone,
+  help,
+}: {
+  label: string;
+  value: string;
+  sub?: string;
+  tone?: string;
+  help?: string;
+}) {
+  return (
+    <div className="card p-4">
+      <div className="flex items-center text-xs uppercase tracking-wide text-neutral-500">
+        {label}
+        {help ? <HelpDot text={help} /> : null}
+      </div>
+      <div className={`mt-1 font-mono text-2xl font-semibold ${tone ?? ""}`}>
+        {value}
+      </div>
+      {sub ? (
+        <div className="mt-1 text-xs text-neutral-500">{sub}</div>
+      ) : null}
     </div>
   );
 }

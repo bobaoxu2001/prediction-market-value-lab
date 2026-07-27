@@ -6,7 +6,7 @@ import {
   type Opportunity,
   type WatchlistItem,
 } from "@/lib/api";
-import type { Divergence } from "@/lib/api";
+import type { Divergence, FunnelStage } from "@/lib/api";
 import {
   ageLabel,
   cents,
@@ -73,13 +73,14 @@ export default async function TodayPage({
     limit: 10,
   });
 
-  const [opps, summary, watch, diverge] = await Promise.all([
+  const [opps, summary, watch, diverge, funnel] = await Promise.all([
     apiGet<Opportunity[]>(`/opportunities${query}`),
     apiGet<Record<string, number>>(`/opportunities/summary${qs({ mode })}`),
     apiGet<WatchlistItem[]>(`/opportunities/watchlist${qs({ horizon, mode, limit: 12 })}`),
     apiGet<Divergence[]>(
       `/opportunities/disagreements${qs({ horizon, mode, limit: 10, min_divergence: "0.02" })}`,
     ),
+    apiGet<FunnelStage[]>(`/opportunities/funnel${qs({ horizon, mode })}`),
   ]);
 
   if (!opps) return <ApiDown />;
@@ -96,10 +97,6 @@ export default async function TodayPage({
         right={
           <div className="text-right text-xs text-neutral-500 dark:text-neutral-400">
             {generatedAt && <div>Generated {localTime(generatedAt)}</div>}
-            <div className="mt-1 flex gap-2">
-              <ModeLink current={mode} target="live" horizon={horizon} />
-              <ModeLink current={mode} target="demo" horizon={horizon} />
-            </div>
           </div>
         }
       />
@@ -127,23 +124,19 @@ export default async function TodayPage({
       </div>
 
       {rows.length === 0 ? (
-        <EmptyState
-          title="No qualifying opportunities in this window"
-          body={
-            (opps.empty_reason as string) ??
-            "Nothing cleared the admission gate. A recommendation requires a conservative net EV above threshold against a probability estimate that does not come from the market's own price. Efficiently-priced markets routinely produce nothing, and reporting nothing is the correct result — see the watchlist below for markets that were scored but could not qualify."
-          }
-          action={
-            mode === "live" ? (
-              <Link
-                href={`/${qs({ horizon, mode: "demo" })}`}
-                className="text-sm underline"
-              >
-                View the demo dataset to see how a populated list looks
-              </Link>
-            ) : undefined
-          }
-        />
+        funnel?.data?.length ? (
+          <FilterFunnel
+            stages={funnel.data}
+            conclusion={(funnel.conclusion as string) ?? "No actionable opportunities right now."}
+            mode={mode}
+            horizon={horizon}
+          />
+        ) : (
+          <EmptyState
+            title="No actionable opportunities right now"
+            body={(opps.empty_reason as string) ?? ""}
+          />
+        )
       ) : (
         <div className="space-y-3">
           {rows.map((o) => (
@@ -204,7 +197,7 @@ export default async function TodayPage({
       {watch?.data?.length ? (
         <section className="mt-10">
           <h2 className="text-sm font-semibold">
-            Scored but not recommendable
+            Watchlist — not actionable yet
           </h2>
           <p className="mt-1 max-w-3xl text-sm text-neutral-600 dark:text-neutral-400">
             {(watch.explanation as string) ??
@@ -254,29 +247,6 @@ export default async function TodayPage({
   );
 }
 
-function ModeLink({
-  current,
-  target,
-  horizon,
-}: {
-  current: DataMode;
-  target: DataMode;
-  horizon: string;
-}) {
-  const active = current === target;
-  return (
-    <Link
-      href={`/${qs({ horizon, mode: target })}`}
-      className={`rounded px-2 py-0.5 ${
-        active
-          ? "bg-neutral-900 text-white dark:bg-neutral-100 dark:text-neutral-900"
-          : "border border-neutral-300 dark:border-neutral-700"
-      }`}
-    >
-      {target}
-    </Link>
-  );
-}
 
 function OpportunityCard({ o }: { o: Opportunity }) {
   return (
@@ -387,5 +357,74 @@ function OpportunityCard({ o }: { o: Opportunity }) {
         </div>
       )}
     </article>
+  );
+}
+
+/**
+ * The filtering funnel, shown instead of a paragraph when nothing qualifies.
+ *
+ * An empty list is the normal and correct outcome on efficiently-priced venues, but
+ * explaining that in prose reads as an excuse. The counts are the evidence: the
+ * system looked at everything and declined on stated grounds. Being willing to
+ * recommend nothing is the product, not a shortfall of it.
+ */
+function FilterFunnel({
+  stages,
+  conclusion,
+  mode,
+  horizon,
+}: {
+  stages: FunnelStage[];
+  conclusion: string;
+  mode: DataMode;
+  horizon: string;
+}) {
+  const widest = Math.max(...stages.map((s) => s.count), 1);
+  return (
+    <div className="card p-5">
+      <h2 className="text-sm font-semibold">How today&apos;s markets were filtered</h2>
+      <ol className="mt-4 space-y-2">
+        {stages.map((stage, i) => {
+          const share = Math.max(2, (stage.count / widest) * 100);
+          const last = i === stages.length - 1;
+          return (
+            <li key={stage.label}>
+              <div className="flex items-baseline justify-between gap-3 text-sm">
+                <span className={last ? "font-semibold" : ""}>{stage.label}</span>
+                <span className="num shrink-0 font-mono font-semibold">
+                  {stage.count.toLocaleString()}
+                </span>
+              </div>
+              <div className="mt-1 h-1.5 w-full overflow-hidden rounded-full bg-neutral-100 dark:bg-neutral-800">
+                <div
+                  className={`h-full rounded-full ${
+                    last && stage.count === 0
+                      ? "bg-neutral-400 dark:bg-neutral-600"
+                      : "bg-neutral-900 dark:bg-neutral-100"
+                  }`}
+                  style={{ width: `${share}%` }}
+                />
+              </div>
+              <div className="mt-0.5 text-xs text-neutral-500">{stage.note}</div>
+            </li>
+          );
+        })}
+      </ol>
+      <p className="mt-5 border-t border-neutral-200 pt-4 text-sm font-medium dark:border-neutral-800">
+        {conclusion}{" "}
+        <span className="font-normal text-neutral-600 dark:text-neutral-400">
+          A recommendation has to survive every stage above. Efficiently-priced
+          markets routinely produce none, and reporting none is the correct result.
+        </span>
+      </p>
+      {mode === "live" ? (
+        <Link
+          href={`/${qs({ horizon, mode: "demo" })}`}
+          className="mt-3 inline-block text-sm underline"
+        >
+          See the demo dataset for how a populated list looks
+        </Link>
+      ) : null}
+    </div>
   );
 }

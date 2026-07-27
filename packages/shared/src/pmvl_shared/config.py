@@ -118,7 +118,15 @@ class Settings(BaseSettings):
     def _default_sqlite(cls, v: str) -> str:
         if v:
             return v
-        DEFAULT_SQLITE_PATH.parent.mkdir(parents=True, exist_ok=True)
+        # Creating the data directory is a convenience for local runs, NOT a
+        # precondition. On a read-only serverless mount this mkdir raised OSError
+        # during Settings construction, which happens at import time - so the entire
+        # API failed to start with an opaque FUNCTION_INVOCATION_FAILED rather than a
+        # message naming the real problem. Never let a convenience abort startup.
+        try:
+            DEFAULT_SQLITE_PATH.parent.mkdir(parents=True, exist_ok=True)
+        except OSError:
+            pass
         return f"sqlite+pysqlite:///{DEFAULT_SQLITE_PATH}"
 
     @property

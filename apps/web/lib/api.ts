@@ -312,3 +312,9 @@ export function qs(params: Record<string, string | number | boolean | undefined>
   const out = search.toString();
   return out ? `?${out}` : "";
 }
+
+export interface FunnelStage {
+  label: string;
+  count: number;
+  note: string;
+}

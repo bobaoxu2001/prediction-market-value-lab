@@ -1,8 +1,8 @@
 import Link from "next/link";
 import { apiGet, qs, type BacktestRun, type DataMode } from "@/lib/api";
-import { localDate, pct, usd } from "@/lib/format";
+import { METRIC_HELP, localDate, pct, strategyLabel, usd } from "@/lib/format";
 import {
-  ApiDown, DemoBanner, EmptyState, Metric, PageHeader,
+  ApiDown, DemoBanner, EmptyState, HelpDot, Metric, PageHeader, VerdictCard, toneFor,
 } from "@/components/ui";
 import { CalibrationChart } from "@/components/CalibrationChart";
 
@@ -32,6 +32,31 @@ export default async function BacktestPage({
         subtitle="Walk-forward by construction: the engine reads only immutable snapshots frozen at publication time. It never re-prices an entry, never re-runs the model, and applies selection within each publication day."
       />
       <DemoBanner notice={res.demo_notice} />
+
+      {mode === "demo" && runs.length > 0 ? (
+        <div className="mb-5 rounded-lg border border-neutral-200 bg-neutral-50 p-4 text-sm dark:border-neutral-800 dark:bg-neutral-900/50">
+          <p className="text-neutral-700 dark:text-neutral-300">
+            <span className="font-semibold">This demo forecaster is deliberately imperfect.</span>{" "}
+            It is overconfident in the tails and several strategies lose money. Use it
+            to see how the platform exposes poor calibration, weak strategies and
+            misleading profitability — not as evidence of expected returns.
+          </p>
+          <div className="mt-2 flex flex-wrap gap-x-4 gap-y-1 text-xs text-neutral-600 dark:text-neutral-400">
+            <span>1. Compare strategies below</span>
+            <span>2. Inspect the calibration curve</span>
+            <span>
+              3.{" "}
+              <Link href={`/track-record${qs({ mode, settled_only: true })}`} className="underline">
+                Open the losing recommendations
+              </Link>
+            </span>
+          </div>
+        </div>
+      ) : null}
+
+      {focus && focus.n_settled > 0 ? (
+        <Verdict run={focus} />
+      ) : null}
 
       {runs.length === 0 ? (
         <EmptyState
@@ -66,7 +91,7 @@ export default async function BacktestPage({
                       <td>
                         <Link href={`/backtest${qs({ mode, strategy: r.strategy })}`}
                           className="hover:underline" title={r.description}>
-                          {r.strategy}
+                          {strategyLabel(r.strategy)}
                         </Link>
                       </td>
                       <td className="num">{r.n_recommendations}</td>
@@ -75,11 +100,11 @@ export default async function BacktestPage({
                       <td className={`num ${(m.roi ?? 0) > 0 ? "text-edge dark:text-edge-dark" : (m.roi ?? 0) < 0 ? "text-risk dark:text-risk-dark" : ""}`}>
                         {m.roi != null ? pct(m.roi) : "—"}
                       </td>
-                      <td className="num">{m.total_pnl ? usd(m.total_pnl) : "—"}</td>
-                      <td className="num">{m.max_drawdown ? usd(m.max_drawdown) : "—"}</td>
+                      <td className="num">{m.total_pnl != null ? usd(m.total_pnl) : "—"}</td>
+                      <td className="num">{m.max_drawdown != null ? usd(m.max_drawdown) : "—"}</td>
                       <td className="num">{m.profit_factor?.toFixed(2) ?? "—"}</td>
                       <td className="num">{m.brier_score?.toFixed(4) ?? "—"}</td>
-                      <td className={`num ${(m.brier_improvement_vs_market ?? 0) > 0 ? "text-edge dark:text-edge-dark" : "text-risk dark:text-risk-dark"}`}>
+                      <td className={`num ${toneFor(m.brier_improvement_vs_market)}`}>
                         {m.brier_improvement_vs_market?.toFixed(5) ?? "—"}
                       </td>
                       <td>
@@ -104,7 +129,12 @@ export default async function BacktestPage({
           {focus && (
             <>
               <section className="card mb-4 p-4">
-                <h2 className="text-sm font-semibold">{focus.strategy}</h2>
+                <h2 className="text-sm font-semibold">
+                  {strategyLabel(focus.strategy)}{" "}
+                  <span className="font-mono text-xs font-normal text-neutral-500">
+                    {focus.strategy}
+                  </span>
+                </h2>
                 <p className="mt-1 text-sm text-neutral-600 dark:text-neutral-400">
                   {focus.description}
                 </p>
@@ -168,5 +198,65 @@ export default async function BacktestPage({
       )}
       <p className="mt-6 text-xs text-neutral-500 dark:text-neutral-400">{res.disclaimer}</p>
     </div>
+  );
+}
+
+/**
+ * Answers the three questions a reader actually has, before the 11-column table:
+ * did it make money, was it more accurate than the market, and is the sample big
+ * enough to mean anything.
+ */
+function Verdict({ run }: { run: BacktestRun }) {
+  const m = run.metrics;
+  const beat = m.brier_improvement_vs_market;
+  const beatsMarket = beat != null && beat > 0;
+  const roi = m.roi;
+  const settled = m.n_settled ?? 0;
+  const thinSample = settled < 100;
+
+  return (
+    <section className="mb-6">
+      <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
+        <VerdictCard
+          label="More accurate than the market?"
+          value={beat == null ? "Unknown" : beatsMarket ? "Yes" : "No"}
+          sub={beat == null ? "no comparison available" : `Brier ${beat > 0 ? "+" : ""}${beat.toFixed(5)}`}
+          tone={beat == null ? "text-neutral-500" : toneFor(beat)}
+          help={METRIC_HELP.vs_market}
+        />
+        <VerdictCard
+          label="Net ROI"
+          value={roi == null ? "—" : `${roi > 0 ? "+" : ""}${(roi * 100).toFixed(1)}%`}
+          sub={m.total_pnl != null ? `${usd(m.total_pnl)} on ${m.total_stake != null ? usd(m.total_stake) : "—"} staked` : undefined}
+          tone={toneFor(roi)}
+          help={METRIC_HELP.roi}
+        />
+        <VerdictCard
+          label="Settled trades"
+          value={String(settled)}
+          sub={thinSample ? "too few to separate skill from luck" : "sample size"}
+          tone={thinSample ? "text-neutral-500" : ""}
+          help={METRIC_HELP.settled}
+        />
+        <VerdictCard
+          label="Max drawdown"
+          value={m.max_drawdown != null ? usd(m.max_drawdown) : "—"}
+          sub="worst peak-to-trough"
+          tone={toneFor(m.max_drawdown != null ? Number(m.max_drawdown) : null)}
+          help={METRIC_HELP.max_drawdown}
+        />
+      </div>
+      <p className="mt-3 text-sm text-neutral-700 dark:text-neutral-300">
+        <span className="font-medium">{strategyLabel(run.strategy)}</span>{" "}
+        {beat == null
+          ? "has no market comparison available"
+          : beatsMarket
+            ? `improved Brier score by ${beat.toFixed(5)} versus market prices`
+            : `did NOT beat market prices (Brier ${beat.toFixed(5)})`}
+        {roi != null ? `, with a net ROI of ${(roi * 100).toFixed(1)}%` : ""}
+        {`, based on ${settled} settled recommendation${settled === 1 ? "" : "s"}`}
+        {thinSample ? " — too small a sample to draw conclusions from." : "."}
+      </p>
+    </section>
   );
 }

@@ -1,6 +1,8 @@
 import type { Metadata } from "next";
 import { apiGet } from "@/lib/api";
 import { SnapshotBanner } from "@/components/ui";
+import { ModeNav, ModeSwitch } from "@/components/mode-nav";
+import { Suspense } from "react";
 import Link from "next/link";
 import "./globals.css";
 import { ThemeToggle } from "@/components/ThemeToggle";
@@ -45,18 +47,15 @@ export default async function RootLayout({ children }: { children: React.ReactNo
                     Prediction Market Value Lab
                   </span>
                 </Link>
-                <nav className="table-wrap flex items-center gap-1 text-sm">
-                  {NAV.map((item) => (
-                    <Link
-                      key={item.href}
-                      href={item.href}
-                      className="rounded px-2 py-1 text-neutral-600 hover:bg-neutral-100 hover:text-neutral-900 dark:text-neutral-400 dark:hover:bg-neutral-800 dark:hover:text-neutral-100"
-                    >
-                      {item.label}
-                    </Link>
-                  ))}
-                </nav>
-                <ThemeToggle />
+                <Suspense fallback={null}>
+                  <ModeNav items={NAV} />
+                </Suspense>
+                <div className="flex items-center gap-2">
+                  <Suspense fallback={null}>
+                    <ModeSwitch />
+                  </Suspense>
+                  <ThemeToggle />
+                </div>
               </div>
             </div>
           </header>
