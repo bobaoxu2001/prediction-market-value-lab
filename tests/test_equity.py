@@ -21,14 +21,20 @@ from pmvl_markets.probability.categories.equity import (
 )
 from pmvl_markets.probability.trading_calendar import (
     EARLY_CLOSE,
+    EFFECTIVE_HOURS_PER_DAY,
+    EFFECTIVE_HOURS_PER_YEAR,
+    OVERNIGHT_VARIANCE_WEIGHT,
     REGULAR_CLOSE,
     TRADING_HOURS_PER_YEAR,
+    effective_volatility_hours,
+    is_futures_open,
     is_market_open,
     is_trading_day,
     next_session_open,
     session_close,
     trading_hours_between,
     trading_years_between,
+    volatility_years_between,
 )
 
 ET = ZoneInfo("America/New_York")
@@ -120,6 +126,19 @@ class TestIndexDetection:
     )
     def test_recognised_indices(self, text: str, symbol: str) -> None:
         assert detect_index(text)[0] == symbol
+
+    @pytest.mark.parametrize(
+        "text,futures",
+        [
+            ("Will the S&P 500 be above 7545?", "ES=F"),
+            ("Will the Nasdaq-100 be above 29800?", "NQ=F"),
+            ("Will the Dow Jones close above 45000?", "YM=F"),
+            # VIX futures are a term-structure product, not a spot proxy.
+            ("Will VIX close above 20?", None),
+        ],
+    )
+    def test_futures_anchor_symbols(self, text: str, futures: str | None) -> None:
+        assert detect_index(text)[1] == futures
 
     def test_unrecognised_returns_none(self) -> None:
         assert detect_index("Will it rain in Chicago tomorrow?") is None
@@ -224,7 +243,7 @@ class TestEquityModelGuards:
         finally:
             await model.aclose()
         assert result.probability is None
-        assert "trading hours" in result.detail
+        assert "cash-hour-equivalents" in result.detail
 
     @pytest.mark.asyncio
     async def test_between_without_both_bounds_declines(self) -> None:
@@ -362,3 +381,87 @@ class TestCryptoStrikeGuards:
         finally:
             await model.aclose()
         assert result.probability is not None
+
+
+class TestFuturesVolatilityTime:
+    """Overnight variance accrues through futures, at a reduced rate."""
+
+    def test_futures_session(self) -> None:
+        assert not is_futures_open(et(2026, 7, 26, 17, 0))   # Sunday pre-open
+        assert is_futures_open(et(2026, 7, 26, 19, 0))       # Sunday evening
+        assert not is_futures_open(et(2026, 7, 25, 12, 0))   # Saturday
+        assert not is_futures_open(et(2026, 7, 27, 17, 30))  # daily halt
+        assert is_futures_open(et(2026, 7, 27, 10, 0))       # cash session
+        assert not is_futures_open(et(2026, 7, 24, 18, 0))   # Friday after 17:00
+
+    def test_overnight_counted_but_discounted(self) -> None:
+        cash, overnight = effective_volatility_hours(
+            et(2026, 7, 26, 21, 0), et(2026, 7, 27, 10, 0)
+        )
+        assert cash == pytest.approx(0.5)
+        assert overnight == pytest.approx(12.5, abs=0.3)
+        effective = cash + overnight * OVERNIGHT_VARIANCE_WEIGHT
+        # Materially more than cash-only (0.5) but far less than calendar (13.0).
+        assert 1.0 < effective < 3.0
+
+    def test_weekend_gap_contributes_almost_nothing(self) -> None:
+        """Saturday is closed for futures too, so a weekend is nearly dead time."""
+        cash, overnight = effective_volatility_hours(
+            et(2026, 7, 24, 16, 0), et(2026, 7, 27, 9, 30)
+        )
+        assert cash == 0.0
+        # Friday 16:00-17:00 plus Sunday 18:00-09:30, not the full 65 clock hours.
+        assert overnight < 20.0
+
+    def test_one_close_to_close_day_is_one_trading_day(self) -> None:
+        """The volatility clock must round-trip a sigma estimated close-to-close."""
+        one_day = volatility_years_between(
+            et(2026, 7, 27, 16, 0), et(2026, 7, 28, 16, 0)
+        )
+        assert one_day * 252 == pytest.approx(1.0, rel=1e-6)
+
+    def test_effective_hours_constant_excludes_the_maintenance_halt(self) -> None:
+        # 6.5 cash + 16.5 tradeable overnight x 0.10 (not 17.5 - the 17:00-18:00 ET
+        # halt is dead time in which the index cannot move).
+        assert EFFECTIVE_HOURS_PER_DAY == pytest.approx(8.15)
+        assert EFFECTIVE_HOURS_PER_YEAR == pytest.approx(252 * 8.15)
+
+    def test_overnight_is_a_minority_of_daily_variance(self) -> None:
+        """Calibration target: overnight ~20% of close-to-close variance."""
+        overnight_share = (16.5 * OVERNIGHT_VARIANCE_WEIGHT) / EFFECTIVE_HOURS_PER_DAY
+        assert 0.15 < overnight_share < 0.25
+
+    def test_cash_session_dominates_an_intraday_horizon(self) -> None:
+        cash, overnight = effective_volatility_hours(
+            et(2026, 7, 27, 10, 0), et(2026, 7, 27, 16, 0)
+        )
+        assert cash == pytest.approx(6.0)
+        assert overnight == 0.0
+
+
+class TestFuturesAnchorGuards:
+    """The anchor must refuse rather than mislead."""
+
+    def test_implausible_overnight_move_is_rejected(self) -> None:
+        from pmvl_markets.probability.categories.equity import (
+            _MAX_OVERNIGHT_ADJUSTMENT,
+        )
+
+        # A >8% overnight move is far more likely a bad symbol or roll artefact.
+        assert 0.03 < _MAX_OVERNIGHT_ADJUSTMENT < 0.15
+
+    def test_anchor_gap_bound_is_tight_enough(self) -> None:
+        from pmvl_markets.probability.categories.equity import (
+            _MAX_ANCHOR_GAP_SECONDS,
+        )
+
+        # The reference bar must be near the cash close or the return spans the
+        # wrong window entirely.
+        assert 0 < _MAX_ANCHOR_GAP_SECONDS <= 4 * 3600
+
+    def test_ewma_lambda_is_the_riskmetrics_daily_value(self) -> None:
+        from pmvl_markets.probability.categories.equity import _EWMA_LAMBDA
+
+        assert _EWMA_LAMBDA == pytest.approx(0.94)
+        # Effective window ~17 sessions, matched to how fast these markets settle.
+        assert 10 < 1 / (1 - _EWMA_LAMBDA) < 25

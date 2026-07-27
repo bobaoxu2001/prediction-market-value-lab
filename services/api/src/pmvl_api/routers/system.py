@@ -311,13 +311,26 @@ def methodology(mode: DataMode = ModeDep) -> dict[str, Any]:
                     "Sports, macro and politics return NO OPINION rather than a guess, "
                     "and name the credentialed data feed that would be required."
                 ),
-                "trading_time": (
-                    "Equity index volatility accrues only while the NYSE is open. A "
-                    "market settling at Monday's open, priced on Sunday evening, is 13 "
-                    "calendar hours away but 0.5 trading hours away; calendar time "
-                    "would overstate sigma*sqrt(tau) by ~5x and manufacture edge on "
-                    "correctly-priced out-of-the-money strikes. Holidays and 13:00 ET "
-                    "early closes are honoured."
+                "volatility_time": (
+                    "Index variance accrues at very different rates through the day. "
+                    "The clock counts NYSE cash-session hours at full weight and "
+                    "overnight CME futures hours at 0.10, calibrated so overnight is "
+                    "~20% of close-to-close daily variance; time when neither market "
+                    "is open (weekends, the 17:00-18:00 ET halt) counts for nothing. "
+                    "Calendar time would overstate sigma*sqrt(tau) by ~5x on an "
+                    "overnight market and manufacture edge on correctly-priced "
+                    "out-of-the-money strikes. Holidays and 13:00 ET early closes are "
+                    "honoured, and the clock is asserted to round-trip: one "
+                    "close-to-close day equals exactly one trading day."
+                ),
+                "overnight_anchor": (
+                    "Outside cash hours the index print is stale while the underlying "
+                    "keeps moving through futures. Spot is re-anchored using the "
+                    "front-month future's RETURN since the cash close "
+                    "(implied = cash_close * futures_now / futures_at_close), which "
+                    "cancels basis, carry and contract rolls without needing to model "
+                    "them. Rejected if the reference bar is far from the close or the "
+                    "implied move exceeds 8%."
                 ),
                 "interval": (
                     "Explicitly a conservative uncertainty band, not a formal confidence "
@@ -364,13 +377,16 @@ def methodology(mode: DataMode = ModeDep) -> dict[str, Any]:
             },
             "limitations": [
                 "Sports, macro and politics have no independent model in this release.",
-                "The equity index model anchors on the last regular-session print, so "
-                "it does not see overnight futures moves; a fixed overnight-gap "
-                "premium stands in for that, and is an approximation. This shows up "
-                "as a systematic, same-signed gap across an entire strike ladder when "
-                "futures have moved since the close - a uniform shift is the model "
-                "being anchored stale, not an edge. Using the ES front-month as the "
-                "overnight anchor is the fix.",
+                "The equity index model uses REALISED volatility (EWMA of daily "
+                "closes), not implied. No keyless forward vol surface exists. When the "
+                "short-dated vol term structure is steep the model prices a WIDER "
+                "distribution than the market: it reads high in both tails and low "
+                "around the money, symmetrically. That is a volatility disagreement, "
+                "not an edge, and the market's short-dated view is usually better "
+                "informed than a backward-looking estimate. It is left visible rather "
+                "than tuned away, and the conservative bound is what stops it becoming "
+                "a recommendation - importantly, acting on it would mean systematically "
+                "buying tails, which is the historically losing side of that trade.",
                 "Index markets worded as touch/barrier events are declined rather than "
                 "priced, because no barrier model is fitted for indices.",
                 "Cross-platform matching requires an exact rule match before any "

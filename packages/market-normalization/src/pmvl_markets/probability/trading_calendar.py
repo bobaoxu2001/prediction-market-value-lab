@@ -140,3 +140,98 @@ def is_market_open(moment: datetime) -> bool:
     if bounds is None:
         return False
     return bounds[0] <= current < bounds[1]
+
+
+# ---------------------------------------------------------------- futures time
+#
+# CME equity index futures (ES, NQ, YM, RTY) trade Sunday 18:00 ET through Friday
+# 17:00 ET, with a daily maintenance halt from 17:00 to 18:00 ET.
+#
+# This matters because the underlying genuinely moves overnight. The cash-session
+# clock above treats a gap as zero width, which is right for "how long is the NYSE
+# open" and wrong for "how much can the index still move". Counting overnight futures
+# hours at a reduced weight replaces the earlier ad-hoc overnight premium with an
+# actual time model.
+
+FUTURES_OPEN = time(18, 0)   # Sunday open / daily reopen
+FUTURES_HALT = time(17, 0)   # daily halt
+
+#: Variance weight of one overnight futures hour relative to one cash-session hour.
+#:
+#: Calibrated so overnight accounts for roughly 20% of close-to-close daily variance,
+#: which is the long-run figure for the S&P: 16.5 tradeable overnight hours x 0.10 =
+#: 1.65 cash-hour equivalents against 6.5 cash hours, i.e. 20% of the 8.15-hour total.
+#: Overnight futures are thinner and carry less information flow per hour, so the
+#: weight is well below 1 - using 1.0 is the calendar-time error this module exists
+#: to prevent.
+OVERNIGHT_VARIANCE_WEIGHT = 0.10
+
+#: One close-to-close day in cash-hour equivalents. The overnight span is 17.5 clock
+#: hours but only 16.5 are tradeable - the 17:00-18:00 ET maintenance halt is dead
+#: time in which the index cannot move.
+OVERNIGHT_TRADEABLE_HOURS = 16.5
+EFFECTIVE_HOURS_PER_DAY = (
+    TRADING_HOURS_PER_DAY + OVERNIGHT_TRADEABLE_HOURS * OVERNIGHT_VARIANCE_WEIGHT
+)
+#: Denominator for a sigma estimated from close-to-close daily returns.
+EFFECTIVE_HOURS_PER_YEAR = TRADING_DAYS_PER_YEAR * EFFECTIVE_HOURS_PER_DAY
+
+
+def is_futures_open(moment: datetime) -> bool:
+    """Whether CME equity index futures are trading at ``moment``."""
+    current = moment.astimezone(ET)
+    weekday = current.weekday()  # Mon=0 .. Sun=6
+    clock = current.time()
+
+    if weekday == 5:  # Saturday: closed all day
+        return False
+    if weekday == 6:  # Sunday: opens at 18:00
+        return clock >= FUTURES_OPEN
+    if weekday == 4:  # Friday: closes at 17:00
+        return clock < FUTURES_HALT
+    # Mon-Thu: open except the 17:00-18:00 maintenance halt.
+    return not (FUTURES_HALT <= clock < FUTURES_OPEN)
+
+
+def effective_volatility_hours(start: datetime, end: datetime) -> tuple[float, float]:
+    """``(cash_hours, overnight_hours)`` between two instants.
+
+    ``cash_hours`` is regular NYSE session time. ``overnight_hours`` is time when
+    futures are open but the cash market is not. Time when neither is open (the
+    weekend gap, the daily halt) contributes to neither, because the index cannot
+    move then.
+
+    Sampled at 15-minute granularity, which is finer than any decision this feeds.
+    """
+    if end <= start:
+        return 0.0, 0.0
+
+    cash = trading_hours_between(start, end)
+
+    step = timedelta(minutes=15)
+    overnight = 0.0
+    cursor = start.astimezone(ET)
+    end_et = end.astimezone(ET)
+    # Bound the loop: 30 days at 15-minute steps.
+    max_steps = 30 * 24 * 4 + 8
+    steps = 0
+    while cursor < end_et and steps < max_steps:
+        nxt = min(cursor + step, end_et)
+        width = (nxt - cursor).total_seconds() / 3600.0
+        midpoint = cursor + (nxt - cursor) / 2
+        if is_futures_open(midpoint) and not is_market_open(midpoint):
+            overnight += width
+        cursor = nxt
+        steps += 1
+    return cash, overnight
+
+
+def volatility_years_between(start: datetime, end: datetime) -> float:
+    """Variance-weighted time between two instants, in years.
+
+    Consistent with a sigma estimated from close-to-close daily returns, since one
+    such day equals :data:`EFFECTIVE_HOURS_PER_DAY` cash-hour equivalents.
+    """
+    cash, overnight = effective_volatility_hours(start, end)
+    effective = cash + overnight * OVERNIGHT_VARIANCE_WEIGHT
+    return effective / EFFECTIVE_HOURS_PER_YEAR
