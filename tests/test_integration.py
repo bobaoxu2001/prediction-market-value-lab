@@ -9,6 +9,8 @@ from __future__ import annotations
 from datetime import timedelta
 from decimal import Decimal
 
+from pathlib import Path
+
 import pytest
 
 from pmvl_shared.enums import (
@@ -539,3 +541,86 @@ class TestTimestampSerialisation:
         ):
             body = client.get(path).text
             assert not bare.search(body), f"unlabelled timestamp in {path}"
+
+
+class TestProductionSurfaceContract:
+    """Guards on what the deployed site must and must not contain.
+
+    These encode the failures that actually reached production: a snapshot missing
+    from the bundle, developer-only instructions shown to visitors, and demo mode
+    silently dropping on navigation.
+    """
+
+    def test_deployment_snapshot_is_committed(self) -> None:
+        """A git-triggered Vercel build only contains what is in the repository.
+
+        While this file was gitignored, every push auto-deployed a bundle with no
+        database and the API crashed on import - three separate outages. Committing
+        it is what makes git and CLI deploys behave identically.
+        """
+        import subprocess
+
+        root = Path(__file__).resolve().parents[1]
+        tracked = subprocess.run(
+            ["git", "ls-files", "data/pmvl-snapshot.db"],
+            cwd=root, capture_output=True, text=True, check=False,
+        ).stdout.strip()
+        assert tracked, "data/pmvl-snapshot.db must be tracked by git"
+
+    def test_snapshot_is_not_in_wal_mode(self) -> None:
+        """WAL needs a -shm sidecar, which a read-only serverless mount cannot create."""
+        root = Path(__file__).resolve().parents[1]
+        snapshot = root / "data" / "pmvl-snapshot.db"
+        if not snapshot.exists():
+            pytest.skip("snapshot not built in this checkout")
+        header = snapshot.open("rb").read(20)
+        assert header[18] != 2 and header[19] != 2, "snapshot must use a rollback journal"
+
+    def test_api_down_copy_is_not_developer_instructions(self) -> None:
+        """Production visitors must never be told to run a make target."""
+        root = Path(__file__).resolve().parents[1]
+        source = (root / "apps/web/components/ui.tsx").read_text()
+        start = source.index("export function ApiDown()")
+        block = source[start : start + 1200]
+        assert "process.env.NODE_ENV" in block, "production copy must be branched"
+        assert "problem on our side" in block
+
+    def test_hero_states_the_value_proposition(self) -> None:
+        root = Path(__file__).resolve().parents[1]
+        hero = (root / "apps/web/components/hero.tsx").read_text()
+        assert "after real" in hero and "trading costs" in hero
+        assert "Explore Demo Opportunities" in hero
+        assert "View Backtest Results" in hero
+
+    def test_hero_ctas_carry_demo_mode(self) -> None:
+        """Both CTAs must land in demo mode, or they show an empty live page."""
+        root = Path(__file__).resolve().parents[1]
+        page = (root / "apps/web/app/page.tsx").read_text()
+        assert 'mode: "demo"' in page
+        assert "demoHref" in page and "backtestHref" in page
+
+    def test_funnel_numbers_are_not_hardcoded(self) -> None:
+        """The funnel must render API counts, never literals baked into the page."""
+        root = Path(__file__).resolve().parents[1]
+        page = (root / "apps/web/app/page.tsx").read_text()
+        assert "/opportunities/funnel" in page
+        assert "stages.map" in page
+
+    def test_navigation_preserves_mode(self) -> None:
+        root = Path(__file__).resolve().parents[1]
+        nav = (root / "apps/web/components/mode-nav.tsx").read_text()
+        assert "withMode" in nav
+
+    def test_zero_is_not_rendered_as_a_dash(self) -> None:
+        """Truthy checks turned a real 0 into an em dash, which looks like no data."""
+        root = Path(__file__).resolve().parents[1]
+        page = (root / "apps/web/app/backtest/page.tsx").read_text()
+        for field in ("total_pnl", "max_drawdown", "total_stake"):
+            assert f"m.{field} != null" in page, f"{field} must be null-checked, not truthy"
+
+    def test_roi_and_brier_are_reported_independently(self) -> None:
+        """A profitable strategy that lost to the market must show both facts."""
+        root = Path(__file__).resolve().parents[1]
+        page = (root / "apps/web/app/backtest/page.tsx").read_text()
+        assert "did NOT beat market prices" in page
+        assert "More accurate than the market?" in page

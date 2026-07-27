@@ -30,6 +30,7 @@ import {
   StateChip,
   ValueTone,
 } from "@/components/ui";
+import { Hero } from "@/components/hero";
 
 export const dynamic = "force-dynamic";
 
@@ -91,6 +92,11 @@ export default async function TodayPage({
 
   return (
     <div>
+      <Hero
+        demoHref={`/${qs({ horizon, mode: "demo" })}`}
+        backtestHref={`/backtest${qs({ mode: "demo" })}`}
+      />
+
       <PageHeader
         title="Today's opportunities"
         subtitle="Ranked by conservative net expected value against the executable ask, after fees, slippage, transfer and capital costs. Only markets with a probability estimate independent of their own price can appear here."
