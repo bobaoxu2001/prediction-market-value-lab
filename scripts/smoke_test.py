@@ -16,6 +16,7 @@ import json
 import os
 import ssl
 import sys
+import time
 import urllib.error
 import urllib.request
 from pathlib import Path
@@ -71,7 +72,7 @@ def _ssl_context() -> ssl.SSLContext | None:
     return ssl.create_default_context(cafile=bundle) if bundle else None
 
 
-def _get(url: str, timeout: int) -> tuple[int, str]:
+def _get_once(url: str, timeout: int) -> tuple[int, str]:
     request = urllib.request.Request(url, headers={"User-Agent": "pmvl-smoke/1.0"})
     context = _ssl_context()
     try:
@@ -80,7 +81,29 @@ def _get(url: str, timeout: int) -> tuple[int, str]:
     except urllib.error.HTTPError as exc:
         return exc.code, exc.read().decode("utf-8", "replace")[:400]
     except Exception as exc:  # noqa: BLE001
+        # Status 0 means the request never completed: DNS, TLS, or a dropped
+        # connection. That is a property of the network between here and the
+        # deployment, not of the deployment.
         return 0, f"{type(exc).__name__}: {exc}"
+
+
+def _get(url: str, timeout: int, attempts: int = 5) -> tuple[int, str]:
+    """GET with retries for TRANSPORT failures only.
+
+    A 5xx is a real defect and is returned immediately - retrying it would mask the
+    very thing this script exists to catch. A status of 0 (TLS reset, dropped
+    connection, cold-start timeout) says nothing about the deployment, and retrying
+    is the difference between a trustworthy check and one that cries wolf on a flaky
+    link. Serverless cold starts also legitimately need a second attempt.
+    """
+    status, body = 0, ""
+    for attempt in range(attempts):
+        status, body = _get_once(url, timeout)
+        if status != 0:
+            return status, body
+        if attempt < attempts - 1:
+            time.sleep(3 * (attempt + 1))
+    return status, body
 
 
 def check_api(base: str, timeout: int) -> list[str]:
