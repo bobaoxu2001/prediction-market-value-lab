@@ -40,6 +40,12 @@ data/processed/**
 *.log
 .vercel
 
-# Deployment snapshot: rebuilt from the live DB with `make snapshot-build`.
-# Not committed - it is a 20MB binary that goes stale immediately.
-data/pmvl-snapshot.db
+# The deployment snapshot IS committed, deliberately.
+#
+# Vercel auto-deploys on every push to main, and a git-triggered build only contains
+# what is in the repository. While this file was gitignored, each push produced a
+# bundle with no database, the API crashed on import, and a healthy CLI deploy was
+# silently replaced by a broken one - three separate production outages.
+#
+# Committing it makes git and CLI deploys produce identical, working bundles.
+# Rebuild with `make snapshot-build` (deterministic, fixed RNG seed).

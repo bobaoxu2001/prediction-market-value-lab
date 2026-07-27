@@ -95,6 +95,60 @@ def _prune(path: Path) -> None:
     ):
         cur.execute(f"DELETE FROM {table} WHERE {column} NOT IN (SELECT id FROM markets)")
 
+    # Aggressive prune so the artefact is small enough to COMMIT.
+    #
+    # Committing it is what makes a git-triggered Vercel build produce a working
+    # bundle. Leaving it gitignored meant every `git push` auto-deployed a snapshot-
+    # less build that crashed on import, silently replacing a healthy CLI deploy -
+    # which took production down three times.
+    #
+    # Everything dropped here is either a drill-down the hosted demo does not link to,
+    # or depth beyond what the UI renders.
+    cur.execute("DELETE FROM trades")
+    cur.execute("DELETE FROM price_snapshots WHERE market_id NOT IN "
+                "(SELECT market_id FROM recommendations)")
+    # Keep only the top 5 levels per side - the detail page renders no more.
+    cur.execute(
+        """
+        DELETE FROM orderbook_levels WHERE id NOT IN (
+            SELECT id FROM (
+                SELECT id, ROW_NUMBER() OVER (
+                    PARTITION BY snapshot_id, side, is_ask ORDER BY level_index
+                ) AS rn FROM orderbook_levels
+            ) WHERE rn <= 5
+        )
+        """
+    )
+    # Per-trade backtest rows back a drill-down endpoint the demo does not link to;
+    # the aggregate metrics on the backtest page are stored on backtest_runs.
+    cur.execute("DELETE FROM backtest_trades")
+    cur.execute("DELETE FROM job_runs")
+
+    # Full settlement-rule text is the single biggest remaining cost (some rules run
+    # to thousands of characters). It is rendered only on the market detail page and
+    # in the case study, both of which are reached through a recommendation, so it is
+    # kept for those markets and dropped elsewhere. The browser list shows titles and
+    # prices only.
+    cur.execute(
+        """
+        UPDATE markets
+           SET description = '',
+               settlement_rules_raw = ''
+         WHERE id NOT IN (
+             SELECT market_id FROM recommendations
+             UNION SELECT market_id FROM recommendation_snapshots
+         )
+        """
+    )
+    cur.execute(
+        """
+        DELETE FROM market_rules WHERE market_id NOT IN (
+            SELECT market_id FROM recommendations
+            UNION SELECT market_id FROM recommendation_snapshots
+        )
+        """
+    )
+
     con.commit()
     cur.execute("VACUUM")
     con.commit()
