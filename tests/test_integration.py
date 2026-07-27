@@ -821,3 +821,18 @@ class TestSnapshotDeploymentGuards:
             stripped = line.strip()
             if stripped == "data/pmvl-snapshot.db":
                 raise AssertionError(".vercelignore excludes the deployment snapshot")
+
+    def test_guided_demo_urls_declare_demo_mode(self) -> None:
+        """The header Live/Demo control reads the URL.
+
+        With no mode param the guided demo showed demo data under a header that
+        said "Live data" - the control contradicted the page beneath it.
+        """
+        root = Path(__file__).resolve().parents[1]
+        page = (root / "apps/web/app/demo/page.tsx").read_text()
+        assert 'step: n, mode: "demo"' in page
+        assert 'step: step - 1, mode: "demo"' in page
+        assert 'step: step + 1, mode: "demo"' in page
+
+        nav = (root / "apps/web/components/mode-nav.tsx").read_text()
+        assert 'pathname.startsWith("/demo")' in nav

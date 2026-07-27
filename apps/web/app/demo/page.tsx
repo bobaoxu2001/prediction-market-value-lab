@@ -80,7 +80,7 @@ function Progress({ step }: { step: number }) {
         {Array.from({ length: TOTAL_STEPS }, (_, i) => i + 1).map((n) => (
           <li key={n} className="flex-1">
             <Link
-              href={`/demo${qs({ step: n })}`}
+              href={`/demo${qs({ step: n, mode: "demo" })}`}
               aria-label={`Go to step ${n}`}
               aria-current={n === step ? "step" : undefined}
               className={`block h-1.5 rounded-full transition focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 ${
@@ -100,12 +100,12 @@ function Controls({ step }: { step: number }) {
   return (
     <nav className="mt-6 flex flex-wrap items-center gap-3 border-t border-neutral-200 pt-4 dark:border-neutral-800">
       {step > 1 ? (
-        <Link href={`/demo${qs({ step: step - 1 })}`} className="rounded-lg border border-neutral-300 px-3 py-2 text-sm transition hover:bg-neutral-100 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 dark:border-neutral-700 dark:hover:bg-neutral-800">
+        <Link href={`/demo${qs({ step: step - 1, mode: "demo" })}`} className="rounded-lg border border-neutral-300 px-3 py-2 text-sm transition hover:bg-neutral-100 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 dark:border-neutral-700 dark:hover:bg-neutral-800">
           Previous
         </Link>
       ) : null}
       {step < TOTAL_STEPS ? (
-        <Link href={`/demo${qs({ step: step + 1 })}`} className="rounded-lg bg-neutral-900 px-4 py-2 text-sm font-medium text-white transition hover:bg-neutral-700 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 dark:bg-neutral-100 dark:text-neutral-900 dark:hover:bg-neutral-300">
+        <Link href={`/demo${qs({ step: step + 1, mode: "demo" })}`} className="rounded-lg bg-neutral-900 px-4 py-2 text-sm font-medium text-white transition hover:bg-neutral-700 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 dark:bg-neutral-100 dark:text-neutral-900 dark:hover:bg-neutral-300">
           {NEXT_LABELS[step]}
         </Link>
       ) : null}

@@ -54,7 +54,11 @@ export function ModeNav({
 export function ModeSwitch() {
   const pathname = usePathname();
   const params = useSearchParams();
-  const mode = params.get("mode") === "demo" ? "demo" : "live";
+  // The guided demo always serves demo data, so the control must show Demo there
+  // even if the URL has not been rewritten yet - otherwise the header contradicts
+  // the page it sits above.
+  const mode =
+    params.get("mode") === "demo" || pathname.startsWith("/demo") ? "demo" : "live";
 
   const hrefFor = (target: "live" | "demo") => {
     const next = new URLSearchParams(params.toString());

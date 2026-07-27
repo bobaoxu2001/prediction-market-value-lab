@@ -95,7 +95,7 @@ export default async function TodayPage({
       <Hero
         demoHref={`/${qs({ horizon, mode: "demo" })}`}
         backtestHref={`/backtest${qs({ mode: "demo" })}`}
-        guidedHref={`/demo${qs({ step: 1 })}`}
+        guidedHref={`/demo${qs({ step: 1, mode: "demo" })}`}
         caseStudyHref={`/case-study${qs({ mode: "demo" })}`}
       />
 
