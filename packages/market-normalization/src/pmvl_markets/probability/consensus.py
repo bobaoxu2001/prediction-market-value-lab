@@ -71,8 +71,10 @@ class SiblingCoherencePrior(ProbabilityModel):
     """Prior from sibling outcomes of the same multi-outcome event.
 
     In a mutually exclusive, exhaustive event the outcome probabilities must sum to
-    1. When the siblings sum to more or less than 1, the residual is information
-    about this outcome that does not come from its own quote.
+    1. When the complete set sums to something else, the correction belongs to every
+    outcome proportionally, so each is renormalised by the total. The information is
+    real but weak, and it is not independent of this market's own quote in the way a
+    cross-venue price is - it is the venue's own book being internally inconsistent.
     """
 
     name = "sibling_coherence"
@@ -100,25 +102,46 @@ class SiblingCoherencePrior(ProbabilityModel):
                 "is shared among the unpriced ones and cannot be attributed here"
             )
 
+        own_price = ctx.extra.get("own_outcome_price")
+        if own_price is None:
+            return no_opinion("this outcome's own price is unavailable for normalisation")
+
         sibling_sum = sum(siblings, ZERO)
-        residual = ONE - sibling_sum
-        if residual <= 0 or residual >= ONE:
+        total = sibling_sum + D(str(own_price))
+        if total <= ZERO:
+            return no_opinion("outcome set sums to zero")
+
+        # NORMALISE, do not residualise.
+        #
+        # On a complete exhaustive set the prices should sum to 1. When they sum to
+        # S != 1 the discrepancy belongs to the whole set, so each outcome is scaled
+        # by 1/S. The previous residual form (1 - sum(others)) handed the entire
+        # shortfall to whichever outcome was being scored: a Seoul temperature board
+        # summing to 0.63 turned a bucket the market priced at 0.07 into 0.44, and
+        # would have done the same to every other bucket in turn.
+        coherent = safe_div(D(str(own_price)), total)
+
+        deviation = abs(ONE - total)
+        if deviation < Decimal("0.02"):
             return no_opinion(
-                f"sibling outcomes sum to {sibling_sum}, leaving no coherent residual"
+                f"outcome set sums to {total}, already coherent; nothing to add"
             )
 
-        # Confidence falls as the sibling set drifts from summing to 1 overall,
-        # since that indicates the venue's own book is internally inconsistent.
-        overshoot = abs(ONE - (sibling_sum + residual))
-        confidence = self.max_confidence * (ONE - min(ONE, overshoot * D(5)))
+        # A set that is wildly off does not reflect a tradeable view - it reflects
+        # missing quotes - so trust falls as the deviation grows.
+        confidence = self.max_confidence * (ONE - min(ONE, deviation * D(2)))
+        if confidence <= ZERO:
+            return no_opinion(f"outcome set sums to {total}; too incoherent to use")
 
         return ModelEstimate(
-            probability=quantize_prob(clamp_prob(residual)),
-            confidence=quantize_prob(max(ZERO, confidence)),
-            stdev=Decimal("0.05"),
+            probability=quantize_prob(clamp_prob(coherent)),
+            confidence=quantize_prob(confidence),
+            stdev=max(deviation / D(2), Decimal("0.02")),
             independent=True,
-            detail=f"residual after {len(siblings)} sibling outcomes summing to {sibling_sum}",
-            data={"sibling_sum": str(sibling_sum)},
+            detail=(
+                f"normalised across {len(siblings) + 1} outcomes summing to {total}"
+            ),
+            data={"outcome_sum": str(total), "own_price": str(own_price)},
         )
 
 

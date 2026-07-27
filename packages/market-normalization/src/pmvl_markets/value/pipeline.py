@@ -234,7 +234,12 @@ async def score_markets(
                 },
                 sibling_outcome_prices=sibling_prices.get(row.id, []),
                 now=now,
-                extra=event_flags.get(row.event_id or -1, {}),
+                extra={
+                    **event_flags.get(row.event_id or -1, {}),
+                    # Sibling coherence renormalises the whole outcome set, so it
+                    # needs this outcome's own quote alongside its siblings'.
+                    "own_outcome_price": _mid_of(row),
+                },
             )
             try:
                 output = await ensemble.estimate(ctx)

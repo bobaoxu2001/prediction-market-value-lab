@@ -470,11 +470,20 @@ class TestFuturesAnchorGuards:
 class TestSiblingCompleteness:
     """A residual is only this outcome's probability on a COMPLETE outcome set."""
 
-    def _ctx(self, n_siblings: int, expected: int) -> ModelContext:
+    def _ctx(
+        self, n_siblings: int, expected: int, sibling_price: str = "0.05",
+        own: str = "0.07",
+    ) -> ModelContext:
         return ModelContext(
             market=NormalizedMarket(platform=Platform.POLYMARKET, platform_market_id="x"),
-            sibling_outcome_prices=[(f"s{i}", Decimal("0.05")) for i in range(n_siblings)],
-            extra={"mutually_exclusive_exhaustive": True, "event_outcome_count": expected},
+            sibling_outcome_prices=[
+                (f"s{i}", Decimal(sibling_price)) for i in range(n_siblings)
+            ],
+            extra={
+                "mutually_exclusive_exhaustive": True,
+                "event_outcome_count": expected,
+                "own_outcome_price": Decimal(own),
+            },
         )
 
     @pytest.mark.asyncio
@@ -491,13 +500,46 @@ class TestSiblingCompleteness:
         assert "outcomes priced" in result.detail
 
     @pytest.mark.asyncio
-    async def test_complete_outcome_set_is_used(self) -> None:
+    async def test_incoherent_set_is_renormalised_not_residualised(self) -> None:
+        """The correction belongs to the whole set, proportionally.
+
+        The Seoul board summed to 0.627. Residualising handed the entire 0.373
+        shortfall to whichever bucket was being scored, turning a 0.07 quote into
+        0.44 - and would have done the same to every other bucket in turn.
+        Renormalising gives 0.07 / 0.627 = 0.112.
+        """
         from pmvl_markets.probability.consensus import SiblingCoherencePrior
 
-        result = await SiblingCoherencePrior().estimate(self._ctx(7, 8))
+        result = await SiblingCoherencePrior().estimate(
+            self._ctx(7, 8, sibling_price="0.08", own="0.07")
+        )
         assert result.probability is not None
-        # 1 - 7 x 0.05 = 0.65
-        assert result.probability == pytest.approx(Decimal("0.65"), abs=Decimal("0.001"))
+        assert result.probability == pytest.approx(Decimal("0.112"), abs=Decimal("0.002"))
+        # Far closer to the market's own 0.07 than the old 0.44.
+        assert result.probability < Decimal("0.15")
+
+    @pytest.mark.asyncio
+    async def test_coherent_set_adds_nothing(self) -> None:
+        """A set already summing to 1 carries no information beyond the quotes."""
+        from pmvl_markets.probability.consensus import SiblingCoherencePrior
+
+        result = await SiblingCoherencePrior().estimate(
+            self._ctx(6, 7, sibling_price="0.15", own="0.10")
+        )
+        assert result.probability is None
+        assert "coherent" in result.detail
+
+    @pytest.mark.asyncio
+    async def test_confidence_falls_as_the_set_drifts(self) -> None:
+        from pmvl_markets.probability.consensus import SiblingCoherencePrior
+
+        mild = await SiblingCoherencePrior().estimate(
+            self._ctx(6, 7, sibling_price="0.16", own="0.10")
+        )
+        wild = await SiblingCoherencePrior().estimate(
+            self._ctx(7, 8, sibling_price="0.08", own="0.07")
+        )
+        assert mild.confidence > wild.confidence
 
     @pytest.mark.asyncio
     async def test_unknown_outcome_count_is_declined(self) -> None:
