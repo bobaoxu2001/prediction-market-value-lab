@@ -86,6 +86,20 @@ class SiblingCoherencePrior(ProbabilityModel):
         if not ctx.extra.get("mutually_exclusive_exhaustive"):
             return no_opinion("event is not known to be mutually exclusive and exhaustive")
 
+        # The residual only belongs to THIS outcome when every other outcome is
+        # priced. On a partially-quoted set the leftover mass is shared among all the
+        # unpriced ones, and attributing it here is simply wrong: a Seoul temperature
+        # event with two quoted buckets out of many produced a residual of 0.895 for a
+        # bucket the market priced at 0.001, and it took 26% of the ensemble weight.
+        expected = int(ctx.extra.get("event_outcome_count") or 0)
+        if expected <= 0:
+            return no_opinion("event outcome count unknown; cannot verify completeness")
+        if len(siblings) + 1 < expected:
+            return no_opinion(
+                f"only {len(siblings) + 1} of {expected} outcomes priced; the residual "
+                "is shared among the unpriced ones and cannot be attributed here"
+            )
+
         sibling_sum = sum(siblings, ZERO)
         residual = ONE - sibling_sum
         if residual <= 0 or residual >= ONE:

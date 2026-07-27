@@ -14,7 +14,7 @@ from decimal import Decimal
 from typing import Any, Sequence
 from uuid import uuid4
 
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
 from pmvl_shared.config import get_settings
@@ -273,11 +273,22 @@ def _event_flags(session: Session, rows: Sequence[Market]) -> dict[int, dict[str
     event_ids = {r.event_id for r in rows if r.event_id}
     if not event_ids:
         return {}
+    # The venue's own outcome count per event. Sibling-based reasoning is only valid
+    # on a COMPLETE outcome set, so the count has to travel with the flags.
+    counts = dict(
+        session.execute(
+            select(Market.event_id, func.count(Market.id))
+            .where(Market.event_id.in_(event_ids))
+            .group_by(Market.event_id)
+        ).all()
+    )
+
     out: dict[int, dict[str, Any]] = {}
     for ev in session.scalars(select(Event).where(Event.id.in_(event_ids))):
         out[ev.id] = {
             "mutually_exclusive_exhaustive": bool(ev.mutually_exclusive and ev.exhaustive),
             "negative_risk": ev.negative_risk,
+            "event_outcome_count": int(counts.get(ev.id, 0)),
         }
     return out
 

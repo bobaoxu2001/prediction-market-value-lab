@@ -465,3 +465,45 @@ class TestFuturesAnchorGuards:
         assert _EWMA_LAMBDA == pytest.approx(0.94)
         # Effective window ~17 sessions, matched to how fast these markets settle.
         assert 10 < 1 / (1 - _EWMA_LAMBDA) < 25
+
+
+class TestSiblingCompleteness:
+    """A residual is only this outcome's probability on a COMPLETE outcome set."""
+
+    def _ctx(self, n_siblings: int, expected: int) -> ModelContext:
+        return ModelContext(
+            market=NormalizedMarket(platform=Platform.POLYMARKET, platform_market_id="x"),
+            sibling_outcome_prices=[(f"s{i}", Decimal("0.05")) for i in range(n_siblings)],
+            extra={"mutually_exclusive_exhaustive": True, "event_outcome_count": expected},
+        )
+
+    @pytest.mark.asyncio
+    async def test_partial_outcome_set_is_declined(self) -> None:
+        """Regression: a Seoul temperature event priced 2 of many buckets.
+
+        The unpriced buckets' mass was attributed entirely to this one, producing a
+        residual of 0.895 against a market price of 0.001, at 26% ensemble weight.
+        """
+        from pmvl_markets.probability.consensus import SiblingCoherencePrior
+
+        result = await SiblingCoherencePrior().estimate(self._ctx(2, 8))
+        assert result.probability is None
+        assert "outcomes priced" in result.detail
+
+    @pytest.mark.asyncio
+    async def test_complete_outcome_set_is_used(self) -> None:
+        from pmvl_markets.probability.consensus import SiblingCoherencePrior
+
+        result = await SiblingCoherencePrior().estimate(self._ctx(7, 8))
+        assert result.probability is not None
+        # 1 - 7 x 0.05 = 0.65
+        assert result.probability == pytest.approx(Decimal("0.65"), abs=Decimal("0.001"))
+
+    @pytest.mark.asyncio
+    async def test_unknown_outcome_count_is_declined(self) -> None:
+        """Completeness cannot be verified, so the residual cannot be attributed."""
+        from pmvl_markets.probability.consensus import SiblingCoherencePrior
+
+        result = await SiblingCoherencePrior().estimate(self._ctx(2, 0))
+        assert result.probability is None
+        assert "outcome count unknown" in result.detail
