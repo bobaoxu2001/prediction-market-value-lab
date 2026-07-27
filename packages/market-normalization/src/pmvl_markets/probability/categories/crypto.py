@@ -54,6 +54,22 @@ _ASSET_PRODUCTS: list[tuple[re.Pattern[str], str]] = [
 #: Below this many hours of history the volatility estimate is too noisy to use.
 _MIN_CANDLES = 48
 
+#: Directional markets ("will BTC close higher than it opened") have no threshold at
+#: all - they compare against a reference price fixed at the open. A threshold model
+#: cannot price them, and scraping a number out of the title produces nonsense.
+_DIRECTIONAL_RE = re.compile(
+    r"\bup or down\b|\bhigher or lower\b|\bup / down\b|\bclose higher\b"
+    r"|\bclose lower\b|\bgreen or red\b",
+    re.IGNORECASE,
+)
+
+#: A strike recovered from free text must be within this band of spot to be credible.
+#: "Bitcoin Up or Down - July 26" yielded a strike of 26 against a spot of 65,052 and
+#: was priced as a near-certainty at 29% ensemble weight. Venue-supplied strikes skip
+#: this check; only text-scraped ones are subject to it.
+_TEXT_STRIKE_MIN_RATIO = 0.02
+_TEXT_STRIKE_MAX_RATIO = 50.0
+
 
 def detect_product(text: str) -> str | None:
     for pattern, product in _ASSET_PRODUCTS:
@@ -214,9 +230,17 @@ class CryptoThresholdModel(ProbabilityModel):
         # Same three shapes as the weather board, and the same trap: a `between`
         # market ("$72,000 to $73,000") priced as a one-sided threshold would be
         # wildly overstated.
+        if _DIRECTIONAL_RE.search(f"{market.title} {market.subtitle}"):
+            return no_opinion(
+                "directional up/down market: settles against the opening price, not a "
+                "threshold, so a threshold model cannot price it"
+            )
+
         comparator = (market.strike_type or "").lower()
         floor_strike = market.floor_strike
         cap_strike = market.cap_strike
+        #: True when the strike came from the venue rather than from a regex.
+        strike_from_venue = floor_strike is not None or cap_strike is not None
 
         if comparator == "between":
             if floor_strike is None or cap_strike is None:
@@ -242,6 +266,17 @@ class CryptoThresholdModel(ProbabilityModel):
         if spot is None or vol is None:
             return no_opinion(f"coinbase data unavailable for {product}")
         sigma, n_returns = vol
+
+        # A strike recovered from free text is only credible if it is the same order
+        # of magnitude as spot. Without this check "Bitcoin Up or Down - July 26"
+        # yielded strike=26 against spot=65,052 and was scored as a near-certainty.
+        if not strike_from_venue:
+            ratio = float(strike) / spot
+            if not (_TEXT_STRIKE_MIN_RATIO <= ratio <= _TEXT_STRIKE_MAX_RATIO):
+                return no_opinion(
+                    f"strike {strike} scraped from title is implausible against spot "
+                    f"{spot:,.0f} (ratio {ratio:.4g}); refusing to guess"
+                )
 
         # Direction: a "below/less than" market pays YES when the threshold is NOT
         # exceeded. Getting this backwards would invert every crypto recommendation.

@@ -366,7 +366,11 @@ def methodology(mode: DataMode = ModeDep) -> dict[str, Any]:
                 "Sports, macro and politics have no independent model in this release.",
                 "The equity index model anchors on the last regular-session print, so "
                 "it does not see overnight futures moves; a fixed overnight-gap "
-                "premium stands in for that, and is an approximation.",
+                "premium stands in for that, and is an approximation. This shows up "
+                "as a systematic, same-signed gap across an entire strike ladder when "
+                "futures have moved since the close - a uniform shift is the model "
+                "being anchored stale, not an edge. Using the ES front-month as the "
+                "overnight anchor is the fix.",
                 "Index markets worded as touch/barrier events are declined rather than "
                 "priced, because no barrier model is fitted for indices.",
                 "Cross-platform matching requires an exact rule match before any "

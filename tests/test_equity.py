@@ -278,3 +278,87 @@ class TestEquityModelGuards:
         assert model.categories == (Category.FINANCE,)
         # Below the crypto cap: scheduled macro events are invisible to realised vol.
         assert Decimal("0") < model.max_confidence <= Decimal("0.65")
+
+
+class TestCryptoStrikeGuards:
+    """Guards against pricing a market that has no usable threshold."""
+
+    def _market(self, title: str, **overrides) -> NormalizedMarket:  # noqa: ANN003
+        base = dict(
+            platform=Platform.POLYMARKET,
+            platform_market_id="x",
+            title=title,
+            category=Category.CRYPTO,
+            expected_resolution_time=utcnow() + timedelta(hours=6),
+        )
+        base.update(overrides)
+        return NormalizedMarket(**base)
+
+    @pytest.mark.parametrize(
+        "title",
+        [
+            "Bitcoin Up or Down - July 26, 9PM ET",
+            "Bitcoin Up or Down on July 27?",
+            "Will ETH close higher on Friday?",
+            "Bitcoin green or red today?",
+        ],
+    )
+    @pytest.mark.asyncio
+    async def test_directional_markets_are_declined(self, title: str) -> None:
+        """These settle against the opening price, not a threshold.
+
+        Regression: 'Bitcoin Up or Down - July 26' had no strike, so the model
+        scraped 26 out of the date and priced P(BTC > $26) = 1.0 against a market
+        at 0.405, taking 29% of the ensemble weight.
+        """
+        from pmvl_markets.probability.categories.crypto import CryptoThresholdModel
+
+        model = CryptoThresholdModel()
+        try:
+            result = await model.estimate(ModelContext(market=self._market(title)))
+        finally:
+            await model.aclose()
+        assert result.probability is None
+        assert "directional" in result.detail
+
+    def test_directional_detection(self) -> None:
+        from pmvl_markets.probability.categories.crypto import _DIRECTIONAL_RE
+
+        assert _DIRECTIONAL_RE.search("Bitcoin Up or Down - July 26")
+        assert _DIRECTIONAL_RE.search("Will ETH close higher?")
+        assert not _DIRECTIONAL_RE.search("Will Bitcoin be above $70,000?")
+        assert not _DIRECTIONAL_RE.search("Bitcoin price on Jul 27, 2026?")
+
+    def test_text_strike_plausibility_band(self) -> None:
+        """A scraped strike must be the same order of magnitude as spot."""
+        from pmvl_markets.probability.categories.crypto import (
+            _TEXT_STRIKE_MAX_RATIO,
+            _TEXT_STRIKE_MIN_RATIO,
+        )
+
+        spot = 65052.0
+        # The date-derived strike that caused the bug.
+        assert not (_TEXT_STRIKE_MIN_RATIO <= 26 / spot <= _TEXT_STRIKE_MAX_RATIO)
+        # A real threshold near spot passes.
+        assert _TEXT_STRIKE_MIN_RATIO <= 64000 / spot <= _TEXT_STRIKE_MAX_RATIO
+        assert _TEXT_STRIKE_MIN_RATIO <= 100000 / spot <= _TEXT_STRIKE_MAX_RATIO
+
+    @pytest.mark.asyncio
+    async def test_venue_strike_bypasses_the_plausibility_check(self) -> None:
+        """A venue-supplied strike is authoritative even if it looks unusual."""
+        from pmvl_markets.probability.categories.crypto import CryptoThresholdModel
+
+        model = CryptoThresholdModel()
+        try:
+            result = await model.estimate(
+                ModelContext(
+                    market=self._market(
+                        "Bitcoin price on Jul 27, 2026?",
+                        floor_strike=Decimal("64000"),
+                        strike_type="greater",
+                    )
+                )
+            )
+        finally:
+            await model.aclose()
+        assert result.probability is not None

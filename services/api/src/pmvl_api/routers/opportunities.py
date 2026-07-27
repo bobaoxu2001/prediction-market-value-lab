@@ -6,7 +6,7 @@ from decimal import Decimal
 from typing import Any
 
 from fastapi import APIRouter, Depends, Query
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
 from pmvl_shared.enums import MarketStatus, RecommendationState, Side
@@ -284,6 +284,14 @@ def disagreements(
         Decimal("0.03"),
         description="Minimum |model - market| in probability terms.",
     ),
+    max_spread: Decimal = Query(
+        Decimal("0.10"),
+        description=(
+            "Reject markets wider than this. A book quoting 1c bid against a 41c ask "
+            "has no meaningful mid, so a 'divergence' against it measures illiquidity "
+            "rather than disagreement."
+        ),
+    ),
     limit: int = Query(20, ge=1, le=100),
     db: Session = DbDep,
     mode: DataMode = ModeDep,
@@ -302,10 +310,31 @@ def disagreements(
     something the market knows.
     """
     now = utcnow()
+
+    # Take the LATEST prediction per market first, then filter.
+    #
+    # Filtering on has_independent_prior before deduping is subtly wrong: when the
+    # newest prediction is excluded (a model correctly declined this run), the loop
+    # falls through to an older row and reports a superseded estimate as current.
+    # That kept showing a retracted 0.975 on a market whose current estimate was
+    # 0.405, long after the model that produced it had been fixed.
+    latest = (
+        select(
+            ModelPrediction.market_id,
+            func.max(ModelPrediction.created_at).label("latest_at"),
+        )
+        .group_by(ModelPrediction.market_id)
+        .subquery()
+    )
     predictions = list(
         db.scalars(
             apply_provenance(
                 select(ModelPrediction)
+                .join(
+                    latest,
+                    (ModelPrediction.market_id == latest.c.market_id)
+                    & (ModelPrediction.created_at == latest.c.latest_at),
+                )
                 .where(ModelPrediction.has_independent_prior.is_(True))
                 .order_by(ModelPrediction.created_at.desc())
                 .limit(3000),
@@ -336,6 +365,17 @@ def disagreements(
             continue
         implied = prediction.market_implied_probability
         if implied is None:
+            continue
+
+        # A price only counts as the market's opinion if the book is two-sided and
+        # reasonably tight. Kalshi's thinner hourly index buckets quote 1c against
+        # 41c, and one had no bid at all - taking the lone ask as "the market says
+        # 51%" produced the largest apparent divergences in the entire list, none of
+        # which were disagreements about the world.
+        if market.best_yes_bid is None or market.best_yes_ask is None:
+            continue
+        spread = market.best_yes_ask - market.best_yes_bid
+        if spread > max_spread:
             continue
         if horizons_for(market.expected_resolution_time, now=now)[:1] != (horizon,):
             continue
