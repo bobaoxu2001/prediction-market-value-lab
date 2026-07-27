@@ -1,0 +1,12 @@
+apps/
+services/worker/
+tests/
+docs/
+.venv/
+data/pmvl.db
+data/pmvl.db-wal
+data/pmvl.db-shm
+data/raw/
+data/processed/
+requirements-dev.txt.bak
+requirements.txt.vercel

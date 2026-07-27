@@ -1,4 +1,6 @@
 import type { Metadata } from "next";
+import { apiGet } from "@/lib/api";
+import { SnapshotBanner } from "@/components/ui";
 import Link from "next/link";
 import "./globals.css";
 import { ThemeToggle } from "@/components/ThemeToggle";
@@ -19,7 +21,7 @@ const NAV = [
   { href: "/system", label: "System" },
 ];
 
-export default function RootLayout({ children }: { children: React.ReactNode }) {
+export default async function RootLayout({ children }: { children: React.ReactNode }) {
   return (
     <html lang="en" suppressHydrationWarning>
       <head>
@@ -59,7 +61,21 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
             </div>
           </header>
 
-          <main className="mx-auto max-w-7xl px-4 py-6">{children}</main>
+          <main className="mx-auto max-w-7xl px-4 py-6">{await (async () => {
+            // One probe per request; a failure here must never blank the site.
+            try {
+              const sys = await apiGet<{ snapshot_mode?: boolean; freshest_quote_observed_at?: string | null }>("/system");
+              return (
+                <SnapshotBanner
+                  active={sys?.data?.snapshot_mode}
+                  capturedAt={sys?.data?.freshest_quote_observed_at}
+                />
+              );
+            } catch {
+              return null;
+            }
+          })()}
+          {children}</main>
 
           <footer className="mt-12 border-t border-neutral-200 py-6 text-xs text-neutral-500 dark:border-neutral-800">
             <div className="mx-auto max-w-7xl space-y-2 px-4">

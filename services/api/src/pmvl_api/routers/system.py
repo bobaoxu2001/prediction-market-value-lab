@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import os
 from typing import Any
 
 from fastapi import APIRouter, Query
@@ -31,6 +32,9 @@ from pmvl_markets.probability.ensemble import MODEL_VERSION
 from ..deps import DataMode, DbDep, ModeDep, envelope
 
 router = APIRouter(tags=["system"])
+
+#: Set by the serverless entrypoint when the bundled read-only database is in use.
+SNAPSHOT_MODE = os.environ.get("PMVL_SNAPSHOT_MODE") == "1"
 
 
 @router.get("/health")
@@ -172,6 +176,16 @@ def system(db: Session = DbDep, mode: DataMode = ModeDep) -> dict[str, Any]:
                 "backtest": "daily, one hour after the snapshot",
             },
             "trading_execution_enabled": settings.trading_execution_enabled,
+            # A serverless deployment ships a pre-built database inside the bundle,
+            # so it is frozen at build time. Say so plainly: a stale snapshot
+            # presented as a live scan would misrepresent the whole platform.
+            "snapshot_mode": SNAPSHOT_MODE,
+            "snapshot_notice": (
+                "This deployment serves a READ-ONLY SNAPSHOT captured at build time. "
+                "Prices, orderbooks and model estimates are frozen and are NOT live. "
+                "Run the pipeline locally (`make ingest && make rank`) for current "
+                "data. See 'freshest_quote_observed_at' for the capture time."
+            ) if SNAPSHOT_MODE else None,
         },
         mode,
     )

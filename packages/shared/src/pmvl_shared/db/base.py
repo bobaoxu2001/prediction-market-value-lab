@@ -86,13 +86,23 @@ def _build_engine(url: str | None = None) -> Engine:
         @event.listens_for(engine, "connect")
         def _sqlite_pragmas(dbapi_conn, _record):  # noqa: ANN001
             cur = dbapi_conn.cursor()
-            # WAL lets the API read while the worker writes - required because both
-            # run against the same file in the default local setup.
-            cur.execute("PRAGMA journal_mode=WAL")
-            cur.execute("PRAGMA synchronous=NORMAL")
-            cur.execute("PRAGMA foreign_keys=ON")
-            cur.execute("PRAGMA busy_timeout=30000")
-            cur.close()
+            try:
+                # WAL lets the API read while the worker writes - required because
+                # both run against the same file in the default local setup.
+                cur.execute("PRAGMA journal_mode=WAL")
+                cur.execute("PRAGMA synchronous=NORMAL")
+            except Exception:  # noqa: BLE001
+                # A read-only mount (serverless deployments ship the database inside
+                # the bundle) rejects journal changes. Reads still work, so this must
+                # not be fatal - the alternative is the whole API failing to start.
+                pass
+            try:
+                cur.execute("PRAGMA foreign_keys=ON")
+                cur.execute("PRAGMA busy_timeout=30000")
+            except Exception:  # noqa: BLE001
+                pass
+            finally:
+                cur.close()
 
     return engine
 

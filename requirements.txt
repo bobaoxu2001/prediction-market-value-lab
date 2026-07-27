@@ -1,35 +1,15 @@
-# Pinned direct dependencies for the Python side of the monorepo.
-# `make lock` regenerates requirements.lock.txt (fully pinned transitive closure).
-
-# --- shared / data model
+# API RUNTIME dependencies only.
+#
+# This file is what the Vercel Python function installs, so it is deliberately the
+# minimal set the read-only API needs. The quant stack (numpy/pandas/scipy/sklearn/
+# statsmodels) and the worker/test tooling live in requirements-dev.txt: nothing the
+# API serves needs them, and excluding them keeps the serverless bundle small.
+#
+# Local development installs requirements-dev.txt, which includes this file.
 pydantic==2.12.4
 pydantic-settings==2.12.0
 SQLAlchemy==2.0.44
-alembic==1.17.1
 python-dotenv==1.2.1
-
-# --- providers / http
 httpx==0.28.1
 tenacity==9.1.2
-websockets==15.0.1
-
-# --- quant
-numpy==2.2.6
-pandas==2.3.3
-scipy==1.15.3
-scikit-learn==1.7.2
-statsmodels==0.14.5
-
-# --- api
 fastapi==0.121.1
-uvicorn[standard]==0.38.0
-
-# --- worker / scheduling
-APScheduler==3.11.0
-typer==0.20.0
-rich==14.2.0
-
-# --- tests
-pytest==8.4.2
-pytest-asyncio==1.2.0
-respx==0.22.0

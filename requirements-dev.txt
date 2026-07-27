@@ -1,0 +1,28 @@
+# Full local development stack: API runtime + quant + worker + tests.
+-r requirements.txt
+
+# --- migrations
+alembic==1.17.1
+
+# --- providers
+websockets==15.0.1
+
+# --- quant (worker and models only; never imported by the API)
+numpy==2.2.6
+pandas==2.3.3
+scipy==1.15.3
+scikit-learn==1.7.2
+statsmodels==0.14.5
+
+# --- serving
+uvicorn[standard]==0.38.0
+
+# --- worker / scheduling
+APScheduler==3.11.0
+typer==0.20.0
+rich==14.2.0
+
+# --- tests
+pytest==8.4.2
+pytest-asyncio==1.2.0
+respx==0.22.0

@@ -1,5 +1,5 @@
 import Link from "next/link";
-import { RISK_FLAG_EXPLANATIONS, humanizeFlag, num } from "@/lib/format";
+import { RISK_FLAG_EXPLANATIONS, humanizeFlag, localTime, num } from "@/lib/format";
 
 export function PageHeader({
   title,
@@ -206,5 +206,37 @@ export function MarketLink({ id, children }: { id: number; children: React.React
 export function Disclaimer({ text }: { text: string }) {
   return (
     <p className="mt-6 text-xs text-neutral-500 dark:text-neutral-400">{text}</p>
+  );
+}
+
+/**
+ * Site-wide notice that the deployment is serving a frozen snapshot.
+ *
+ * A serverless deployment ships a pre-built database inside the bundle, so prices
+ * and model estimates are frozen at build time. The platform's whole premise is a
+ * daily scan, so rendering stale numbers without saying so would misrepresent it -
+ * this is the same reason demo data carries a banner.
+ */
+export function SnapshotBanner({
+  active,
+  capturedAt,
+}: {
+  active?: boolean;
+  capturedAt?: string | null;
+}) {
+  if (!active) return null;
+  return (
+    <div className="mb-4 rounded-lg border border-amber-500/40 bg-amber-500/10 px-4 py-3 text-sm">
+      <span className="font-semibold text-amber-700 dark:text-amber-400">
+        Read-only snapshot.
+      </span>{" "}
+      <span className="text-neutral-700 dark:text-neutral-300">
+        This hosted demo serves data frozen at build time
+        {capturedAt ? ` (quotes captured ${localTime(capturedAt)})` : ""}, not a live
+        scan. Orderbooks and model estimates are stale. Run the pipeline locally
+        (<code className="font-mono text-xs">make ingest &amp;&amp; make rank</code>)
+        for current data.
+      </span>
+    </div>
   );
 }

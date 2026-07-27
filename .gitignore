@@ -38,3 +38,8 @@ data/processed/**
 .idea/
 .vscode/
 *.log
+.vercel
+
+# Deployment snapshot: rebuilt from the live DB with `make snapshot-build`.
+# Not committed - it is a 20MB binary that goes stale immediately.
+data/pmvl-snapshot.db

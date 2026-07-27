@@ -27,7 +27,7 @@ help: ## Show available targets
 setup: ## Create venv, install Python packages, run migrations
 	@test -d $(VENV) || python3 -m venv $(VENV)
 	$(PIP) install -q --upgrade pip setuptools wheel $(PIP_ARGS)
-	$(PIP) install -q -r requirements.txt $(PIP_ARGS)
+	$(PIP) install -q -r requirements-dev.txt $(PIP_ARGS)
 	$(PIP) install -q -e packages/shared -e packages/market-normalization \
 	                  -e services/api -e services/worker $(PIP_ARGS)
 	@mkdir -p data/raw data/processed
@@ -128,6 +128,15 @@ reset-db: ## Drop and rebuild the local database (destructive)
 	@echo "✓ database reset"
 
 # ----------------------------------------------------------------- docker
+snapshot-build: ## Build the slim read-only DB used by the hosted demo
+	$(PY) scripts/build_snapshot.py
+
+deploy-api: snapshot-build ## Deploy the read-only API to Vercel
+	vercel deploy --prod --yes
+
+deploy-web: ## Deploy the frontend to Vercel
+	cd $(WEB) && vercel deploy --prod --yes
+
 docker-up: ## Start Postgres + API + worker + web in Docker
 	docker compose up --build -d
 
