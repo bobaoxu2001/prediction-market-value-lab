@@ -463,3 +463,79 @@ class TestScheduler:
         assert scheduler._job_defaults["max_instances"] == 1  # noqa: SLF001
         assert scheduler._job_defaults["coalesce"] is True  # noqa: SLF001
         assert scheduler.get_jobs()
+
+
+class TestTimestampSerialisation:
+    """Every timestamp leaving the API must carry an explicit UTC marker.
+
+    Regression: SQLite drops tzinfo on round-trip, so rows loaded from the database
+    carry naive datetimes. Emitting one bare makes ``new Date(...)`` in the browser
+    parse it as LOCAL time, putting every timestamp on the site out by the viewer's
+    UTC offset. A market resolving at 03:05Z rendered as "8h 29m ago" at UTC+8.
+    """
+
+    def test_naive_datetime_is_labelled_utc(self) -> None:
+        from datetime import datetime
+
+        from pmvl_api.deps import jsonable
+
+        assert jsonable(datetime(2026, 7, 27, 3, 5, 0)) == "2026-07-27T03:05:00Z"
+
+    def test_aware_datetime_round_trips(self) -> None:
+        from datetime import datetime, timezone
+
+        from pmvl_api.deps import jsonable
+
+        aware = datetime(2026, 7, 27, 3, 5, 0, tzinfo=timezone.utc)
+        assert jsonable(aware) == "2026-07-27T03:05:00Z"
+
+    def test_naive_and_aware_agree(self) -> None:
+        from datetime import datetime, timezone
+
+        from pmvl_api.deps import jsonable
+
+        naive = datetime(2026, 7, 27, 3, 5, 0)
+        aware = naive.replace(tzinfo=timezone.utc)
+        assert jsonable(naive) == jsonable(aware)
+
+    def test_non_utc_offset_is_converted_not_relabelled(self) -> None:
+        from datetime import datetime, timedelta, timezone
+
+        from pmvl_api.deps import jsonable
+
+        eastern = timezone(timedelta(hours=-4))
+        assert jsonable(datetime(2026, 7, 26, 23, 5, 0, tzinfo=eastern)) == (
+            "2026-07-27T03:05:00Z"
+        )
+
+    def test_nested_datetimes_are_labelled(self) -> None:
+        from datetime import datetime
+
+        from pmvl_api.deps import jsonable
+
+        payload = jsonable({"rows": [{"at": datetime(2026, 7, 27, 3, 5, 0)}]})
+        assert payload["rows"][0]["at"].endswith("Z")
+
+    @pytest.mark.integration
+    def test_live_endpoints_emit_only_zulu_timestamps(self) -> None:
+        """Sweep real responses for any timestamp missing its marker."""
+        import re
+
+        from fastapi.testclient import TestClient
+
+        from pmvl_api.main import app
+
+        # ISO-like value with no trailing Z and no numeric offset.
+        bare = re.compile(r'"\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d+)?"')
+        client = TestClient(app)
+        for path in (
+            "/opportunities?horizon=24h",
+            "/opportunities/disagreements?horizon=24h",
+            "/arbitrage",
+            "/markets?limit=5",
+            "/system",
+            "/track-record?mode=demo&limit=5",
+            "/backtest?mode=demo",
+        ):
+            body = client.get(path).text
+            assert not bare.search(body), f"unlabelled timestamp in {path}"

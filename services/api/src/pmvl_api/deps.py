@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from datetime import datetime
+from datetime import datetime, timezone
 from decimal import Decimal
 from enum import Enum
 from typing import Any, Iterator
@@ -13,6 +13,8 @@ from sqlalchemy.orm import Session
 from pmvl_shared.config import Settings, get_settings
 from pmvl_shared.db import get_session_factory
 from pmvl_shared.enums import DataProvenance
+
+UTC = timezone.utc
 
 
 def get_db() -> Iterator[Session]:
@@ -75,11 +77,19 @@ def jsonable(value: Any) -> Any:
     Sending a Decimal as a JSON number would hand the browser a float and quietly
     reintroduce exactly the representation error the backend is built to avoid. The
     frontend formats these strings for display and never does arithmetic on money.
+
+    Datetimes are always emitted with an explicit ``Z``. SQLite drops tzinfo on
+    round-trip, so rows loaded from the database carry naive datetimes; emitting one
+    bare makes ``new Date(...)`` in the browser interpret it as **local** time, and
+    every timestamp on the site is then wrong by the viewer's UTC offset. A market
+    resolving at 03:05Z was rendering as "8h 29m ago" for a viewer at UTC+8. The
+    database stores UTC by contract, so a naive value is UTC and is labelled as such.
     """
     if isinstance(value, Decimal):
         return str(value)
     if isinstance(value, datetime):
-        return value.isoformat().replace("+00:00", "Z")
+        aware = value if value.tzinfo is not None else value.replace(tzinfo=UTC)
+        return aware.astimezone(UTC).isoformat().replace("+00:00", "Z")
     if isinstance(value, Enum):
         return value.value
     if isinstance(value, dict):
