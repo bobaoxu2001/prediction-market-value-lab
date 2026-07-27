@@ -135,6 +135,13 @@ def system(db: Session = DbDep, mode: DataMode = ModeDep) -> dict[str, Any]:
                     "docs": "https://docs.cdp.coinbase.com/exchange/docs/welcome",
                 },
                 {
+                    "name": "Yahoo Finance (chart API)",
+                    "base_url": settings.yahoo_finance_base,
+                    "auth_required": False,
+                    "used_for": "index level and realised volatility for the equity index model",
+                    "docs": "https://query1.finance.yahoo.com/v8/finance/chart/",
+                },
+                {
                     "name": "National Weather Service",
                     "base_url": settings.nws_api_base,
                     "auth_required": False,
@@ -291,6 +298,8 @@ def methodology(mode: DataMode = ModeDep) -> dict[str, Any]:
                     "cross-platform consensus (verified equivalent matches only)",
                     "sibling coherence on mutually exclusive exhaustive events",
                     "crypto driftless-GBM threshold model on Coinbase spot + realised vol",
+                    "equity-index driftless-GBM model on Yahoo spot + realised vol, "
+                    "measured in NYSE trading time rather than calendar time",
                     "weather model on NWS gridpoint forecasts",
                     "research agent (capped, evidence-weighted)",
                 ],
@@ -301,6 +310,14 @@ def methodology(mode: DataMode = ModeDep) -> dict[str, Any]:
                 "unmodelled_categories": (
                     "Sports, macro and politics return NO OPINION rather than a guess, "
                     "and name the credentialed data feed that would be required."
+                ),
+                "trading_time": (
+                    "Equity index volatility accrues only while the NYSE is open. A "
+                    "market settling at Monday's open, priced on Sunday evening, is 13 "
+                    "calendar hours away but 0.5 trading hours away; calendar time "
+                    "would overstate sigma*sqrt(tau) by ~5x and manufacture edge on "
+                    "correctly-priced out-of-the-money strikes. Holidays and 13:00 ET "
+                    "early closes are honoured."
                 ),
                 "interval": (
                     "Explicitly a conservative uncertainty band, not a formal confidence "
@@ -347,6 +364,11 @@ def methodology(mode: DataMode = ModeDep) -> dict[str, Any]:
             },
             "limitations": [
                 "Sports, macro and politics have no independent model in this release.",
+                "The equity index model anchors on the last regular-session print, so "
+                "it does not see overnight futures moves; a fixed overnight-gap "
+                "premium stands in for that, and is an approximation.",
+                "Index markets worded as touch/barrier events are declined rather than "
+                "priced, because no barrier model is fitted for indices.",
                 "Cross-platform matching requires an exact rule match before any "
                 "arbitrage claim; genuinely identical pairs across these two venues "
                 "are rare.",

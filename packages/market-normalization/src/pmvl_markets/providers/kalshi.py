@@ -120,6 +120,8 @@ MODELLABLE_SERIES: tuple[str, ...] = (
     # NWS daily high-temperature boards -> WeatherThresholdModel (api.weather.gov)
     "KXHIGHNY", "KXHIGHCHI", "KXHIGHMIA", "KXHIGHAUS", "KXHIGHDEN",
     "KXHIGHLAX", "KXHIGHPHIL",
+    # Equity index boards -> EquityIndexThresholdModel (Yahoo chart API, trading-time)
+    "KXINXU", "KXINX", "KXNASDAQ100", "KXINXY",
 )
 
 

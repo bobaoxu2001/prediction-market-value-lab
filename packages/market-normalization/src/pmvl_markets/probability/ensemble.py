@@ -48,6 +48,7 @@ from pmvl_shared.timeutil import utcnow
 from ..research.provider import BaseResearchProvider, NullResearchProvider, ResearchResult
 from .base import ModelContext, ModelEstimate, ProbabilityModel, no_opinion
 from .categories.crypto import CryptoThresholdModel
+from .categories.equity import EquityIndexThresholdModel
 from .categories.structural import (
     ExtremePriceSanityModel,
     TimeToResolutionModel,
@@ -166,6 +167,7 @@ class ProbabilityEnsemble:
             SiblingCoherencePrior(),
             RelatedMarketPrior(),
             CryptoThresholdModel(),
+            EquityIndexThresholdModel(),
             WeatherThresholdModel(),
             *default_category_models(),
             ExtremePriceSanityModel(),
@@ -192,7 +194,14 @@ class ProbabilityEnsemble:
 
         for model, result in zip(models, results):
             if isinstance(result, Exception):
-                log.debug("model %s failed: %s", model.name, result)
+                # Warning, not debug: a crashing model degrades silently into "no
+                # opinion", which looks identical to a model that correctly declined.
+                # That hid a naive/aware datetime TypeError in the equity model for a
+                # full pipeline run - every index market fell back to its own price.
+                log.warning(
+                    "model %s raised %s: %s",
+                    model.name, type(result).__name__, result,
+                )
                 components.append(
                     ProbabilityComponent(
                         name=model.name, probability=None, weight=ZERO,

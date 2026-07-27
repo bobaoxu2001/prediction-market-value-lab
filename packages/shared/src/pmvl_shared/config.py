@@ -52,6 +52,8 @@ class Settings(BaseSettings):
     polymarket_ws_base: str = Field(default="wss://ws-subscriptions-clob.polymarket.com/ws")
 
     coinbase_api_base: str = Field(default="https://api.exchange.coinbase.com")
+    #: Yahoo's public chart endpoint. Keyless; backs the equity index model.
+    yahoo_finance_base: str = Field(default="https://query1.finance.yahoo.com")
     nws_api_base: str = Field(default="https://api.weather.gov")
     #: NWS requires a self-identifying User-Agent per their API terms.
     http_user_agent: str = Field(
