@@ -13,6 +13,9 @@ from pathlib import Path
 
 import pytest
 
+#: Set by conftest so snapshot-backed tests can restore the isolated test DB.
+_ORIGINAL_DATABASE_URL: str = ""
+
 from pmvl_shared.enums import (
     DataProvenance,
     MarketStatus,
@@ -624,3 +627,197 @@ class TestProductionSurfaceContract:
         page = (root / "apps/web/app/backtest/page.tsx").read_text()
         assert "did NOT beat market prices" in page
         assert "More accurate than the market?" in page
+
+
+class TestCaseStudyEndpoint:
+    """The walkthrough must read frozen records, and must show losers too."""
+
+    @pytest.fixture(scope="class")
+    def client(self):  # noqa: ANN201
+        import os
+
+        from fastapi.testclient import TestClient
+
+        root = Path(__file__).resolve().parents[1]
+        snapshot = root / "data" / "pmvl-snapshot.db"
+        if not snapshot.exists():
+            pytest.skip("deployment snapshot not built in this checkout")
+        os.environ["DATABASE_URL"] = f"sqlite+pysqlite:///file:{snapshot}?mode=ro&uri=true"
+
+        from pmvl_shared.db import reset_engine
+
+        reset_engine()
+        from pmvl_api.main import app
+
+        yield TestClient(app)
+
+        # Restore the isolated test database for the rest of the suite.
+        os.environ["DATABASE_URL"] = str(_ORIGINAL_DATABASE_URL)
+        reset_engine()
+
+    def test_winner_exists_and_is_settled(self, client) -> None:  # noqa: ANN001
+        body = client.get("/case-study?mode=demo&result=winner").json()
+        cs = body["data"]
+        assert cs is not None
+        assert cs["outcome"]["settled"] is True
+        assert cs["outcome"]["trade_won"] is True
+        assert float(cs["outcome"]["realized_profit_per_contract"]) > 0
+
+    def test_loser_exists_and_is_settled(self, client) -> None:  # noqa: ANN001
+        body = client.get("/case-study?mode=demo&result=loser").json()
+        cs = body["data"]
+        assert cs is not None
+        assert cs["outcome"]["settled"] is True
+        assert cs["outcome"]["trade_won"] is False
+        assert float(cs["outcome"]["realized_profit_per_contract"]) <= 0
+
+    def test_cost_breakdown_is_present(self, client) -> None:  # noqa: ANN001
+        cs = client.get("/case-study?mode=demo").json()["data"]
+        keys = {c["key"] for c in cs["costs"]["components"]}
+        assert {"entry_price", "platform_fee", "estimated_slippage"} <= keys
+        # All-in cost must exceed the entry price: costs only ever add.
+        assert float(cs["costs"]["total_cost_per_contract"]) >= float(
+            cs["execution"]["entry_vwap"]
+        )
+
+    def test_provenance_is_demo_and_not_mixed(self, client) -> None:  # noqa: ANN001
+        body = client.get("/case-study?mode=demo").json()
+        assert body["data_mode"] == "demo"
+        assert body["provenance"] == "demo"
+        assert body["data"]["market"]["provenance"] == "demo"
+        assert body.get("demo_notice")
+
+    def test_no_side_uses_the_mirrored_bound(self, client) -> None:  # noqa: ANN001
+        """A NO recommendation must not reuse the YES lower bound."""
+        for result in ("winner", "loser", "featured"):
+            cs = client.get(f"/case-study?mode=demo&result={result}").json()["data"]
+            if cs["market"]["side"] != "no":
+                continue
+            expected = 1 - float(cs["probability"]["interval_high"])
+            assert abs(float(cs["probability"]["conservative_bound"]) - expected) < 1e-6
+            assert "1 - upper bound" in cs["probability"]["conservative_bound_label"]
+            return
+
+    def test_trade_result_and_forecast_quality_are_separate(self, client) -> None:  # noqa: ANN001
+        """Winning and forecasting well are different claims and must not be merged."""
+        cs = client.get("/case-study?mode=demo&result=loser").json()["data"]
+        outcome = cs["outcome"]
+        assert "trade_won" in outcome and "forecast_beat_market" in outcome
+        assert outcome["summary"]
+        # The summary must speak to both, not just profit.
+        assert "money" in outcome["summary"]
+
+    def test_matches_the_frozen_snapshot(self, client) -> None:  # noqa: ANN001
+        """Displayed figures must equal the stored record, not a recomputation."""
+        from sqlalchemy import select
+
+        from pmvl_markets.db_models import RecommendationSnapshot
+        from pmvl_shared.db import session_scope
+
+        body = client.get("/case-study?mode=demo&result=winner").json()
+        snapshot_id = body["snapshot_id"]
+        cs = body["data"]
+        with session_scope() as db:
+            row = db.get(RecommendationSnapshot, snapshot_id)
+            assert str(row.entry_price_at_recommendation) == cs["execution"]["entry_vwap"]
+            assert str(row.total_cost_at_recommendation) == cs["costs"]["total_cost_per_contract"]
+            assert str(row.conservative_net_ev) == cs["decision"]["conservative_net_ev"]
+            assert row.final_result == cs["outcome"]["final_result"]
+
+    def test_live_mode_does_not_return_demo_rows(self, client) -> None:  # noqa: ANN001
+        body = client.get("/case-study?mode=live").json()
+        assert body["data"] is None or body["data"]["market"]["provenance"] != "demo"
+
+
+class TestGuidedDemoRoutes:
+    """Every step must be directly openable and pinned to demo mode."""
+
+    def test_all_five_steps_are_defined(self) -> None:
+        root = Path(__file__).resolve().parents[1]
+        page = (root / "apps/web/app/demo/page.tsx").read_text()
+        assert "const TOTAL_STEPS = 5" in page
+        for n in range(1, 6):
+            assert f"step === {n}" in page
+
+    def test_invalid_step_falls_back_to_one(self) -> None:
+        root = Path(__file__).resolve().parents[1]
+        page = (root / "apps/web/app/demo/page.tsx").read_text()
+        assert "Number.isInteger(parsed)" in page
+        assert "<= TOTAL_STEPS ? parsed : 1" in page
+
+    def test_mode_is_pinned_to_demo(self) -> None:
+        """The tour must never silently drop to live and show empty pages."""
+        root = Path(__file__).resolve().parents[1]
+        page = (root / "apps/web/app/demo/page.tsx").read_text()
+        assert 'const mode: DataMode = "demo"' in page
+        assert 'mode: "demo"' in page
+
+    def test_controls_are_present(self) -> None:
+        root = Path(__file__).resolve().parents[1]
+        page = (root / "apps/web/app/demo/page.tsx").read_text()
+        for control in ("Previous", "Skip to case study", "Exit", "Step {step} of"):
+            assert control in page
+
+    def test_backtest_step_keeps_roi_and_brier_separate(self) -> None:
+        root = Path(__file__).resolve().parents[1]
+        page = (root / "apps/web/app/demo/page.tsx").read_text()
+        assert "Positive ROI, but it did not beat the market." in page
+        assert "does not automatically mean the model" in page
+
+    def test_homepage_links_to_both_new_surfaces(self) -> None:
+        root = Path(__file__).resolve().parents[1]
+        hero = (root / "apps/web/components/hero.tsx").read_text()
+        page = (root / "apps/web/app/page.tsx").read_text()
+        assert "Start guided demo" in hero
+        assert "See a recommendation from price to settlement" in hero
+        assert "guidedHref" in page and "caseStudyHref" in page
+        assert '/case-study${qs({ mode: "demo" })}' in page
+
+
+class TestSnapshotDeploymentGuards:
+    """The snapshot must stay shippable through a git-triggered build."""
+
+    @property
+    def _root(self) -> Path:
+        return Path(__file__).resolve().parents[1]
+
+    def test_snapshot_exists_and_is_small_enough(self) -> None:
+        snapshot = self._root / "data" / "pmvl-snapshot.db"
+        if not snapshot.exists():
+            pytest.skip("snapshot not built in this checkout")
+        size_mb = snapshot.stat().st_size / 1e6
+        # GitHub warns above 50MB and rejects above 100MB.
+        assert size_mb < 40, f"snapshot is {size_mb:.1f} MB; prune before committing"
+
+    def test_snapshot_opens_read_only(self) -> None:
+        """A read-only serverless mount cannot create journal sidecars."""
+        import sqlite3
+
+        snapshot = self._root / "data" / "pmvl-snapshot.db"
+        if not snapshot.exists():
+            pytest.skip("snapshot not built in this checkout")
+        con = sqlite3.connect(f"file:{snapshot}?mode=ro", uri=True)
+        try:
+            assert con.execute("SELECT COUNT(*) FROM recommendation_snapshots").fetchone()[0] > 0
+        finally:
+            con.close()
+
+    def test_gitignore_does_not_exclude_the_snapshot(self) -> None:
+        import subprocess
+
+        result = subprocess.run(
+            ["git", "check-ignore", "data/pmvl-snapshot.db"],
+            cwd=self._root, capture_output=True, text=True, check=False,
+        )
+        assert result.returncode != 0, (
+            "data/pmvl-snapshot.db is gitignored; a git-triggered Vercel build would "
+            "ship without a database and the API would crash on import"
+        )
+
+    def test_vercelignore_does_not_exclude_the_snapshot(self) -> None:
+        text = (self._root / ".vercelignore").read_text()
+        assert "!data/pmvl-snapshot.db" in text
+        for line in text.splitlines():
+            stripped = line.strip()
+            if stripped == "data/pmvl-snapshot.db":
+                raise AssertionError(".vercelignore excludes the deployment snapshot")

@@ -318,3 +318,86 @@ export interface FunnelStage {
   count: number;
   note: string;
 }
+
+export interface CostComponent {
+  key: string;
+  label: string;
+  amount: string | null;
+  applicable: boolean;
+}
+
+export interface CaseStudy {
+  market: {
+    snapshot_id: number;
+    market_id: number;
+    title: string;
+    platform: string;
+    platform_market_id: string;
+    category: string | null;
+    side: "yes" | "no";
+    horizon: string;
+    rank: number;
+    published_at: string;
+    expected_resolution_time: string | null;
+    settled_at: string | null;
+    final_result: string | null;
+    settlement_rules: string;
+    settlement_source: string;
+    provenance: string;
+  };
+  execution: {
+    best_ask: string | null;
+    best_no_ask: string | null;
+    entry_vwap: string;
+    reference_size: string;
+    spread: string | null;
+    depth_usd: string | null;
+    quote_observed_at: string | null;
+    levels: Array<{ price: string; size: string }>;
+  };
+  probability: {
+    market_implied: string | null;
+    fair_probability_yes: string;
+    win_probability_for_side: string;
+    conservative_bound: string;
+    conservative_bound_label: string;
+    interval_low: string;
+    interval_high: string;
+    model_confidence: string;
+    model_version: string;
+    has_independent_prior: boolean | null;
+    components: Array<Record<string, unknown>>;
+    explanation: string;
+    evidence_items: Array<Record<string, unknown>>;
+  };
+  costs: {
+    components: CostComponent[];
+    total_cost_per_contract: string;
+    cost_above_entry: string;
+  };
+  decision: {
+    raw_edge: string;
+    net_edge: string;
+    conservative_net_ev: string;
+    net_roi: string | null;
+    expected_profit_per_100_usd: string | null;
+    position_cap: string | null;
+    risk_flags: string[];
+    state: string | null;
+    qualified: boolean;
+    verdict: string;
+  };
+  outcome: {
+    settled: boolean;
+    final_result: string | null;
+    yes_payout: string | null;
+    payout_for_side: string | null;
+    realized_profit_per_contract: string | null;
+    realized_profit_at_100_usd: string | null;
+    trade_won: boolean | null;
+    model_brier: string | null;
+    market_brier: string | null;
+    forecast_beat_market: boolean | null;
+    summary: string | null;
+  };
+}

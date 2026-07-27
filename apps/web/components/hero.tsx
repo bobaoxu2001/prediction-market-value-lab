@@ -9,7 +9,17 @@ import Link from "next/link";
  * click. The three differentiators are the actual engineering claims of the project,
  * stated in one line each rather than as an essay.
  */
-export function Hero({ demoHref, backtestHref }: { demoHref: string; backtestHref: string }) {
+export function Hero({
+  demoHref,
+  backtestHref,
+  guidedHref,
+  caseStudyHref,
+}: {
+  demoHref: string;
+  backtestHref: string;
+  guidedHref: string;
+  caseStudyHref: string;
+}) {
   return (
     <section className="mb-8">
       <h1 className="max-w-3xl text-2xl font-semibold leading-tight tracking-tight sm:text-3xl">
@@ -33,6 +43,23 @@ export function Hero({ demoHref, backtestHref }: { demoHref: string; backtestHre
           className="rounded-lg border border-neutral-300 px-4 py-2.5 text-sm font-medium transition hover:bg-neutral-100 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-neutral-900 dark:border-neutral-700 dark:hover:bg-neutral-800 dark:focus-visible:outline-neutral-100"
         >
           View Backtest Results
+        </Link>
+      </div>
+
+      {/* Text links, deliberately below the two buttons: four equal-weight buttons
+          would give a first-time visitor no primary path. */}
+      <div className="mt-3 flex flex-wrap items-center gap-x-4 gap-y-1 text-sm">
+        <Link
+          href={guidedHref}
+          className="underline decoration-neutral-400 underline-offset-2 hover:decoration-current focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2"
+        >
+          Start guided demo
+        </Link>
+        <Link
+          href={caseStudyHref}
+          className="underline decoration-neutral-400 underline-offset-2 hover:decoration-current focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2"
+        >
+          See a recommendation from price to settlement
         </Link>
       </div>
 

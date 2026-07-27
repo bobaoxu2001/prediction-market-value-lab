@@ -38,6 +38,10 @@ def _test_environment(tmp_path_factory: pytest.TempPathFactory) -> None:
 
     db_path = tmp_path_factory.mktemp("pmvl") / "test.db"
     os.environ["DATABASE_URL"] = f"sqlite+pysqlite:///{db_path}"
+    # Tests that repoint the engine at the deployment snapshot restore this.
+    import tests.test_integration as _ti  # noqa: PLC0415
+
+    _ti._ORIGINAL_DATABASE_URL = os.environ["DATABASE_URL"]
     os.environ["ALLOW_DEMO_DATA"] = "true"
     os.environ["RESEARCH_ENABLED"] = "false"
     reset_settings_cache()

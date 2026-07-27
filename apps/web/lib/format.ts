@@ -223,7 +223,19 @@ export const METRIC_HELP: Record<string, string> = {
   settled:
     "Recommendations that have reached their resolution date and been graded. Small " +
     "samples cannot distinguish skill from luck.",
+  conservative_bound:
+    "The pessimistic end of the model's probability range. A recommendation must be " +
+    "profitable even at this bound, not just at the central estimate.",
+  conservative_net_ev:
+    "Expected profit per contract using the conservative probability bound and the " +
+    "full all-in cost. Must be positive for a market to be recommended.",
   calibration:
     "Compares forecast probability against how often those forecasts actually came " +
     "true. A well-calibrated model's 70% predictions happen about 70% of the time.",
 };
+
+/** Thousands-separated integer for display. Renders a real 0 as "0", never a dash. */
+export function count(value: string | number | null | undefined): string {
+  const n = num(value);
+  return n == null ? "—" : Math.round(n).toLocaleString();
+}
