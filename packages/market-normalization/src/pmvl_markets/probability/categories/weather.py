@@ -33,25 +33,32 @@ from ..base import ModelContext, ModelEstimate, ProbabilityModel, no_opinion
 
 log = get_logger(__name__)
 
-#: Stations Kalshi runs daily temperature markets on, with NWS grid coordinates.
-#: Keyed by the tokens that appear in market titles.
-_STATIONS: dict[str, tuple[str, str, str]] = {
-    # token          (office, gridX, gridY)
-    "new york city": ("OKX", "33", "42"),
-    "nyc":           ("OKX", "33", "42"),
-    "chicago":       ("LOT", "76", "73"),
-    "miami":         ("MFL", "110", "50"),
-    "austin":        ("EWX", "156", "91"),
-    "denver":        ("BOU", "62", "60"),
-    "los angeles":   ("LOX", "154", "44"),
-    "philadelphia":  ("PHI", "49", "75"),
-    "washington dc": ("LWX", "96", "71"),
-    "boston":        ("BOX", "71", "90"),
-    "houston":       ("HGX", "65", "97"),
-    "phoenix":       ("PSR", "159", "58"),
-    "seattle":       ("SEW", "125", "68"),
-    "atlanta":       ("FFC", "51", "87"),
-    "dallas":        ("FWD", "89", "105"),
+#: Observing stations Kalshi's daily temperature markets settle on, as
+#: **latitude/longitude**. The NWS forecast grid cell is resolved at runtime through
+#: the documented ``/points/{lat},{lon}`` endpoint and cached.
+#:
+#: Grid indices were previously hardcoded, and they were guessed rather than derived.
+#: The Los Angeles entry pointed at a cell forecasting 89F while the LAX settlement
+#: station forecast 81F - an eight-degree error that manufactured a 48-point
+#: "disagreement" against a market that was pricing the real forecast correctly.
+#: Coordinates are checkable against the station; grid indices are not.
+_STATIONS: dict[str, tuple[float, float]] = {
+    # token          (latitude, longitude)   station
+    "new york city": (40.7794, -73.9692),   # Central Park, KNYC
+    "nyc":           (40.7794, -73.9692),
+    "chicago":       (41.7860, -87.7524),   # Midway, KMDW
+    "miami":         (25.7906, -80.3164),   # Miami Intl, KMIA
+    "austin":        (30.3210, -97.7600),   # Camp Mabry, KATT
+    "denver":        (39.8467, -104.6564),  # Denver Intl, KDEN
+    "los angeles":   (33.9425, -118.4081),  # LAX, KLAX
+    "philadelphia":  (39.8683, -75.2311),   # Philadelphia Intl, KPHL
+    "washington dc": (38.8472, -77.0345),   # Reagan National, KDCA
+    "boston":        (42.3606, -71.0097),   # Logan, KBOS
+    "houston":       (29.9902, -95.3368),   # Bush Intercontinental, KIAH
+    "phoenix":       (33.4278, -112.0038),  # Sky Harbor, KPHX
+    "seattle":       (47.4444, -122.3139),  # Sea-Tac, KSEA
+    "atlanta":       (33.6301, -84.4418),   # Hartsfield-Jackson, KATL
+    "dallas":        (32.8471, -96.8517),   # Dallas Love Field, KDAL
 }
 
 #: Standard deviation of NWS maximum-temperature forecast error, in degrees F, by
@@ -73,7 +80,7 @@ def forecast_sigma(lead_days: int) -> float:
     return _FORECAST_SIGMA_F.get(min(lead_days, _MAX_LEAD_DAYS), 8.0)
 
 
-def detect_station(text: str) -> tuple[str, tuple[str, str, str]] | None:
+def detect_station(text: str) -> tuple[str, tuple[float, float]] | None:
     lowered = text.lower()
     # Longest token first so "new york city" beats a bare "york".
     for token in sorted(_STATIONS, key=len, reverse=True):
@@ -105,20 +112,51 @@ class WeatherThresholdModel(ProbabilityModel):
             cache_ttl_seconds=900.0,
             headers={"Accept": "application/geo+json"},
         )
+        #: "lat,lon" -> "/gridpoints/OFFICE/X,Y"
+        self._grid_cache: dict[str, str] = {}
 
     async def aclose(self) -> None:
         await self._client.aclose()
 
+    async def _resolve_grid(self, lat: float, lon: float) -> str | None:
+        """Resolve a coordinate to its NWS forecast grid endpoint, cached.
+
+        Grid geometry changes when the NWS re-tiles a region, so the mapping is
+        looked up rather than stored.
+        """
+        key = f"{lat:.4f},{lon:.4f}"
+        if key in self._grid_cache:
+            return self._grid_cache[key]
+        try:
+            data = await self._client.get_json(f"/points/{key}", allow_404=True)
+        except ProviderError as exc:
+            log.debug("NWS points lookup failed for %s: %s", key, exc)
+            return None
+        if not isinstance(data, dict):
+            return None
+        properties = data.get("properties") or {}
+        office, grid_x, grid_y = (
+            properties.get("gridId"),
+            properties.get("gridX"),
+            properties.get("gridY"),
+        )
+        if not office or grid_x is None or grid_y is None:
+            return None
+        path = f"/gridpoints/{office}/{grid_x},{grid_y}"
+        self._grid_cache[key] = path
+        return path
+
     async def _max_temperature_f(
-        self, office: str, grid_x: str, grid_y: str, target_date: datetime
+        self, lat: float, lon: float, target_date: datetime
     ) -> tuple[float, datetime] | None:
         """Forecast daily maximum in F for ``target_date``, with its issue time."""
+        path = await self._resolve_grid(lat, lon)
+        if path is None:
+            return None
         try:
-            data = await self._client.get_json(
-                f"/gridpoints/{office}/{grid_x},{grid_y}", allow_404=True
-            )
+            data = await self._client.get_json(path, allow_404=True)
         except ProviderError as exc:
-            log.debug("NWS gridpoint failed for %s/%s,%s: %s", office, grid_x, grid_y, exc)
+            log.debug("NWS gridpoint failed for %s: %s", path, exc)
             return None
         if not isinstance(data, dict):
             return None
@@ -157,7 +195,7 @@ class WeatherThresholdModel(ProbabilityModel):
         station = detect_station(f"{text} {market.description[:200]}")
         if station is None:
             return no_opinion("no supported NWS station in market text")
-        token, (office, grid_x, grid_y) = station
+        token, (lat, lon) = station
 
         # Kalshi runs three shapes per station and they are NOT interchangeable:
         #   greater  floor=88            -> P(T > 88)
@@ -202,7 +240,7 @@ class WeatherThresholdModel(ProbabilityModel):
         if lead_days > _MAX_LEAD_DAYS:
             return no_opinion(f"lead time {lead_days}d exceeds forecast skill horizon")
 
-        result = await self._max_temperature_f(office, grid_x, grid_y, target)
+        result = await self._max_temperature_f(lat, lon, target)
         if result is None:
             return no_opinion(f"no NWS max-temperature forecast for {token} on {target.date()}")
         forecast_f, issued = result
@@ -261,7 +299,7 @@ class WeatherThresholdModel(ProbabilityModel):
             data_freshness_seconds=int(age_hours * 3600),
             data={
                 "station": token,
-                "office": office,
+                "coordinates": f"{lat:.4f},{lon:.4f}",
                 "forecast_high_f": f"{forecast_f:.2f}",
                 "strike": strike_label,
                 "lead_days": lead_days,

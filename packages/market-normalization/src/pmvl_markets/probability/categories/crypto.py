@@ -66,6 +66,22 @@ def normal_cdf(x: float) -> float:
     return 0.5 * (1.0 + math.erf(x / math.sqrt(2.0)))
 
 
+#: Phrases that make a market a **barrier** (touch) event rather than a terminal one.
+#: "Will BTC dip to 60k this week" pays if the price touches 60k at any moment, which
+#: is strictly more likely than being below 60k at expiry - roughly twice as likely
+#: for a driftless process. Pricing these with the terminal distribution understates
+#: them badly and shows up as a large, fake model-vs-market divergence.
+_BARRIER_RE = re.compile(
+    r"\bdip(s|ped)?\s+to\b|\breach(es|ed)?\b|\bhit(s)?\b|\btouch(es|ed)?\b"
+    r"|\bat any (time|point)\b|\bever\b|\bintraday\b",
+    re.IGNORECASE,
+)
+
+
+def is_barrier_market(text: str) -> bool:
+    return bool(_BARRIER_RE.search(text))
+
+
 def gbm_probability_above(
     spot: float, strike: float, sigma_annual: float, tau_years: float
 ) -> float:
@@ -77,6 +93,47 @@ def gbm_probability_above(
     vol_sqrt_t = sigma_annual * math.sqrt(tau_years)
     d2 = (math.log(spot / strike) - 0.5 * sigma_annual**2 * tau_years) / vol_sqrt_t
     return normal_cdf(d2)
+
+
+def gbm_probability_touch(
+    spot: float, barrier: float, sigma_annual: float, tau_years: float
+) -> float:
+    """P(the path touches ``barrier`` at any time before T) under driftless GBM.
+
+    Closed form from the reflection principle for arithmetic Brownian motion in log
+    space with drift ``mu = -sigma^2 / 2``:
+
+        P(min_t X_t <= b) = Phi((b - mu*T) / (sigma*sqrt(T)))
+                          + exp(2*mu*b / sigma^2) * Phi((b + mu*T) / (sigma*sqrt(T)))
+
+    where ``b = ln(barrier / spot)``. The mirrored expression applies for an upper
+    barrier. Always at least the terminal probability, and tends to 1 as the barrier
+    approaches spot - both asserted in the test suite.
+    """
+    if spot <= 0 or barrier <= 0 or tau_years <= 0 or sigma_annual <= 0:
+        return 0.0
+    # Already touched: the barrier is on the wrong side of spot right now.
+    b = math.log(barrier / spot)
+    if b == 0:
+        return 1.0
+
+    mu = -0.5 * sigma_annual**2
+    vol_sqrt_t = sigma_annual * math.sqrt(tau_years)
+    drift = mu * tau_years
+    exponent = 2.0 * mu * b / (sigma_annual**2)
+    # Guard the exponential against overflow for distant barriers.
+    scale = math.exp(exponent) if -700 < exponent < 700 else (0.0 if exponent < 0 else float("inf"))
+
+    if b < 0:  # downward barrier: P(min <= b)
+        first = normal_cdf((b - drift) / vol_sqrt_t)
+        second = normal_cdf((b + drift) / vol_sqrt_t)
+    else:  # upward barrier: P(max >= b)
+        first = 1.0 - normal_cdf((b - drift) / vol_sqrt_t)
+        second = 1.0 - normal_cdf((-b + drift) / vol_sqrt_t)
+
+    if scale == float("inf"):
+        return 1.0
+    return min(1.0, max(0.0, first + scale * second))
 
 
 class CryptoThresholdModel(ProbabilityModel):
@@ -193,7 +250,13 @@ class CryptoThresholdModel(ProbabilityModel):
             and bool(re.search(r"\bbelow\b|\bunder\b|\bless than\b|\bat or below\b", text, re.I))
         )
 
+        barrier = is_barrier_market(f"{market.title} {market.subtitle}")
+
         def probability_at(vol: float) -> float:
+            if barrier and comparator != "between":
+                # Touch semantics: the contract pays if the price reaches the level at
+                # any point, not only at expiry.
+                return gbm_probability_touch(spot, float(strike), vol, tau)
             if comparator == "between":
                 # P(a < S_T <= b) = P(S_T > a) - P(S_T > b)
                 above_low = gbm_probability_above(spot, float(floor_strike), vol, tau)
@@ -234,7 +297,8 @@ class CryptoThresholdModel(ProbabilityModel):
             independent=True,
             detail=(
                 f"GBM {product}: spot={spot:,.2f} strike {strike_label} "
-                f"sigma={sigma:.1%}/yr tau={hours:.1f}h -> P={probability:.3f}"
+                f"sigma={sigma:.1%}/yr tau={hours:.1f}h "
+                f"{'[touch]' if barrier else '[terminal]'} -> P={probability:.3f}"
             ),
             data_freshness_seconds=0,
             data={
@@ -244,6 +308,7 @@ class CryptoThresholdModel(ProbabilityModel):
                 "sigma_annual": f"{sigma:.4f}",
                 "tau_hours": f"{hours:.2f}",
                 "comparator": comparator or "unknown",
+                "settlement_style": "touch" if barrier else "terminal",
                 "direction": "below" if is_below else "above",
                 "n_returns": n_returns,
                 "model": "driftless_gbm",

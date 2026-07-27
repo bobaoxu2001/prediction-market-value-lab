@@ -344,3 +344,177 @@ class TestConservativeBounds:
         assert no_mean == D("0.40")
         assert no_low == D("0.30")           # 1 - high
         assert no_low < D("0.50")            # NOT 1 - low = 0.50
+
+
+class TestThresholdShapes:
+    """`between` markets must not be priced as one-sided thresholds."""
+
+    def test_barrier_detection(self) -> None:
+        from pmvl_markets.probability.categories.crypto import is_barrier_market
+
+        assert is_barrier_market("Will Bitcoin dip to $60,000 July 20-26?")
+        assert is_barrier_market("Will Bitcoin reach $100,000 in July?")
+        assert not is_barrier_market("Bitcoin price on Jul 26, 2026?")
+        assert not is_barrier_market("Will BTC close above $70,000?")
+
+    def test_touch_is_never_below_terminal(self) -> None:
+        """A path that ends beyond the barrier must have crossed it."""
+        from pmvl_markets.probability.categories.crypto import (
+            gbm_probability_above,
+            gbm_probability_touch,
+        )
+
+        spot, sigma, tau = 64000.0, 0.30, 20.0 / 8766
+        for barrier in (58000, 61000, 63000, 63900):
+            terminal_below = 1.0 - gbm_probability_above(spot, barrier, sigma, tau)
+            assert gbm_probability_touch(spot, barrier, sigma, tau) >= terminal_below - 1e-9
+        for barrier in (65000, 67000, 72000):
+            terminal_above = gbm_probability_above(spot, barrier, sigma, tau)
+            assert gbm_probability_touch(spot, barrier, sigma, tau) >= terminal_above - 1e-9
+
+    def test_touch_approaches_certainty_at_the_money(self) -> None:
+        from pmvl_markets.probability.categories.crypto import gbm_probability_touch
+
+        assert gbm_probability_touch(64000.0, 63990.0, 0.30, 20.0 / 8766) > 0.9
+
+    def test_touch_is_bounded(self) -> None:
+        from pmvl_markets.probability.categories.crypto import gbm_probability_touch
+
+        for barrier in (1000, 40000, 64000, 90000, 500000):
+            value = gbm_probability_touch(64000.0, barrier, 0.30, 20.0 / 8766)
+            assert 0.0 <= value <= 1.0
+
+    def test_weather_between_buckets_are_disjoint(self) -> None:
+        """Adjacent temperature buckets must not overlap or sum above 1."""
+        from pmvl_markets.probability.categories.weather import normal_cdf
+
+        forecast, sigma = 82.0, 2.0
+
+        def bucket(lo: float, hi: float) -> float:
+            return normal_cdf((hi + 0.5 - forecast) / sigma) - normal_cdf(
+                (lo - 0.5 - forecast) / sigma
+            )
+
+        buckets = [bucket(lo, lo + 1) for lo in (78, 80, 82, 84, 86)]
+        assert all(b >= 0 for b in buckets)
+        assert sum(buckets) <= 1.0
+        # The bucket containing the forecast must be the most likely one.
+        assert buckets.index(max(buckets)) == 2
+
+    def test_weather_refuses_a_past_event(self) -> None:
+        """A forecast is not evidence about a day that has already happened."""
+        import asyncio
+        from datetime import timedelta
+
+        from pmvl_markets.probability.base import ModelContext
+        from pmvl_markets.probability.categories.weather import WeatherThresholdModel
+        from pmvl_shared.enums import Category, Platform
+        from pmvl_shared.schemas import NormalizedMarket
+        from pmvl_shared.timeutil import utcnow
+
+        market = NormalizedMarket(
+            platform=Platform.KALSHI,
+            platform_market_id="KXHIGHNY-PAST",
+            title="Will the high temp in NYC be 82-83 on a past day?",
+            category=Category.WEATHER,
+            strike_type="between",
+            floor_strike=Decimal("82"),
+            cap_strike=Decimal("83"),
+            # Event yesterday, settlement still pending.
+            event_occurrence_time=utcnow() - timedelta(days=1),
+            expected_resolution_time=utcnow() + timedelta(hours=6),
+        )
+        model = WeatherThresholdModel()
+        try:
+            result = asyncio.get_event_loop().run_until_complete(
+                model.estimate(ModelContext(market=market))
+            ) if False else asyncio.run(model.estimate(ModelContext(market=market)))
+        finally:
+            asyncio.run(model.aclose())
+        assert result.probability is None
+        assert "already determined" in result.detail or "closed" in result.detail
+
+    def test_already_occurred_gate(self) -> None:
+        from datetime import timedelta
+
+        from pmvl_markets.value.ranking import event_already_occurred
+        from pmvl_shared.enums import Platform
+        from pmvl_shared.schemas import NormalizedMarket
+        from pmvl_shared.timeutil import utcnow
+
+        past = NormalizedMarket(
+            platform=Platform.KALSHI, platform_market_id="a",
+            event_occurrence_time=utcnow() - timedelta(hours=2),
+        )
+        future = NormalizedMarket(
+            platform=Platform.KALSHI, platform_market_id="b",
+            event_occurrence_time=utcnow() + timedelta(hours=2),
+        )
+        unknown = NormalizedMarket(platform=Platform.KALSHI, platform_market_id="c")
+        assert event_already_occurred(past)
+        assert not event_already_occurred(future)
+        assert not event_already_occurred(unknown)
+
+
+class TestUsablePrices:
+    """A price of exactly 0 or 1 from a summary field is 'no data', not a price."""
+
+    def _ctx(self, **overrides):  # noqa: ANN202
+        from pmvl_markets.probability.base import ModelContext
+        from pmvl_shared.enums import Platform
+        from pmvl_shared.schemas import NormalizedMarket
+
+        return ModelContext(
+            market=NormalizedMarket(
+                platform=Platform.KALSHI, platform_market_id="x", **overrides
+            )
+        )
+
+    def test_never_traded_zero_last_price_is_not_a_price(self) -> None:
+        from pmvl_markets.probability.consensus import reference_price
+
+        assert reference_price(self._ctx(last_trade_price=Decimal("0"))) is None
+
+    def test_lone_bid_is_used(self) -> None:
+        """A 98c bid with no offer is a real statement about value."""
+        from pmvl_markets.probability.consensus import reference_price
+
+        ctx = self._ctx(
+            best_yes_bid=Decimal("0.98"),
+            best_yes_ask=None,
+            last_trade_price=Decimal("0"),
+        )
+        assert reference_price(ctx) == Decimal("0.98")
+
+    def test_two_sided_quote_uses_the_mid(self) -> None:
+        from pmvl_markets.probability.consensus import reference_price
+
+        ctx = self._ctx(best_yes_bid=Decimal("0.40"), best_yes_ask=Decimal("0.44"))
+        assert reference_price(ctx) == Decimal("0.42")
+
+
+class TestLogOddsInterval:
+    """Intervals live in the same space the mean is pooled in."""
+
+    def test_low_probability_bound_is_not_crushed_to_zero(self) -> None:
+        from pmvl_markets.probability.ensemble import from_log_odds, to_log_odds
+
+        mean = Decimal("0.015")
+        low = from_log_odds(to_log_odds(mean) - Decimal("1.2816") * Decimal("0.5"))
+        assert low > Decimal("0.001")
+        assert low < mean
+
+    def test_interval_is_asymmetric_near_the_boundary(self) -> None:
+        from pmvl_markets.probability.ensemble import from_log_odds, to_log_odds
+
+        mean = Decimal("0.05")
+        half = Decimal("1.2816") * Decimal("0.6")
+        low = from_log_odds(to_log_odds(mean) - half)
+        high = from_log_odds(to_log_odds(mean) + half)
+        assert (mean - low) < (high - mean)
+        assert Decimal("0") < low < mean < high < Decimal("1")
+
+    def test_component_sigma_is_capped(self) -> None:
+        from pmvl_markets.probability.ensemble import MAX_COMPONENT_LOG_ODDS_SIGMA
+
+        assert 0 < MAX_COMPONENT_LOG_ODDS_SIGMA <= 5

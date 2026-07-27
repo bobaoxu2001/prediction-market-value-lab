@@ -9,8 +9,8 @@ from fastapi import APIRouter, Depends, Query
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from pmvl_shared.enums import RecommendationState, Side
-from pmvl_shared.timeutil import HORIZONS, utcnow
+from pmvl_shared.enums import MarketStatus, RecommendationState, Side
+from pmvl_shared.timeutil import HORIZONS, ensure_utc, horizons_for, utcnow
 
 from pmvl_markets.db_models import Market, ModelPrediction, Recommendation
 
@@ -273,5 +273,117 @@ def watchlist(
             "These markets are NOT opportunities. The model had no information source "
             "independent of the market itself, so no edge can be demonstrated against "
             "its price."
+        ),
+    )
+
+
+@router.get("/disagreements")
+def disagreements(
+    horizon: str = Query("24h", pattern="^(24h|7d|30d)$"),
+    min_divergence: Decimal = Query(
+        Decimal("0.03"),
+        description="Minimum |model - market| in probability terms.",
+    ),
+    limit: int = Query(20, ge=1, le=100),
+    db: Session = DbDep,
+    mode: DataMode = ModeDep,
+) -> dict[str, Any]:
+    """Markets where an **independent** model most disagrees with the market price.
+
+    This is the platform's research output when nothing clears the recommendation
+    gate, which on efficiently-priced venues is most of the time. Every row here has
+    a probability estimate that does *not* come from the market's own price, so the
+    divergence is real information rather than an artefact - but none of them has
+    cleared the conservative bound after costs, so **none is a recommendation**.
+
+    Ranked by divergence, not by expected value, because the point is to surface
+    where the model and the market see the world differently and let a human judge
+    which one is wrong. A large divergence usually means the model is missing
+    something the market knows.
+    """
+    now = utcnow()
+    predictions = list(
+        db.scalars(
+            apply_provenance(
+                select(ModelPrediction)
+                .where(ModelPrediction.has_independent_prior.is_(True))
+                .order_by(ModelPrediction.created_at.desc())
+                .limit(3000),
+                ModelPrediction.provenance,
+                mode,
+            )
+        )
+    )
+
+    market_ids = {p.market_id for p in predictions}
+    markets = {
+        m.id: m for m in db.scalars(select(Market).where(Market.id.in_(market_ids)))
+    } if market_ids else {}
+
+    seen: set[int] = set()
+    rows: list[dict[str, Any]] = []
+    for prediction in predictions:
+        if prediction.market_id in seen:
+            continue
+        market = markets.get(prediction.market_id)
+        if market is None or market.status != MarketStatus.OPEN.value:
+            continue
+        # An event that has already happened is not a disagreement - the market knows
+        # the outcome and the model is still estimating. Those rows dominated the list
+        # with 99c-vs-4c "divergences" that are entirely the model's error.
+        occurrence = ensure_utc(market.event_occurrence_time)
+        if occurrence is not None and occurrence <= now:
+            continue
+        implied = prediction.market_implied_probability
+        if implied is None:
+            continue
+        if horizons_for(market.expected_resolution_time, now=now)[:1] != (horizon,):
+            continue
+        seen.add(prediction.market_id)
+
+        divergence = prediction.fair_probability_mean - implied
+        if abs(divergence) < min_divergence:
+            continue
+
+        rows.append(
+            {
+                "market_id": market.id,
+                "platform": market.platform,
+                "platform_market_id": market.platform_market_id,
+                "title": market.title,
+                "subtitle": market.subtitle,
+                "category": market.category,
+                "market_implied_probability": implied,
+                "model_probability": prediction.fair_probability_mean,
+                "model_low": prediction.fair_probability_low,
+                "model_high": prediction.fair_probability_high,
+                "divergence": divergence,
+                "abs_divergence": abs(divergence),
+                "direction": "model_higher" if divergence > 0 else "model_lower",
+                "model_confidence": prediction.model_confidence,
+                "best_yes_ask": market.best_yes_ask,
+                "best_no_ask": market.best_no_ask,
+                "spread": market.spread,
+                "liquidity_usd": market.orderbook_depth_usd,
+                "volume_24h": market.volume_24h,
+                "expected_resolution_time": market.expected_resolution_time,
+                "explanation": prediction.explanation,
+                "model_version": prediction.model_version,
+            }
+        )
+
+    rows.sort(key=lambda r: r["abs_divergence"], reverse=True)
+    rows = rows[:limit]
+
+    return envelope(
+        rows, mode,
+        horizon=horizon,
+        count=len(rows),
+        is_recommendation_list=False,
+        explanation=(
+            "These are NOT recommendations. Each row has an independent model estimate "
+            "that differs from the market price, but none cleared the conservative net "
+            "EV gate after fees, slippage and capital cost. A large divergence more "
+            "often means the model is missing information than that the market is wrong."
         ),
     )

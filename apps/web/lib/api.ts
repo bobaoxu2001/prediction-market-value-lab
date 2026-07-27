@@ -174,6 +174,31 @@ export interface TrackRecordRow {
   provenance: string;
 }
 
+export interface Divergence {
+  market_id: number;
+  platform: string;
+  platform_market_id: string;
+  title: string;
+  subtitle: string;
+  category: string;
+  market_implied_probability: string;
+  model_probability: string;
+  model_low: string;
+  model_high: string;
+  divergence: string;
+  abs_divergence: string;
+  direction: string;
+  model_confidence: string;
+  best_yes_ask: string | null;
+  best_no_ask: string | null;
+  spread: string | null;
+  liquidity_usd: string | null;
+  volume_24h: string | null;
+  expected_resolution_time: string | null;
+  explanation: string;
+  model_version: string;
+}
+
 export interface CalibrationBin {
   bin_lower: number;
   bin_upper: number;

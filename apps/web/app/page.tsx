@@ -6,6 +6,7 @@ import {
   type Opportunity,
   type WatchlistItem,
 } from "@/lib/api";
+import type { Divergence } from "@/lib/api";
 import {
   ageLabel,
   cents,
@@ -72,10 +73,13 @@ export default async function TodayPage({
     limit: 10,
   });
 
-  const [opps, summary, watch] = await Promise.all([
+  const [opps, summary, watch, diverge] = await Promise.all([
     apiGet<Opportunity[]>(`/opportunities${query}`),
     apiGet<Record<string, number>>(`/opportunities/summary${qs({ mode })}`),
     apiGet<WatchlistItem[]>(`/opportunities/watchlist${qs({ horizon, mode, limit: 12 })}`),
+    apiGet<Divergence[]>(
+      `/opportunities/disagreements${qs({ horizon, mode, limit: 10, min_divergence: "0.02" })}`,
+    ),
   ]);
 
   if (!opps) return <ApiDown />;
@@ -147,6 +151,55 @@ export default async function TodayPage({
           ))}
         </div>
       )}
+
+      {diverge?.data?.length ? (
+        <section className="mt-10">
+          <h2 className="text-sm font-semibold">
+            Where the model most disagrees with the market
+          </h2>
+          <p className="mt-1 max-w-3xl text-sm text-neutral-600 dark:text-neutral-400">
+            {(diverge.explanation as string) ??
+              "These are not recommendations."}
+          </p>
+          <div className="card table-wrap mt-3">
+            <table className="w-full">
+              <thead className="border-b border-neutral-200 dark:border-neutral-800">
+                <tr>
+                  <th>Market</th><th>Venue</th><th>Market</th><th>Model</th>
+                  <th>Interval</th><th>Divergence</th><th>Confidence</th><th>Resolves</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-neutral-100 dark:divide-neutral-800">
+                {diverge.data.map((d) => {
+                  const div = Number(d.divergence);
+                  return (
+                    <tr key={d.market_id}>
+                      <td className="max-w-sm truncate">
+                        <Link href={`/market/${d.market_id}`} className="hover:underline">
+                          {d.title}
+                        </Link>
+                      </td>
+                      <td><PlatformChip platform={d.platform} /></td>
+                      <td className="num">{prob(d.market_implied_probability)}</td>
+                      <td className="num font-semibold">{prob(d.model_probability)}</td>
+                      <td className="num text-neutral-500">
+                        {prob(d.model_low)}–{prob(d.model_high)}
+                      </td>
+                      <td className={`num font-semibold ${div > 0 ? "text-edge dark:text-edge-dark" : "text-risk dark:text-risk-dark"}`}>
+                        {div > 0 ? "+" : ""}{(div * 100).toFixed(1)}pp
+                      </td>
+                      <td className="num">{pct(d.model_confidence)}</td>
+                      <td className="text-neutral-500">
+                        {relativeTime(d.expected_resolution_time)}
+                      </td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
+        </section>
+      ) : null}
 
       {watch?.data?.length ? (
         <section className="mt-10">
