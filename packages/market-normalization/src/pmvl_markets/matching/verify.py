@@ -37,7 +37,11 @@ from pmvl_shared.money import D, ZERO, safe_div
 from pmvl_shared.schemas import NormalizedMarket
 from pmvl_shared.timeutil import ensure_utc
 
-from ..normalize.rules import NormalizedRules, normalize_rules
+from ..normalize.rules import (
+    KALSHI_STRIKE_COMPARATORS,
+    NormalizedRules,
+    normalize_rules,
+)
 from .candidates import MatchCandidate
 
 #: Cutoff differences at or below this are immaterial.
@@ -125,19 +129,61 @@ def comparators_match(a: str, b: str, *, continuous: bool) -> tuple[bool, bool]:
     return False, False
 
 
-def is_continuous_quantity(market: NormalizedMarket) -> bool:
-    """Whether the underlying is continuous, making '>' and '>=' equivalent.
+#: Granularity of the value the SETTLEMENT SOURCE publishes, per category.
+#:
+#: This is not the granularity of the underlying physical quantity, and conflating
+#: the two is a real source of false equivalence. Air temperature is continuous, but
+#: Kalshi and Polymarket settle their temperature markets on the NWS climatological
+#: report, which publishes WHOLE DEGREES. On that lattice "above 75" means 76-or-more
+#: while "75 or above" includes 75, and a whole degree of probability mass separates
+#: two contracts that a category-level "temperature is continuous" rule would have
+#: declared identical.
+#:
+#: ``None`` means the published value is effectively continuous at the scale these
+#: markets are struck on.
+_SETTLEMENT_STEP: dict[str, Decimal] = {
+    "weather": Decimal("1"),      # NWS reports whole degrees
+    "economics": Decimal("0.1"),  # CPI/GDP prints carry one decimal
+}
 
-    Prices and temperatures are continuous; counts of goals, tweets or mentions are
-    not, and for those an exact tie is a real, reachable outcome.
+#: Phrases implying a counted quantity, where every value is an integer and a tie on
+#: the threshold is a reachable outcome.
+_DISCRETE_MARKERS = (
+    "how many", "number of", "times", "count", "goals", "points", "seats",
+    "medals", "wins", "games", "runs", "sets",
+)
+
+
+def settlement_step(market: NormalizedMarket) -> Decimal | None:
+    """Smallest increment the settlement source can publish, if it is lattice-valued.
+
+    Returns ``None`` when the published value is fine-grained enough that landing
+    exactly on a threshold has negligible probability.
     """
-    from pmvl_shared.enums import Category
-
-    if market.category in (Category.CRYPTO, Category.FINANCE, Category.WEATHER):
-        return True
     text = f"{market.title} {market.subtitle}".lower()
-    discrete_markers = ("how many", "number of", "times", "count", "goals", "points")
-    return not any(marker in text for marker in discrete_markers)
+    if any(marker in text for marker in _DISCRETE_MARKERS):
+        return Decimal("1")
+    return _SETTLEMENT_STEP.get(market.category.value)
+
+
+def is_continuous_quantity(market: NormalizedMarket) -> bool:
+    """Whether '>' and '>=' at the same threshold are the same contract.
+
+    True only when the settled value cannot realistically land exactly on the
+    threshold. A lattice-valued source (whole degrees, integer counts) makes the tie
+    reachable, so the two comparators describe genuinely different contracts.
+    """
+    step = settlement_step(market)
+    if step is None:
+        return True
+    threshold = market.floor_strike if market.floor_strike is not None else market.cap_strike
+    if threshold is None or threshold == 0:
+        # Lattice-valued source and no threshold to scale against: assume the tie is
+        # reachable rather than assume it away.
+        return False
+    # A step that is a negligible fraction of the threshold cannot separate the two
+    # comparators in practice (a $0.01 step against a $70,000 strike).
+    return abs(step / threshold) < Decimal("0.0001")
 
 
 def cutoff_delta(a: NormalizedRules, b: NormalizedRules) -> timedelta | None:
@@ -203,6 +249,17 @@ def unmatched_proper_nouns(a: NormalizedMarket, b: NormalizedMarket) -> set[str]
 
 
 def rules_for(market: NormalizedMarket) -> NormalizedRules:
+    """Structured settlement terms for a market.
+
+    The venue's own ``strike_type`` is passed through as the authoritative
+    comparator. Without it the comparator came from a regex over the title and
+    subtitle, and Kalshi's subtitle convention restates a ``>75`` market inclusively
+    as "76 or above" - so text extraction returned ``gte`` for a market the venue had
+    explicitly declared ``greater``. Both sides of a strict-vs-inclusive pair then
+    normalised to the same comparator and the pair was certified IDENTICAL, which is
+    exactly the false risk-free claim this module exists to prevent. Structured venue
+    fields beat text extraction, the same rule already applied to the threshold.
+    """
     return normalize_rules(
         title=market.title,
         subtitle=market.subtitle,
@@ -215,6 +272,9 @@ def rules_for(market: NormalizedMarket) -> NormalizedRules:
         ),
         explicit_threshold=(
             market.floor_strike if market.floor_strike is not None else market.cap_strike
+        ),
+        explicit_comparator=KALSHI_STRIKE_COMPARATORS.get(
+            (market.strike_type or "").lower(), ""
         ),
         has_structured_strike=bool(market.strike_type),
     )
