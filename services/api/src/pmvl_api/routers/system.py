@@ -96,7 +96,9 @@ def system(db: Session = DbDep, mode: DataMode = ModeDep) -> dict[str, Any]:
 
     return envelope(
         {
-            "environment": settings.environment,
+            "environment": settings.runtime_environment,
+            "runtime_mode": settings.runtime_mode,
+            "worker_status": settings.worker_status,
             "model_version": MODEL_VERSION,
             "row_counts": counts,
             "provenance_split": provenance_split,
@@ -361,6 +363,16 @@ def methodology(mode: DataMode = ModeDep) -> dict[str, Any]:
                     "cutoff, timezone, measurement basis and settlement source agree",
                     "net profit still strictly greater than zero",
                 ],
+                "safety_margins": (
+                    "Minimum net edge before an arbitrage is published, held in "
+                    "configuration rather than scattered through the scanners: 1.5% "
+                    "same-venue liquid, 3% same-venue thin, 4% cross-venue liquid, 5% "
+                    "cross-venue thin. Cross-venue legs clear a higher bar because "
+                    "they add settlement-source divergence, two close times, split "
+                    "capital and withdrawal cost, none of which is recoverable if one "
+                    "leg fills and the other does not. Unknown depth is treated as "
+                    "thin - absent evidence of depth is not evidence of depth."
+                ),
                 "other_labels": (
                     "Everything failing any precondition is labelled Theoretical, Rule "
                     "Mismatch Risk, Execution Risk, Stale Quote, Insufficient "
@@ -387,6 +399,19 @@ def methodology(mode: DataMode = ModeDep) -> dict[str, Any]:
                 "benchmark": (
                     "Brier improvement versus the market's own implied probability. A "
                     "model that cannot beat the market price adds no information."
+                ),
+            },
+            "venue_availability": {
+                "observed_directly": ["kalshi", "polymarket"],
+                "unverified": ["moomoo", "robinhood", "ibkr"],
+                "rule": (
+                    "Availability is reported only for venues this platform reads "
+                    "directly. Brokers that resell exchange event contracts list a "
+                    "subset that changes without notice and is gated by jurisdiction "
+                    "and account type, and no discovery source for them is wired up "
+                    "here. A contract existing on Kalshi is therefore NOT reported as "
+                    "available on Moomoo - that status stays 'Unverified'. Inferring "
+                    "it would be a confident claim the reader cannot act on."
                 ),
             },
             "limitations": [

@@ -1,6 +1,6 @@
 import Link from "next/link";
 import { apiGet, qs, type DataMode, type TrackRecordRow } from "@/lib/api";
-import { cents, localTime, pct, prob, signedCents, usd } from "@/lib/format";
+import { cents, displayTitle, localTime, pct, prob, signedCents, usd } from "@/lib/format";
 import {
   ApiDown, DemoBanner, EmptyState, PageHeader, PlatformChip, SideChip,
 } from "@/components/ui";
@@ -97,7 +97,7 @@ export default async function TrackRecordPage({
                       <td className="text-neutral-500">{localTime(r.recommendation_created_at)}</td>
                       <td className="max-w-xs truncate">
                         <Link href={`/market/${r.market_id}`} className="hover:underline">
-                          {r.market_title}
+                          {displayTitle(r.market_title)}
                         </Link>
                       </td>
                       <td><PlatformChip platform={r.platform} /></td>

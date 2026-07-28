@@ -7,17 +7,7 @@ import {
   type WatchlistItem,
 } from "@/lib/api";
 import type { Divergence, FunnelStage } from "@/lib/api";
-import {
-  ageLabel,
-  cents,
-  compactUsd,
-  localTime,
-  pct,
-  prob,
-  relativeTime,
-  signedCents,
-  usd,
-} from "@/lib/format";
+import { ageLabel, cents, compactUsd, displayTitle, localTime, pct, prob, relativeTime, relativeToSnapshot, signedCents, usd } from "@/lib/format";
 import {
   ApiDown,
   DemoBanner,
@@ -74,7 +64,7 @@ export default async function TodayPage({
     limit: 10,
   });
 
-  const [opps, summary, watch, diverge, funnel] = await Promise.all([
+  const [opps, summary, watch, diverge, funnel, system] = await Promise.all([
     apiGet<Opportunity[]>(`/opportunities${query}`),
     apiGet<Record<string, number>>(`/opportunities/summary${qs({ mode })}`),
     apiGet<WatchlistItem[]>(`/opportunities/watchlist${qs({ horizon, mode, limit: 12 })}`),
@@ -82,7 +72,16 @@ export default async function TodayPage({
       `/opportunities/disagreements${qs({ horizon, mode, limit: 10, min_divergence: "0.02" })}`,
     ),
     apiGet<FunnelStage[]>(`/opportunities/funnel${qs({ horizon, mode })}`),
+    // Anchor relative times to the snapshot instant. On a frozen deployment now()
+    // keeps advancing while the data does not, so a market with 3h left at capture
+    // drifts into "resolved 12h ago" under a heading that says "today".
+    apiGet<{ snapshot_mode?: boolean; freshest_quote_observed_at?: string | null }>(
+      "/system",
+    ),
   ]);
+  const snapshotAt = system?.data?.snapshot_mode
+    ? (system?.data?.freshest_quote_observed_at ?? null)
+    : null;
 
   if (!opps) return <ApiDown />;
 
@@ -148,7 +147,7 @@ export default async function TodayPage({
       ) : (
         <div className="space-y-3">
           {rows.map((o) => (
-            <OpportunityCard key={o.id} o={o} />
+            <OpportunityCard key={o.id} o={o} snapshotAt={snapshotAt} />
           ))}
         </div>
       )}
@@ -177,7 +176,7 @@ export default async function TodayPage({
                     <tr key={d.market_id}>
                       <td className="max-w-sm truncate">
                         <Link href={`/market/${d.market_id}`} className="hover:underline">
-                          {d.title}
+                          {displayTitle(d.title)}
                         </Link>
                       </td>
                       <td><PlatformChip platform={d.platform} /></td>
@@ -191,7 +190,7 @@ export default async function TodayPage({
                       </td>
                       <td className="num">{pct(d.model_confidence)}</td>
                       <td className="text-neutral-500">
-                        {relativeTime(d.expected_resolution_time)}
+                        {relativeToSnapshot(d.expected_resolution_time, snapshotAt)}
                       </td>
                     </tr>
                   );
@@ -230,7 +229,7 @@ export default async function TodayPage({
                   <tr key={w.market_id}>
                     <td className="max-w-md truncate">
                       <Link href={`/market/${w.market_id}`} className="hover:underline">
-                        {w.title}
+                        {displayTitle(w.title)}
                       </Link>
                     </td>
                     <td><PlatformChip platform={w.platform} /></td>
@@ -238,7 +237,7 @@ export default async function TodayPage({
                     <td className="num">{cents(w.spread)}</td>
                     <td className="num">{compactUsd(w.liquidity_usd)}</td>
                     <td className="text-neutral-500">
-                      {relativeTime(w.expected_resolution_time)}
+                      {relativeToSnapshot(w.expected_resolution_time, snapshotAt)}
                     </td>
                   </tr>
                 ))}
@@ -256,7 +255,13 @@ export default async function TodayPage({
 }
 
 
-function OpportunityCard({ o }: { o: Opportunity }) {
+function OpportunityCard({
+  o,
+  snapshotAt,
+}: {
+  o: Opportunity;
+  snapshotAt: string | null;
+}) {
   return (
     <article className="card p-4">
       <div className="flex flex-wrap items-start justify-between gap-3">
@@ -269,7 +274,7 @@ function OpportunityCard({ o }: { o: Opportunity }) {
               href={`/market/${o.market_id}`}
               className="block truncate font-medium hover:underline"
             >
-              {o.title}
+              {displayTitle(o.title)}
             </Link>
             <div className="mt-1.5 flex flex-wrap items-center gap-2">
               <PlatformChip platform={o.platform} />
@@ -340,7 +345,7 @@ function OpportunityCard({ o }: { o: Opportunity }) {
         />
         <Metric
           label="Resolves"
-          value={relativeTime(o.expected_resolution_time)}
+          value={relativeToSnapshot(o.expected_resolution_time, snapshotAt)}
           hint={localTime(o.expected_resolution_time)}
         />
       </div>

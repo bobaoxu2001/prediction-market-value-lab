@@ -51,7 +51,7 @@ export function ModeNav({
  * Segmented Live/Demo control. Keeps the current path and every other query
  * parameter, so switching mode never also resets a filter or a horizon tab.
  */
-export function ModeSwitch() {
+export function ModeSwitch({ snapshot = false }: { snapshot?: boolean }) {
   const pathname = usePathname();
   const params = useSearchParams();
   // The guided demo always serves demo data, so the control must show Demo there
@@ -81,7 +81,14 @@ export function ModeSwitch() {
               : "rounded-md px-2.5 py-1 text-neutral-500 hover:text-neutral-900 dark:hover:text-neutral-100"
           }
         >
-          {target === "live" ? "Live data" : "Demo"}
+          {target === "live"
+            ? // Calling a frozen snapshot "Live data" while a banner on the same page
+              // says quotes are stale is a contradiction the reader has to resolve,
+              // and it costs trust in everything else on the page.
+              snapshot
+              ? "Research snapshot"
+              : "Live pipeline"
+            : "Synthetic demo"}
         </Link>
       ))}
     </div>

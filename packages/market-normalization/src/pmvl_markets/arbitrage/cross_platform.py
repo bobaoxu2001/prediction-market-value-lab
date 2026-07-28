@@ -31,17 +31,27 @@ from pmvl_shared.money import ONE, ZERO, quantize_usd, safe_div
 from pmvl_shared.schemas import ArbitrageResult, ArbLeg, NormalizedMarket, OrderBook
 from pmvl_shared.timeutil import age_seconds, hours_until, utcnow
 
+from ..matching.equivalence import EquivalenceScore, EquivalenceVerdict
 from ..matching.verify import MatchVerdict
 from ..pricing.execution import capital_cost_per_contract, transfer_cost_per_contract
 from ..pricing.fees import taker_fee
-from ..pricing.orderbook import executable_quote
+from ..pricing.multileg import LegRequest, simulate_basket
+from ..pricing.orderbook import depth_usd, executable_quote
 
-#: Label applied when the rules are not an exact match, ordered by severity.
-_LABEL_FOR_COMPATIBILITY = {
-    RuleCompatibility.IDENTICAL: ArbitrageLabel.EXECUTABLE,
-    RuleCompatibility.EQUIVALENT: ArbitrageLabel.RULE_MISMATCH_RISK,
-    RuleCompatibility.SIMILAR: ArbitrageLabel.NOT_GUARANTEED,
-    RuleCompatibility.INCOMPATIBLE: ArbitrageLabel.NOT_GUARANTEED,
+#: Label applied per equivalence verdict.
+#:
+#: EXECUTABLE - the only label that claims a guaranteed payout - now requires
+#: VERIFIED_EQUIVALENT_STRICT, meaning cancellation and void handling were confirmed
+#: too. STANDARD agrees on every term that decides the payout but leaves void
+#: behaviour unverified, and a pair where one venue voids a postponed event while the
+#: other settles it can lose on both legs. That is a hedge with residual rule risk,
+#: not an arbitrage, so it is labelled accordingly.
+_LABEL_FOR_VERDICT = {
+    EquivalenceVerdict.VERIFIED_EQUIVALENT_STRICT: ArbitrageLabel.EXECUTABLE,
+    EquivalenceVerdict.VERIFIED_EQUIVALENT_STANDARD: ArbitrageLabel.RULE_MISMATCH_RISK,
+    EquivalenceVerdict.PROBABLE_MATCH: ArbitrageLabel.RULE_MISMATCH_RISK,
+    EquivalenceVerdict.RELATED_NOT_EQUIVALENT: ArbitrageLabel.NOT_GUARANTEED,
+    EquivalenceVerdict.REJECTED: ArbitrageLabel.NOT_GUARANTEED,
 }
 
 
@@ -50,26 +60,32 @@ def scan_cross_platform(
     book_a: OrderBook,
     market_b: NormalizedMarket,
     book_b: OrderBook,
-    verdict: MatchVerdict,
+    verdict: MatchVerdict | EquivalenceScore,
     *,
     market_a_id: int | None = None,
     market_b_id: int | None = None,
     match_id: int | None = None,
     max_sets: Decimal = Decimal("10000"),
 ) -> ArbitrageResult | None:
-    """Scan both leg orientations of a matched pair and return the better one."""
-    if verdict.rule_compatibility == RuleCompatibility.INCOMPATIBLE:
+    """Scan both leg orientations of a matched pair and return the better one.
+
+    Accepts an :class:`EquivalenceScore`. A bare ``MatchVerdict`` is still accepted and
+    upgraded, so existing callers keep working, but the *decision* is always made on
+    the equivalence verdict - the scanner no longer reads RuleCompatibility directly.
+    """
+    score = _as_equivalence(verdict)
+    if score.verdict is EquivalenceVerdict.REJECTED:
         return None
 
     best: ArbitrageResult | None = None
     for side_a, side_b in ((Side.YES, Side.NO), (Side.NO, Side.YES)):
         # Inverted polarity means the other venue's YES corresponds to this one's NO,
         # so the hedging leg is the *same* nominal side rather than the opposite.
-        effective_b = _flip(side_b) if verdict.polarity_inverted else side_b
+        effective_b = _flip(side_b) if score.polarity_inverted else side_b
         result = _scan_orientation(
             market_a, book_a, side_a,
             market_b, book_b, effective_b,
-            verdict,
+            score,
             market_a_id=market_a_id, market_b_id=market_b_id,
             match_id=match_id, max_sets=max_sets,
         )
@@ -84,6 +100,36 @@ def _flip(side: Side) -> Side:
     return Side.NO if side == Side.YES else Side.YES
 
 
+def _as_equivalence(verdict: MatchVerdict | EquivalenceScore) -> EquivalenceScore:
+    """Normalise the input so the scanner only ever decides on an equivalence verdict.
+
+    A bare MatchVerdict carries no component breakdown, so cancellation status is
+    unknown by construction - it maps to STANDARD at best, never STRICT. That is the
+    conservative reading and it means a caller cannot obtain a guaranteed-arbitrage
+    label by passing the older, less informative type.
+    """
+    if isinstance(verdict, EquivalenceScore):
+        return verdict
+
+    mapped = {
+        RuleCompatibility.IDENTICAL: EquivalenceVerdict.VERIFIED_EQUIVALENT_STANDARD,
+        RuleCompatibility.EQUIVALENT: EquivalenceVerdict.PROBABLE_MATCH,
+        RuleCompatibility.SIMILAR: EquivalenceVerdict.RELATED_NOT_EQUIVALENT,
+        RuleCompatibility.INCOMPATIBLE: EquivalenceVerdict.REJECTED,
+    }[verdict.rule_compatibility]
+    return EquivalenceScore(
+        verdict=mapped,
+        components=[],
+        rule_compatibility=verdict.rule_compatibility,
+        match_confidence=verdict.match_confidence,
+        polarity_inverted=verdict.polarity_inverted,
+        outcome_mapping=verdict.outcome_mapping,
+        resolution_hash_a=verdict.resolution_hash_a,
+        resolution_hash_b=verdict.resolution_hash_b,
+        reasons=list(verdict.mismatch_reasons),
+    )
+
+
 def _scan_orientation(
     market_a: NormalizedMarket,
     book_a: OrderBook,
@@ -91,7 +137,7 @@ def _scan_orientation(
     market_b: NormalizedMarket,
     book_b: OrderBook,
     side_b: Side,
-    verdict: MatchVerdict,
+    score: EquivalenceScore,
     *,
     market_a_id: int | None,
     market_b_id: int | None,
@@ -113,10 +159,30 @@ def _scan_orientation(
     if sets <= 0:
         return None
 
+    # Both legs are priced through the multi-leg simulator so the fill detail comes
+    # from one place, and so the BINDING leg is identified. The pair-walk above
+    # decides how many sets are worth buying (it stops once the two asks sum to $1);
+    # the simulator then reports what each leg actually achieves at that size and
+    # what, if anything, is left unfilled.
+    basket = simulate_basket(
+        [
+            LegRequest(label=f"{market_a.platform.value}:{side_a.value}", book=book_a, side=side_a),
+            LegRequest(label=f"{market_b.platform.value}:{side_b.value}", book=book_b, side=side_b),
+        ],
+        sets,
+    )
+    if basket.executable_units <= 0:
+        return None
+    # A basket that cannot fill both legs at the walked size is not a smaller
+    # arbitrage - it is a naked position on whichever leg did fill. Size down to what
+    # both legs support rather than reporting an edge that needs an unfillable leg.
+    sets = basket.executable_units
+
     quote_a = executable_quote(book_a, side_a, sets)
     quote_b = executable_quote(book_b, side_b, sets)
     if quote_a is None or quote_b is None:
         return None
+    gross_cost = basket.total_cost
 
     fee_a = taker_fee(
         market_a.platform, sets, quote_a.average_price,
@@ -157,6 +223,23 @@ def _scan_orientation(
     if net_profit <= 0:
         return None
 
+    # Minimum-edge gate, tiered by venue span and liquidity.
+    #
+    # Previously any positive net profit qualified, which is too weak for a
+    # cross-venue trade: a fraction of a cent of modelled edge does not cover the
+    # risks that are NOT in the cost stack - a venue halting, a rule reading that
+    # turns out to differ, or one leg filling while the other is pulled. The tiers
+    # live in Settings so the engine's risk appetite is readable in one place.
+    worst_leg_depth = min(
+        depth_usd(book_a, side_a), depth_usd(book_b, side_b)
+    )
+    required_edge = settings.min_arbitrage_edge(
+        cross_platform=True, depth_usd=worst_leg_depth
+    )
+    achieved_edge = safe_div(net_profit, total_cost)
+    if achieved_edge < required_edge:
+        return None
+
     per_set_total = safe_div(total_cost, sets)
     per_set_gross = safe_div(gross_cost, sets)
 
@@ -164,10 +247,26 @@ def _scan_orientation(
     age_b = age_seconds(book_b.observed_at)
     worst_age = max([a for a in (age_a, age_b) if a is not None], default=None)
 
-    label = _LABEL_FOR_COMPATIBILITY[verdict.rule_compatibility]
-    risk_flags = list(verdict.mismatch_reasons)
+    label = _LABEL_FOR_VERDICT[score.verdict]
+    risk_flags = list(score.reasons)
 
-    if verdict.rule_compatibility != RuleCompatibility.IDENTICAL:
+    if score.verdict is EquivalenceVerdict.VERIFIED_EQUIVALENT_STANDARD:
+        risk_flags.insert(
+            0,
+            "payout terms match, but cancellation and postponement handling could not "
+            "be confirmed on both venues; if one leg voids while the other settles, "
+            "both can lose. NOT a guaranteed profit",
+        )
+
+    # Name the leg that limits the trade. Without it a reader sees a size but not
+    # which venue they will struggle to fill, which is the operationally useful part.
+    if basket.binding_leg:
+        risk_flags.append(
+            f"size is limited by {basket.binding_leg}, which supports "
+            f"{basket.executable_units} of the walked size"
+        )
+
+    if not score.verdict.allows_hedged_position:
         risk_flags.insert(
             0,
             "settlement rules are not an exact match; this is NOT a guaranteed profit",
@@ -231,7 +330,8 @@ def _scan_orientation(
         max_net_profit=quantize_usd(net_profit),
         capital_required=quantize_usd(total_cost),
         net_roi=quantize_usd(safe_div(net_profit, total_cost)),
-        rule_compatibility=verdict.rule_compatibility,
+        rule_compatibility=score.rule_compatibility,
+        equivalence_verdict=score.verdict.value,
         risk_flags=risk_flags,
         quote_age_seconds=int(worst_age) if worst_age is not None else None,
         expected_resolution_time=later_resolution,
@@ -244,7 +344,12 @@ def _scan_orientation(
             "capital_cost": str(quantize_usd(capital)),
             "execution_risk": str(quantize_usd(execution_risk)),
             "payout": str(quantize_usd(payout)),
-            "match_confidence": str(verdict.match_confidence),
+            "match_confidence": str(score.match_confidence),
+            "equivalence_verdict": score.verdict.value,
+            "cancellation_status": next(
+                (c.result.value for c in score.components if c.name == "cancellation"),
+                "unknown",
+            ),
         },
         match_id=match_id,
         provenance=market_a.provenance,

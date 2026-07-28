@@ -542,6 +542,9 @@ class ArbitrageOpportunity(Base, TimestampMixin):
     capital_required: Mapped[Decimal] = mapped_column(Money, nullable=False, default=Decimal("0"))
     net_roi: Mapped[Decimal] = mapped_column(Money, nullable=False, default=Decimal("0"))
     rule_compatibility: Mapped[str] = mapped_column(String(24), nullable=False, default="")
+    #: Public equivalence verdict; only VERIFIED_EQUIVALENT_STRICT licenses a
+    #: guaranteed-arbitrage claim.
+    equivalence_verdict: Mapped[str] = mapped_column(String(32), nullable=False, default="")
     match_id: Mapped[int | None] = mapped_column(
         ForeignKey("market_matches.id", ondelete="SET NULL"), nullable=True
     )

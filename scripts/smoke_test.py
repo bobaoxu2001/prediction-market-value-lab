@@ -37,6 +37,8 @@ API_CHECKS: tuple[tuple[str, str | None], ...] = (
     ("/case-study?mode=demo&result=winner", "data"),
     ("/case-study?mode=demo&result=loser", "data"),
     ("/arbitrage", None),
+    ("/arbitrage?view=actionable", None),
+    ("/arbitrage?view=diagnostics", None),
     ("/markets?limit=5", "data"),
 )
 
