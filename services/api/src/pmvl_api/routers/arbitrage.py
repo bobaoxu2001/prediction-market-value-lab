@@ -14,7 +14,7 @@ from pmvl_shared.enums import (
     classify_arbitrage_label,
 )
 
-from pmvl_markets.db_models import ArbitrageOpportunity
+from pmvl_markets.db_models import ArbitrageOpportunity, JobRun
 
 from ..deps import DataMode, DbDep, ModeDep, apply_provenance, envelope
 
@@ -78,11 +78,14 @@ def list_arbitrage(
             mode,
         ).limit(1)
     )
+    diagnostics = _matching_diagnostics(db)
+
     if not latest_batch:
         return envelope(
             [], mode,
             batch_id=None,
             label_meanings=LABEL_MEANINGS,
+            matching_diagnostics=diagnostics,
             empty_reason=(
                 "No arbitrage scan has run yet, or the most recent scan found nothing. "
                 "Finding nothing is the normal result: both venues are actively "
@@ -150,4 +153,34 @@ def list_arbitrage(
         count=len(rows),
         counts_by_label=counts,
         label_meanings=LABEL_MEANINGS,
+        matching_diagnostics=diagnostics,
     )
+
+
+def _matching_diagnostics(db: Session) -> dict[str, Any] | None:
+    """Why cross-platform pairs failed to reach equivalence on the last scan.
+
+    Zero cross-platform arbitrage is either a finding about the venues or a gap in
+    rule parsing, and the two are indistinguishable from the outside. Surfacing the
+    histogram is what lets a reader tell which one they are looking at instead of
+    taking the empty list on trust.
+    """
+    row = db.scalar(
+        select(JobRun)
+        .where(JobRun.job_name == "arbitrage")
+        .order_by(JobRun.started_at.desc())
+        .limit(1)
+    )
+    histogram = (row.details or {}).get("demotion_histogram") if row else None
+    if not histogram:
+        return None
+    return {
+        "ran_at": row.started_at,
+        "pairs_examined": histogram.get("pairs_examined"),
+        "verified_equivalent": histogram.get("verified_equivalent"),
+        "blocked_only_by_missing_info": histogram.get("blocked_only_by_missing_info"),
+        "missing_information_count": histogram.get("missing_information_count"),
+        "contradiction_count": histogram.get("contradiction_count"),
+        "top_reasons": (histogram.get("by_code") or [])[:8],
+        "diagnosis": histogram.get("diagnosis"),
+    }

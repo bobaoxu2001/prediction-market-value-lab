@@ -22,6 +22,7 @@ from ..db_models import ArbitrageOpportunity, Event, Market, MarketMatch, PriceS
 from ..ingest.runner import _market_from_row
 from ..ingest.store import latest_orderbook, orderbook_from_snapshot
 from ..matching.candidates import generate_candidates
+from ..matching.histogram import DemotionHistogram
 from ..matching.verify import MatchVerdict, verify_match
 from .complete_set import scan_complete_set
 from .cross_platform import scan_cross_platform
@@ -38,6 +39,10 @@ class ArbitrageReport:
     markets_examined: int = 0
     matches_verified: int = 0
     matches_identical: int = 0
+    #: Why candidate pairs failed to reach equivalence. Zero cross-platform matches is
+    #: either a finding about the venues or a gap in rule parsing, and those look
+    #: identical from the outside - this is what tells them apart.
+    demotion_histogram: dict[str, Any] = field(default_factory=dict)
     opportunities: dict[str, int] = field(default_factory=dict)
     by_label: dict[str, int] = field(default_factory=dict)
     errors: list[str] = field(default_factory=list)
@@ -48,6 +53,7 @@ class ArbitrageReport:
             "markets_examined": self.markets_examined,
             "matches_verified": self.matches_verified,
             "matches_identical": self.matches_identical,
+            "demotion_histogram": self.demotion_histogram,
             "opportunities": self.opportunities,
             "by_label": self.by_label,
             "errors": self.errors,
@@ -112,6 +118,7 @@ def refresh_matches(
     pairs: Sequence[tuple[Market, NormalizedMarket]],
     *,
     max_pairs: int = 4000,
+    histogram_out: DemotionHistogram | None = None,
 ) -> list[tuple[MarketMatch, MatchVerdict]]:
     """Generate, verify and persist cross-platform matches.
 
@@ -133,9 +140,14 @@ def refresh_matches(
 
     candidates = generate_candidates(kalshi, polymarket)[:max_pairs]
     stored: list[tuple[MarketMatch, MatchVerdict]] = []
+    histogram = histogram_out if histogram_out is not None else DemotionHistogram()
 
     for candidate in candidates:
         verdict = verify_match(candidate)
+        # Record EVERY verdict, including rejections. The rejected pairs are the
+        # informative ones: they are what distinguishes "these venues do not list the
+        # same contracts" from "the parser cannot read the rules".
+        histogram.add(verdict)
         if verdict.rule_compatibility == RuleCompatibility.INCOMPATIBLE:
             continue
         key_a, key_b = candidate.key
@@ -249,11 +261,16 @@ def run_arbitrage_scan(
     # ---- 2. cross-platform -------------------------------------------------
     # Matched over every open market, not just those with books, so that markets
     # without a fetched orderbook still gain an independent cross-venue prior.
-    matches = refresh_matches(session, load_matchable_markets(session, now=now))
+    histogram = DemotionHistogram()
+    matches = refresh_matches(
+        session, load_matchable_markets(session, now=now), histogram_out=histogram
+    )
     report.matches_verified = len(matches)
     report.matches_identical = sum(
         1 for _, v in matches if v.rule_compatibility == RuleCompatibility.IDENTICAL
     )
+    report.demotion_histogram = histogram.as_dict()
+    log.info("cross-platform matching: %s", histogram.diagnosis)
 
     by_id = {row.id: (row, market, book) for row, market, book in triples}
     for match_row, verdict in matches:

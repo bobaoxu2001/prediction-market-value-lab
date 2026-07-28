@@ -109,6 +109,41 @@ venue that *is* read but where the contract is absent returns `CONFIRMED_UNAVAIL
 — a real answer rather than ignorance, and the distinction matters because only one of
 the two is evidence.
 
+## What the demotion histogram found
+
+The scanner reports zero cross-platform arbitrage. That is either a finding about the
+venues or a gap in rule parsing, and the two are indistinguishable from the outside,
+so `verify_match` emits a stable `DemotionCode` for every demotion and the pipeline
+aggregates them.
+
+On a live scan of 9,978 open Kalshi markets against 979 Polymarket markets, candidate
+generation proposed 109 pairs plausible enough to verify. **All 109 were rejected, and
+99% of demotions were genuine contradictions rather than missing information.** Not a
+single pair was blocked *only* by fields the parser could not establish, so better
+rule extraction would not promote any of them.
+
+| Demotion reason | Pairs | Kind |
+|---|---:|---|
+| Measurement basis differs | 106 | contradiction |
+| Settlement source differs | 106 | contradiction |
+| Threshold differs | 104 | contradiction |
+| Cutoff drift (hours) | 81 | contradiction |
+| Low title similarity | 79 | contradiction |
+| Cutoff differs (days) | 28 | contradiction |
+| Comparator incompatible | 26 | contradiction |
+| *All missing-information codes* | **4** | missing information |
+
+The reading: where these two venues list superficially similar contracts, they
+systematically differ on *what is measured*, *who measures it*, and *at what level* —
+the three terms that decide who gets paid. Zero verified-equivalent pairs is a
+property of the market structure, not a shortfall of the matcher.
+
+**Caveat.** 109 is the count of pairs that survived candidate generation, not an
+exhaustive search of the 9.8M possible pairings. If the candidate generator's
+similarity filter is too aggressive, genuinely equivalent pairs could be discarded
+before verification ever sees them. Measuring that recall is the natural next step,
+and until it is measured this is evidence rather than proof.
+
 ## Limitations
 
 - The hosted demo serves a frozen snapshot, not a live feed.
@@ -119,6 +154,8 @@ the two is evidence.
 - Real track record requires calendar time to accumulate; current settled counts are
   too small to separate skill from luck, and the UI says so.
 - No hosted Postgres and no continuous ingest.
+- Candidate-generation recall is unmeasured, so the zero-match result is evidence
+  rather than proof (see the caveat above).
 
 ## Not claimed
 

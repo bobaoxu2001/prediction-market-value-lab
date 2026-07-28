@@ -28,6 +28,7 @@ Compatibility ladder
 from __future__ import annotations
 
 from dataclasses import dataclass, field
+from enum import StrEnum
 from datetime import timedelta
 from decimal import Decimal
 from typing import Sequence
@@ -58,6 +59,52 @@ _CONTINUOUS_EQUIVALENT = {("gt", "gte"), ("gte", "gt"), ("lt", "lte"), ("lte", "
 _OPPOSITE = {("gt", "lte"), ("lte", "gt"), ("gte", "lt"), ("lt", "gte")}
 
 
+class DemotionCode(StrEnum):
+    """Stable identifier for why a pair was demoted.
+
+    The human-readable reasons carry numbers and are written to be read once; a
+    histogram built by pattern-matching that prose would break the moment the wording
+    changed. These codes are the thing aggregation keys on, so they must stay stable
+    even when the message text is reworded.
+    """
+
+    ENTITY_MISMATCH = "entity_mismatch"
+    LOW_TITLE_SIMILARITY = "low_title_similarity"
+    LOW_ENTITY_OVERLAP = "low_entity_overlap"
+    THRESHOLD_DIFFERS = "threshold_differs"
+    THRESHOLD_UNKNOWN = "threshold_unknown"
+    COMPARATOR_INCOMPATIBLE = "comparator_incompatible"
+    COMPARATOR_UNKNOWN = "comparator_unknown"
+    MEASUREMENT_BASIS_DIFFERS = "measurement_basis_differs"
+    MEASUREMENT_BASIS_UNKNOWN = "measurement_basis_unknown"
+    CUTOFF_UNKNOWN = "cutoff_unknown"
+    CUTOFF_DRIFT_HOURS = "cutoff_drift_hours"
+    CUTOFF_DIFFERS_DAYS = "cutoff_differs_days"
+    SOURCE_DIFFERS = "source_differs"
+    SOURCE_UNKNOWN = "source_unknown"
+    OVERTIME_DIFFERS = "overtime_differs"
+    REVISION_DIFFERS = "revision_differs"
+    DIGEST_DIFFERS = "digest_differs"
+
+    @property
+    def is_missing_information(self) -> bool:
+        """Whether this is absent evidence rather than a contradiction.
+
+        The distinction is what makes the histogram actionable. A pile of
+        *_UNKNOWN codes means the rule parser is not extracting a field, which is a
+        fixable engineering gap. A pile of *_DIFFERS codes means the contracts really
+        do settle differently, which is a finding about the venues rather than a bug.
+        """
+        return self in (
+            DemotionCode.THRESHOLD_UNKNOWN,
+            DemotionCode.COMPARATOR_UNKNOWN,
+            DemotionCode.MEASUREMENT_BASIS_UNKNOWN,
+            DemotionCode.CUTOFF_UNKNOWN,
+            DemotionCode.SOURCE_UNKNOWN,
+            DemotionCode.DIGEST_DIFFERS,
+        )
+
+
 @dataclass
 class MatchVerdict:
     """The outcome of verifying one candidate pair."""
@@ -69,6 +116,8 @@ class MatchVerdict:
     polarity_inverted: bool
     outcome_mapping: dict[str, str]
     mismatch_reasons: list[str] = field(default_factory=list)
+    #: Stable codes parallel to ``mismatch_reasons``, for aggregation.
+    demotion_codes: list[str] = field(default_factory=list)
     resolution_hash_a: str = ""
     resolution_hash_b: str = ""
 
@@ -290,12 +339,14 @@ def verify_match(candidate: MatchCandidate) -> MatchVerdict:
     rules_a, rules_b = rules_for(a), rules_for(b)
 
     reasons: list[str] = []
+    codes: list[str] = []
     level = RuleCompatibility.IDENTICAL
     polarity_inverted = False
 
-    def demote(to: RuleCompatibility, reason: str) -> None:
+    def demote(to: RuleCompatibility, code: DemotionCode, reason: str) -> None:
         nonlocal level
         reasons.append(reason)
+        codes.append(code.value)
         order = [
             RuleCompatibility.IDENTICAL,
             RuleCompatibility.EQUIVALENT,
@@ -315,6 +366,7 @@ def verify_match(candidate: MatchCandidate) -> MatchVerdict:
     if unmatched:
         demote(
             RuleCompatibility.INCOMPATIBLE,
+            DemotionCode.ENTITY_MISMATCH,
             "proper nouns present on only one side: " + ", ".join(sorted(unmatched)[:4]),
         )
 
@@ -322,11 +374,13 @@ def verify_match(candidate: MatchCandidate) -> MatchVerdict:
     if candidate.token_similarity < 0.35:
         demote(
             RuleCompatibility.SIMILAR,
+            DemotionCode.LOW_TITLE_SIMILARITY,
             f"low title similarity ({candidate.token_similarity:.2f})",
         )
     if candidate.entity_overlap < 0.3:
         demote(
             RuleCompatibility.SIMILAR,
+            DemotionCode.LOW_ENTITY_OVERLAP,
             f"low entity overlap ({candidate.entity_overlap:.2f})",
         )
 
@@ -335,6 +389,7 @@ def verify_match(candidate: MatchCandidate) -> MatchVerdict:
     if threshold_verdict == "differ":
         demote(
             RuleCompatibility.INCOMPATIBLE,
+            DemotionCode.THRESHOLD_DIFFERS,
             f"different thresholds ({rules_a.threshold} vs {rules_b.threshold})",
         )
     elif threshold_verdict == "unknown":
@@ -342,6 +397,7 @@ def verify_match(candidate: MatchCandidate) -> MatchVerdict:
         # but this is missing information rather than a contradiction.
         demote(
             RuleCompatibility.SIMILAR,
+            DemotionCode.THRESHOLD_UNKNOWN,
             f"threshold not established on both sides "
             f"({rules_a.threshold} vs {rules_b.threshold})",
         )
@@ -354,13 +410,18 @@ def verify_match(candidate: MatchCandidate) -> MatchVerdict:
     if not compatible:
         demote(
             RuleCompatibility.INCOMPATIBLE,
+            DemotionCode.COMPARATOR_INCOMPATIBLE,
             f"incompatible comparators ({rules_a.comparator} vs {rules_b.comparator})",
         )
     polarity_inverted = inverted
     if inverted:
         reasons.append("YES/NO polarity is inverted between venues")
     if not rules_a.comparator or not rules_b.comparator:
-        demote(RuleCompatibility.EQUIVALENT, "comparator could not be established on one side")
+        demote(
+            RuleCompatibility.EQUIVALENT,
+            DemotionCode.COMPARATOR_UNKNOWN,
+            "comparator could not be established on one side",
+        )
 
     # ---- measurement basis ----------------------------------------------
     sem_a, sem_b = rules_a.threshold_semantics, rules_b.threshold_semantics
@@ -368,11 +429,13 @@ def verify_match(candidate: MatchCandidate) -> MatchVerdict:
         # "closes above" vs "touches intraday" are genuinely different questions.
         demote(
             RuleCompatibility.INCOMPATIBLE,
+            DemotionCode.MEASUREMENT_BASIS_DIFFERS,
             f"different measurement basis ({sem_a} vs {sem_b})",
         )
     elif bool(sem_a) != bool(sem_b):
         demote(
             RuleCompatibility.EQUIVALENT,
+            DemotionCode.MEASUREMENT_BASIS_UNKNOWN,
             f"measurement basis stated on only one side ({sem_a or sem_b})",
         )
 
@@ -380,19 +443,25 @@ def verify_match(candidate: MatchCandidate) -> MatchVerdict:
     delta = cutoff_delta(rules_a, rules_b)
     if delta is None:
         time_compatibility = D("0.5")
-        demote(RuleCompatibility.EQUIVALENT, "cutoff time unknown on at least one side")
+        demote(
+            RuleCompatibility.EQUIVALENT,
+            DemotionCode.CUTOFF_UNKNOWN,
+            "cutoff time unknown on at least one side",
+        )
     elif delta <= IDENTICAL_CUTOFF_TOLERANCE:
         time_compatibility = D(1)
     elif delta <= EQUIVALENT_CUTOFF_TOLERANCE:
         time_compatibility = D("0.7")
         demote(
             RuleCompatibility.EQUIVALENT,
+            DemotionCode.CUTOFF_DRIFT_HOURS,
             f"cutoffs differ by {delta.total_seconds() / 3600:.1f}h",
         )
     else:
         time_compatibility = ZERO
         demote(
             RuleCompatibility.INCOMPATIBLE,
+            DemotionCode.CUTOFF_DIFFERS_DAYS,
             f"cutoffs differ by {delta.total_seconds() / 86400:.1f} days",
         )
 
@@ -406,12 +475,14 @@ def verify_match(candidate: MatchCandidate) -> MatchVerdict:
         # different index methodology), so this is a material difference.
         demote(
             RuleCompatibility.SIMILAR,
+            DemotionCode.SOURCE_DIFFERS,
             f"different settlement sources ({fam_a} vs {fam_b})",
         )
     else:
         source_compatibility = D("0.4")
         demote(
             RuleCompatibility.EQUIVALENT,
+            DemotionCode.SOURCE_UNKNOWN,
             "settlement source could not be identified on at least one side",
         )
 
@@ -421,13 +492,21 @@ def verify_match(candidate: MatchCandidate) -> MatchVerdict:
         and rules_b.includes_overtime is not None
         and rules_a.includes_overtime != rules_b.includes_overtime
     ):
-        demote(RuleCompatibility.INCOMPATIBLE, "overtime inclusion differs")
+        demote(
+            RuleCompatibility.INCOMPATIBLE,
+            DemotionCode.OVERTIME_DIFFERS,
+            "overtime inclusion differs",
+        )
     if (
         rules_a.uses_revised_data is not None
         and rules_b.uses_revised_data is not None
         and rules_a.uses_revised_data != rules_b.uses_revised_data
     ):
-        demote(RuleCompatibility.SIMILAR, "revised-data treatment differs")
+        demote(
+            RuleCompatibility.SIMILAR,
+            DemotionCode.REVISION_DIFFERS,
+            "revised-data treatment differs",
+        )
 
     # ---- digest ----------------------------------------------------------
     if level == RuleCompatibility.IDENTICAL and rules_a.resolution_hash != rules_b.resolution_hash:
@@ -435,6 +514,7 @@ def verify_match(candidate: MatchCandidate) -> MatchVerdict:
         # explicit checks do not cover differs. Refuse the risk-free claim.
         demote(
             RuleCompatibility.EQUIVALENT,
+            DemotionCode.DIGEST_DIFFERS,
             "normalized rule digests differ despite matching individual terms",
         )
 
@@ -455,6 +535,7 @@ def verify_match(candidate: MatchCandidate) -> MatchVerdict:
         polarity_inverted=polarity_inverted,
         outcome_mapping=outcome_mapping,
         mismatch_reasons=reasons,
+        demotion_codes=codes,
         resolution_hash_a=rules_a.resolution_hash,
         resolution_hash_b=rules_b.resolution_hash,
     )
