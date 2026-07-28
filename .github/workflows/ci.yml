@@ -1,0 +1,93 @@
+name: CI
+
+# A green Vercel build proves the frontend compiles. It proves nothing about the
+# Python tests, the snapshot the API boots from, or whether demo data can leak into a
+# live surface - all of which have broken production at least once on this project.
+on:
+  push:
+    branches: [main, "improve-*"]
+  pull_request:
+    branches: [main]
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  python:
+    name: Python tests
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: pip
+      - name: Install
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+          pip install -e packages/shared -e packages/market-normalization \
+                      -e services/api -e services/worker
+      - name: Tests
+        run: pytest -q
+      - name: Compile check
+        run: python -m compileall -q packages services scripts
+
+  snapshot:
+    name: Snapshot integrity
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: pip
+      - name: Install
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+          pip install -e packages/shared -e packages/market-normalization -e services/api
+      - name: Validate the committed snapshot
+        # Three failures that each took production down: the snapshot missing from the
+        # bundle, the snapshot in WAL mode (unopenable read-only on a serverless
+        # mount), and the snapshot present but unable to answer the API's queries.
+        run: python scripts/validate_snapshot.py
+
+  frontend:
+    name: Frontend build
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: apps/web
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: npm
+          cache-dependency-path: apps/web/package-lock.json
+      - run: npm ci
+      - name: Typecheck
+        run: npx tsc --noEmit
+      - name: Production build
+        run: npm run build
+
+  secrets:
+    name: Secret scan
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Refuse committed credentials
+        run: |
+          set -e
+          if git ls-files | grep -qE '(^|/)\.env$|\.pem$|\.key$'; then
+            echo "A credential file is tracked in git."
+            exit 1
+          fi
+          # .env.example must stay a template.
+          if grep -qE '^(ANTHROPIC_API_KEY|KALSHI_API_KEY_ID)=.+' .env.example; then
+            echo ".env.example contains a real-looking value."
+            exit 1
+          fi
+          echo "No tracked credentials."

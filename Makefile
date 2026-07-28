@@ -134,6 +134,9 @@ WEB_URL ?= https://pmvl-web.vercel.app
 snapshot-build: ## Build + verify the deployable demo snapshot (deterministic)
 	$(PY) scripts/build_demo_snapshot.py --from-live
 
+validate-snapshot: ## Check the committed snapshot can actually serve the API
+	$(PY) scripts/validate_snapshot.py
+
 smoke: ## Smoke-test the deployed API and web app
 	$(PY) scripts/smoke_test.py --api $(API_URL) --web $(WEB_URL)
 
@@ -141,6 +144,7 @@ smoke-api: ## Smoke-test the deployed API only
 	$(PY) scripts/smoke_test.py --api $(API_URL)
 
 deploy-api: snapshot-build ## Build the snapshot, deploy the API, verify it answers
+	$(MAKE) validate-snapshot
 	vercel deploy --prod --yes
 	@echo "waiting for the deployment to become reachable..."
 	@sleep 10
