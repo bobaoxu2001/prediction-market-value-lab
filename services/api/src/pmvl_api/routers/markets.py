@@ -30,6 +30,7 @@ from pmvl_markets.db_models import (
 )
 
 from ..deps import DataMode, DbDep, ModeDep, apply_provenance, envelope
+from ..quotes import coherent_quote
 
 router = APIRouter(prefix="/markets", tags=["markets"])
 
@@ -65,7 +66,7 @@ def _venue_availability(market: Market) -> list[dict[str, Any]]:
     return rows
 
 
-def _market_row(market: Market) -> dict[str, Any]:
+def _market_row(market: Market, quote=None) -> dict[str, Any]:  # noqa: ANN001
     horizons = horizons_for(market.expected_resolution_time)
     return {
         "id": market.id,
@@ -76,12 +77,19 @@ def _market_row(market: Market) -> dict[str, Any]:
         "category": market.category,
         "status": market.status,
         "accepting_orders": market.accepting_orders,
-        "best_yes_bid": market.best_yes_bid,
-        "best_yes_ask": market.best_yes_ask,
-        "best_no_bid": market.best_no_bid,
-        "best_no_ask": market.best_no_ask,
-        "spread": market.spread,
-        "orderbook_depth_usd": market.orderbook_depth_usd,
+        # Every price on a row comes from ONE observation. Rendering the venue
+        # summary next to a book that was captured two days later showed three
+        # different prices for one contract with no way to tell which to believe.
+        "best_yes_bid": quote.best_yes_bid if quote else market.best_yes_bid,
+        "best_yes_ask": quote.best_yes_ask if quote else market.best_yes_ask,
+        "best_no_bid": quote.best_no_bid if quote else market.best_no_bid,
+        "best_no_ask": quote.best_no_ask if quote else market.best_no_ask,
+        "spread": quote.spread if quote else market.spread,
+        "orderbook_depth_usd": (
+            quote.yes_depth_usd if quote else market.orderbook_depth_usd
+        ),
+        "quote_source": quote.source if quote else "venue_summary",
+        "quote_is_stale_summary": bool(quote and quote.summary_disagrees),
         "volume_24h": market.volume_24h,
         "total_volume": market.total_volume,
         "open_interest": market.open_interest,
@@ -91,7 +99,9 @@ def _market_row(market: Market) -> dict[str, Any]:
         "close_time": market.close_time,
         "expected_resolution_time": market.expected_resolution_time,
         "horizon": horizons[0] if horizons else None,
-        "quote_observed_at": market.quote_observed_at,
+        "quote_observed_at": (
+            quote.observed_at if quote else market.quote_observed_at
+        ),
         "result": market.result,
         "provenance": market.provenance,
         # Availability travels with the row so a list can show it without an N+1
@@ -166,7 +176,7 @@ def list_markets(
     rows = list(db.scalars(stmt.offset(offset).limit(limit * 3 if horizon else limit)))
     out = []
     for market in rows:
-        row = _market_row(market)
+        row = _market_row(market, coherent_quote(db, market))
         if horizon and row["horizon"] != horizon:
             continue
         out.append(row)
@@ -196,6 +206,7 @@ def market_detail(
     if market is None:
         raise HTTPException(status_code=404, detail="market not found")
 
+    quote = coherent_quote(db, market)
     rule = db.scalar(select(MarketRule).where(MarketRule.market_id == market_id))
 
     snapshot = db.scalar(
@@ -348,7 +359,7 @@ def market_detail(
     return envelope(
         {
             "market": {
-                **_market_row(market),
+                **_market_row(market, quote),
                 "description": market.description,
                 "settlement_source": market.settlement_source,
                 "settlement_rules_raw": market.settlement_rules_raw,
@@ -367,6 +378,7 @@ def market_detail(
                 "condition_id": market.condition_id,
                 "venue_availability": _venue_availability(market),
             },
+            "quote": quote.as_dict(),
             "rule": {
                 "threshold_semantics": rule.threshold_semantics,
                 "threshold_value": rule.threshold_value,

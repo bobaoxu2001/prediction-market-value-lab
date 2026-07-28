@@ -26,6 +26,38 @@ SNAPSHOT = ROOT / "data" / "pmvl-snapshot.db"
 MAX_BYTES = 40 * 1024 * 1024
 
 
+def _restore_rollback_journal() -> None:
+    """Put the file back into rollback-journal mode and drop any sidecars."""
+    try:
+        from pmvl_shared.db import get_engine
+
+        get_engine().dispose()
+    except Exception:  # noqa: BLE001
+        pass
+    con = sqlite3.connect(SNAPSHOT)
+    con.execute("PRAGMA journal_mode=DELETE")
+    con.commit()
+    con.close()
+    for suffix in ("-wal", "-shm"):
+        sidecar = SNAPSHOT.with_name(SNAPSHOT.name + suffix)
+        if sidecar.exists():
+            sidecar.unlink()
+
+
+def select_markets_with_books():  # noqa: ANN201
+    """Markets that have at least one captured order book."""
+    from sqlalchemy import select
+
+    from pmvl_markets.db_models import Market, OrderbookSnapshot
+
+    return (
+        select(Market)
+        .join(OrderbookSnapshot, OrderbookSnapshot.market_id == Market.id)
+        .distinct()
+        .limit(120)
+    )
+
+
 def main() -> int:
     problems: list[str] = []
 
@@ -92,6 +124,54 @@ def main() -> int:
                 problems.append(f"{route} -> 200 but '{key}' is empty")
     except Exception as exc:  # noqa: BLE001
         problems.append(f"API could not serve the snapshot: {type(exc).__name__}: {exc}")
+
+    # Quote coherence: whatever the API serves as a market's price must match the
+    # order book it also serves for that market. Three different prices for one
+    # contract on one page is not a crash, so nothing else here would catch it.
+    try:
+        from pmvl_shared.db import session_scope
+        from pmvl_markets.db_models import Market
+
+        from pmvl_api.quotes import coherent_quote
+
+        with session_scope() as session:
+            checked = incoherent = 0
+            for market in session.scalars(select_markets_with_books()).all():
+                quote = coherent_quote(session, market)
+                if quote.source != "orderbook":
+                    continue
+                checked += 1
+                response = client.get(f"/markets/{market.id}")
+                if response.status_code != 200:
+                    continue
+                payload = response.json()["data"]
+                served = payload["market"].get("best_yes_ask")
+                book = (payload.get("orderbook") or {}).get("yes_asks") or []
+                if not book:
+                    continue
+                if served is not None and str(served) != str(book[0]["price"]):
+                    incoherent += 1
+                    if incoherent <= 3:
+                        problems.append(
+                            f"market {market.id}: served ask {served} != book ask "
+                            f"{book[0]['price']}"
+                        )
+            if incoherent:
+                problems.append(
+                    f"{incoherent} of {checked} markets serve a price that disagrees "
+                    "with their own order book"
+                )
+    except Exception as exc:  # noqa: BLE001
+        problems.append(f"quote-coherence check failed: {type(exc).__name__}: {exc}")
+
+    # Opening the snapshot through SQLAlchemy sets journal_mode=WAL, so simply
+    # RUNNING this validator used to leave the artefact unopenable read-only - the
+    # check corrupting the thing it checks. Restore it, then re-assert from the file
+    # header so a genuine WAL commit is still caught above.
+    _restore_rollback_journal()
+    header = SNAPSHOT.open("rb").read(20)
+    if header[18] == 2 or header[19] == 2:
+        problems.append("snapshot is still in WAL mode after the restore attempt")
 
     if problems:
         print("SNAPSHOT VALIDATION FAILED:")
