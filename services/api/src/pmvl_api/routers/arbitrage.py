@@ -9,9 +9,11 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from pmvl_shared.enums import (
+    ACTIONABLE_ARBITRAGE_LABELS,
     ArbitrageKind,
     ArbitrageLabel,
     classify_arbitrage_label,
+    is_actionable_label,
 )
 
 from pmvl_markets.db_models import ArbitrageOpportunity, JobRun
@@ -64,6 +66,17 @@ LABEL_MEANINGS: dict[str, str] = {
 def list_arbitrage(
     kind: ArbitrageKind | None = Query(None),
     label: ArbitrageLabel | None = Query(None),
+    view: str = Query(
+        "all",
+        pattern="^(all|actionable|diagnostics)$",
+        description=(
+            "'actionable' returns only opportunities that cleared every gate. "
+            "'diagnostics' returns the research output - stale quotes, rule "
+            "mismatches, logical inconsistencies, cost-rejected edges - which is real "
+            "signal but not a trade. Mixing them lets a 25-hour-old quote with "
+            "negative net profit sit in a list a reader takes as actionable."
+        ),
+    ),
     executable_only: bool = Query(False),
     limit: int = Query(50, ge=1, le=200),
     db: Session = DbDep,
@@ -105,9 +118,13 @@ def list_arbitrage(
         stmt = stmt.where(ArbitrageOpportunity.kind == kind.value)
     if label:
         stmt = stmt.where(ArbitrageOpportunity.label == label.value)
-    if executable_only:
+    if executable_only or view == "actionable":
         stmt = stmt.where(
-            ArbitrageOpportunity.label == ArbitrageLabel.EXECUTABLE.value
+            ArbitrageOpportunity.label.in_(sorted(ACTIONABLE_ARBITRAGE_LABELS))
+        )
+    elif view == "diagnostics":
+        stmt = stmt.where(
+            ArbitrageOpportunity.label.notin_(sorted(ACTIONABLE_ARBITRAGE_LABELS))
         )
 
     rows = [
@@ -116,6 +133,8 @@ def list_arbitrage(
             "kind": o.kind,
             "label": o.label,
             "label_meaning": LABEL_MEANINGS.get(o.label, ""),
+            "actionable": is_actionable_label(o.label),
+            "equivalence_verdict": o.equivalence_verdict,
             # Public taxonomy. Only a guaranteed terminal payout may be called
             # arbitrage; every weaker label is demoted to a class that names how it
             # is weaker, so the strength of a claim never has to be inferred.
@@ -154,6 +173,14 @@ def list_arbitrage(
         counts_by_label=counts,
         label_meanings=LABEL_MEANINGS,
         matching_diagnostics=diagnostics,
+        view=view,
+        actionable_count=sum(1 for r in rows if r["actionable"]),
+        diagnostic_count=sum(1 for r in rows if not r["actionable"]),
+        view_note=(
+            "Only opportunities in the 'actionable' view cleared every gate. "
+            "Diagnostics are research output - a stale quote or a rule mismatch is a "
+            "finding, not a trade."
+        ),
     )
 
 

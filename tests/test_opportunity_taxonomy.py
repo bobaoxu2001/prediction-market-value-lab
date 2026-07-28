@@ -154,3 +154,58 @@ class TestArbitrageMarginTiers:
             < s.min_edge_cross_platform
             < s.min_edge_cross_platform_illiquid
         )
+
+
+class TestActionableVsDiagnostics:
+    """A research finding is not a trade, and must not sit in a trade list."""
+
+    def test_only_executable_is_actionable(self) -> None:
+        from pmvl_shared.enums import ArbitrageLabel, is_actionable_label
+
+        assert is_actionable_label(ArbitrageLabel.EXECUTABLE.value)
+        for label in ArbitrageLabel:
+            if label is not ArbitrageLabel.EXECUTABLE:
+                assert not is_actionable_label(label.value), label
+
+    def test_stale_quote_is_never_actionable(self) -> None:
+        """The live scan's only hit was a 25-hour-old quote with negative profit."""
+        from pmvl_shared.enums import ArbitrageLabel, is_actionable_label
+
+        assert not is_actionable_label(ArbitrageLabel.STALE_QUOTE.value)
+
+    def test_scan_outcome_labels_are_human_readable(self) -> None:
+        from pmvl_shared.enums import ScanOutcome
+
+        for outcome in ScanOutcome:
+            assert outcome.label and not outcome.label.startswith("rejected_")
+        assert ScanOutcome.ACTIONABLE.is_actionable
+        assert not ScanOutcome.REJECTED_FEES.is_actionable
+
+
+class TestRuntimeEnvironment:
+    """A serverless deployment must not report itself as a local dev machine."""
+
+    def test_vercel_is_detected(self, monkeypatch) -> None:  # noqa: ANN001
+        from pmvl_shared.config import get_settings, reset_settings_cache
+
+        monkeypatch.setenv("VERCEL_ENV", "production")
+        reset_settings_cache()
+        try:
+            assert get_settings().runtime_environment == "vercel_production"
+        finally:
+            monkeypatch.delenv("VERCEL_ENV", raising=False)
+            reset_settings_cache()
+
+    def test_snapshot_mode_reports_no_worker(self, monkeypatch) -> None:  # noqa: ANN001
+        """An empty jobs list on a snapshot deploy is expected, not a broken scheduler."""
+        from pmvl_shared.config import get_settings, reset_settings_cache
+
+        monkeypatch.setenv("PMVL_SNAPSHOT_MODE", "1")
+        reset_settings_cache()
+        try:
+            s = get_settings()
+            assert s.runtime_mode == "read_only_snapshot"
+            assert s.worker_status == "unavailable_in_snapshot_deployment"
+        finally:
+            monkeypatch.delenv("PMVL_SNAPSHOT_MODE", raising=False)
+            reset_settings_cache()

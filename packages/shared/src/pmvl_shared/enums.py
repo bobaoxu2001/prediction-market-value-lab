@@ -255,3 +255,51 @@ ARBITRAGE_LABEL_TO_CLASS: dict[str, OpportunityClass] = {
 def classify_arbitrage_label(label: str) -> OpportunityClass:
     """Map an arbitrage honesty label onto the public taxonomy, defaulting to weak."""
     return ARBITRAGE_LABEL_TO_CLASS.get(label, OpportunityClass.WATCHLIST)
+
+
+class ScanOutcome(StrEnum):
+    """What happened to a candidate opportunity during a scan.
+
+    Reporting only "no arbitrage found" tells a reader nothing about WHY. These codes
+    let the pipeline answer the question the empty list raises: was there no price
+    difference, did fees eat it, was the book too thin, or did the rules not match?
+    """
+
+    ACTIONABLE = "actionable"
+    REJECTED_PRICE = "rejected_price"
+    REJECTED_FEES = "rejected_fees"
+    REJECTED_MARGIN = "rejected_margin"
+    REJECTED_DEPTH = "rejected_depth"
+    REJECTED_RULES = "rejected_rules"
+    REJECTED_STALE = "rejected_stale"
+    DIAGNOSTIC = "diagnostic"
+
+    @property
+    def is_actionable(self) -> bool:
+        return self is ScanOutcome.ACTIONABLE
+
+    @property
+    def label(self) -> str:
+        return {
+            ScanOutcome.ACTIONABLE: "Cleared every gate",
+            ScanOutcome.REJECTED_PRICE: "No price difference to capture",
+            ScanOutcome.REJECTED_FEES: "Fees and slippage consumed the edge",
+            ScanOutcome.REJECTED_MARGIN: "Edge below the required safety margin",
+            ScanOutcome.REJECTED_DEPTH: "Order book too thin to fill",
+            ScanOutcome.REJECTED_RULES: "Settlement rules are not equivalent",
+            ScanOutcome.REJECTED_STALE: "Quotes too old to act on",
+            ScanOutcome.DIAGNOSTIC: "Research signal, not actionable",
+        }[self]
+
+
+#: Labels a user would reasonably expect to see under the heading "Arbitrage
+#: opportunities". Everything else is a research diagnostic: real output, but not a
+#: trade. Mixing them lets a 25-hour-old quote with negative net profit sit in a list
+#: a reader takes as actionable.
+ACTIONABLE_ARBITRAGE_LABELS: frozenset[str] = frozenset(
+    {ArbitrageLabel.EXECUTABLE.value}
+)
+
+
+def is_actionable_label(label: str) -> bool:
+    return label in ACTIONABLE_ARBITRAGE_LABELS

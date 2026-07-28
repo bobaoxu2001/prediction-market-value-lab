@@ -96,7 +96,9 @@ def system(db: Session = DbDep, mode: DataMode = ModeDep) -> dict[str, Any]:
 
     return envelope(
         {
-            "environment": settings.environment,
+            "environment": settings.runtime_environment,
+            "runtime_mode": settings.runtime_mode,
+            "worker_status": settings.worker_status,
             "model_version": MODEL_VERSION,
             "row_counts": counts,
             "provenance_split": provenance_split,

@@ -130,6 +130,42 @@ class Settings(BaseSettings):
 
     api_cors_origins: str = Field(default="http://localhost:3000,http://127.0.0.1:3000")
 
+    @property
+    def runtime_environment(self) -> str:
+        """Where this process is actually running.
+
+        ENVIRONMENT defaults to "local" and nothing overrides it on Vercel, so
+        /system reported "local" from a production serverless function - which reads
+        as a misconfigured deploy. Vercel injects VERCEL_ENV, so detect it rather
+        than relying on an env var nobody sets.
+        """
+        vercel = os.environ.get("VERCEL_ENV")
+        if vercel:
+            return f"vercel_{vercel}"
+        return self.environment
+
+    @property
+    def snapshot_mode(self) -> bool:
+        """Serving a frozen snapshot rather than a live database."""
+        return os.environ.get("PMVL_SNAPSHOT_MODE") == "1"
+
+    @property
+    def runtime_mode(self) -> str:
+        return "read_only_snapshot" if self.snapshot_mode else "live_pipeline"
+
+    @property
+    def worker_status(self) -> str:
+        """Whether a worker could be running against this database.
+
+        A read-only snapshot deployment has no worker by construction, and saying so
+        is more useful than an empty jobs list that looks like a broken scheduler.
+        """
+        return (
+            "unavailable_in_snapshot_deployment"
+            if self.snapshot_mode
+            else "runs_separately_see_job_runs"
+        )
+
     def min_arbitrage_edge(
         self, *, cross_platform: bool, depth_usd: Decimal | None
     ) -> Decimal:
