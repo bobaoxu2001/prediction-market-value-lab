@@ -317,3 +317,127 @@ class TestReasonsAreRecorded:
         verdict = verify_match(pair(a, b))
         assert verdict.rule_compatibility == RuleCompatibility.INCOMPATIBLE
         assert verdict.mismatch_reasons, "rejection recorded no reason"
+
+
+class TestEquivalenceScoring:
+    """Component-wise attribution and the four public verdicts."""
+
+    def _score(self, a, b):  # noqa: ANN001, ANN202
+        from pmvl_markets.matching.equivalence import score_equivalence
+
+        return score_equivalence(pair(a, b))
+
+    def test_identical_pair_is_verified_or_probable(self) -> None:
+        common = dict(
+            description="Settles on the closing price at 4pm ET per CF Benchmarks.",
+            strike_type="greater", floor="70000",
+            settlement_source="CF Benchmarks", category=Category.CRYPTO,
+        )
+        a = market(Platform.KALSHI, "E1", "Will BTC close above $70,000 on Jul 31?", **common)
+        b = market(Platform.POLYMARKET, "E2", "Will BTC close above $70,000 on Jul 31?", **common)
+        score = self._score(a, b)
+        from pmvl_markets.matching.equivalence import EquivalenceVerdict
+
+        assert score.verdict in (
+            EquivalenceVerdict.VERIFIED_EQUIVALENT,
+            EquivalenceVerdict.PROBABLE_MATCH,
+        )
+        assert not score.mismatches, [c.detail for c in score.mismatches]
+
+    def test_different_source_is_related_not_equivalent(self) -> None:
+        """Same question, different authority: related but never arbitrage."""
+        from pmvl_markets.matching.equivalence import EquivalenceVerdict
+
+        a = market(
+            Platform.KALSHI, "E3", "Will BTC close above $70,000?",
+            description="Settles on the CF Benchmarks index.",
+            strike_type="greater", floor="70000", settlement_source="CF Benchmarks",
+            category=Category.CRYPTO,
+        )
+        b = market(
+            Platform.POLYMARKET, "E4", "Will BTC close above $70,000?",
+            description="Settles on the Binance spot price.",
+            strike_type="greater", floor="70000", settlement_source="Binance",
+            category=Category.CRYPTO,
+        )
+        score = self._score(a, b)
+        assert score.verdict is EquivalenceVerdict.RELATED_NOT_EQUIVALENT
+        assert not score.verdict.allows_cross_platform_arbitrage
+        assert score.component("data_source").detail
+
+    def test_different_entity_is_rejected(self) -> None:
+        from pmvl_markets.matching.equivalence import EquivalenceVerdict
+
+        a = market(Platform.KALSHI, "E5", "Will Arsenal win the match?",
+                   settlement_source="official league", category=Category.SPORTS)
+        b = market(Platform.POLYMARKET, "E6", "Will Chelsea win the match?",
+                   settlement_source="official league", category=Category.SPORTS)
+        assert self._score(a, b).verdict is EquivalenceVerdict.REJECTED
+
+    def test_every_component_is_reported(self) -> None:
+        """Attribution is the point: a caller must see which term failed."""
+        a = market(Platform.KALSHI, "E7", "Will BTC close above $70,000?",
+                   strike_type="greater", floor="70000",
+                   settlement_source="CF Benchmarks", category=Category.CRYPTO)
+        b = market(Platform.POLYMARKET, "E8", "Will BTC close above $70,000?",
+                   strike_type="greater", floor="70000",
+                   settlement_source="CF Benchmarks", category=Category.CRYPTO)
+        names = {c.name for c in self._score(a, b).components}
+        assert names == {
+            "entity", "event", "threshold", "operator",
+            "time", "data_source", "settlement_rule", "cancellation",
+        }
+
+    def test_unknown_blocks_verified_equivalent(self) -> None:
+        """An unverified decisive term is not a verified one."""
+        from pmvl_markets.matching.equivalence import ComponentResult, EquivalenceVerdict
+
+        a = market(Platform.KALSHI, "E9", "Will BTC close above $70,000?",
+                   strike_type="greater", floor="70000", category=Category.CRYPTO)
+        b = market(Platform.POLYMARKET, "E10", "Will BTC close above $70,000?",
+                   strike_type="greater", floor="70000", category=Category.CRYPTO)
+        score = self._score(a, b)
+        # No settlement source stated on either side.
+        assert score.component("data_source").result is ComponentResult.UNKNOWN
+        assert score.verdict is not EquivalenceVerdict.VERIFIED_EQUIVALENT
+
+    def test_only_verified_equivalent_licenses_arbitrage(self) -> None:
+        from pmvl_markets.matching.equivalence import EquivalenceVerdict
+
+        licensed = [v for v in EquivalenceVerdict if v.allows_cross_platform_arbitrage]
+        assert licensed == [EquivalenceVerdict.VERIFIED_EQUIVALENT]
+
+    def test_probable_match_allows_relative_value_but_not_arbitrage(self) -> None:
+        from pmvl_markets.matching.equivalence import EquivalenceVerdict
+
+        v = EquivalenceVerdict.PROBABLE_MATCH
+        assert v.allows_relative_value
+        assert not v.allows_cross_platform_arbitrage
+
+    def test_aggregate_score_cannot_override_a_mismatch(self) -> None:
+        """Seven strong components must not outvote one fatal one."""
+        from pmvl_markets.matching.equivalence import EquivalenceVerdict
+
+        a = market(Platform.KALSHI, "E11", "Will BTC close above $70,000?",
+                   description="Settles on the CF Benchmarks index.",
+                   strike_type="greater", floor="70000",
+                   settlement_source="CF Benchmarks", category=Category.CRYPTO)
+        b = market(Platform.POLYMARKET, "E12", "Will BTC close above $70,000?",
+                   description="Settles on the Binance spot price.",
+                   strike_type="greater", floor="70000",
+                   settlement_source="Binance", category=Category.CRYPTO)
+        score = self._score(a, b)
+        assert score.aggregate_score > Decimal("0.7")  # most components pass
+        assert score.verdict is not EquivalenceVerdict.VERIFIED_EQUIVALENT
+
+    def test_serialisation_carries_the_reasons(self) -> None:
+        a = market(Platform.KALSHI, "E13", "Will BTC close above $70,000?",
+                   strike_type="greater", floor="70000",
+                   settlement_source="CF Benchmarks", category=Category.CRYPTO)
+        b = market(Platform.POLYMARKET, "E14", "Will ETH close above $4,000?",
+                   strike_type="greater", floor="4000",
+                   settlement_source="CF Benchmarks", category=Category.CRYPTO)
+        payload = self._score(a, b).as_dict()
+        assert payload["verdict"] == "REJECTED"
+        assert payload["allows_cross_platform_arbitrage"] is False
+        assert len(payload["components"]) == 8

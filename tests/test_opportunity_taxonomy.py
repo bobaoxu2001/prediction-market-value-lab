@@ -107,3 +107,50 @@ class TestLabelMapping:
 
     def test_unknown_label_defaults_to_the_weakest_claim(self) -> None:
         assert classify_arbitrage_label("something_new") is OpportunityClass.WATCHLIST
+
+
+class TestArbitrageMarginTiers:
+    """Risk appetite lives in configuration, and cross-venue costs more."""
+
+    def _settings(self):  # noqa: ANN202
+        from pmvl_shared.config import get_settings
+
+        return get_settings()
+
+    def test_cross_platform_always_demands_more(self) -> None:
+        s = self._settings()
+        for depth in (Decimal("5000"), Decimal("100"), None):
+            same = s.min_arbitrage_edge(cross_platform=False, depth_usd=depth)
+            cross = s.min_arbitrage_edge(cross_platform=True, depth_usd=depth)
+            assert cross > same, f"depth={depth}: cross {cross} not above same {same}"
+
+    def test_thin_books_demand_more_than_liquid(self) -> None:
+        s = self._settings()
+        for cross in (False, True):
+            liquid = s.min_arbitrage_edge(cross_platform=cross, depth_usd=Decimal("5000"))
+            thin = s.min_arbitrage_edge(cross_platform=cross, depth_usd=Decimal("50"))
+            assert thin > liquid
+
+    def test_unknown_depth_is_treated_as_thin(self) -> None:
+        """Absent evidence of depth is not evidence of depth."""
+        s = self._settings()
+        for cross in (False, True):
+            assert s.min_arbitrage_edge(
+                cross_platform=cross, depth_usd=None
+            ) == s.min_arbitrage_edge(cross_platform=cross, depth_usd=Decimal("1"))
+
+    def test_tiers_match_the_documented_defaults(self) -> None:
+        s = self._settings()
+        assert s.min_edge_same_platform_liquid == Decimal("0.015")
+        assert s.min_edge_same_platform_normal == Decimal("0.03")
+        assert s.min_edge_cross_platform == Decimal("0.04")
+        assert s.min_edge_cross_platform_illiquid == Decimal("0.05")
+
+    def test_tiers_are_monotone(self) -> None:
+        s = self._settings()
+        assert (
+            s.min_edge_same_platform_liquid
+            < s.min_edge_same_platform_normal
+            < s.min_edge_cross_platform
+            < s.min_edge_cross_platform_illiquid
+        )

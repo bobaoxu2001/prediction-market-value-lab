@@ -97,6 +97,23 @@ class Settings(BaseSettings):
     min_conservative_net_ev: Decimal = Field(default=Decimal("0.005"))
     #: Cross-platform legs cannot fill simultaneously; charged against arbitrage.
     cross_platform_execution_risk_usd: Decimal = Field(default=Decimal("0.01"))
+
+    # ------------------------------------------------------- arbitrage margins
+    #: Minimum NET edge, as a fraction of capital deployed, before an arbitrage is
+    #: published. Held in configuration rather than scattered through the scanners so
+    #: the risk appetite of the whole engine can be read - and changed - in one place.
+    #:
+    #: The tiers are not arbitrary. Same-platform legs settle against one another on
+    #: one venue's books, so the residual risk is fill risk alone. Cross-platform legs
+    #: add settlement-source divergence, two different close times, capital split
+    #: across venues, and withdrawal cost, none of which are recoverable if one leg
+    #: fills and the other does not - so they must clear a materially higher bar.
+    min_edge_same_platform_liquid: Decimal = Field(default=Decimal("0.015"))
+    min_edge_same_platform_normal: Decimal = Field(default=Decimal("0.03"))
+    min_edge_cross_platform: Decimal = Field(default=Decimal("0.04"))
+    min_edge_cross_platform_illiquid: Decimal = Field(default=Decimal("0.05"))
+    #: Depth at or above this notional counts as "liquid" for tier selection.
+    liquid_depth_threshold_usd: Decimal = Field(default=Decimal("2000"))
     #: Quotes older than this are "stale" and cannot back an executable claim.
     max_quote_age_seconds: int = Field(default=300)
 
@@ -112,6 +129,28 @@ class Settings(BaseSettings):
     trading_execution_enabled: bool = Field(default=False)
 
     api_cors_origins: str = Field(default="http://localhost:3000,http://127.0.0.1:3000")
+
+    def min_arbitrage_edge(
+        self, *, cross_platform: bool, depth_usd: Decimal | None
+    ) -> Decimal:
+        """Minimum net edge this opportunity must clear, by venue span and liquidity.
+
+        Thin books are the harder case in both spans: the quoted edge is real only for
+        the few contracts at the top of the ladder, and the rest of the intended size
+        walks into worse prices.
+        """
+        liquid = depth_usd is not None and depth_usd >= self.liquid_depth_threshold_usd
+        if cross_platform:
+            return (
+                self.min_edge_cross_platform
+                if liquid
+                else self.min_edge_cross_platform_illiquid
+            )
+        return (
+            self.min_edge_same_platform_liquid
+            if liquid
+            else self.min_edge_same_platform_normal
+        )
 
     @field_validator("database_url")
     @classmethod
