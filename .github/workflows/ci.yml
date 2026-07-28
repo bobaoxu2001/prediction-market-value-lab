@@ -80,7 +80,11 @@ jobs:
           cache-dependency-path: apps/web/package-lock.json
       - run: npm ci
       - name: Lint
-        run: npx next lint --max-warnings 0 || true
+        # `|| true` here meant this job reported green for every push while
+        # `next lint` (removed in Next 16) errored on a missing directory. The
+        # exit code is honoured now; `any` at the fetch boundary stays a warning
+        # so the gate fails on real defects rather than on annotation debt.
+        run: npm run lint
       - name: Typecheck
         run: npx tsc --noEmit
       - name: Production build

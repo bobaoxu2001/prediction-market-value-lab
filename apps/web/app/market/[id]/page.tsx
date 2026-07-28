@@ -1,7 +1,7 @@
 import Link from "next/link";
 import { apiGet, qs, type DataMode } from "@/lib/api";
-import { ageLabel, ageRelativeToSnapshot, cents, compactUsd, displayTitle, localTime, pct, prob, relativeTime, relativeToSnapshot, signedCents } from "@/lib/format";
-import { ApiDown, DemoBanner, EmptyState, Metric, PageHeader, PlatformChip, RiskFlags, SideChip, StateChip, VenueAvailability } from "@/components/ui";
+import { ageRelativeToSnapshot, cents, compactUsd, displayTitle, localTime, pct, prob, relativeToSnapshot, signedCents } from "@/lib/format";
+import { ApiDown, DemoBanner, EmptyState, Metric, PageHeader, PlatformChip, SideChip, StateChip, VenueAvailability } from "@/components/ui";
 import { PriceChart } from "@/components/PriceChart";
 
 export const dynamic = "force-dynamic";

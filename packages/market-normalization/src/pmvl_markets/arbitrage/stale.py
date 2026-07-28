@@ -20,6 +20,7 @@ from datetime import datetime
 from decimal import Decimal
 
 from pmvl_shared.config import get_settings
+from pmvl_shared.timeutil import humanize_seconds
 from pmvl_shared.enums import ArbitrageKind, ArbitrageLabel, RuleCompatibility, Side
 from pmvl_shared.money import ZERO, quantize_usd
 from pmvl_shared.schemas import ArbitrageResult, ArbLeg, NormalizedMarket, OrderBook
@@ -93,7 +94,7 @@ def detect_stale_quote(
         "retail order arrives; treat this as a race, not a locked-in edge",
     ]
     if laggard_age is not None:
-        risk_flags.append(f"lagging book snapshot is {laggard_age:.0f}s old")
+        risk_flags.append(f"lagging book snapshot is {humanize_seconds(laggard_age)} old")
     if laggard_age is not None and laggard_age > settings.max_quote_age_seconds:
         risk_flags.append(
             "the lagging quote is older than the freshness limit, so it may already "

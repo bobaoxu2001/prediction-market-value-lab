@@ -1,6 +1,6 @@
 import Link from "next/link";
 import { apiGet, qs, type DataMode, type TrackRecordRow } from "@/lib/api";
-import { cents, displayTitle, localTime, pct, prob, signedCents, usd } from "@/lib/format";
+import { cents, displayTitle, localTime, prob, signedCents, usd } from "@/lib/format";
 import {
   ApiDown, DemoBanner, EmptyState, PageHeader, PlatformChip, SideChip,
 } from "@/components/ui";

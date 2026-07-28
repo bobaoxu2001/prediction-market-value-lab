@@ -1,6 +1,6 @@
 import Link from "next/link";
 import { apiGet, qs, type DataMode, type MarketRow } from "@/lib/api";
-import { ageLabel, ageRelativeToSnapshot, cents, compactUsd, displayTitle, relativeTime, relativeToSnapshot } from "@/lib/format";
+import { ageRelativeToSnapshot, cents, compactUsd, displayTitle, relativeToSnapshot } from "@/lib/format";
 import { ApiDown, DemoBanner, EmptyState, PageHeader, PlatformChip, VenueAvailability } from "@/components/ui";
 
 export const dynamic = "force-dynamic";

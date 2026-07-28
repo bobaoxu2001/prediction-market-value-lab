@@ -1,9 +1,7 @@
 "use client";
 
 import {
-  CartesianGrid, Legend, Line, LineChart, ResponsiveContainer, Scatter,
-  ComposedChart, Tooltip, XAxis, YAxis, ZAxis,
-} from "recharts";
+  CartesianGrid, Legend, Line, ResponsiveContainer, ComposedChart, Tooltip, XAxis, YAxis, } from "recharts";
 
 export interface CalibrationBin {
   bin_lower: number;

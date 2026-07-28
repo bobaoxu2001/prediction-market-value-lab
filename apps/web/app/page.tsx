@@ -7,7 +7,7 @@ import {
   type WatchlistItem,
 } from "@/lib/api";
 import type { Divergence, FunnelStage } from "@/lib/api";
-import { ageLabel, ageRelativeToSnapshot, cents, compactUsd, displayTitle, localTime, pct, prob, relativeTime, relativeToSnapshot, signedCents, usd } from "@/lib/format";
+import { ageRelativeToSnapshot, cents, compactUsd, displayTitle, localTime, pct, prob, relativeToSnapshot, signedCents, usd } from "@/lib/format";
 import {
   ApiDown,
   DemoBanner,
