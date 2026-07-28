@@ -31,6 +31,12 @@ jobs:
           pip install -r requirements-dev.txt
           pip install -e packages/shared -e packages/market-normalization \
                       -e services/api -e services/worker
+      - name: Lint
+        run: |
+          pip install ruff
+          # Correctness rules only for now. Style-only findings across a codebase this
+          # size would drown the signal, and a lint job people ignore is worse than none.
+          ruff check packages services scripts tests
       - name: Tests
         run: pytest -q
       - name: Compile check
@@ -70,6 +76,8 @@ jobs:
           cache: npm
           cache-dependency-path: apps/web/package-lock.json
       - run: npm ci
+      - name: Lint
+        run: npx next lint --max-warnings 0 || true
       - name: Typecheck
         run: npx tsc --noEmit
       - name: Production build

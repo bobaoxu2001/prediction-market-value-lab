@@ -204,7 +204,6 @@ async def score_markets(
     ensemble: ProbabilityEnsemble | None = None,
 ) -> tuple[ScoringReport, list[ValueCandidate]]:
     """Run the ensemble over every scoreable market and build value candidates."""
-    settings = get_settings()
     now = now or utcnow()
     report = ScoringReport(batch_id=uuid4().hex[:16])
     config = RankingConfig.from_settings()

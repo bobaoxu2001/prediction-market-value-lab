@@ -1,6 +1,6 @@
 import Link from "next/link";
 import { apiGet, qs, type DataMode, type MarketRow } from "@/lib/api";
-import { ageLabel, cents, compactUsd, displayTitle, relativeTime } from "@/lib/format";
+import { ageLabel, cents, compactUsd, displayTitle, relativeTime, relativeToSnapshot } from "@/lib/format";
 import { ApiDown, DemoBanner, EmptyState, PageHeader, PlatformChip, VenueAvailability } from "@/components/ui";
 
 export const dynamic = "force-dynamic";
@@ -29,6 +29,17 @@ export default async function MarketsPage({
     ),
     apiGet<Array<{ category: string; count: number }>>(`/markets/categories${qs({ mode })}`),
   ]);
+  // Anchor relative times to the capture instant. On a frozen deployment now()
+  // advances while the data does not, so a market with hours left at capture drifts
+  // into "resolved 12h ago" while still listed as upcoming.
+  const system = await apiGet<{
+    snapshot_mode?: boolean;
+    freshest_quote_observed_at?: string | null;
+  }>("/system");
+  const snapshotAt = system?.data?.snapshot_mode
+    ? (system?.data?.freshest_quote_observed_at ?? null)
+    : null;
+
   if (!res) return <ApiDown />;
 
   const rows = res.data ?? [];
@@ -42,7 +53,7 @@ export default async function MarketsPage({
     <div>
       <PageHeader
         title="Market browser"
-        subtitle={`${total.toLocaleString()} markets ingested from Kalshi and Polymarket. Prices shown are live top-of-book, not last trades.`}
+        subtitle={`${total.toLocaleString()} markets ingested from Kalshi and Polymarket. Prices are the best executable bid and ask from the most recent order book captured for each market, not last trades.`}
       />
       <DemoBanner notice={res.demo_notice} />
 
@@ -123,6 +134,11 @@ export default async function MarketsPage({
                   <tr key={m.id} className="hover:bg-neutral-50 dark:hover:bg-neutral-900">
                     <td className="max-w-md">
                       <Link href={`/market/${m.id}`} className="hover:underline">{displayTitle(m.title)}</Link>
+                      {m.venue_availability ? (
+                        <div className="mt-1">
+                          <VenueAvailability venues={m.venue_availability} compact />
+                        </div>
+                      ) : null}
                     </td>
                     <td><PlatformChip platform={m.platform} /></td>
                     <td className="text-neutral-500">{m.category}</td>
@@ -132,7 +148,7 @@ export default async function MarketsPage({
                     <td className="num">{cents(m.spread)}</td>
                     <td className="num">{compactUsd(m.orderbook_depth_usd)}</td>
                     <td className="num">{compactUsd(m.volume_24h)}</td>
-                    <td className="text-neutral-500">{relativeTime(m.expected_resolution_time)}</td>
+                    <td className="text-neutral-500">{relativeToSnapshot(m.expected_resolution_time, snapshotAt)}</td>
                     <td className="text-neutral-500">{ageLabel(m.quote_observed_at)}</td>
                   </tr>
                 ))}

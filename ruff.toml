@@ -1,0 +1,12 @@
+# Correctness-focused lint. Style-only findings across a codebase this size would
+# drown the signal, and a lint job people ignore is worse than no lint job.
+[lint]
+select = ["F", "E9", "B"]
+ignore = [
+    "F401",  # re-exports in __init__ and deliberate test-local imports
+    "B008",  # FastAPI's Depends()/Query() in defaults is the documented idiom
+    "B905",  # zip(strict=) is style, not correctness, on equal-length sequences
+]
+
+[lint.per-file-ignores]
+"tests/*" = ["F811", "F841"]  # fixtures and intentionally-unused bindings

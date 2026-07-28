@@ -319,10 +319,19 @@ export function VerdictCard({
  */
 export function VenueAvailability({
   venues,
+  compact = false,
 }: {
   venues: { venue: string; status: string; label: string }[];
+  compact?: boolean;
 }) {
   if (!venues?.length) return null;
+  // A list row already shows which exchange the contract came from, so repeating it
+  // is noise. What a reader cannot infer is broker availability - and that is exactly
+  // the thing that must never be guessed from an exchange listing.
+  const shown = compact
+    ? venues.filter((v) => v.status === "unverified")
+    : venues;
+  if (!shown.length) return null;
   const tone = (status: string) =>
     status === "observed_via_public_api" || status === "confirmed_available"
       ? "border-edge/40 text-edge dark:text-edge-dark"
@@ -331,7 +340,7 @@ export function VenueAvailability({
         : "border-amber-500/40 text-amber-700 dark:text-amber-400";
   return (
     <div className="flex flex-wrap gap-1">
-      {venues.map((v) => (
+      {shown.map((v) => (
         <span
           key={v.venue}
           title={v.label}

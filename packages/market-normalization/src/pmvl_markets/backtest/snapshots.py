@@ -258,10 +258,12 @@ def _orderbook_by_market(
             .order_by(OrderbookLevel.level_index)
         ).all()
 
-        def side_levels(side: str, is_ask: bool) -> list[dict[str, str]]:
+        def side_levels(
+            side: str, is_ask: bool, rows=levels  # noqa: B008 - bound per iteration
+        ) -> list[dict[str, str]]:
             return [
                 {"price": str(l.price), "size": str(l.size)}
-                for l in levels
+                for l in rows
                 if l.side == side and l.is_ask == is_ask
             ][:depth]
 
