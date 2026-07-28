@@ -14,6 +14,7 @@ from pmvl_shared.enums import (
     UNDISCOVERABLE_VENUES,
     availability_for,
 )
+from pmvl_shared.money import ZERO
 from pmvl_shared.timeutil import horizons_for, utcnow
 
 from pmvl_markets.db_models import (
@@ -30,6 +31,10 @@ from pmvl_markets.db_models import (
 )
 
 from ..deps import DataMode, DbDep, ModeDep, apply_provenance, envelope
+from ..quotes import coherent_quote
+
+#: Candidate window when ordering by a quote-derived value.
+QUOTE_SORT_WINDOW = 400
 
 router = APIRouter(prefix="/markets", tags=["markets"])
 
@@ -65,7 +70,7 @@ def _venue_availability(market: Market) -> list[dict[str, Any]]:
     return rows
 
 
-def _market_row(market: Market) -> dict[str, Any]:
+def _market_row(market: Market, quote=None) -> dict[str, Any]:  # noqa: ANN001
     horizons = horizons_for(market.expected_resolution_time)
     return {
         "id": market.id,
@@ -76,12 +81,31 @@ def _market_row(market: Market) -> dict[str, Any]:
         "category": market.category,
         "status": market.status,
         "accepting_orders": market.accepting_orders,
-        "best_yes_bid": market.best_yes_bid,
-        "best_yes_ask": market.best_yes_ask,
-        "best_no_bid": market.best_no_bid,
-        "best_no_ask": market.best_no_ask,
-        "spread": market.spread,
-        "orderbook_depth_usd": market.orderbook_depth_usd,
+        # Every price on a row comes from ONE observation. Rendering the venue
+        # summary next to a book that was captured two days later showed three
+        # different prices for one contract with no way to tell which to believe.
+        "best_yes_bid": quote.best_yes_bid if quote else market.best_yes_bid,
+        "best_yes_ask": quote.best_yes_ask if quote else market.best_yes_ask,
+        "best_no_bid": quote.best_no_bid if quote else market.best_no_bid,
+        "best_no_ask": quote.best_no_ask if quote else market.best_no_ask,
+        "spread": quote.spread if quote else market.spread,
+        # Named explicitly. "orderbook_depth_usd" was ambiguous: the quote resolver
+        # sums the ASK side (what a buyer can lift), while OrderbookSnapshot's stored
+        # figure is a different total. A single generic label for two definitions is
+        # how a liquidity ranking ends up disagreeing with the number beside it.
+        "yes_ask_depth_usd": quote.yes_depth_usd if quote else market.orderbook_depth_usd,
+        "no_ask_depth_usd": quote.no_depth_usd if quote else None,
+        "total_displayed_depth_usd": (
+            (quote.yes_depth_usd or ZERO) + (quote.no_depth_usd or ZERO)
+            if quote and quote.source == "orderbook"
+            else market.orderbook_depth_usd
+        ),
+        # Retained for existing consumers; equal to yes_ask_depth_usd.
+        "orderbook_depth_usd": (
+            quote.yes_depth_usd if quote else market.orderbook_depth_usd
+        ),
+        "quote_source": quote.source if quote else "venue_summary",
+        "quote_is_stale_summary": bool(quote and quote.summary_disagrees),
         "volume_24h": market.volume_24h,
         "total_volume": market.total_volume,
         "open_interest": market.open_interest,
@@ -91,7 +115,9 @@ def _market_row(market: Market) -> dict[str, Any]:
         "close_time": market.close_time,
         "expected_resolution_time": market.expected_resolution_time,
         "horizon": horizons[0] if horizons else None,
-        "quote_observed_at": market.quote_observed_at,
+        "quote_observed_at": (
+            quote.observed_at if quote else market.quote_observed_at
+        ),
         "result": market.result,
         "provenance": market.provenance,
         # Availability travels with the row so a list can show it without an N+1
@@ -149,13 +175,24 @@ def list_markets(
     if has_orderbook:
         stmt = stmt.where(Market.orderbook_depth_usd.is_not(None))
 
-    order = {
-        "volume": Market.volume_24h.desc(),
-        "spread": Market.spread.asc(),
-        "resolution": Market.expected_resolution_time.asc(),
-        "liquidity": Market.orderbook_depth_usd.desc(),
-    }[sort]
-    stmt = stmt.order_by(order)
+    # Volume and resolution time are market attributes, so they can be ordered in
+    # SQL. Spread and liquidity are QUOTE attributes, and the quote a row displays
+    # comes from the order book - so ordering them by the stale Market summary would
+    # rank rows by numbers the page does not show. Those two are resolved and sorted
+    # in Python below.
+    quote_sorted = sort in ("spread", "liquidity")
+    if not quote_sorted:
+        stmt = stmt.order_by(
+            {
+                "volume": Market.volume_24h.desc(),
+                "resolution": Market.expected_resolution_time.asc(),
+            }[sort]
+        )
+    else:
+        # Order by volume first so the candidate window is the most-traded markets
+        # rather than an arbitrary slice; the honest cost of sorting in Python is
+        # stated in the response.
+        stmt = stmt.order_by(Market.volume_24h.desc())
 
     total = db.scalar(
         apply_provenance(select(func.count()).select_from(Market), Market.provenance, mode)
@@ -163,17 +200,50 @@ def list_markets(
 
     # Horizon is derived from the current time rather than stored, so it is filtered
     # after the query. Over-fetching keeps the page full after that filter.
-    rows = list(db.scalars(stmt.offset(offset).limit(limit * 3 if horizon else limit)))
+    # A quote-sorted view needs a wider candidate window, because the ordering is
+    # decided after the quotes are resolved.
+    window = QUOTE_SORT_WINDOW if quote_sorted else (limit * 3 if horizon else limit)
+    rows = list(db.scalars(stmt.offset(0 if quote_sorted else offset).limit(window)))
     out = []
     for market in rows:
-        row = _market_row(market)
+        row = _market_row(market, coherent_quote(db, market))
         if horizon and row["horizon"] != horizon:
             continue
         out.append(row)
-        if len(out) >= limit:
+        if not quote_sorted and len(out) >= limit:
             break
 
-    return envelope(out, mode, total=total, count=len(out), offset=offset, limit=limit)
+    sort_note = None
+    ranked_total = None
+    if quote_sorted:
+        # Sort on the SAME values the row displays.
+        def key(row: dict[str, Any]):  # noqa: ANN202
+            if sort == "spread":
+                value = row.get("spread")
+                # Rows with no spread sort last rather than pretending to be tightest.
+                return (value is None, Decimal(str(value)) if value is not None else ZERO)
+            value = row.get("yes_ask_depth_usd")
+            return (value is None, -(Decimal(str(value)) if value is not None else ZERO))
+
+        out.sort(key=key)
+        # `total` counts the table; this counts what was actually ranked. Without
+        # it a client shows "351-400 of 1,388" under a ranking that only ever
+        # considered 400 rows, and an offset past the window returns an empty page
+        # while still claiming more exist.
+        ranked_total = len(out)
+        sort_note = (
+            f"Ordered by displayed {sort}. Spread and liquidity come from each "
+            f"market's order book, so they are resolved before sorting; the ranking "
+            f"covers the {ranked_total} highest-volume markets matching the filters, "
+            f"not all {total}. Paging beyond that window returns nothing rather than "
+            f"continuing the ranking."
+        )
+        out = out[offset : offset + limit]
+
+    return envelope(
+        out, mode, total=total, count=len(out), offset=offset, limit=limit,
+        sort=sort, sort_note=sort_note, ranked_total=ranked_total,
+    )
 
 
 @router.get("/categories")
@@ -188,6 +258,28 @@ def categories(db: Session = DbDep, mode: DataMode = ModeDep) -> dict[str, Any]:
     )
 
 
+def _counterpart_quote_fields(db: Session, other: Market | None) -> dict[str, Any]:
+    """Coherent quote fields for a cross-platform counterpart, flattened."""
+    if other is None:
+        return {
+            "other_best_yes_bid": None, "other_best_yes_ask": None,
+            "other_best_no_bid": None, "other_best_no_ask": None,
+            "other_spread": None, "other_quote_observed_at": None,
+            "other_quote_source": "none", "other_quote_is_stale_summary": False,
+        }
+    quote = coherent_quote(db, other)
+    return {
+        "other_best_yes_bid": quote.best_yes_bid,
+        "other_best_yes_ask": quote.best_yes_ask,
+        "other_best_no_bid": quote.best_no_bid,
+        "other_best_no_ask": quote.best_no_ask,
+        "other_spread": quote.spread,
+        "other_quote_observed_at": quote.observed_at,
+        "other_quote_source": quote.source,
+        "other_quote_is_stale_summary": quote.summary_disagrees,
+    }
+
+
 @router.get("/{market_id}")
 def market_detail(
     market_id: int, db: Session = DbDep, mode: DataMode = ModeDep
@@ -196,6 +288,7 @@ def market_detail(
     if market is None:
         raise HTTPException(status_code=404, detail="market not found")
 
+    quote = coherent_quote(db, market)
     rule = db.scalar(select(MarketRule).where(MarketRule.market_id == market_id))
 
     snapshot = db.scalar(
@@ -310,7 +403,11 @@ def market_detail(
                 "other_market_id": other_id,
                 "other_platform": other.platform if other else None,
                 "other_title": other.title if other else None,
-                "other_best_yes_ask": other.best_yes_ask if other else None,
+                # The counterpart gets the SAME treatment as the primary market.
+                # Reading other.best_yes_ask here would put a stale venue summary
+                # next to an order-book price for the market it is compared against,
+                # which is the same incoherence one level down.
+                **_counterpart_quote_fields(db, other),
                 "match_confidence": match.match_confidence,
                 "rule_compatibility": match.rule_compatibility,
                 "time_compatibility": match.time_compatibility,
@@ -348,7 +445,7 @@ def market_detail(
     return envelope(
         {
             "market": {
-                **_market_row(market),
+                **_market_row(market, quote),
                 "description": market.description,
                 "settlement_source": market.settlement_source,
                 "settlement_rules_raw": market.settlement_rules_raw,
@@ -367,6 +464,7 @@ def market_detail(
                 "condition_id": market.condition_id,
                 "venue_availability": _venue_availability(market),
             },
+            "quote": quote.as_dict(),
             "rule": {
                 "threshold_semantics": rule.threshold_semantics,
                 "threshold_value": rule.threshold_value,

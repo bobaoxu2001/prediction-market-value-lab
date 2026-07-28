@@ -14,6 +14,7 @@ from __future__ import annotations
 from decimal import Decimal
 
 from pmvl_shared.config import get_settings
+from pmvl_shared.timeutil import humanize_seconds
 from pmvl_shared.enums import ArbitrageKind, ArbitrageLabel, RuleCompatibility, Side
 from pmvl_shared.money import ONE, ZERO, quantize_usd, safe_div
 from pmvl_shared.schemas import ArbitrageResult, ArbLeg, NormalizedMarket, OrderBook
@@ -89,7 +90,8 @@ def scan_complete_set(
     if quote_age is not None and quote_age > settings.max_quote_age_seconds:
         label = ArbitrageLabel.STALE_QUOTE
         risk_flags.append(
-            f"quote is {quote_age:.0f}s old (limit {settings.max_quote_age_seconds}s)"
+            f"quote is {humanize_seconds(quote_age)} old "
+            f"(limit {humanize_seconds(settings.max_quote_age_seconds)})"
         )
     if total_cost < settings.min_orderbook_notional_usd:
         label = ArbitrageLabel.INSUFFICIENT_LIQUIDITY

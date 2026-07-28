@@ -1,24 +1,44 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useCallback, useSyncExternalStore } from "react";
+
+/**
+ * The current theme lives on `<html class="dark">`, set by an inline script that
+ * runs before paint so the page never flashes the wrong colours. That makes the
+ * class list an external store, not React state.
+ *
+ * Reading it with `useState` + `useEffect` meant rendering `false`, then
+ * immediately setting the real value - a cascading render on every mount, and the
+ * button briefly claiming the wrong theme. `useSyncExternalStore` reads it during
+ * render instead, and returns `false` on the server where there is no document,
+ * which is also what the pre-paint script assumes before it runs.
+ */
+function subscribe(onChange: () => void): () => void {
+  const observer = new MutationObserver(onChange);
+  observer.observe(document.documentElement, {
+    attributes: true,
+    attributeFilter: ["class"],
+  });
+  return () => observer.disconnect();
+}
+
+const isDark = () => document.documentElement.classList.contains("dark");
+const isDarkOnServer = () => false;
 
 export function ThemeToggle() {
-  const [dark, setDark] = useState(false);
+  const dark = useSyncExternalStore(subscribe, isDark, isDarkOnServer);
 
-  useEffect(() => {
-    setDark(document.documentElement.classList.contains("dark"));
-  }, []);
-
-  function toggle() {
-    const next = !dark;
-    setDark(next);
+  const toggle = useCallback(() => {
+    const next = !document.documentElement.classList.contains("dark");
+    // The MutationObserver above turns this into the new rendered value, so the
+    // class list stays the single source of truth rather than being mirrored.
     document.documentElement.classList.toggle("dark", next);
     try {
       localStorage.setItem("pmvl-theme", next ? "dark" : "light");
     } catch {
-      /* private browsing — the in-session toggle still works */
+      /* private browsing - the in-session toggle still works */
     }
-  }
+  }, []);
 
   return (
     <button

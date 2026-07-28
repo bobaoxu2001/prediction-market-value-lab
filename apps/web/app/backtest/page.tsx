@@ -2,7 +2,7 @@ import Link from "next/link";
 import { apiGet, qs, type BacktestRun, type DataMode } from "@/lib/api";
 import { METRIC_HELP, localDate, pct, strategyLabel, usd } from "@/lib/format";
 import {
-  ApiDown, DemoBanner, EmptyState, HelpDot, Metric, PageHeader, VerdictCard, toneFor,
+  ApiDown, DemoBanner, EmptyState, Metric, PageHeader, VerdictCard, toneFor,
 } from "@/components/ui";
 import { CalibrationChart } from "@/components/CalibrationChart";
 

@@ -4,8 +4,8 @@ import {
   type BacktestRun, type CaseStudy, type DataMode, type FunnelStage, type SystemInfo,
   type TrackRecordRow,
 } from "@/lib/api";
-import { METRIC_HELP, cents, count, localTime, pct, prob, strategyLabel, usd } from "@/lib/format";
-import { ApiDown, DemoBanner, HelpDot, VerdictCard, toneFor } from "@/components/ui";
+import { METRIC_HELP, cents, count, localTime, prob, strategyLabel, usd } from "@/lib/format";
+import { ApiDown, DemoBanner, VerdictCard, toneFor } from "@/components/ui";
 
 export const dynamic = "force-dynamic";
 

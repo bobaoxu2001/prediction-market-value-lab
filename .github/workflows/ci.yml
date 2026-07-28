@@ -4,8 +4,11 @@ name: CI
 # Python tests, the snapshot the API boots from, or whether demo data can leak into a
 # live surface - all of which have broken production at least once on this project.
 on:
+  # Every branch, deliberately. A name-pattern allowlist meant a branch called
+  # fix-* pushed with no CI at all and nothing said so - the failure mode of a
+  # gate is that it silently is not there.
   push:
-    branches: [main, "improve-*"]
+    branches: ["**"]
   pull_request:
     branches: [main]
 
@@ -31,6 +34,12 @@ jobs:
           pip install -r requirements-dev.txt
           pip install -e packages/shared -e packages/market-normalization \
                       -e services/api -e services/worker
+      - name: Lint
+        run: |
+          pip install ruff
+          # Correctness rules only for now. Style-only findings across a codebase this
+          # size would drown the signal, and a lint job people ignore is worse than none.
+          ruff check packages services scripts tests
       - name: Tests
         run: pytest -q
       - name: Compile check
@@ -70,6 +79,12 @@ jobs:
           cache: npm
           cache-dependency-path: apps/web/package-lock.json
       - run: npm ci
+      - name: Lint
+        # `|| true` here meant this job reported green for every push while
+        # `next lint` (removed in Next 16) errored on a missing directory. The
+        # exit code is honoured now; `any` at the fetch boundary stays a warning
+        # so the gate fails on real defects rather than on annotation debt.
+        run: npm run lint
       - name: Typecheck
         run: npx tsc --noEmit
       - name: Production build

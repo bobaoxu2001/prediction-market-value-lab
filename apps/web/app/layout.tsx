@@ -28,14 +28,25 @@ export default async function RootLayout({ children }: { children: React.ReactNo
   // whether this deployment serves a frozen snapshot before it can name the mode.
   // A failure here must never blank the site.
   let snapshotActive = false;
-  let capturedAt: string | null = null;
+  let latestQuoteAt: string | null = null;
+  let arbitrageScanAt: string | null = null;
   try {
     const sys = await apiGet<{
       snapshot_mode?: boolean;
       freshest_quote_observed_at?: string | null;
+      snapshot_timing?: {
+        freshest_quote_observed_at?: string | null;
+        arbitrage_scan_at?: string | null;
+      } | null;
     }>("/system");
     snapshotActive = Boolean(sys?.data?.snapshot_mode);
-    capturedAt = sys?.data?.freshest_quote_observed_at ?? null;
+    // Prefer the timing block, which names each instant; fall back to the legacy
+    // top-level field so an older API still labels the banner correctly.
+    latestQuoteAt =
+      sys?.data?.snapshot_timing?.freshest_quote_observed_at ??
+      sys?.data?.freshest_quote_observed_at ??
+      null;
+    arbitrageScanAt = sys?.data?.snapshot_timing?.arbitrage_scan_at ?? null;
   } catch {
     // leave defaults
   }
@@ -77,7 +88,11 @@ export default async function RootLayout({ children }: { children: React.ReactNo
           </header>
 
           <main className="mx-auto max-w-7xl px-4 py-6">
-            <SnapshotBanner active={snapshotActive} capturedAt={capturedAt} />
+            <SnapshotBanner
+              active={snapshotActive}
+              latestQuoteAt={latestQuoteAt}
+              arbitrageScanAt={arbitrageScanAt}
+            />
             {children}
           </main>
 

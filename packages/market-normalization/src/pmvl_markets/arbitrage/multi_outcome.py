@@ -22,6 +22,7 @@ from dataclasses import dataclass
 from decimal import Decimal
 
 from pmvl_shared.config import get_settings
+from pmvl_shared.timeutil import humanize_seconds
 from pmvl_shared.enums import ArbitrageKind, ArbitrageLabel, RuleCompatibility, Side
 from pmvl_shared.money import ONE, ZERO, quantize_usd, safe_div
 from pmvl_shared.schemas import ArbitrageResult, ArbLeg, NormalizedMarket, OrderBook
@@ -146,7 +147,7 @@ def scan_multi_outcome(
     worst_age = max([a for a in ages if a is not None], default=None)
     if worst_age is not None and worst_age > settings.max_quote_age_seconds:
         label = ArbitrageLabel.STALE_QUOTE
-        risk_flags.append(f"oldest leg quote is {worst_age:.0f}s old")
+        risk_flags.append(f"oldest leg quote is {humanize_seconds(worst_age)} old")
     if total_cost < settings.min_orderbook_notional_usd:
         label = ArbitrageLabel.INSUFFICIENT_LIQUIDITY
         risk_flags.append(f"only ${total_cost:.2f} of matched depth across all legs")

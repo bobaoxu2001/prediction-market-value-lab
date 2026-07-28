@@ -81,14 +81,19 @@ export function ModeSwitch({ snapshot = false }: { snapshot?: boolean }) {
               : "rounded-md px-2.5 py-1 text-neutral-500 hover:text-neutral-900 dark:hover:text-neutral-100"
           }
         >
-          {target === "live"
-            ? // Calling a frozen snapshot "Live data" while a banner on the same page
-              // says quotes are stale is a contradiction the reader has to resolve,
-              // and it costs trust in everything else on the page.
-              snapshot
-              ? "Research snapshot"
-              : "Live pipeline"
-            : "Synthetic demo"}
+          {/* Full wording from sm up; abbreviated below, where the long labels
+              pushed the nav off screen entirely. The meaning has to survive the
+              abbreviation - "Live" vs "Snapshot" is the distinction that matters. */}
+          <span className="hidden sm:inline">
+            {target === "live"
+              ? snapshot
+                ? "Research snapshot"
+                : "Live pipeline"
+              : "Synthetic demo"}
+          </span>
+          <span className="sm:hidden">
+            {target === "live" ? (snapshot ? "Snapshot" : "Live") : "Demo"}
+          </span>
         </Link>
       ))}
     </div>

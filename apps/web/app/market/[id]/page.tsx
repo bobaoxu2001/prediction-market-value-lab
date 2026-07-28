@@ -1,17 +1,7 @@
 import Link from "next/link";
 import { apiGet, qs, type DataMode } from "@/lib/api";
-import { ageLabel, cents, compactUsd, displayTitle, localTime, pct, prob, relativeTime, signedCents } from "@/lib/format";
-import {
-  ApiDown,
-  DemoBanner,
-  EmptyState,
-  Metric,
-  PageHeader,
-  PlatformChip,
-  RiskFlags,
-  SideChip,
-  StateChip,
-} from "@/components/ui";
+import { humanizeSeconds, ageRelativeToSnapshot, cents, compactUsd, displayTitle, localTime, pct, prob, relativeToSnapshot, signedCents } from "@/lib/format";
+import { ApiDown, DemoBanner, EmptyState, Metric, PageHeader, PlatformChip, SideChip, StateChip, VenueAvailability } from "@/components/ui";
 import { PriceChart } from "@/components/PriceChart";
 
 export const dynamic = "force-dynamic";
@@ -45,6 +35,17 @@ export default async function MarketDetailPage({
   const mode: DataMode = rawMode === "demo" ? "demo" : "live";
 
   const res = await apiGet<Detail>(`/markets/${id}${qs({ mode })}`);
+  // Anchor relative times to the capture instant. On a frozen deployment now()
+  // advances while the data does not, so a market with hours left at capture drifts
+  // into "resolved 12h ago" while still listed as upcoming.
+  const system = await apiGet<{
+    snapshot_mode?: boolean;
+    freshest_quote_observed_at?: string | null;
+  }>("/system");
+  const snapshotAt = system?.data?.snapshot_mode
+    ? (system?.data?.freshest_quote_observed_at ?? null)
+    : null;
+
   if (!res) return <ApiDown />;
   const d = res.data;
   if (!d?.market) {
@@ -73,9 +74,24 @@ export default async function MarketDetailPage({
       />
       <DemoBanner notice={res.demo_notice} />
 
+      {m.venue_availability ? (
+        <div className="card mb-4 p-4">
+          <h2 className="text-sm font-semibold">Where this contract can be traded</h2>
+          <div className="mt-2">
+            <VenueAvailability venues={m.venue_availability} />
+          </div>
+          <p className="mt-2 text-xs text-neutral-500">
+            Exchange availability is asserted only for venues read directly. Broker
+            availability is never inferred from an exchange listing: brokers resell a
+            subset that changes without notice and is gated by jurisdiction and
+            account type, and no discovery source for them is wired up here.
+          </p>
+        </div>
+      ) : null}
+
       {/* ---- quotes ---- */}
       <section className="card mb-4 p-4">
-        <h2 className="mb-3 text-sm font-semibold">Current quotes</h2>
+        <h2 className="mb-3 text-sm font-semibold">Quotes</h2>
         <div className="grid grid-cols-2 gap-4 sm:grid-cols-4 lg:grid-cols-8">
           <Metric label="YES bid" value={cents(m.best_yes_bid)} />
           <Metric label="YES ask" value={cents(m.best_yes_ask)} hint="Executable price to buy YES" />
@@ -91,8 +107,8 @@ export default async function MarketDetailPage({
           <Metric label="Taker fee rate" value={m.fee_rate} hint={`Fee model: ${m.fee_type}`} />
           <Metric label="Min order" value={m.min_order_size} />
           <Metric label="Open interest" value={compactUsd(m.open_interest)} />
-          <Metric label="Quote age" value={ageLabel(m.quote_observed_at)} />
-          <Metric label="Resolves" value={relativeTime(m.expected_resolution_time)} hint={localTime(m.expected_resolution_time)} />
+          <Metric label="Quote age" value={ageRelativeToSnapshot(m.quote_observed_at, snapshotAt)} />
+          <Metric label="Resolves" value={relativeToSnapshot(m.expected_resolution_time, snapshotAt)} hint={localTime(m.expected_resolution_time)} />
         </div>
       </section>
 
@@ -134,7 +150,7 @@ export default async function MarketDetailPage({
                 />
                 <Metric label="Confidence" value={pct(latest.model_confidence)} />
                 <Metric label="Evidence quality" value={pct(latest.evidence_quality)} />
-                <Metric label="Data freshness" value={latest.data_freshness_seconds != null ? `${Math.round(latest.data_freshness_seconds / 60)}m` : "—"} />
+                <Metric label="Data freshness" value={humanizeSeconds(latest.data_freshness_seconds)} />
                 <Metric label="Model version" value={latest.model_version} />
               </div>
 

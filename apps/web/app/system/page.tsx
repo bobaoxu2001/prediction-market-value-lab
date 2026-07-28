@@ -1,5 +1,5 @@
 import { apiGet, type SystemInfo } from "@/lib/api";
-import { ageLabel, localTime } from "@/lib/format";
+import { localTime, utcTime } from "@/lib/format";
 import { ApiDown, Metric, PageHeader } from "@/components/ui";
 
 export const dynamic = "force-dynamic";
@@ -24,6 +24,12 @@ export default async function SystemPage() {
   if (!res) return <ApiDown />;
   const s = res.data;
 
+  // Available to the server render on Vercel; absent locally, where "—" is honest.
+  const short = (sha: string | undefined | null) => (sha ? sha.slice(0, 12) : "—");
+  const webCommit = short(process.env.VERCEL_GIT_COMMIT_SHA);
+  const webRef = process.env.VERCEL_GIT_COMMIT_REF ?? "—";
+  const apiCommit = short(s.deployment?.commit_sha);
+
   return (
     <div>
       <PageHeader
@@ -31,12 +37,41 @@ export default async function SystemPage() {
         subtitle="Data sources, job health and update cadences. A job that has silently stopped running shows here rather than being mistaken for 'no opportunities today'."
       />
 
+      {/* The web bundle's OWN commit, read from the build environment rather than
+          from the API. Without it the two projects can drift - the web app once
+          served a commit two merges behind the API with nothing on the page
+          saying so - and comparing these two rows is how you catch it. */}
+      <section className="card mb-4 p-4">
+        <h2 className="mb-3 text-sm font-semibold">Deployment</h2>
+        <div className="grid grid-cols-2 gap-4 sm:grid-cols-4">
+          <Metric label="Web commit" value={webCommit} />
+          <Metric label="Web branch" value={webRef} />
+          <Metric label="API commit" value={apiCommit} />
+          <Metric
+            label="Web / API match"
+            value={
+              webCommit === "—" || apiCommit === "—"
+                ? "unknown"
+                : webCommit === apiCommit
+                  ? "same commit"
+                  : "DIFFERENT"
+            }
+            tone={
+              webCommit !== "—" && apiCommit !== "—" && webCommit !== apiCommit
+                ? "warn"
+                : "neutral"
+            }
+            hint="The frontend and the API are deployed separately and can drift apart."
+          />
+        </div>
+      </section>
+
       <section className="card mb-4 p-4">
         <h2 className="mb-3 text-sm font-semibold">Status</h2>
         <div className="grid grid-cols-2 gap-4 sm:grid-cols-4">
           <Metric label="Environment" value={s.environment} />
           <Metric label="Model version" value={s.model_version} />
-          <Metric label="Freshest quote" value={ageLabel(s.freshest_quote_observed_at)} />
+          <Metric label="Latest captured quote" value={utcTime(s.freshest_quote_observed_at)} />
           <Metric
             label="Trading execution"
             value={s.trading_execution_enabled ? "enabled" : "disabled"}
@@ -45,6 +80,37 @@ export default async function SystemPage() {
           />
         </div>
       </section>
+
+      {s.snapshot_timing && (
+        <section className="card mb-4 p-4">
+          <h2 className="mb-1 text-sm font-semibold">Snapshot timing</h2>
+          {/* These were previously collapsed into one "snapshot timestamp", which
+              reported the single freshest observation as though every quote had
+              been captured then. They are hours to weeks apart, so each one is
+              named for the question it answers. */}
+          <p className="mb-3 max-w-3xl text-xs text-neutral-600 dark:text-neutral-400">
+            {s.snapshot_timing.note}
+          </p>
+          <div className="grid grid-cols-2 gap-4 sm:grid-cols-3">
+            <Metric label="Ingest started" value={utcTime(s.snapshot_timing.market_ingest_started_at)} />
+            <Metric label="Ingest finished" value={utcTime(s.snapshot_timing.market_ingest_finished_at)} />
+            <Metric label="Arbitrage scan" value={utcTime(s.snapshot_timing.arbitrage_scan_at)} />
+            <Metric label="Latest captured quote" value={utcTime(s.snapshot_timing.freshest_quote_observed_at)} />
+            <Metric label="Median captured quote" value={utcTime(s.snapshot_timing.median_quote_observed_at)} />
+            <Metric label="Oldest captured quote" value={utcTime(s.snapshot_timing.oldest_quote_observed_at)} />
+          </div>
+          {/* Reported as absent with a reason rather than approximated from a
+              value that happens to be recorded. */}
+          <dl className="mt-4 space-y-1 border-t border-neutral-100 pt-3 text-xs text-neutral-500 dark:border-neutral-800">
+            {Object.entries(s.snapshot_timing.unavailable ?? {}).map(([field, why]) => (
+              <div key={field} className="flex flex-wrap gap-x-2">
+                <dt className="font-mono text-neutral-600 dark:text-neutral-400">{field}</dt>
+                <dd>not recorded — {why}</dd>
+              </div>
+            ))}
+          </dl>
+        </section>
+      )}
 
       <section className="card mb-4 p-4">
         <h2 className="mb-3 text-sm font-semibold">Job health</h2>

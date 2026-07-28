@@ -1,6 +1,6 @@
 import Link from "next/link";
 import { apiGet, qs, type ArbitrageOpportunity, type DataMode } from "@/lib/api";
-import { cents, compactUsd, displayTitle, localTime, pct, relativeTime, usd } from "@/lib/format";
+import { cents, compactUsd, displayTitle, localTime, pct, relativeToSnapshot, usd } from "@/lib/format";
 import {
   ApiDown,
   ArbLabelChip,
@@ -9,7 +9,6 @@ import {
   Metric,
   PageHeader,
   PlatformChip,
-  RiskFlags,
 } from "@/components/ui";
 
 export const dynamic = "force-dynamic";
@@ -31,6 +30,17 @@ export default async function ArbitragePage({
   const res = await apiGet<ArbitrageOpportunity[]>(
     `/arbitrage${qs({ mode, view, label: params.label, kind: params.kind, limit: 50 })}`,
   );
+  // Anchor relative times to the capture instant. On a frozen deployment now()
+  // advances while the data does not, so a market with hours left at capture drifts
+  // into "resolved 12h ago" while still listed as upcoming.
+  const system = await apiGet<{
+    snapshot_mode?: boolean;
+    freshest_quote_observed_at?: string | null;
+  }>("/system");
+  const snapshotAt = system?.data?.snapshot_mode
+    ? (system?.data?.freshest_quote_observed_at ?? null)
+    : null;
+
   if (!res) return <ApiDown />;
 
   const rows = res.data ?? [];
@@ -223,6 +233,10 @@ export default async function ArbitragePage({
                 </table>
               </div>
 
+              {/* Arbitrage scanners emit full sentences here, not the enum codes
+                  the RiskFlags chips are built for - a sentence in a pill wraps
+                  badly and its tooltip would just repeat itself. A list is the
+                  right container for this shape of text. */}
               {a.risk_flags?.length > 0 && (
                 <ul className="mt-3 space-y-1 text-xs text-neutral-600 dark:text-neutral-400">
                   {a.risk_flags.map((flag, i) => (
@@ -236,7 +250,7 @@ export default async function ArbitragePage({
 
               <div className="mt-3 border-t border-neutral-100 pt-2 text-[11px] text-neutral-500 dark:border-neutral-800">
                 Quote age {a.quote_age_seconds ?? "—"}s · resolves{" "}
-                {relativeTime(a.expected_resolution_time)} · scanned {localTime(a.created_at)}
+                {relativeToSnapshot(a.expected_resolution_time, snapshotAt)} · scanned {localTime(a.created_at)}
               </div>
             </article>
           ))}

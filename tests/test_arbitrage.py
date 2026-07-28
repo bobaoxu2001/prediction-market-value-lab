@@ -76,9 +76,7 @@ class TestCompleteSetArbitrage:
         assert result.label == ArbitrageLabel.INSUFFICIENT_LIQUIDITY
 
 
-def equivalence(
-    v: "EquivalenceVerdict", cancellation: str = "unknown"
-) -> "EquivalenceScore":
+def equivalence(v, cancellation: str = "unknown"):  # noqa: ANN001, ANN201
     """Build an EquivalenceScore with an explicit cancellation status."""
     from pmvl_markets.matching.equivalence import (
         ComponentResult,

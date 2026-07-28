@@ -26,6 +26,38 @@ SNAPSHOT = ROOT / "data" / "pmvl-snapshot.db"
 MAX_BYTES = 40 * 1024 * 1024
 
 
+def _restore_rollback_journal() -> None:
+    """Put the file back into rollback-journal mode and drop any sidecars."""
+    try:
+        from pmvl_shared.db import get_engine
+
+        get_engine().dispose()
+    except Exception:  # noqa: BLE001
+        pass
+    con = sqlite3.connect(SNAPSHOT)
+    con.execute("PRAGMA journal_mode=DELETE")
+    con.commit()
+    con.close()
+    for suffix in ("-wal", "-shm"):
+        sidecar = SNAPSHOT.with_name(SNAPSHOT.name + suffix)
+        if sidecar.exists():
+            sidecar.unlink()
+
+
+def select_markets_with_books():  # noqa: ANN201
+    """Markets that have at least one captured order book."""
+    from sqlalchemy import select
+
+    from pmvl_markets.db_models import Market, OrderbookSnapshot
+
+    return (
+        select(Market)
+        .join(OrderbookSnapshot, OrderbookSnapshot.market_id == Market.id)
+        .distinct()
+        .limit(120)
+    )
+
+
 def main() -> int:
     problems: list[str] = []
 
@@ -90,8 +122,174 @@ def main() -> int:
                 problems.append(f"{route} -> HTTP {response.status_code}")
             elif key and not response.json().get(key):
                 problems.append(f"{route} -> 200 but '{key}' is empty")
+
+        # The snapshot's timestamps must reach the deployment already separated.
+        # Collapsing them produced a banner that reported the single freshest
+        # observation as the capture time for all 1850 markets.
+        timing = client.get("/system").json().get("data", {}).get("snapshot_timing")
+        if not timing:
+            problems.append("/system -> no snapshot_timing block")
+        else:
+            for field in (
+                "market_ingest_started_at",
+                "market_ingest_finished_at",
+                "freshest_quote_observed_at",
+                "oldest_quote_observed_at",
+                "median_quote_observed_at",
+                "arbitrage_scan_at",
+            ):
+                if field not in timing:
+                    problems.append(f"/system snapshot_timing -> missing {field}")
+            freshest = timing.get("freshest_quote_observed_at")
+            oldest = timing.get("oldest_quote_observed_at")
+            if freshest and oldest and freshest == oldest:
+                problems.append(
+                    "/system snapshot_timing -> freshest equals oldest quote; the "
+                    "spread that makes a single capture time misleading is missing"
+                )
+            # Never approximated from a value that happens to be recorded.
+            for absent in ("snapshot_artifact_built_at", "deployment_created_at"):
+                if timing.get(absent) is not None:
+                    problems.append(
+                        f"/system snapshot_timing -> {absent} is set, but nothing "
+                        "records it; it must stay null with a stated reason"
+                    )
     except Exception as exc:  # noqa: BLE001
         problems.append(f"API could not serve the snapshot: {type(exc).__name__}: {exc}")
+
+    # Quote coherence. Every displayed price, the spread, the depth and the
+    # timestamp must come from ONE observation. Checking only the first YES ask
+    # would miss a response that mixes a book ask with a summary bid, which reads
+    # as a plausible spread and is entirely fictional.
+    try:
+        from decimal import Decimal
+
+        from pmvl_shared.db import session_scope
+        from pmvl_markets.db_models import Market
+
+        from pmvl_api.quotes import coherent_quote
+
+        def dec(value):
+            return None if value is None else Decimal(str(value))
+
+        with session_scope() as session:
+            checked = 0
+            failures: list[str] = []
+            for market in session.scalars(select_markets_with_books()).all():
+                resolved = coherent_quote(session, market)
+                response = client.get(f"/markets/{market.id}")
+                if response.status_code != 200:
+                    continue
+                payload = response.json()["data"]
+                served, book = payload["market"], payload.get("orderbook") or {}
+                served_quote = payload.get("quote") or {}
+                checked += 1
+
+                def top(side: str, kind: str, source=book):
+                    levels = source.get(f"{side}_{kind}") or []
+                    return dec(levels[0]["price"]) if levels else None
+
+                # 1. The response must say where its numbers came from.
+                source = served_quote.get("source")
+                if source not in ("orderbook", "venue_summary", "none"):
+                    failures.append(f"market {market.id}: quote source {source!r}")
+                    continue
+
+                if source == "orderbook":
+                    # 2. Every side must match the book it claims to come from.
+                    for side, kind, field in (
+                        ("yes", "asks", "best_yes_ask"),
+                        ("yes", "bids", "best_yes_bid"),
+                        ("no", "asks", "best_no_ask"),
+                        ("no", "bids", "best_no_bid"),
+                    ):
+                        expected, actual = top(side, kind), dec(served.get(field))
+                        if expected is not None and actual is not None and expected != actual:
+                            failures.append(
+                                f"market {market.id}: {field} {actual} != book {expected}"
+                            )
+                    # 3. A market claiming order-book pricing while a newer book
+                    #    exists unused would be a resolver bug.
+                    if resolved.source != "orderbook":
+                        failures.append(
+                            f"market {market.id}: served orderbook pricing but the "
+                            f"resolver chose {resolved.source}"
+                        )
+                elif source == "venue_summary" and resolved.source == "orderbook":
+                    failures.append(
+                        f"market {market.id}: served a venue summary while a usable "
+                        "order book exists"
+                    )
+
+                # 4. Spread must be derived from the displayed bid and ask, not
+                #    carried over from a different observation.
+                bid, ask, spread = (
+                    dec(served.get("best_yes_bid")),
+                    dec(served.get("best_yes_ask")),
+                    dec(served.get("spread")),
+                )
+                if None not in (bid, ask, spread) and (ask - bid) != spread:
+                    failures.append(
+                        f"market {market.id}: spread {spread} != ask {ask} - bid {bid}"
+                    )
+                # A spread with a side missing has nothing to measure from. This
+                # case used to be skipped because the check required all three to
+                # be present, which is exactly how the venue-summary path shipped
+                # "YES BID -, YES ASK 0.1c, SPREAD 0.1c".
+                if spread is not None and (bid is None or ask is None):
+                    failures.append(
+                        f"market {market.id}: spread {spread} shown with "
+                        f"bid={bid} ask={ask}; one side is missing"
+                    )
+
+                # 5. The timestamp must belong to the source that supplied the prices.
+                if source == "orderbook":
+                    if served.get("quote_observed_at") != (book.get("observed_at")):
+                        failures.append(
+                            f"market {market.id}: quote timestamp does not match the "
+                            "order book it was priced from"
+                        )
+
+                # 6. Depth must be labelled for the definition it uses.
+                if source == "orderbook" and "yes_ask_depth_usd" not in served:
+                    failures.append(f"market {market.id}: ask depth is not named explicitly")
+
+            problems.extend(failures[:5])
+            if len(failures) > 5:
+                problems.append(f"...and {len(failures) - 5} further quote-coherence failures")
+            if not failures:
+                print(f"   quote coherence: {checked} markets consistent")
+    except Exception as exc:  # noqa: BLE001
+        problems.append(f"quote-coherence check failed: {type(exc).__name__}: {exc}")
+
+    # If an arbitrage scan is recorded, its demotion histogram must be servable.
+    # The histogram is the only thing that distinguishes "these venues genuinely do
+    # not list equivalent contracts" from "the matcher is broken", and it lived in a
+    # table the snapshot builder was deleting wholesale.
+    try:
+        response = client.get("/arbitrage")
+        if response.status_code == 200:
+            body = response.json()
+            has_scan = bool(body.get("batch_id"))
+            diagnostics = body.get("matching_diagnostics")
+            if has_scan and not diagnostics:
+                problems.append(
+                    "an arbitrage scan is recorded but matching_diagnostics is null; "
+                    "the demotion histogram did not survive into the snapshot"
+                )
+            elif diagnostics and not diagnostics.get("pairs_examined"):
+                problems.append("matching_diagnostics present but pairs_examined is 0")
+    except Exception as exc:  # noqa: BLE001
+        problems.append(f"diagnostics check failed: {type(exc).__name__}: {exc}")
+
+    # Opening the snapshot through SQLAlchemy sets journal_mode=WAL, so simply
+    # RUNNING this validator used to leave the artefact unopenable read-only - the
+    # check corrupting the thing it checks. Restore it, then re-assert from the file
+    # header so a genuine WAL commit is still caught above.
+    _restore_rollback_journal()
+    header = SNAPSHOT.open("rb").read(20)
+    if header[18] == 2 or header[19] == 2:
+        problems.append("snapshot is still in WAL mode after the restore attempt")
 
     if problems:
         print("SNAPSHOT VALIDATION FAILED:")

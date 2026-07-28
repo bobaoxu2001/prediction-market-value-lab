@@ -348,3 +348,6 @@ See `/methodology` for the live list. The significant ones:
   model.
 - The backtest cannot model queue position or partial fills.
 - WebSocket streaming is specified but not implemented; orderbooks are polled.
+
+
+See [docs/deployment.md](docs/deployment.md) for deployment and preview wiring.

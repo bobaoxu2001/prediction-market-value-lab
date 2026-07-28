@@ -104,36 +104,19 @@ export function localDate(iso: string | null | undefined): string {
   });
 }
 
-/** "in 6h 20m" / "3d ago" — the reader needs urgency, not a raw timestamp. */
-export function relativeTime(iso: string | null | undefined): string {
-  if (!iso) return "—";
-  const target = new Date(iso).getTime();
-  if (Number.isNaN(target)) return "—";
-  const deltaSeconds = (target - Date.now()) / 1000;
-  const past = deltaSeconds < 0;
-  const abs = Math.abs(deltaSeconds);
+/*
+ * `relativeTime` and `ageLabel` lived here and measured from `Date.now()`. On a
+ * deployment serving a frozen snapshot that is simply wrong: an age grew while
+ * the reader sat on the page, and a market that had hours left when the data was
+ * captured drifted into "resolved 12h ago".
+ *
+ * They are deleted rather than left unused, because an exported helper with the
+ * right-sounding name is how the bug came back the last two times. Use
+ * `ageRelativeToSnapshot` / `relativeToSnapshot` (both take an explicit anchor
+ * and fall back to the live clock only when passed `null`), or `utcTime` for a
+ * timestamp describing the dataset itself.
+ */
 
-  let text: string;
-  if (abs < 60) text = `${Math.round(abs)}s`;
-  else if (abs < 3600) text = `${Math.round(abs / 60)}m`;
-  else if (abs < 86400) {
-    const hours = Math.floor(abs / 3600);
-    const minutes = Math.round((abs % 3600) / 60);
-    text = minutes ? `${hours}h ${minutes}m` : `${hours}h`;
-  } else text = `${Math.round(abs / 86400)}d`;
-
-  return past ? `${text} ago` : `in ${text}`;
-}
-
-export function ageLabel(iso: string | null | undefined): string {
-  if (!iso) return "unknown";
-  const seconds = (Date.now() - new Date(iso).getTime()) / 1000;
-  if (!Number.isFinite(seconds)) return "unknown";
-  if (seconds < 90) return "just now";
-  if (seconds < 3600) return `${Math.round(seconds / 60)}m old`;
-  if (seconds < 86400) return `${Math.round(seconds / 3600)}h old`;
-  return `${Math.round(seconds / 86400)}d old`;
-}
 
 /** Risk flags are snake_case identifiers; render them readably. */
 export function humanizeFlag(flag: string): string {
@@ -299,3 +282,78 @@ export const VENUE_AVAILABILITY_LABEL: Record<string, string> = {
   unverified: "Unverified",
   not_observed: "Not checked",
 };
+
+/**
+ * How old a quote was **at the moment the data was captured**.
+ *
+ * `ageLabel` measures against the real clock. On a frozen snapshot that is wrong in a
+ * way that gets worse every day: resolution times were anchored to the capture
+ * instant while quote age kept counting up against now(), so one page showed a quote
+ * "3d old" next to a market resolving "in 2h" — two different clocks, and a reader
+ * has no way to know which one to trust.
+ *
+ * Passing `snapshotAt = null` restores live behaviour for a real-time deployment.
+ */
+export function ageRelativeToSnapshot(
+  observedAt: string | null | undefined,
+  snapshotAt: string | null | undefined,
+): string {
+  if (!observedAt) return "—";
+  const observed = new Date(observedAt).getTime();
+  const anchor = snapshotAt ? new Date(snapshotAt).getTime() : Date.now();
+  if (Number.isNaN(observed) || Number.isNaN(anchor)) return "—";
+
+  const diffMs = anchor - observed;
+  // A quote captured after the anchor is a clock or ordering artefact, not a
+  // negative age. Report it plainly rather than rendering "-3h old".
+  if (diffMs < 0) return snapshotAt ? "after snapshot" : "just now";
+
+  const mins = Math.floor(diffMs / 60000);
+  if (mins < 1) return "<1m";
+  if (mins < 60) return `${mins}m`;
+  const hours = Math.floor(diffMs / 3600000);
+  if (hours < 48) return `${hours}h`;
+  return `${Math.floor(diffMs / 86400000)}d`;
+}
+
+/**
+ * Render a duration so the number stays small enough to read at a glance.
+ *
+ * "Data freshness 3269m" is two and a quarter days, but a reader scanning a
+ * metric row does not divide by 1440. Mirrors `humanize_seconds` in
+ * pmvl_shared.timeutil so the API and the page describe an age the same way.
+ */
+export function humanizeSeconds(seconds: number | null | undefined): string {
+  if (seconds == null || !Number.isFinite(seconds)) return "—";
+  const s = Math.abs(seconds);
+  if (s < 90) return `${Math.round(s)}s`;
+  const minutes = s / 60;
+  if (minutes < 90) return `${Math.round(minutes)}m`;
+  const hours = minutes / 60;
+  if (hours < 48) return `${hours.toFixed(1).replace(/\.0$/, "")}h`;
+  return `${(hours / 24).toFixed(1).replace(/\.0$/, "")}d`;
+}
+
+/**
+ * An absolute instant in UTC, for timestamps that describe the dataset itself.
+ *
+ * `localTime` renders in the reader's zone, which is right for "when does this
+ * market resolve" and wrong for provenance: two people comparing notes on the
+ * same snapshot should read the same string. `ageLabel` is worse here — it
+ * measures from `Date.now()`, so on a frozen snapshot it reported an age that
+ * grew while the reader sat on the page.
+ */
+export function utcTime(iso: string | null | undefined): string {
+  if (!iso) return "—";
+  const d = new Date(iso);
+  if (Number.isNaN(d.getTime())) return "—";
+  return `${d.toLocaleString("en-US", {
+    timeZone: "UTC",
+    month: "short",
+    day: "numeric",
+    year: "numeric",
+    hour: "2-digit",
+    minute: "2-digit",
+    hour12: false,
+  })} UTC`;
+}

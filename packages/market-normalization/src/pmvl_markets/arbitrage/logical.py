@@ -23,6 +23,7 @@ from dataclasses import dataclass
 from decimal import Decimal
 
 from pmvl_shared.config import get_settings
+from pmvl_shared.timeutil import humanize_seconds
 from pmvl_shared.enums import ArbitrageKind, ArbitrageLabel, RuleCompatibility, Side
 from pmvl_shared.logging_setup import get_logger
 from pmvl_shared.money import D, ONE, ZERO, quantize_usd, safe_div
@@ -186,7 +187,7 @@ def _build_logical_result(
     worst_age = max([a for a in ages if a is not None], default=None)
     if worst_age is not None and worst_age > settings.max_quote_age_seconds:
         label = ArbitrageLabel.STALE_QUOTE
-        risk_flags.append(f"oldest quote is {worst_age:.0f}s old")
+        risk_flags.append(f"oldest quote is {humanize_seconds(worst_age)} old")
     if total_cost < settings.min_orderbook_notional_usd:
         label = ArbitrageLabel.INSUFFICIENT_LIQUIDITY
 

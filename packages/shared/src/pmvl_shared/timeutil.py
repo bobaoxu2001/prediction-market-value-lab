@@ -139,3 +139,25 @@ def age_seconds(observed_at: datetime | None, *, now: datetime | None = None) ->
 def earliest(values: Iterable[datetime | None]) -> datetime | None:
     present = [ensure_utc(v) for v in values if v is not None]
     return min(present) if present else None
+
+
+def humanize_seconds(seconds: float) -> str:
+    """Render an age as something a reader can judge at a glance.
+
+    Risk flags reached the page reading "oldest quote is 179581s old". That is
+    two days, but nobody converts six-figure second counts while scanning a
+    table, so the flag failed at the one job it had: making staleness obvious.
+
+    The unit is chosen so the number stays small, and sub-minute ages keep
+    seconds because that is the range where seconds are the natural unit.
+    """
+    seconds = abs(float(seconds))
+    if seconds < 90:
+        return f"{seconds:.0f}s"
+    minutes = seconds / 60
+    if minutes < 90:
+        return f"{minutes:.0f}m"
+    hours = minutes / 60
+    if hours < 48:
+        return f"{hours:.1f}h".replace(".0h", "h")
+    return f"{hours / 24:.1f}d".replace(".0d", "d")
