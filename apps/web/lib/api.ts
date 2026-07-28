@@ -141,6 +141,7 @@ export interface MarketRow {
   quote_observed_at: string | null;
   result: string | null;
   provenance: string;
+  venue_availability?: { venue: string; status: string; label: string }[];
 }
 
 export interface TrackRecordRow {

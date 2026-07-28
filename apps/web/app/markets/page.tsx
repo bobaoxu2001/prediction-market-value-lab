@@ -1,13 +1,7 @@
 import Link from "next/link";
 import { apiGet, qs, type DataMode, type MarketRow } from "@/lib/api";
-import { ageLabel, cents, compactUsd, relativeTime } from "@/lib/format";
-import {
-  ApiDown,
-  DemoBanner,
-  EmptyState,
-  PageHeader,
-  PlatformChip,
-} from "@/components/ui";
+import { ageLabel, cents, compactUsd, displayTitle, relativeTime } from "@/lib/format";
+import { ApiDown, DemoBanner, EmptyState, PageHeader, PlatformChip, VenueAvailability } from "@/components/ui";
 
 export const dynamic = "force-dynamic";
 
@@ -127,8 +121,8 @@ export default async function MarketsPage({
               <tbody className="divide-y divide-neutral-100 dark:divide-neutral-800">
                 {rows.map((m) => (
                   <tr key={m.id} className="hover:bg-neutral-50 dark:hover:bg-neutral-900">
-                    <td className="max-w-md truncate">
-                      <Link href={`/market/${m.id}`} className="hover:underline">{m.title}</Link>
+                    <td className="max-w-md">
+                      <Link href={`/market/${m.id}`} className="hover:underline">{displayTitle(m.title)}</Link>
                     </td>
                     <td><PlatformChip platform={m.platform} /></td>
                     <td className="text-neutral-500">{m.category}</td>

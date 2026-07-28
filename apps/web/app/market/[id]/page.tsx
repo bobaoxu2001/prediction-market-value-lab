@@ -1,15 +1,6 @@
 import Link from "next/link";
 import { apiGet, qs, type DataMode } from "@/lib/api";
-import {
-  ageLabel,
-  cents,
-  compactUsd,
-  localTime,
-  pct,
-  prob,
-  relativeTime,
-  signedCents,
-} from "@/lib/format";
+import { ageLabel, cents, compactUsd, displayTitle, localTime, pct, prob, relativeTime, signedCents } from "@/lib/format";
 import {
   ApiDown,
   DemoBanner,
@@ -66,7 +57,7 @@ export default async function MarketDetailPage({
   return (
     <div>
       <PageHeader
-        title={m.title}
+        title={displayTitle(m.title)}
         subtitle={m.subtitle || undefined}
         right={
           <div className="flex flex-wrap items-center gap-2">
@@ -267,7 +258,7 @@ export default async function MarketDetailPage({
                   <tr key={i}>
                     <td className="max-w-xs truncate">
                       <Link href={`/market/${mt.other_market_id}`} className="hover:underline">
-                        {mt.other_title}
+                        {displayTitle(mt.other_title)}
                       </Link>
                     </td>
                     <td><PlatformChip platform={mt.other_platform} /></td>
@@ -310,7 +301,7 @@ export default async function MarketDetailPage({
                     {e.is_novel ? "" : " · repeat coverage"}
                   </span>
                 </div>
-                <p className="mt-1 text-sm">{e.title}</p>
+                <p className="mt-1 text-sm">{displayTitle(e.title)}</p>
                 <p className="text-xs text-neutral-600 dark:text-neutral-400">{e.summary}</p>
                 {e.source_url && (
                   <a href={e.source_url} target="_blank" rel="noopener noreferrer"

@@ -24,6 +24,22 @@ const NAV = [
 ];
 
 export default async function RootLayout({ children }: { children: React.ReactNode }) {
+  // Probed once per request, above the header, because the mode switch needs to know
+  // whether this deployment serves a frozen snapshot before it can name the mode.
+  // A failure here must never blank the site.
+  let snapshotActive = false;
+  let capturedAt: string | null = null;
+  try {
+    const sys = await apiGet<{
+      snapshot_mode?: boolean;
+      freshest_quote_observed_at?: string | null;
+    }>("/system");
+    snapshotActive = Boolean(sys?.data?.snapshot_mode);
+    capturedAt = sys?.data?.freshest_quote_observed_at ?? null;
+  } catch {
+    // leave defaults
+  }
+
   return (
     <html lang="en" suppressHydrationWarning>
       <head>
@@ -52,7 +68,7 @@ export default async function RootLayout({ children }: { children: React.ReactNo
                 </Suspense>
                 <div className="flex items-center gap-2">
                   <Suspense fallback={null}>
-                    <ModeSwitch />
+                    <ModeSwitch snapshot={snapshotActive} />
                   </Suspense>
                   <ThemeToggle />
                 </div>
@@ -60,21 +76,10 @@ export default async function RootLayout({ children }: { children: React.ReactNo
             </div>
           </header>
 
-          <main className="mx-auto max-w-7xl px-4 py-6">{await (async () => {
-            // One probe per request; a failure here must never blank the site.
-            try {
-              const sys = await apiGet<{ snapshot_mode?: boolean; freshest_quote_observed_at?: string | null }>("/system");
-              return (
-                <SnapshotBanner
-                  active={sys?.data?.snapshot_mode}
-                  capturedAt={sys?.data?.freshest_quote_observed_at}
-                />
-              );
-            } catch {
-              return null;
-            }
-          })()}
-          {children}</main>
+          <main className="mx-auto max-w-7xl px-4 py-6">
+            <SnapshotBanner active={snapshotActive} capturedAt={capturedAt} />
+            {children}
+          </main>
 
           <footer className="mt-12 border-t border-neutral-200 py-6 text-xs text-neutral-500 dark:border-neutral-800">
             <div className="mx-auto max-w-7xl space-y-2 px-4">

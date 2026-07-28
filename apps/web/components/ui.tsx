@@ -308,3 +308,38 @@ export function VerdictCard({
     </div>
   );
 }
+
+/**
+ * Venue availability chips.
+ *
+ * Broker availability is shown separately from exchange availability and is never
+ * inferred from it. A contract listed on Kalshi says nothing about whether a broker
+ * resells it, and presenting the two identically would imply a claim the platform
+ * cannot support.
+ */
+export function VenueAvailability({
+  venues,
+}: {
+  venues: { venue: string; status: string; label: string }[];
+}) {
+  if (!venues?.length) return null;
+  const tone = (status: string) =>
+    status === "observed_via_public_api" || status === "confirmed_available"
+      ? "border-edge/40 text-edge dark:text-edge-dark"
+      : status === "confirmed_unavailable"
+        ? "border-neutral-300 text-neutral-500 dark:border-neutral-700"
+        : "border-amber-500/40 text-amber-700 dark:text-amber-400";
+  return (
+    <div className="flex flex-wrap gap-1">
+      {venues.map((v) => (
+        <span
+          key={v.venue}
+          title={v.label}
+          className={`rounded border px-1.5 py-0.5 text-[10px] uppercase tracking-wide ${tone(v.status)}`}
+        >
+          {v.venue}: {v.label}
+        </span>
+      ))}
+    </div>
+  );
+}

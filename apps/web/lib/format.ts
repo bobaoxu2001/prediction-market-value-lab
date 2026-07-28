@@ -239,3 +239,63 @@ export function count(value: string | number | null | undefined): string {
   const n = num(value);
   return n == null ? "—" : Math.round(n).toLocaleString();
 }
+
+/**
+ * Strip venue markdown from a market title.
+ *
+ * Kalshi emphasises the subject with `**...**`, which rendered literally as
+ * `Will the **high temp in Austin** be >103°`. The fix is deliberately NOT to render
+ * the markdown: these strings come from a third party and go straight into the page,
+ * so interpreting their formatting means interpreting whatever else they contain.
+ * Removing the syntax is the smaller, safer operation - React keeps escaping the
+ * result, and no `dangerouslySetInnerHTML` is involved anywhere.
+ */
+export function displayTitle(raw: string | null | undefined): string {
+  if (!raw) return "";
+  return raw
+    .replace(/\*\*(.+?)\*\*/g, "$1") // bold
+    .replace(/__(.+?)__/g, "$1") // bold, underscore form
+    .replace(/(^|\s)\*(?!\s)(.+?)\*(?=\s|$|[.,!?])/g, "$1$2") // italics
+    .replace(/`([^`]+)`/g, "$1") // inline code
+    .replace(/\s{2,}/g, " ")
+    .trim();
+}
+
+/**
+ * Time relative to the snapshot instant, not to now.
+ *
+ * On a frozen snapshot, `now()` keeps advancing while the data does not, so a market
+ * that had 3 hours left when the data was captured drifts into "resolved 12h ago"
+ * while still sitting under "Today's opportunities". Anchoring to the capture time
+ * keeps the page internally consistent, and passing `null` falls back to live
+ * behaviour for a real-time deployment.
+ */
+export function relativeToSnapshot(
+  target: string | null | undefined,
+  snapshotAt: string | null | undefined,
+): string {
+  if (!target) return "—";
+  const anchor = snapshotAt ? new Date(snapshotAt).getTime() : Date.now();
+  const t = new Date(target).getTime();
+  if (Number.isNaN(t) || Number.isNaN(anchor)) return "—";
+
+  const diffMs = t - anchor;
+  const abs = Math.abs(diffMs);
+  const mins = Math.round(abs / 60000);
+  const hours = Math.round(abs / 3600000);
+  const days = Math.round(abs / 86400000);
+  const size = mins < 60 ? `${mins}m` : hours < 48 ? `${hours}h` : `${days}d`;
+
+  if (diffMs >= 0) return snapshotAt ? `in ${size} (as of snapshot)` : `in ${size}`;
+  // Already past at capture time. On a snapshot this is a settled market, not a
+  // stale row that leaked into today's list.
+  return snapshotAt ? `settled ${size} before snapshot` : `${size} ago`;
+}
+
+/** Venue availability labels. Broker availability is never inferred. */
+export const VENUE_AVAILABILITY_LABEL: Record<string, string> = {
+  confirmed_available: "Confirmed",
+  confirmed_unavailable: "Not listed",
+  unverified: "Unverified",
+  not_observed: "Not checked",
+};

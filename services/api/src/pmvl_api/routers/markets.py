@@ -94,6 +94,21 @@ def _market_row(market: Market) -> dict[str, Any]:
         "quote_observed_at": market.quote_observed_at,
         "result": market.result,
         "provenance": market.provenance,
+        # Availability travels with the row so a list can show it without an N+1
+        # fetch. Broker availability is never inferred from exchange availability -
+        # a Kalshi listing says nothing about what a broker resells.
+        "venue_availability": [
+            {
+                "venue": venue,
+                "status": availability_for(
+                    venue, observed_platforms={market.platform}
+                ).value,
+                "label": availability_for(
+                    venue, observed_platforms={market.platform}
+                ).display_label,
+            }
+            for venue in ("kalshi", "polymarket", "moomoo")
+        ],
     }
 
 
