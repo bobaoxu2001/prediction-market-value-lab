@@ -53,7 +53,7 @@ export default async function MarketsPage({
     <div>
       <PageHeader
         title="Market browser"
-        subtitle={`${total.toLocaleString()} markets ingested from Kalshi and Polymarket. Prices use the latest captured order book when available. A clearly labelled venue-summary quote is used only as a fallback when no order book was captured, and is not an executable top-of-book price, not last trades.`}
+        subtitle={`${total.toLocaleString()} markets ingested from Kalshi and Polymarket. Prices use the latest captured order book when available. A clearly labelled venue-summary quote is used only as a fallback when no order book was captured, and is not an executable top-of-book price.`}
       />
       <DemoBanner notice={res.demo_notice} />
 
