@@ -64,8 +64,12 @@ API_ALIAS=$(vercel inspect <api-preview-url> 2>&1 | grep -o 'https://pmvl-api-gi
 printf '%s' "$API_ALIAS" | vercel env add NEXT_PUBLIC_API_BASE preview <branch-name>
 ```
 
-Find the API's branch alias with `vercel inspect <deployment-url>` — the alias is
-stable across pushes to that branch, unlike the per-deployment URL.
+Find the API's branch alias with `vercel inspect <deployment-url>`. It is far more
+stable than the per-deployment URL, but **not permanent** — the hash segment has been
+observed to change for the same project and branch, at which point the old alias
+returns `DEPLOYMENT_NOT_FOUND` and the web preview silently loses its backend. Re-read
+it from `vercel inspect` rather than reusing a remembered URL, and re-point the env
+var when it moves.
 
 ## Verifying a preview is really wired to its own API
 

@@ -1,6 +1,6 @@
 import Link from "next/link";
 import { apiGet, qs, type DataMode } from "@/lib/api";
-import { ageRelativeToSnapshot, cents, compactUsd, displayTitle, localTime, pct, prob, relativeToSnapshot, signedCents } from "@/lib/format";
+import { humanizeSeconds, ageRelativeToSnapshot, cents, compactUsd, displayTitle, localTime, pct, prob, relativeToSnapshot, signedCents } from "@/lib/format";
 import { ApiDown, DemoBanner, EmptyState, Metric, PageHeader, PlatformChip, SideChip, StateChip, VenueAvailability } from "@/components/ui";
 import { PriceChart } from "@/components/PriceChart";
 
@@ -150,7 +150,7 @@ export default async function MarketDetailPage({
                 />
                 <Metric label="Confidence" value={pct(latest.model_confidence)} />
                 <Metric label="Evidence quality" value={pct(latest.evidence_quality)} />
-                <Metric label="Data freshness" value={latest.data_freshness_seconds != null ? `${Math.round(latest.data_freshness_seconds / 60)}m` : "—"} />
+                <Metric label="Data freshness" value={humanizeSeconds(latest.data_freshness_seconds)} />
                 <Metric label="Model version" value={latest.model_version} />
               </div>
 

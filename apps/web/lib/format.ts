@@ -332,3 +332,21 @@ export function ageRelativeToSnapshot(
   if (hours < 48) return `${hours}h`;
   return `${Math.floor(diffMs / 86400000)}d`;
 }
+
+/**
+ * Render a duration so the number stays small enough to read at a glance.
+ *
+ * "Data freshness 3269m" is two and a quarter days, but a reader scanning a
+ * metric row does not divide by 1440. Mirrors `humanize_seconds` in
+ * pmvl_shared.timeutil so the API and the page describe an age the same way.
+ */
+export function humanizeSeconds(seconds: number | null | undefined): string {
+  if (seconds == null || !Number.isFinite(seconds)) return "—";
+  const s = Math.abs(seconds);
+  if (s < 90) return `${Math.round(s)}s`;
+  const minutes = s / 60;
+  if (minutes < 90) return `${Math.round(minutes)}m`;
+  const hours = minutes / 60;
+  if (hours < 48) return `${hours.toFixed(1).replace(/\.0$/, "")}h`;
+  return `${(hours / 24).toFixed(1).replace(/\.0$/, "")}d`;
+}
