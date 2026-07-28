@@ -80,10 +80,10 @@ class TestCrossPlatformArbitrage:
     def test_identical_rules_can_be_executable(
         self, kalshi_market, polymarket_market, book_factory
     ) -> None:  # noqa: ANN001
-        book_a = book_factory(yes_asks=[("0.35", "5000")], no_asks=[("0.66", "5000")])
+        book_a = book_factory(yes_asks=[("0.30", "5000")], no_asks=[("0.71", "5000")])
         book_b = book_factory(
             platform=Platform.POLYMARKET, market_id="123456",
-            yes_asks=[("0.36", "5000")], no_asks=[("0.55", "5000")],
+            yes_asks=[("0.31", "5000")], no_asks=[("0.55", "5000")],
         )
         result = scan_cross_platform(
             kalshi_market, book_a, polymarket_market, book_b,
@@ -97,10 +97,10 @@ class TestCrossPlatformArbitrage:
         self, kalshi_market, polymarket_market, book_factory
     ) -> None:  # noqa: ANN001
         """Anything short of an exact rule match must carry rule-mismatch risk."""
-        book_a = book_factory(yes_asks=[("0.35", "5000")], no_asks=[("0.66", "5000")])
+        book_a = book_factory(yes_asks=[("0.30", "5000")], no_asks=[("0.71", "5000")])
         book_b = book_factory(
             platform=Platform.POLYMARKET, market_id="123456",
-            yes_asks=[("0.36", "5000")], no_asks=[("0.55", "5000")],
+            yes_asks=[("0.31", "5000")], no_asks=[("0.55", "5000")],
         )
         result = scan_cross_platform(
             kalshi_market, book_a, polymarket_market, book_b,
@@ -124,10 +124,10 @@ class TestCrossPlatformArbitrage:
     def test_execution_risk_is_charged(
         self, kalshi_market, polymarket_market, book_factory
     ) -> None:  # noqa: ANN001
-        book_a = book_factory(yes_asks=[("0.35", "5000")], no_asks=[("0.66", "5000")])
+        book_a = book_factory(yes_asks=[("0.30", "5000")], no_asks=[("0.71", "5000")])
         book_b = book_factory(
             platform=Platform.POLYMARKET, market_id="123456",
-            yes_asks=[("0.36", "5000")], no_asks=[("0.55", "5000")],
+            yes_asks=[("0.31", "5000")], no_asks=[("0.55", "5000")],
         )
         result = scan_cross_platform(
             kalshi_market, book_a, polymarket_market, book_b,
@@ -148,6 +148,77 @@ class TestCrossPlatformArbitrage:
             kalshi_market, book_a, polymarket_market, book_b,
             verdict(RuleCompatibility.IDENTICAL),
         ) is None
+
+
+class TestCrossPlatformMarginGate:
+    """Cross-venue trades must clear a tiered minimum edge, not merely break even."""
+
+    def _books(self, book_factory, yes_a: str, no_b: str, size: str = "5000"):  # noqa: ANN001
+        return (
+            book_factory(yes_asks=[(yes_a, size)], no_asks=[("0.99", size)]),
+            book_factory(
+                platform=Platform.POLYMARKET, market_id="123456",
+                yes_asks=[("0.99", size)], no_asks=[(no_b, size)],
+            ),
+        )
+
+    def test_thin_edge_is_rejected_even_though_it_is_profitable(
+        self, kalshi_market, polymarket_market, book_factory
+    ) -> None:  # noqa: ANN001
+        """A fraction of a cent of modelled edge does not cover unmodelled risk.
+
+        The cost stack cannot price a venue halting, a rule reading that turns out to
+        differ, or one leg filling while the other is pulled.
+        """
+        book_a, book_b = self._books(book_factory, "0.49", "0.50")
+        assert scan_cross_platform(
+            kalshi_market, book_a, polymarket_market, book_b,
+            verdict(RuleCompatibility.IDENTICAL),
+        ) is None
+
+    def test_wide_edge_clears_the_gate(
+        self, kalshi_market, polymarket_market, book_factory
+    ) -> None:  # noqa: ANN001
+        book_a, book_b = self._books(book_factory, "0.30", "0.55")
+        result = scan_cross_platform(
+            kalshi_market, book_a, polymarket_market, book_b,
+            verdict(RuleCompatibility.IDENTICAL),
+        )
+        assert result is not None
+        assert result.net_roi >= Decimal("0.04")
+
+    def test_binding_leg_is_named(
+        self, kalshi_market, polymarket_market, book_factory
+    ) -> None:  # noqa: ANN001
+        """A reader needs to know WHICH venue limits the trade, not just the size."""
+        book_a = book_factory(yes_asks=[("0.30", "5000")], no_asks=[("0.99", "5000")])
+        book_b = book_factory(
+            platform=Platform.POLYMARKET, market_id="123456",
+            yes_asks=[("0.99", "5000")], no_asks=[("0.55", "120")],
+        )
+        result = scan_cross_platform(
+            kalshi_market, book_a, polymarket_market, book_b,
+            verdict(RuleCompatibility.IDENTICAL),
+        )
+        assert result is not None
+        assert result.max_executable_sets == Decimal("120")
+        assert any("limited by" in flag for flag in result.risk_flags)
+        assert any("polymarket" in flag for flag in result.risk_flags)
+
+    def test_legs_are_size_matched_to_the_scarcer_side(
+        self, kalshi_market, polymarket_market, book_factory
+    ) -> None:  # noqa: ANN001
+        """Filling one leg deeper than the other is a naked position."""
+        book_a = book_factory(yes_asks=[("0.30", "5000")], no_asks=[("0.99", "5000")])
+        book_b = book_factory(
+            platform=Platform.POLYMARKET, market_id="123456",
+            yes_asks=[("0.99", "5000")], no_asks=[("0.55", "120")],
+        )
+        result = scan_cross_platform(
+            kalshi_market, book_a, polymarket_market, book_b,
+            verdict(RuleCompatibility.IDENTICAL),
+        )
+        assert all(l.size_available == Decimal("120") for l in result.legs)
 
 
 class TestMultiOutcomeArbitrage:

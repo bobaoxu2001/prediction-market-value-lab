@@ -34,7 +34,8 @@ from pmvl_shared.timeutil import age_seconds, hours_until, utcnow
 from ..matching.verify import MatchVerdict
 from ..pricing.execution import capital_cost_per_contract, transfer_cost_per_contract
 from ..pricing.fees import taker_fee
-from ..pricing.orderbook import executable_quote
+from ..pricing.multileg import LegRequest, simulate_basket
+from ..pricing.orderbook import depth_usd, executable_quote
 
 #: Label applied when the rules are not an exact match, ordered by severity.
 _LABEL_FOR_COMPATIBILITY = {
@@ -113,10 +114,30 @@ def _scan_orientation(
     if sets <= 0:
         return None
 
+    # Both legs are priced through the multi-leg simulator so the fill detail comes
+    # from one place, and so the BINDING leg is identified. The pair-walk above
+    # decides how many sets are worth buying (it stops once the two asks sum to $1);
+    # the simulator then reports what each leg actually achieves at that size and
+    # what, if anything, is left unfilled.
+    basket = simulate_basket(
+        [
+            LegRequest(label=f"{market_a.platform.value}:{side_a.value}", book=book_a, side=side_a),
+            LegRequest(label=f"{market_b.platform.value}:{side_b.value}", book=book_b, side=side_b),
+        ],
+        sets,
+    )
+    if basket.executable_units <= 0:
+        return None
+    # A basket that cannot fill both legs at the walked size is not a smaller
+    # arbitrage - it is a naked position on whichever leg did fill. Size down to what
+    # both legs support rather than reporting an edge that needs an unfillable leg.
+    sets = basket.executable_units
+
     quote_a = executable_quote(book_a, side_a, sets)
     quote_b = executable_quote(book_b, side_b, sets)
     if quote_a is None or quote_b is None:
         return None
+    gross_cost = basket.total_cost
 
     fee_a = taker_fee(
         market_a.platform, sets, quote_a.average_price,
@@ -157,6 +178,23 @@ def _scan_orientation(
     if net_profit <= 0:
         return None
 
+    # Minimum-edge gate, tiered by venue span and liquidity.
+    #
+    # Previously any positive net profit qualified, which is too weak for a
+    # cross-venue trade: a fraction of a cent of modelled edge does not cover the
+    # risks that are NOT in the cost stack - a venue halting, a rule reading that
+    # turns out to differ, or one leg filling while the other is pulled. The tiers
+    # live in Settings so the engine's risk appetite is readable in one place.
+    worst_leg_depth = min(
+        depth_usd(book_a, side_a), depth_usd(book_b, side_b)
+    )
+    required_edge = settings.min_arbitrage_edge(
+        cross_platform=True, depth_usd=worst_leg_depth
+    )
+    achieved_edge = safe_div(net_profit, total_cost)
+    if achieved_edge < required_edge:
+        return None
+
     per_set_total = safe_div(total_cost, sets)
     per_set_gross = safe_div(gross_cost, sets)
 
@@ -166,6 +204,14 @@ def _scan_orientation(
 
     label = _LABEL_FOR_COMPATIBILITY[verdict.rule_compatibility]
     risk_flags = list(verdict.mismatch_reasons)
+
+    # Name the leg that limits the trade. Without it a reader sees a size but not
+    # which venue they will struggle to fill, which is the operationally useful part.
+    if basket.binding_leg:
+        risk_flags.append(
+            f"size is limited by {basket.binding_leg}, which supports "
+            f"{basket.executable_units} of the walked size"
+        )
 
     if verdict.rule_compatibility != RuleCompatibility.IDENTICAL:
         risk_flags.insert(
