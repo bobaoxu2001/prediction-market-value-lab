@@ -84,6 +84,42 @@ If the web preview renders production-only output, the branch-scoped env var is
 missing or the build predates it — env changes require a **rebuild**, not a redeploy
 of the same build.
 
+## Snapshot timestamps
+
+A snapshot deployment has several different times. They are hours to weeks apart and
+must never be presented as one "snapshot timestamp" — doing so produced a banner that
+reported the single freshest observation as the capture time for all 1850 markets,
+when only 12 were that fresh and 1516 were more than a day older.
+
+`/system` returns them under `snapshot_timing`, each named for the question it answers:
+
+| Field | Means |
+|---|---|
+| `market_ingest_started_at` | when the ingest job began asking the venues |
+| `market_ingest_finished_at` | when it finished |
+| `freshest_quote_observed_at` | the single most recent `markets.quote_observed_at` — **one** market, not the dataset |
+| `median_quote_observed_at` | the middle of the distribution; the honest headline for "how old is this data" |
+| `oldest_quote_observed_at` | the tail |
+| `arbitrage_scan_at` | when the cross-platform scan ran |
+
+Two are reported as `null` with a stated reason in `snapshot_timing.unavailable`,
+because nothing records them and approximating either would be inventing provenance:
+
+- **`snapshot_artifact_built_at`** — no job writes it. The `snapshot` job name belongs
+  to the daily recommendation snapshot used by the track record, not to building this
+  file, and a committed binary's mtime reflects checkout.
+- **`deployment_created_at`** — Vercel exposes only commit SHA, ref, URL and
+  environment to the process. It is readable from the Vercel API externally.
+
+The UI banner says `Latest captured quote: …` and `Arbitrage scan: …` as separate
+labelled values, followed by the note that individual markets may be older. Never
+reintroduce a single "quotes captured" timestamp, and never render a snapshot
+timestamp through a helper that measures from `Date.now()` — `/system` previously
+showed "2d old" growing while the reader sat on the page.
+
+`scripts/validate_snapshot.py` fails the build if the timing block is missing, if
+freshest equals oldest, or if either unavailable field is ever populated.
+
 ## The snapshot
 
 The API serves a committed SQLite snapshot (`data/pmvl-snapshot.db`). Three

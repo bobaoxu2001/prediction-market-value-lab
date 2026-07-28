@@ -1,5 +1,5 @@
 import Link from "next/link";
-import { RISK_FLAG_EXPLANATIONS, humanizeFlag, localTime, num } from "@/lib/format";
+import { RISK_FLAG_EXPLANATIONS, humanizeFlag, num, utcTime } from "@/lib/format";
 
 export function PageHeader({
   title,
@@ -226,24 +226,48 @@ export function Disclaimer({ text }: { text: string }) {
  */
 export function SnapshotBanner({
   active,
-  capturedAt,
+  latestQuoteAt,
+  arbitrageScanAt,
 }: {
   active?: boolean;
-  capturedAt?: string | null;
+  /** The single most recent observation in the database - NOT a capture time
+      for the dataset. Most markets are older, some by weeks. */
+  latestQuoteAt?: string | null;
+  arbitrageScanAt?: string | null;
 }) {
   if (!active) return null;
   return (
     <div className="mb-4 rounded-lg border border-amber-500/40 bg-amber-500/10 px-4 py-3 text-sm">
       <span className="font-semibold text-amber-700 dark:text-amber-400">
-        Read-only snapshot.
+        Research snapshot.
       </span>{" "}
       <span className="text-neutral-700 dark:text-neutral-300">
-        This hosted demo serves data frozen at build time
-        {capturedAt ? ` (quotes captured ${localTime(capturedAt)})` : ""}, not a live
-        scan. Orderbooks and model estimates are stale. Run the pipeline locally
-        (<code className="font-mono text-xs">make ingest &amp;&amp; make rank</code>)
+        This hosted demo serves frozen data, not a live scan. Orderbooks and model
+        estimates are stale. Run the pipeline locally (
+        <code className="font-mono text-xs">make ingest &amp;&amp; make rank</code>)
         for current data.
       </span>
+      {/* Previously one timestamp introduced as "quotes captured", which read as
+          though every price was that fresh. On the deployed artefact that
+          described 12 markets out of 1850. Both times are labelled for what they
+          are, and the spread is stated rather than left to be inferred. */}
+      {(latestQuoteAt || arbitrageScanAt) && (
+        <span className="mt-2 flex flex-wrap gap-x-4 gap-y-1 text-xs text-neutral-600 dark:text-neutral-400">
+          {latestQuoteAt && (
+            <span>
+              Latest captured quote:{" "}
+              <span className="font-mono">{utcTime(latestQuoteAt)}</span>
+            </span>
+          )}
+          {arbitrageScanAt && (
+            <span>
+              Arbitrage scan:{" "}
+              <span className="font-mono">{utcTime(arbitrageScanAt)}</span>
+            </span>
+          )}
+          <span>Individual markets may have older quotes; each page shows its own.</span>
+        </span>
+      )}
     </div>
   );
 }

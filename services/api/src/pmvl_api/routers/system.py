@@ -30,6 +30,7 @@ from pmvl_markets.db_models import (
 from pmvl_markets.probability.ensemble import MODEL_VERSION
 
 from ..deps import DataMode, DbDep, ModeDep, envelope
+from ..snapshot_timing import QUOTE_SPREAD_NOTE, snapshot_timing
 
 router = APIRouter(tags=["system"])
 
@@ -92,7 +93,11 @@ def system(db: Session = DbDep, mode: DataMode = ModeDep) -> dict[str, Any]:
         )
     ]
 
-    freshest_quote = db.scalar(select(func.max(Market.quote_observed_at)))
+    timing = snapshot_timing(db)
+    # Kept at the top level because clients read it, but it is the single most
+    # recent observation in the database - not a capture time for the dataset.
+    # `snapshot_timing` carries the spread that makes that unambiguous.
+    freshest_quote = timing["freshest_quote_observed_at"]
 
     return envelope(
         {
@@ -105,6 +110,8 @@ def system(db: Session = DbDep, mode: DataMode = ModeDep) -> dict[str, Any]:
             "provenance_split": provenance_split,
             "jobs": jobs,
             "freshest_quote_observed_at": freshest_quote,
+            "freshest_quote_observed_at_note": QUOTE_SPREAD_NOTE,
+            "snapshot_timing": timing,
             "data_sources": [
                 {
                     "name": "Kalshi Trade API v2",
@@ -184,10 +191,12 @@ def system(db: Session = DbDep, mode: DataMode = ModeDep) -> dict[str, Any]:
             # presented as a live scan would misrepresent the whole platform.
             "snapshot_mode": SNAPSHOT_MODE,
             "snapshot_notice": (
-                "This deployment serves a READ-ONLY SNAPSHOT captured at build time. "
-                "Prices, orderbooks and model estimates are frozen and are NOT live. "
-                "Run the pipeline locally (`make ingest && make rank`) for current "
-                "data. See 'freshest_quote_observed_at' for the capture time."
+                "This deployment serves a READ-ONLY SNAPSHOT. Prices, orderbooks "
+                "and model estimates are frozen and are NOT live. Run the pipeline "
+                "locally (`make ingest && make rank`) for current data. There is no "
+                "single capture time: see 'snapshot_timing' for the ingest window, "
+                "the freshest, median and oldest quote observations, and the "
+                "arbitrage scan time, each named separately."
             ) if SNAPSHOT_MODE else None,
         },
         mode,

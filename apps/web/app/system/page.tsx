@@ -1,5 +1,5 @@
 import { apiGet, type SystemInfo } from "@/lib/api";
-import { ageLabel, localTime } from "@/lib/format";
+import { localTime, utcTime } from "@/lib/format";
 import { ApiDown, Metric, PageHeader } from "@/components/ui";
 
 export const dynamic = "force-dynamic";
@@ -36,7 +36,7 @@ export default async function SystemPage() {
         <div className="grid grid-cols-2 gap-4 sm:grid-cols-4">
           <Metric label="Environment" value={s.environment} />
           <Metric label="Model version" value={s.model_version} />
-          <Metric label="Freshest quote" value={ageLabel(s.freshest_quote_observed_at)} />
+          <Metric label="Latest captured quote" value={utcTime(s.freshest_quote_observed_at)} />
           <Metric
             label="Trading execution"
             value={s.trading_execution_enabled ? "enabled" : "disabled"}
@@ -45,6 +45,37 @@ export default async function SystemPage() {
           />
         </div>
       </section>
+
+      {s.snapshot_timing && (
+        <section className="card mb-4 p-4">
+          <h2 className="mb-1 text-sm font-semibold">Snapshot timing</h2>
+          {/* These were previously collapsed into one "snapshot timestamp", which
+              reported the single freshest observation as though every quote had
+              been captured then. They are hours to weeks apart, so each one is
+              named for the question it answers. */}
+          <p className="mb-3 max-w-3xl text-xs text-neutral-600 dark:text-neutral-400">
+            {s.snapshot_timing.note}
+          </p>
+          <div className="grid grid-cols-2 gap-4 sm:grid-cols-3">
+            <Metric label="Ingest started" value={utcTime(s.snapshot_timing.market_ingest_started_at)} />
+            <Metric label="Ingest finished" value={utcTime(s.snapshot_timing.market_ingest_finished_at)} />
+            <Metric label="Arbitrage scan" value={utcTime(s.snapshot_timing.arbitrage_scan_at)} />
+            <Metric label="Latest captured quote" value={utcTime(s.snapshot_timing.freshest_quote_observed_at)} />
+            <Metric label="Median captured quote" value={utcTime(s.snapshot_timing.median_quote_observed_at)} />
+            <Metric label="Oldest captured quote" value={utcTime(s.snapshot_timing.oldest_quote_observed_at)} />
+          </div>
+          {/* Reported as absent with a reason rather than approximated from a
+              value that happens to be recorded. */}
+          <dl className="mt-4 space-y-1 border-t border-neutral-100 pt-3 text-xs text-neutral-500 dark:border-neutral-800">
+            {Object.entries(s.snapshot_timing.unavailable ?? {}).map(([field, why]) => (
+              <div key={field} className="flex flex-wrap gap-x-2">
+                <dt className="font-mono text-neutral-600 dark:text-neutral-400">{field}</dt>
+                <dd>not recorded — {why}</dd>
+              </div>
+            ))}
+          </dl>
+        </section>
+      )}
 
       <section className="card mb-4 p-4">
         <h2 className="mb-3 text-sm font-semibold">Job health</h2>

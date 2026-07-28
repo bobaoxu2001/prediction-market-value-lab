@@ -122,6 +122,38 @@ def main() -> int:
                 problems.append(f"{route} -> HTTP {response.status_code}")
             elif key and not response.json().get(key):
                 problems.append(f"{route} -> 200 but '{key}' is empty")
+
+        # The snapshot's timestamps must reach the deployment already separated.
+        # Collapsing them produced a banner that reported the single freshest
+        # observation as the capture time for all 1850 markets.
+        timing = client.get("/system").json().get("data", {}).get("snapshot_timing")
+        if not timing:
+            problems.append("/system -> no snapshot_timing block")
+        else:
+            for field in (
+                "market_ingest_started_at",
+                "market_ingest_finished_at",
+                "freshest_quote_observed_at",
+                "oldest_quote_observed_at",
+                "median_quote_observed_at",
+                "arbitrage_scan_at",
+            ):
+                if field not in timing:
+                    problems.append(f"/system snapshot_timing -> missing {field}")
+            freshest = timing.get("freshest_quote_observed_at")
+            oldest = timing.get("oldest_quote_observed_at")
+            if freshest and oldest and freshest == oldest:
+                problems.append(
+                    "/system snapshot_timing -> freshest equals oldest quote; the "
+                    "spread that makes a single capture time misleading is missing"
+                )
+            # Never approximated from a value that happens to be recorded.
+            for absent in ("snapshot_artifact_built_at", "deployment_created_at"):
+                if timing.get(absent) is not None:
+                    problems.append(
+                        f"/system snapshot_timing -> {absent} is set, but nothing "
+                        "records it; it must stay null with a stated reason"
+                    )
     except Exception as exc:  # noqa: BLE001
         problems.append(f"API could not serve the snapshot: {type(exc).__name__}: {exc}")
 

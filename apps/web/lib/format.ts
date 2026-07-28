@@ -350,3 +350,27 @@ export function humanizeSeconds(seconds: number | null | undefined): string {
   if (hours < 48) return `${hours.toFixed(1).replace(/\.0$/, "")}h`;
   return `${(hours / 24).toFixed(1).replace(/\.0$/, "")}d`;
 }
+
+/**
+ * An absolute instant in UTC, for timestamps that describe the dataset itself.
+ *
+ * `localTime` renders in the reader's zone, which is right for "when does this
+ * market resolve" and wrong for provenance: two people comparing notes on the
+ * same snapshot should read the same string. `ageLabel` is worse here — it
+ * measures from `Date.now()`, so on a frozen snapshot it reported an age that
+ * grew while the reader sat on the page.
+ */
+export function utcTime(iso: string | null | undefined): string {
+  if (!iso) return "—";
+  const d = new Date(iso);
+  if (Number.isNaN(d.getTime())) return "—";
+  return `${d.toLocaleString("en-US", {
+    timeZone: "UTC",
+    month: "short",
+    day: "numeric",
+    year: "numeric",
+    hour: "2-digit",
+    minute: "2-digit",
+    hour12: false,
+  })} UTC`;
+}

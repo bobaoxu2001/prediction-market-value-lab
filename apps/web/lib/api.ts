@@ -280,6 +280,23 @@ export interface SystemInfo {
   provenance_split: Record<string, Record<string, number>>;
   jobs: JobStatusRow[];
   freshest_quote_observed_at: string | null;
+  /** Never render the field above without this: it is one observation, not a
+      capture time for the dataset. */
+  freshest_quote_observed_at_note?: string | null;
+  snapshot_timing?: {
+    market_ingest_started_at: string | null;
+    market_ingest_finished_at: string | null;
+    freshest_quote_observed_at: string | null;
+    oldest_quote_observed_at: string | null;
+    median_quote_observed_at: string | null;
+    arbitrage_scan_at: string | null;
+    /** Not recorded anywhere; see `unavailable` for why. */
+    snapshot_artifact_built_at: string | null;
+    /** Not exposed to the running process; see `unavailable` for why. */
+    deployment_created_at: string | null;
+    unavailable: Record<string, string>;
+    note: string;
+  } | null;
   data_sources: Array<{
     name: string;
     base_url: string;
