@@ -7,7 +7,7 @@ import {
   type WatchlistItem,
 } from "@/lib/api";
 import type { Divergence, FunnelStage } from "@/lib/api";
-import { ageLabel, cents, compactUsd, displayTitle, localTime, pct, prob, relativeTime, relativeToSnapshot, signedCents, usd } from "@/lib/format";
+import { ageLabel, ageRelativeToSnapshot, cents, compactUsd, displayTitle, localTime, pct, prob, relativeTime, relativeToSnapshot, signedCents, usd } from "@/lib/format";
 import {
   ApiDown,
   DemoBanner,
@@ -360,7 +360,7 @@ function OpportunityCard({
         </div>
         <div className="sm:text-right">
           Recommended {localTime(o.created_at)} · evidence{" "}
-          {o.evidence_updated_at ? ageLabel(o.evidence_updated_at) : "none"}
+          {o.evidence_updated_at ? ageRelativeToSnapshot(o.evidence_updated_at, snapshotAt) : "none"}
         </div>
       </div>
 

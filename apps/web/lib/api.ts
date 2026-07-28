@@ -142,6 +142,11 @@ export interface MarketRow {
   result: string | null;
   provenance: string;
   venue_availability?: { venue: string; status: string; label: string }[];
+  quote_source?: string;
+  quote_is_stale_summary?: boolean;
+  yes_ask_depth_usd?: string | null;
+  no_ask_depth_usd?: string | null;
+  total_displayed_depth_usd?: string | null;
 }
 
 export interface TrackRecordRow {
@@ -262,6 +267,14 @@ export interface JobStatusRow {
 
 export interface SystemInfo {
   environment: string;
+  runtime_mode?: string;
+  worker_status?: string;
+  deployment?: {
+    commit_sha?: string | null;
+    commit_ref?: string | null;
+    deployment_url?: string | null;
+    vercel_env?: string | null;
+  };
   model_version: string;
   row_counts: Record<string, number>;
   provenance_split: Record<string, Record<string, number>>;

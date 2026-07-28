@@ -125,42 +125,99 @@ def main() -> int:
     except Exception as exc:  # noqa: BLE001
         problems.append(f"API could not serve the snapshot: {type(exc).__name__}: {exc}")
 
-    # Quote coherence: whatever the API serves as a market's price must match the
-    # order book it also serves for that market. Three different prices for one
-    # contract on one page is not a crash, so nothing else here would catch it.
+    # Quote coherence. Every displayed price, the spread, the depth and the
+    # timestamp must come from ONE observation. Checking only the first YES ask
+    # would miss a response that mixes a book ask with a summary bid, which reads
+    # as a plausible spread and is entirely fictional.
     try:
+        from decimal import Decimal
+
         from pmvl_shared.db import session_scope
         from pmvl_markets.db_models import Market
 
         from pmvl_api.quotes import coherent_quote
 
+        def dec(value):
+            return None if value is None else Decimal(str(value))
+
         with session_scope() as session:
-            checked = incoherent = 0
+            checked = 0
+            failures: list[str] = []
             for market in session.scalars(select_markets_with_books()).all():
-                quote = coherent_quote(session, market)
-                if quote.source != "orderbook":
-                    continue
-                checked += 1
+                resolved = coherent_quote(session, market)
                 response = client.get(f"/markets/{market.id}")
                 if response.status_code != 200:
                     continue
                 payload = response.json()["data"]
-                served = payload["market"].get("best_yes_ask")
-                book = (payload.get("orderbook") or {}).get("yes_asks") or []
-                if not book:
+                served, book = payload["market"], payload.get("orderbook") or {}
+                served_quote = payload.get("quote") or {}
+                checked += 1
+
+                def top(side: str, kind: str, source=book):
+                    levels = source.get(f"{side}_{kind}") or []
+                    return dec(levels[0]["price"]) if levels else None
+
+                # 1. The response must say where its numbers came from.
+                source = served_quote.get("source")
+                if source not in ("orderbook", "venue_summary", "none"):
+                    failures.append(f"market {market.id}: quote source {source!r}")
                     continue
-                if served is not None and str(served) != str(book[0]["price"]):
-                    incoherent += 1
-                    if incoherent <= 3:
-                        problems.append(
-                            f"market {market.id}: served ask {served} != book ask "
-                            f"{book[0]['price']}"
+
+                if source == "orderbook":
+                    # 2. Every side must match the book it claims to come from.
+                    for side, kind, field in (
+                        ("yes", "asks", "best_yes_ask"),
+                        ("yes", "bids", "best_yes_bid"),
+                        ("no", "asks", "best_no_ask"),
+                        ("no", "bids", "best_no_bid"),
+                    ):
+                        expected, actual = top(side, kind), dec(served.get(field))
+                        if expected is not None and actual is not None and expected != actual:
+                            failures.append(
+                                f"market {market.id}: {field} {actual} != book {expected}"
+                            )
+                    # 3. A market claiming order-book pricing while a newer book
+                    #    exists unused would be a resolver bug.
+                    if resolved.source != "orderbook":
+                        failures.append(
+                            f"market {market.id}: served orderbook pricing but the "
+                            f"resolver chose {resolved.source}"
                         )
-            if incoherent:
-                problems.append(
-                    f"{incoherent} of {checked} markets serve a price that disagrees "
-                    "with their own order book"
+                elif source == "venue_summary" and resolved.source == "orderbook":
+                    failures.append(
+                        f"market {market.id}: served a venue summary while a usable "
+                        "order book exists"
+                    )
+
+                # 4. Spread must be derived from the displayed bid and ask, not
+                #    carried over from a different observation.
+                bid, ask, spread = (
+                    dec(served.get("best_yes_bid")),
+                    dec(served.get("best_yes_ask")),
+                    dec(served.get("spread")),
                 )
+                if None not in (bid, ask, spread) and (ask - bid) != spread:
+                    failures.append(
+                        f"market {market.id}: spread {spread} != ask {ask} - bid {bid}"
+                    )
+
+                # 5. The timestamp must belong to the source that supplied the prices.
+                if source == "orderbook":
+                    if served.get("quote_observed_at") != (book.get("observed_at")):
+                        failures.append(
+                            f"market {market.id}: quote timestamp does not match the "
+                            "order book it was priced from"
+                        )
+
+                # 6. Depth must be labelled for the definition it uses.
+                if source == "orderbook" and "yes_ask_depth_usd" not in served:
+                    failures.append(f"market {market.id}: ask depth is not named explicitly")
+
+            problems.extend(failures[:5])
+            if len(failures) > 5:
+                problems.append(f"...and {len(failures) - 5} further quote-coherence failures")
+            if not failures:
+                print(f"   quote coherence: {checked} markets consistent")
     except Exception as exc:  # noqa: BLE001
         problems.append(f"quote-coherence check failed: {type(exc).__name__}: {exc}")
 

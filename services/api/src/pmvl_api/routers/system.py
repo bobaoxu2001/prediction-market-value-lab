@@ -98,6 +98,7 @@ def system(db: Session = DbDep, mode: DataMode = ModeDep) -> dict[str, Any]:
         {
             "environment": settings.runtime_environment,
             "runtime_mode": settings.runtime_mode,
+            "deployment": settings.deployment_metadata,
             "worker_status": settings.worker_status,
             "model_version": MODEL_VERSION,
             "row_counts": counts,

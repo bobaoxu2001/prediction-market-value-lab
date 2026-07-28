@@ -299,3 +299,36 @@ export const VENUE_AVAILABILITY_LABEL: Record<string, string> = {
   unverified: "Unverified",
   not_observed: "Not checked",
 };
+
+/**
+ * How old a quote was **at the moment the data was captured**.
+ *
+ * `ageLabel` measures against the real clock. On a frozen snapshot that is wrong in a
+ * way that gets worse every day: resolution times were anchored to the capture
+ * instant while quote age kept counting up against now(), so one page showed a quote
+ * "3d old" next to a market resolving "in 2h" — two different clocks, and a reader
+ * has no way to know which one to trust.
+ *
+ * Passing `snapshotAt = null` restores live behaviour for a real-time deployment.
+ */
+export function ageRelativeToSnapshot(
+  observedAt: string | null | undefined,
+  snapshotAt: string | null | undefined,
+): string {
+  if (!observedAt) return "—";
+  const observed = new Date(observedAt).getTime();
+  const anchor = snapshotAt ? new Date(snapshotAt).getTime() : Date.now();
+  if (Number.isNaN(observed) || Number.isNaN(anchor)) return "—";
+
+  const diffMs = anchor - observed;
+  // A quote captured after the anchor is a clock or ordering artefact, not a
+  // negative age. Report it plainly rather than rendering "-3h old".
+  if (diffMs < 0) return snapshotAt ? "after snapshot" : "just now";
+
+  const mins = Math.floor(diffMs / 60000);
+  if (mins < 1) return "<1m";
+  if (mins < 60) return `${mins}m`;
+  const hours = Math.floor(diffMs / 3600000);
+  if (hours < 48) return `${hours}h`;
+  return `${Math.floor(diffMs / 86400000)}d`;
+}

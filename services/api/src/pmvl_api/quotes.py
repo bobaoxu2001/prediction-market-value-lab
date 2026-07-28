@@ -52,6 +52,10 @@ class CoherentQuote:
     summary_disagrees: bool = False
     summary_ask: Decimal | None = None
 
+    @property
+    def no_ask_depth_usd_value(self) -> Decimal | None:
+        return self.no_depth_usd
+
     def as_dict(self) -> dict[str, Any]:
         return {
             "source": self.source,
@@ -61,6 +65,10 @@ class CoherentQuote:
             "best_no_bid": self.best_no_bid,
             "best_no_ask": self.best_no_ask,
             "spread": self.spread,
+            # Ask-side depth: what a BUYER of that side can lift at the displayed
+            # prices. Not the same as OrderbookSnapshot's stored depth total.
+            "yes_ask_depth_usd": self.yes_depth_usd,
+            "no_ask_depth_usd": self.no_ask_depth_usd_value,
             "yes_depth_usd": self.yes_depth_usd,
             "no_depth_usd": self.no_depth_usd,
             "summary_disagrees": self.summary_disagrees,

@@ -1,6 +1,6 @@
 import Link from "next/link";
 import { apiGet, qs, type DataMode, type MarketRow } from "@/lib/api";
-import { ageLabel, cents, compactUsd, displayTitle, relativeTime, relativeToSnapshot } from "@/lib/format";
+import { ageLabel, ageRelativeToSnapshot, cents, compactUsd, displayTitle, relativeTime, relativeToSnapshot } from "@/lib/format";
 import { ApiDown, DemoBanner, EmptyState, PageHeader, PlatformChip, VenueAvailability } from "@/components/ui";
 
 export const dynamic = "force-dynamic";
@@ -53,7 +53,7 @@ export default async function MarketsPage({
     <div>
       <PageHeader
         title="Market browser"
-        subtitle={`${total.toLocaleString()} markets ingested from Kalshi and Polymarket. Prices are the best executable bid and ask from the most recent order book captured for each market, not last trades.`}
+        subtitle={`${total.toLocaleString()} markets ingested from Kalshi and Polymarket. Prices use the latest captured order book when available. A clearly labelled venue-summary quote is used only as a fallback when no order book was captured, and is not an executable top-of-book price, not last trades.`}
       />
       <DemoBanner notice={res.demo_notice} />
 
@@ -125,7 +125,7 @@ export default async function MarketsPage({
                 <tr>
                   <th>Market</th><th>Venue</th><th>Category</th>
                   <th>YES bid</th><th>YES ask</th><th>NO ask</th>
-                  <th>Spread</th><th>Depth</th><th>24h vol</th>
+                  <th>Spread</th><th>Ask depth</th><th>24h vol</th>
                   <th>Resolves</th><th>Quote</th>
                 </tr>
               </thead>
@@ -146,10 +146,31 @@ export default async function MarketsPage({
                     <td className="num font-semibold">{cents(m.best_yes_ask)}</td>
                     <td className="num">{cents(m.best_no_ask)}</td>
                     <td className="num">{cents(m.spread)}</td>
-                    <td className="num">{compactUsd(m.orderbook_depth_usd)}</td>
+                    <td className="num">{compactUsd(m.yes_ask_depth_usd ?? m.orderbook_depth_usd)}</td>
                     <td className="num">{compactUsd(m.volume_24h)}</td>
                     <td className="text-neutral-500">{relativeToSnapshot(m.expected_resolution_time, snapshotAt)}</td>
-                    <td className="text-neutral-500">{ageLabel(m.quote_observed_at)}</td>
+                    <td className="text-neutral-500">
+                      {ageRelativeToSnapshot(m.quote_observed_at, snapshotAt)}
+                      <div className="mt-0.5 text-[10px] uppercase tracking-wide">
+                        {m.quote_source === "orderbook" ? (
+                          <span className="text-neutral-400">Order book</span>
+                        ) : m.quote_source === "venue_summary" ? (
+                          <span className="text-amber-700 dark:text-amber-400">
+                            Venue summary fallback
+                          </span>
+                        ) : (
+                          <span className="text-neutral-400">No quote</span>
+                        )}
+                        {m.quote_is_stale_summary ? (
+                          <span
+                            title="The venue's summary price disagrees with the latest order book, so metadata ingest has fallen behind. The order book is shown."
+                            className="ml-1 text-amber-700 dark:text-amber-400"
+                          >
+                            · summary stale
+                          </span>
+                        ) : null}
+                      </div>
+                    </td>
                   </tr>
                 ))}
               </tbody>

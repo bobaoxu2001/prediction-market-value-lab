@@ -145,6 +145,21 @@ class Settings(BaseSettings):
         return self.environment
 
     @property
+    def deployment_metadata(self) -> dict[str, str | None]:
+        """Which commit and branch this process was built from.
+
+        Without it there is no way to tell whether a preview URL is serving the
+        branch you think it is - the web project spent a day serving a commit two
+        merges old and nothing on the page said so.
+        """
+        return {
+            "commit_sha": os.environ.get("VERCEL_GIT_COMMIT_SHA"),
+            "commit_ref": os.environ.get("VERCEL_GIT_COMMIT_REF"),
+            "deployment_url": os.environ.get("VERCEL_URL"),
+            "vercel_env": os.environ.get("VERCEL_ENV"),
+        }
+
+    @property
     def snapshot_mode(self) -> bool:
         """Serving a frozen snapshot rather than a live database."""
         return os.environ.get("PMVL_SNAPSHOT_MODE") == "1"

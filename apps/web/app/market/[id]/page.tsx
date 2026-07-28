@@ -1,6 +1,6 @@
 import Link from "next/link";
 import { apiGet, qs, type DataMode } from "@/lib/api";
-import { ageLabel, cents, compactUsd, displayTitle, localTime, pct, prob, relativeTime, relativeToSnapshot, signedCents } from "@/lib/format";
+import { ageLabel, ageRelativeToSnapshot, cents, compactUsd, displayTitle, localTime, pct, prob, relativeTime, relativeToSnapshot, signedCents } from "@/lib/format";
 import { ApiDown, DemoBanner, EmptyState, Metric, PageHeader, PlatformChip, RiskFlags, SideChip, StateChip, VenueAvailability } from "@/components/ui";
 import { PriceChart } from "@/components/PriceChart";
 
@@ -107,7 +107,7 @@ export default async function MarketDetailPage({
           <Metric label="Taker fee rate" value={m.fee_rate} hint={`Fee model: ${m.fee_type}`} />
           <Metric label="Min order" value={m.min_order_size} />
           <Metric label="Open interest" value={compactUsd(m.open_interest)} />
-          <Metric label="Quote age" value={ageLabel(m.quote_observed_at)} />
+          <Metric label="Quote age" value={ageRelativeToSnapshot(m.quote_observed_at, snapshotAt)} />
           <Metric label="Resolves" value={relativeToSnapshot(m.expected_resolution_time, snapshotAt)} hint={localTime(m.expected_resolution_time)} />
         </div>
       </section>
