@@ -360,6 +360,10 @@ class ArbitrageResult(StrictModel):
     capital_required: Decimal
     net_roi: Decimal
     rule_compatibility: RuleCompatibility = RuleCompatibility.INCOMPATIBLE
+    #: Public equivalence verdict. Distinct from ``rule_compatibility``: only
+    #: VERIFIED_EQUIVALENT_STRICT licenses a guaranteed-arbitrage claim, whereas
+    #: RuleCompatibility.IDENTICAL says nothing about cancellation handling.
+    equivalence_verdict: str = ""
     risk_flags: list[str] = Field(default_factory=list)
     quote_age_seconds: int | None = None
     expected_resolution_time: datetime | None = None

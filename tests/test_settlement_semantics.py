@@ -339,7 +339,8 @@ class TestEquivalenceScoring:
         from pmvl_markets.matching.equivalence import EquivalenceVerdict
 
         assert score.verdict in (
-            EquivalenceVerdict.VERIFIED_EQUIVALENT,
+            EquivalenceVerdict.VERIFIED_EQUIVALENT_STRICT,
+            EquivalenceVerdict.VERIFIED_EQUIVALENT_STANDARD,
             EquivalenceVerdict.PROBABLE_MATCH,
         )
         assert not score.mismatches, [c.detail for c in score.mismatches]
@@ -399,13 +400,32 @@ class TestEquivalenceScoring:
         score = self._score(a, b)
         # No settlement source stated on either side.
         assert score.component("data_source").result is ComponentResult.UNKNOWN
-        assert score.verdict is not EquivalenceVerdict.VERIFIED_EQUIVALENT
+        assert not score.verdict.allows_guaranteed_arbitrage
 
-    def test_only_verified_equivalent_licenses_arbitrage(self) -> None:
+    def test_only_strict_licenses_guaranteed_arbitrage(self) -> None:
         from pmvl_markets.matching.equivalence import EquivalenceVerdict
 
-        licensed = [v for v in EquivalenceVerdict if v.allows_cross_platform_arbitrage]
-        assert licensed == [EquivalenceVerdict.VERIFIED_EQUIVALENT]
+        licensed = [v for v in EquivalenceVerdict if v.allows_guaranteed_arbitrage]
+        assert licensed == [EquivalenceVerdict.VERIFIED_EQUIVALENT_STRICT]
+
+    def test_unknown_cancellation_lands_on_standard_not_strict(self) -> None:
+        """Neither venue publishes void handling, so this is the common case."""
+        from pmvl_markets.matching.equivalence import ComponentResult, EquivalenceVerdict
+
+        common = dict(
+            description="Settles on the closing price at 4pm ET per CF Benchmarks.",
+            strike_type="greater", floor="70000",
+            settlement_source="CF Benchmarks", category=Category.CRYPTO,
+        )
+        a = market(Platform.KALSHI, "C1", "Will BTC close above $70,000 on Jul 31?", **common)
+        b = market(Platform.POLYMARKET, "C2", "Will BTC close above $70,000 on Jul 31?", **common)
+        score = self._score(a, b)
+        assert score.component("cancellation").result is ComponentResult.UNKNOWN
+        assert score.verdict is EquivalenceVerdict.VERIFIED_EQUIVALENT_STANDARD
+        # Payout terms agree, so it supports a hedge - but never a guarantee.
+        assert score.verdict.allows_hedged_position
+        assert not score.verdict.allows_guaranteed_arbitrage
+        assert score.as_dict()["cancellation_status"] == "unknown"
 
     def test_probable_match_allows_relative_value_but_not_arbitrage(self) -> None:
         from pmvl_markets.matching.equivalence import EquivalenceVerdict
@@ -428,7 +448,7 @@ class TestEquivalenceScoring:
                    settlement_source="Binance", category=Category.CRYPTO)
         score = self._score(a, b)
         assert score.aggregate_score > Decimal("0.7")  # most components pass
-        assert score.verdict is not EquivalenceVerdict.VERIFIED_EQUIVALENT
+        assert not score.verdict.allows_guaranteed_arbitrage
 
     def test_serialisation_carries_the_reasons(self) -> None:
         a = market(Platform.KALSHI, "E13", "Will BTC close above $70,000?",

@@ -467,6 +467,7 @@ def persist_opportunities(
                 capital_required=result.capital_required,
                 net_roi=result.net_roi,
                 rule_compatibility=result.rule_compatibility.value,
+                equivalence_verdict=result.equivalence_verdict,
                 match_id=result.match_id,
                 risk_flags=result.risk_flags,
                 quote_age_seconds=result.quote_age_seconds,

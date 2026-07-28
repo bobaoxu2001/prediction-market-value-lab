@@ -79,7 +79,8 @@ class TestBasketSimulation:
         assert ex.legs[0].average_price == Decimal("0.45")
         assert ex.legs[0].average_price > Decimal("0.40")
 
-    def test_missing_leg_is_reported_not_hidden(self, book_factory) -> None:  # noqa: ANN001
+    def test_missing_leg_makes_the_basket_unavailable(self, book_factory) -> None:  # noqa: ANN001
+        """No units at all, so there is nothing hedged and nothing exposed."""
         ex = simulate_basket(
             [
                 leg(book_factory(yes_asks=[("0.40", "100")]), label="ok"),
@@ -88,8 +89,34 @@ class TestBasketSimulation:
             Decimal("10"),
         )
         assert ex.executable_units == 0
-        assert ex.unfilled_legs
-        assert {l.label for l in ex.unfilled_legs} == {"ok", "gone"}
+        assert not ex.fully_executable
+        assert not ex.fully_hedged
+        # Zero units is not exposure - no leg was bought.
+        assert not ex.naked_exposure
+        assert ex.binding_leg == "gone"
+
+    def test_scaled_down_basket_is_hedged_not_naked(self, book_factory) -> None:  # noqa: ANN001
+        """Scaling every leg from 100 to 40 leaves a hedged 40, not a naked position.
+
+        The earlier version compared each leg's fill against the ORIGINAL request, so
+        a uniformly scaled basket reported every leg as unfilled and the whole thing
+        as naked exposure. That is the opposite of what happened.
+        """
+        deep = book_factory(yes_asks=[("0.40", "5000")])
+        thin = book_factory(yes_asks=[("0.55", "40")])
+        ex = simulate_basket(
+            [leg(deep, label="deep"), leg(thin, label="thin")], Decimal("100")
+        )
+        assert ex.executable_units == Decimal("40")
+        assert ex.scaled_down
+        assert ex.fully_hedged
+        assert not ex.naked_exposure
+        assert not ex.unfilled_legs
+        assert ex.shortfall_vs_requested == Decimal("60")
+        # Each leg gave up 60 against the request but nothing against the plan.
+        for l in ex.legs:
+            assert l.shortfall_vs_plan == 0
+            assert l.shortfall_vs_requested == Decimal("60")
 
     def test_zero_units_requested(self, book_factory) -> None:  # noqa: ANN001
         ex = simulate_basket([leg(book_factory(yes_asks=[("0.4", "10")]))], Decimal("0"))
@@ -104,9 +131,13 @@ class TestBasketSimulation:
         ).as_dict()
         assert payload["binding_leg"] == "thin"
         assert payload["fully_executable"] is False
+        assert payload["scaled_down"] is True
+        assert payload["fully_hedged"] is True
+        assert payload["naked_exposure"] is False
         by_label = {l["label"]: l for l in payload["legs"]}
         # Compare as Decimal: the payload carries the quantized money form.
-        assert Decimal(by_label["thin"]["unfilled"]) == Decimal("60")
+        assert Decimal(by_label["thin"]["shortfall_vs_requested"]) == Decimal("60")
+        assert Decimal(by_label["thin"]["shortfall_vs_plan"]) == 0
 
 
 class TestBasketEdge:

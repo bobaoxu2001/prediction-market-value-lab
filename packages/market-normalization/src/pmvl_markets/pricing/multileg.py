@@ -41,20 +41,51 @@ class LegRequest:
 
 @dataclass
 class LegFill:
-    """What one leg actually achieved."""
+    """What one leg actually achieved.
+
+    Three quantities, deliberately kept apart:
+
+    ``requested``
+        what the caller originally asked for on this leg
+    ``planned``
+        what the leg was asked for after the WHOLE basket was scaled to the size every
+        leg could support
+    ``filled``
+        what the book actually delivered against ``planned``
+
+    Conflating the first and third is what made a uniformly scaled-down basket look
+    like a naked position. Scaling every leg from 100 to 40 leaves a fully hedged 40;
+    only a leg that misses its *planned* size leaves exposure.
+    """
 
     label: str
     side: Side
     requested: Decimal
+    planned: Decimal
     filled: Decimal
     average_price: Decimal
     notional: Decimal
-    fully_filled: bool
     available: Decimal
 
     @property
-    def unfilled(self) -> Decimal:
+    def fully_filled(self) -> bool:
+        """Whether the leg delivered the size the basket planned for it."""
+        return self.filled >= self.planned
+
+    @property
+    def shortfall_vs_plan(self) -> Decimal:
+        """Size missed against the plan. Non-zero means real exposure."""
+        return max(ZERO, self.planned - self.filled)
+
+    @property
+    def shortfall_vs_requested(self) -> Decimal:
+        """Size given up by scaling the basket down. Not exposure."""
         return max(ZERO, self.requested - self.filled)
+
+    #: Retained: callers reading "unfilled" mean the shortfall against the plan.
+    @property
+    def unfilled(self) -> Decimal:
+        return self.shortfall_vs_plan
 
 
 @dataclass
@@ -68,7 +99,32 @@ class BasketExecution:
 
     @property
     def fully_executable(self) -> bool:
+        """Whether the basket ran at the size the caller asked for."""
         return self.executable_units >= self.requested_units and self.requested_units > 0
+
+    @property
+    def scaled_down(self) -> bool:
+        """The basket ran, but smaller than requested, because a leg was thin."""
+        return 0 < self.executable_units < self.requested_units
+
+    @property
+    def fully_hedged(self) -> bool:
+        """Every leg delivered its planned size, so no leg is exposed.
+
+        True for a scaled-down basket. Reducing 100 sets to 40 across ALL legs is a
+        smaller hedged position, not an unhedged one - the distinction the earlier
+        version got wrong by comparing each fill against the original request.
+        """
+        return self.executable_units > 0 and all(leg.fully_filled for leg in self.legs)
+
+    @property
+    def naked_exposure(self) -> bool:
+        """At least one leg missed its planned size while others filled."""
+        return self.executable_units > 0 and not self.fully_hedged
+
+    @property
+    def shortfall_vs_requested(self) -> Decimal:
+        return max(ZERO, self.requested_units - self.executable_units)
 
     @property
     def total_cost(self) -> Decimal:
@@ -80,10 +136,7 @@ class BasketExecution:
 
     @property
     def unfilled_legs(self) -> list[LegFill]:
-        """Legs that could not fill the requested size.
-
-        Non-empty means a naked position, not a smaller hedge.
-        """
+        """Legs that missed their PLANNED size. Non-empty means real exposure."""
         return [leg for leg in self.legs if not leg.fully_filled]
 
     def as_dict(self) -> dict[str, object]:
@@ -91,6 +144,10 @@ class BasketExecution:
             "requested_units": str(self.requested_units),
             "executable_units": str(self.executable_units),
             "fully_executable": self.fully_executable,
+            "scaled_down": self.scaled_down,
+            "fully_hedged": self.fully_hedged,
+            "naked_exposure": self.naked_exposure,
+            "shortfall_vs_requested": str(self.shortfall_vs_requested),
             "binding_leg": self.binding_leg,
             "total_cost": str(self.total_cost),
             "cost_per_unit": str(self.cost_per_unit),
@@ -99,8 +156,10 @@ class BasketExecution:
                     "label": leg.label,
                     "side": leg.side.value,
                     "requested": str(leg.requested),
+                    "planned": str(leg.planned),
                     "filled": str(leg.filled),
-                    "unfilled": str(leg.unfilled),
+                    "shortfall_vs_plan": str(leg.shortfall_vs_plan),
+                    "shortfall_vs_requested": str(leg.shortfall_vs_requested),
                     "average_price": str(leg.average_price),
                     "notional": str(leg.notional),
                     "fully_filled": leg.fully_filled,
@@ -150,6 +209,8 @@ def simulate_basket(legs: list[LegRequest], units: Decimal) -> BasketExecution:
 
     for leg in legs:
         requested = quantize_usd(units * leg.ratio)
+        # The plan is the basket's achievable size, not the caller's original ask.
+        planned = quantize_usd(execution.executable_units * leg.ratio)
         target = execution.executable_units * leg.ratio
         quote: ExecutionQuote | None = (
             executable_quote(leg.book, leg.side, target) if target > 0 else None
@@ -160,10 +221,10 @@ def simulate_basket(legs: list[LegRequest], units: Decimal) -> BasketExecution:
                     label=leg.label,
                     side=leg.side,
                     requested=requested,
+                    planned=planned,
                     filled=ZERO,
                     average_price=ZERO,
                     notional=ZERO,
-                    fully_filled=False,
                     available=available_size(leg.book, leg.side),
                 )
             )
@@ -173,10 +234,10 @@ def simulate_basket(legs: list[LegRequest], units: Decimal) -> BasketExecution:
                 label=leg.label,
                 side=leg.side,
                 requested=requested,
+                planned=planned,
                 filled=quote.filled_size,
                 average_price=quote.average_price,
                 notional=quantize_usd(quote.notional),
-                fully_filled=quote.filled_size >= requested,
                 available=available_size(leg.book, leg.side),
             )
         )

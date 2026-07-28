@@ -76,10 +76,39 @@ class TestCompleteSetArbitrage:
         assert result.label == ArbitrageLabel.INSUFFICIENT_LIQUIDITY
 
 
+def equivalence(
+    v: "EquivalenceVerdict", cancellation: str = "unknown"
+) -> "EquivalenceScore":
+    """Build an EquivalenceScore with an explicit cancellation status."""
+    from pmvl_markets.matching.equivalence import (
+        ComponentResult,
+        ComponentScore,
+        EquivalenceScore,
+    )
+
+    return EquivalenceScore(
+        verdict=v,
+        components=[
+            ComponentScore("cancellation", ComponentResult(cancellation), "test fixture")
+        ],
+        rule_compatibility=RuleCompatibility.IDENTICAL,
+        match_confidence=D("0.9"),
+        polarity_inverted=False,
+        outcome_mapping={},
+    )
+
+
 class TestCrossPlatformArbitrage:
-    def test_identical_rules_can_be_executable(
+    def test_identical_rules_alone_do_not_earn_executable(
         self, kalshi_market, polymarket_market, book_factory
     ) -> None:  # noqa: ANN001
+        """RuleCompatibility.IDENTICAL says nothing about cancellation handling.
+
+        A bare MatchVerdict carries no component breakdown, so void behaviour is
+        unverified by construction. If one venue voids a postponed event while the
+        other settles it, both legs can lose - which is exactly what "guaranteed"
+        is supposed to exclude.
+        """
         book_a = book_factory(yes_asks=[("0.30", "5000")], no_asks=[("0.71", "5000")])
         book_b = book_factory(
             platform=Platform.POLYMARKET, market_id="123456",
@@ -91,7 +120,49 @@ class TestCrossPlatformArbitrage:
         )
         assert result is not None
         assert result.net_profit_per_set > 0
+        assert result.label != ArbitrageLabel.EXECUTABLE
+        assert result.equivalence_verdict == "VERIFIED_EQUIVALENT_STANDARD"
+
+    def test_strict_equivalence_earns_executable(
+        self, kalshi_market, polymarket_market, book_factory
+    ) -> None:  # noqa: ANN001
+        """Confirming cancellation handling is what unlocks the guaranteed claim."""
+        from pmvl_markets.matching.equivalence import EquivalenceVerdict
+
+        book_a = book_factory(yes_asks=[("0.30", "5000")], no_asks=[("0.71", "5000")])
+        book_b = book_factory(
+            platform=Platform.POLYMARKET, market_id="123456",
+            yes_asks=[("0.31", "5000")], no_asks=[("0.55", "5000")],
+        )
+        result = scan_cross_platform(
+            kalshi_market, book_a, polymarket_market, book_b,
+            equivalence(EquivalenceVerdict.VERIFIED_EQUIVALENT_STRICT, "match"),
+        )
+        assert result is not None
         assert result.label == ArbitrageLabel.EXECUTABLE
+        assert result.equivalence_verdict == "VERIFIED_EQUIVALENT_STRICT"
+
+    def test_unknown_cancellation_cannot_be_called_arbitrage(
+        self, kalshi_market, polymarket_market, book_factory
+    ) -> None:  # noqa: ANN001
+        """The P0 regression: STANDARD must never reach a guaranteed claim."""
+        from pmvl_shared.enums import classify_arbitrage_label
+        from pmvl_markets.matching.equivalence import EquivalenceVerdict
+
+        book_a = book_factory(yes_asks=[("0.30", "5000")], no_asks=[("0.71", "5000")])
+        book_b = book_factory(
+            platform=Platform.POLYMARKET, market_id="123456",
+            yes_asks=[("0.31", "5000")], no_asks=[("0.55", "5000")],
+        )
+        result = scan_cross_platform(
+            kalshi_market, book_a, polymarket_market, book_b,
+            equivalence(EquivalenceVerdict.VERIFIED_EQUIVALENT_STANDARD, "unknown"),
+        )
+        assert result is not None
+        assert result.label != ArbitrageLabel.EXECUTABLE
+        assert not classify_arbitrage_label(result.label.value).may_be_called_arbitrage
+        assert any("cancellation" in f for f in result.risk_flags)
+        assert result.cost_breakdown["cancellation_status"] == "unknown"
 
     def test_equivalent_rules_are_never_executable(
         self, kalshi_market, polymarket_market, book_factory

@@ -13,9 +13,13 @@ layer adds attribution on top.
 
 The verdict vocabulary is deliberately blunt about what it licenses:
 
-``VERIFIED_EQUIVALENT``
-    Every material term checked out. The only verdict that may back a cross-platform
-    arbitrage claim.
+``VERIFIED_EQUIVALENT_STRICT``
+    Every material term checked out, *including* how each venue handles cancellation,
+    postponement and void. The only verdict that may back a guaranteed-arbitrage claim.
+``VERIFIED_EQUIVALENT_STANDARD``
+    The terms that decide the payout are identical, but cancellation handling could
+    not be confirmed on both sides. Tradeable as a hedged position carrying residual
+    rule risk; never as guaranteed arbitrage.
 ``PROBABLE_MATCH``
     Same question in substance, but at least one term could not be *confirmed*.
     Tradeable as relative value; never as arbitrage.
@@ -52,23 +56,50 @@ from .verify import (
 
 
 class EquivalenceVerdict(StrEnum):
-    """Public equivalence vocabulary."""
+    """Public equivalence vocabulary.
 
-    VERIFIED_EQUIVALENT = "VERIFIED_EQUIVALENT"
+    Split into two verified tiers because neither venue publishes cancellation,
+    postponement or void handling in structured form. Collapsing them into a single
+    "verified" level forces a false choice: either certify pairs whose void behaviour
+    is unknown - and a pair where one leg voids while the other pays is not riskless -
+    or refuse every cross-venue pair outright and lose the genuine ones too.
+    """
+
+    VERIFIED_EQUIVALENT_STRICT = "VERIFIED_EQUIVALENT_STRICT"
+    VERIFIED_EQUIVALENT_STANDARD = "VERIFIED_EQUIVALENT_STANDARD"
     PROBABLE_MATCH = "PROBABLE_MATCH"
     RELATED_NOT_EQUIVALENT = "RELATED_NOT_EQUIVALENT"
     REJECTED = "REJECTED"
 
     @property
+    def allows_guaranteed_arbitrage(self) -> bool:
+        """Only a STRICT match may back a guaranteed terminal payout.
+
+        STANDARD is deliberately excluded. Its payout terms agree, but if one venue
+        voids a postponed event while the other settles it, both legs can lose - which
+        is precisely the thing "guaranteed" is supposed to rule out.
+        """
+        return self is EquivalenceVerdict.VERIFIED_EQUIVALENT_STRICT
+
+    #: Retained under the old name so existing callers keep their meaning.
+    @property
     def allows_cross_platform_arbitrage(self) -> bool:
-        """Only a fully verified pair may back a risk-free cross-venue claim."""
-        return self is EquivalenceVerdict.VERIFIED_EQUIVALENT
+        return self.allows_guaranteed_arbitrage
+
+    @property
+    def allows_hedged_position(self) -> bool:
+        """STANDARD supports a hedged trade carrying residual rule risk."""
+        return self in (
+            EquivalenceVerdict.VERIFIED_EQUIVALENT_STRICT,
+            EquivalenceVerdict.VERIFIED_EQUIVALENT_STANDARD,
+        )
 
     @property
     def allows_relative_value(self) -> bool:
         """A probable match can carry a directional view, but not a guarantee."""
         return self in (
-            EquivalenceVerdict.VERIFIED_EQUIVALENT,
+            EquivalenceVerdict.VERIFIED_EQUIVALENT_STRICT,
+            EquivalenceVerdict.VERIFIED_EQUIVALENT_STANDARD,
             EquivalenceVerdict.PROBABLE_MATCH,
         )
 
@@ -139,8 +170,16 @@ class EquivalenceScore:
     def as_dict(self) -> dict[str, object]:
         return {
             "verdict": self.verdict.value,
-            "allows_cross_platform_arbitrage": self.verdict.allows_cross_platform_arbitrage,
+            "allows_guaranteed_arbitrage": self.verdict.allows_guaranteed_arbitrage,
+            "allows_cross_platform_arbitrage": self.verdict.allows_guaranteed_arbitrage,
+            "allows_hedged_position": self.verdict.allows_hedged_position,
             "allows_relative_value": self.verdict.allows_relative_value,
+            "cancellation_status": (
+                next(
+                    (c.result.value for c in self.components if c.name == "cancellation"),
+                    "unknown",
+                )
+            ),
             "aggregate_score": str(self.aggregate_score),
             "match_confidence": str(self.match_confidence),
             "polarity_inverted": self.polarity_inverted,
@@ -328,7 +367,17 @@ def _derive_verdict(
         # The monotone verifier found something these components do not cover.
         return EquivalenceVerdict.PROBABLE_MATCH
 
-    return EquivalenceVerdict.VERIFIED_EQUIVALENT
+    # Payout terms agree. Cancellation decides which verified tier this is.
+    #
+    # Neither venue publishes void/postponement handling structurally, so in practice
+    # this is almost always UNKNOWN and almost every real pair lands on STANDARD. That
+    # is the honest outcome: the payout terms really do match, and the void behaviour
+    # really is unverified, so the pair supports a hedge but not a guarantee.
+    cancellation = next((c for c in components if c.name == "cancellation"), None)
+    if cancellation is not None and cancellation.result is not ComponentResult.MATCH:
+        return EquivalenceVerdict.VERIFIED_EQUIVALENT_STANDARD
+
+    return EquivalenceVerdict.VERIFIED_EQUIVALENT_STRICT
 
 
 def score_equivalence(
