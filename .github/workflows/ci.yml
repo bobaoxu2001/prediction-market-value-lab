@@ -26,7 +26,9 @@ jobs:
       - name: Install
         run: |
           python -m pip install --upgrade pip
-          pip install -r requirements.txt
+          # requirements.txt is deliberately the slim API runtime set - the test
+          # tooling and quant stack live in requirements-dev.txt.
+          pip install -r requirements-dev.txt
           pip install -e packages/shared -e packages/market-normalization \
                       -e services/api -e services/worker
       - name: Tests
@@ -46,7 +48,7 @@ jobs:
       - name: Install
         run: |
           python -m pip install --upgrade pip
-          pip install -r requirements.txt
+          pip install -r requirements-dev.txt
           pip install -e packages/shared -e packages/market-normalization -e services/api
       - name: Validate the committed snapshot
         # Three failures that each took production down: the snapshot missing from the
