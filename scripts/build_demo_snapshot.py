@@ -122,7 +122,17 @@ def _prune(path: Path) -> None:
     # Per-trade backtest rows back a drill-down endpoint the demo does not link to;
     # the aggregate metrics on the backtest page are stored on backtest_runs.
     cur.execute("DELETE FROM backtest_trades")
-    cur.execute("DELETE FROM job_runs")
+    # Keep the LATEST run per job. These rows carry the demotion histogram that
+    # /arbitrage serves as matching_diagnostics, so wiping the table wholesale meant
+    # the deployed site answered "no arbitrage" with no way to see why - the research
+    # result existed locally and was invisible in production.
+    cur.execute(
+        """
+        DELETE FROM job_runs WHERE id NOT IN (
+            SELECT MAX(id) FROM job_runs GROUP BY job_name
+        )
+        """
+    )
 
     # Full settlement-rule text is the single biggest remaining cost (some rules run
     # to thousands of characters). It is rendered only on the market detail page and

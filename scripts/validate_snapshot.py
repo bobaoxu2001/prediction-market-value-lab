@@ -164,6 +164,26 @@ def main() -> int:
     except Exception as exc:  # noqa: BLE001
         problems.append(f"quote-coherence check failed: {type(exc).__name__}: {exc}")
 
+    # If an arbitrage scan is recorded, its demotion histogram must be servable.
+    # The histogram is the only thing that distinguishes "these venues genuinely do
+    # not list equivalent contracts" from "the matcher is broken", and it lived in a
+    # table the snapshot builder was deleting wholesale.
+    try:
+        response = client.get("/arbitrage")
+        if response.status_code == 200:
+            body = response.json()
+            has_scan = bool(body.get("batch_id"))
+            diagnostics = body.get("matching_diagnostics")
+            if has_scan and not diagnostics:
+                problems.append(
+                    "an arbitrage scan is recorded but matching_diagnostics is null; "
+                    "the demotion histogram did not survive into the snapshot"
+                )
+            elif diagnostics and not diagnostics.get("pairs_examined"):
+                problems.append("matching_diagnostics present but pairs_examined is 0")
+    except Exception as exc:  # noqa: BLE001
+        problems.append(f"diagnostics check failed: {type(exc).__name__}: {exc}")
+
     # Opening the snapshot through SQLAlchemy sets journal_mode=WAL, so simply
     # RUNNING this validator used to leave the artefact unopenable read-only - the
     # check corrupting the thing it checks. Restore it, then re-assert from the file
