@@ -4,8 +4,11 @@ name: CI
 # Python tests, the snapshot the API boots from, or whether demo data can leak into a
 # live surface - all of which have broken production at least once on this project.
 on:
+  # Every branch, deliberately. A name-pattern allowlist meant a branch called
+  # fix-* pushed with no CI at all and nothing said so - the failure mode of a
+  # gate is that it silently is not there.
   push:
-    branches: [main, "improve-*"]
+    branches: ["**"]
   pull_request:
     branches: [main]
 
