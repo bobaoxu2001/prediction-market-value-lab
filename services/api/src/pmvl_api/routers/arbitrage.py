@@ -8,7 +8,11 @@ from fastapi import APIRouter, Query
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from pmvl_shared.enums import ArbitrageKind, ArbitrageLabel
+from pmvl_shared.enums import (
+    ArbitrageKind,
+    ArbitrageLabel,
+    classify_arbitrage_label,
+)
 
 from pmvl_markets.db_models import ArbitrageOpportunity
 
@@ -109,6 +113,13 @@ def list_arbitrage(
             "kind": o.kind,
             "label": o.label,
             "label_meaning": LABEL_MEANINGS.get(o.label, ""),
+            # Public taxonomy. Only a guaranteed terminal payout may be called
+            # arbitrage; every weaker label is demoted to a class that names how it
+            # is weaker, so the strength of a claim never has to be inferred.
+            "opportunity_class": classify_arbitrage_label(o.label).value,
+            "may_be_called_arbitrage": classify_arbitrage_label(
+                o.label
+            ).may_be_called_arbitrage,
             "title": o.title,
             "legs": o.legs or [],
             "gross_edge_per_set": o.gross_edge_per_set,

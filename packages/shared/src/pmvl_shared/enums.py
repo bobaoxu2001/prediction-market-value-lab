@@ -190,3 +190,68 @@ def availability_for(venue: str, *, observed_platforms: frozenset[str] | set[str
         # Discoverable and we did look, but this contract was not among the results.
         return VenueAvailability.CONFIRMED_UNAVAILABLE
     return VenueAvailability.UNVERIFIED
+
+
+class OpportunityClass(StrEnum):
+    """What kind of claim an opportunity actually is.
+
+    The word "arbitrage" is reserved for a terminal payout that is guaranteed under
+    every valid settlement state. Everything weaker gets a name that says how it is
+    weaker, so a reader never has to infer the strength of a claim from its styling.
+    """
+
+    #: Payout guaranteed in every settlement state, after all costs, at a size the
+    #: book can actually fill. The only class that may be called arbitrage.
+    GUARANTEED_ARBITRAGE = "guaranteed_arbitrage"
+    #: The price relationship is genuinely riskless, but depth, venue status or leg
+    #: synchronisation means it cannot be captured at a meaningful size.
+    EXECUTION_CONSTRAINED_ARBITRAGE = "execution_constrained_arbitrage"
+    #: Positive expected value against an independent probability estimate, with real
+    #: downside. Not guaranteed.
+    RELATIVE_VALUE = "relative_value"
+    #: The model and the market differ, but the difference did not survive costs or
+    #: the conservative bound. Research signal only.
+    MODEL_DISAGREEMENT = "model_disagreement"
+    #: Worth monitoring; no actionable claim today.
+    WATCHLIST = "watchlist"
+    #: Evaluated and declined, with a recorded reason.
+    REJECTED = "rejected"
+
+    @property
+    def is_guaranteed(self) -> bool:
+        return self is OpportunityClass.GUARANTEED_ARBITRAGE
+
+    @property
+    def may_be_called_arbitrage(self) -> bool:
+        """Only a guaranteed terminal payout earns the word."""
+        return self is OpportunityClass.GUARANTEED_ARBITRAGE
+
+    @property
+    def is_actionable(self) -> bool:
+        return self in (
+            OpportunityClass.GUARANTEED_ARBITRAGE,
+            OpportunityClass.RELATIVE_VALUE,
+        )
+
+
+#: How the arbitrage scanners' honesty labels map onto the public taxonomy.
+#:
+#: EXECUTABLE is the only label that survives as a guarantee. Everything else names
+#: a specific unmet precondition and is demoted accordingly - a stale quote is a race,
+#: a rule mismatch can lose on both legs, and a logical mispricing is information
+#: rather than a harvestable trade unless a complete hedge exists.
+ARBITRAGE_LABEL_TO_CLASS: dict[str, OpportunityClass] = {
+    "executable": OpportunityClass.GUARANTEED_ARBITRAGE,
+    "theoretical_arbitrage": OpportunityClass.EXECUTION_CONSTRAINED_ARBITRAGE,
+    "insufficient_liquidity": OpportunityClass.EXECUTION_CONSTRAINED_ARBITRAGE,
+    "execution_risk": OpportunityClass.EXECUTION_CONSTRAINED_ARBITRAGE,
+    "stale_quote": OpportunityClass.EXECUTION_CONSTRAINED_ARBITRAGE,
+    "rule_mismatch_risk": OpportunityClass.MODEL_DISAGREEMENT,
+    "not_guaranteed": OpportunityClass.MODEL_DISAGREEMENT,
+    "logical_mispricing": OpportunityClass.MODEL_DISAGREEMENT,
+}
+
+
+def classify_arbitrage_label(label: str) -> OpportunityClass:
+    """Map an arbitrage honesty label onto the public taxonomy, defaulting to weak."""
+    return ARBITRAGE_LABEL_TO_CLASS.get(label, OpportunityClass.WATCHLIST)

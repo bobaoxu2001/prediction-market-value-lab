@@ -209,3 +209,43 @@ def slippage_estimate(
         return padding
     impact = max(ZERO, quote.average_price - top)
     return impact + padding
+
+
+#: Price bands the depth profile reports, in dollars above the best ask.
+#:
+#: One and three cents are the bands that decide whether an edge is real. An
+#: opportunity showing a 2c edge with depth only AT the best ask is a handful of
+#: contracts; the same edge with depth three cents deep is a position. Reporting a
+#: single aggregate depth number hides that difference entirely.
+DEPTH_BANDS: tuple[Decimal, ...] = (Decimal("0"), Decimal("0.01"), Decimal("0.03"))
+
+
+def depth_profile(book: OrderBook, side: Side) -> dict[str, Decimal | None]:
+    """Contracts and notional available at the best price and within 1c and 3c.
+
+    Returns ``None`` for every band when the side has no asks at all, which is a
+    different statement from zero depth and must not be rendered as "$0 available".
+    """
+    best = best_executable_price(book, side)
+    if best is None:
+        return {
+            "best_price": None,
+            "size_at_best": None,
+            "notional_at_best": None,
+            "size_within_1c": None,
+            "notional_within_1c": None,
+            "size_within_3c": None,
+            "notional_within_3c": None,
+        }
+
+    out: dict[str, Decimal | None] = {"best_price": best}
+    for band, label in zip(DEPTH_BANDS, ("at_best", "within_1c", "within_3c")):
+        ceiling = best + band
+        suffix = "at_best" if label == "at_best" else label
+        size_key = "size_at_best" if suffix == "at_best" else f"size_{suffix}"
+        notional_key = (
+            "notional_at_best" if suffix == "at_best" else f"notional_{suffix}"
+        )
+        out[size_key] = available_size(book, side, max_price=ceiling)
+        out[notional_key] = depth_usd(book, side, max_price=ceiling)
+    return out
