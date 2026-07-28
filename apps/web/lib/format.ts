@@ -104,36 +104,19 @@ export function localDate(iso: string | null | undefined): string {
   });
 }
 
-/** "in 6h 20m" / "3d ago" — the reader needs urgency, not a raw timestamp. */
-export function relativeTime(iso: string | null | undefined): string {
-  if (!iso) return "—";
-  const target = new Date(iso).getTime();
-  if (Number.isNaN(target)) return "—";
-  const deltaSeconds = (target - Date.now()) / 1000;
-  const past = deltaSeconds < 0;
-  const abs = Math.abs(deltaSeconds);
+/*
+ * `relativeTime` and `ageLabel` lived here and measured from `Date.now()`. On a
+ * deployment serving a frozen snapshot that is simply wrong: an age grew while
+ * the reader sat on the page, and a market that had hours left when the data was
+ * captured drifted into "resolved 12h ago".
+ *
+ * They are deleted rather than left unused, because an exported helper with the
+ * right-sounding name is how the bug came back the last two times. Use
+ * `ageRelativeToSnapshot` / `relativeToSnapshot` (both take an explicit anchor
+ * and fall back to the live clock only when passed `null`), or `utcTime` for a
+ * timestamp describing the dataset itself.
+ */
 
-  let text: string;
-  if (abs < 60) text = `${Math.round(abs)}s`;
-  else if (abs < 3600) text = `${Math.round(abs / 60)}m`;
-  else if (abs < 86400) {
-    const hours = Math.floor(abs / 3600);
-    const minutes = Math.round((abs % 3600) / 60);
-    text = minutes ? `${hours}h ${minutes}m` : `${hours}h`;
-  } else text = `${Math.round(abs / 86400)}d`;
-
-  return past ? `${text} ago` : `in ${text}`;
-}
-
-export function ageLabel(iso: string | null | undefined): string {
-  if (!iso) return "unknown";
-  const seconds = (Date.now() - new Date(iso).getTime()) / 1000;
-  if (!Number.isFinite(seconds)) return "unknown";
-  if (seconds < 90) return "just now";
-  if (seconds < 3600) return `${Math.round(seconds / 60)}m old`;
-  if (seconds < 86400) return `${Math.round(seconds / 3600)}h old`;
-  return `${Math.round(seconds / 86400)}d old`;
-}
 
 /** Risk flags are snake_case identifiers; render them readably. */
 export function humanizeFlag(flag: string): string {

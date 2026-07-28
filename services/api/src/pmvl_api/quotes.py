@@ -91,6 +91,19 @@ _MATERIAL_DRIFT = Decimal("0.01")
 
 
 def _summary_quote(market: Market) -> CoherentQuote:
+    # The spread is DERIVED from the two prices this quote will display, exactly as
+    # the order-book path derives it, and is None when either side is missing.
+    #
+    # It used to be copied from the venue's own `spread` column. That column is
+    # computed by the venue from quotes it holds and we may not, so a market with
+    # no bid rendered as "YES BID -, YES ASK 0.1c, SPREAD 0.1c": a spread with
+    # nothing to measure it from. Whatever the venue meant by that number, it is
+    # not the distance between the two prices on the page.
+    spread = (
+        market.best_yes_ask - market.best_yes_bid
+        if market.best_yes_ask is not None and market.best_yes_bid is not None
+        else None
+    )
     return CoherentQuote(
         source="venue_summary" if market.best_yes_ask is not None else "none",
         observed_at=market.quote_observed_at,
@@ -98,7 +111,7 @@ def _summary_quote(market: Market) -> CoherentQuote:
         best_yes_ask=market.best_yes_ask,
         best_no_bid=market.best_no_bid,
         best_no_ask=market.best_no_ask,
-        spread=market.spread,
+        spread=spread,
         yes_depth_usd=market.orderbook_depth_usd,
         summary_ask=market.best_yes_ask,
     )

@@ -232,6 +232,15 @@ def main() -> int:
                     failures.append(
                         f"market {market.id}: spread {spread} != ask {ask} - bid {bid}"
                     )
+                # A spread with a side missing has nothing to measure from. This
+                # case used to be skipped because the check required all three to
+                # be present, which is exactly how the venue-summary path shipped
+                # "YES BID -, YES ASK 0.1c, SPREAD 0.1c".
+                if spread is not None and (bid is None or ask is None):
+                    failures.append(
+                        f"market {market.id}: spread {spread} shown with "
+                        f"bid={bid} ask={ask}; one side is missing"
+                    )
 
                 # 5. The timestamp must belong to the source that supplied the prices.
                 if source == "orderbook":

@@ -44,6 +44,10 @@ export default async function MarketsPage({
 
   const rows = res.data ?? [];
   const total = (res.total as number) ?? 0;
+  // Present when the sort is quote-derived: how many rows were actually ranked.
+  // `total` counts the table, which is a larger number than the ranking covers.
+  const rankedTotal = (res.ranked_total as number | null) ?? null;
+  const shownOf = rankedTotal ?? total;
 
   function link(patch: Record<string, string | number | undefined>) {
     return `/markets${qs({ q: params.q, platform: params.platform, category: params.category, horizon: params.horizon, sort, mode, offset, ...patch })}`;
@@ -178,7 +182,18 @@ export default async function MarketsPage({
           </div>
           <div className="mt-3 flex items-center justify-between text-sm">
             <span className="text-neutral-500">
-              Showing {offset + 1}–{offset + rows.length} of {total.toLocaleString()}
+              Showing {offset + 1}–{offset + rows.length} of{" "}
+              {shownOf.toLocaleString()}
+              {rankedTotal !== null && (
+                <>
+                  {" "}
+                  ranked
+                  <span className="text-neutral-400">
+                    {" "}
+                    (of {total.toLocaleString()} total)
+                  </span>
+                </>
+              )}
             </span>
             <div className="flex gap-2">
               {offset > 0 && (

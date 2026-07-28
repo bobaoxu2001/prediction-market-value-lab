@@ -214,6 +214,7 @@ def list_markets(
             break
 
     sort_note = None
+    ranked_total = None
     if quote_sorted:
         # Sort on the SAME values the row displays.
         def key(row: dict[str, Any]):  # noqa: ANN202
@@ -225,17 +226,23 @@ def list_markets(
             return (value is None, -(Decimal(str(value)) if value is not None else ZERO))
 
         out.sort(key=key)
+        # `total` counts the table; this counts what was actually ranked. Without
+        # it a client shows "351-400 of 1,388" under a ranking that only ever
+        # considered 400 rows, and an offset past the window returns an empty page
+        # while still claiming more exist.
+        ranked_total = len(out)
         sort_note = (
             f"Ordered by displayed {sort}. Spread and liquidity come from each "
             f"market's order book, so they are resolved before sorting; the ranking "
-            f"covers the {len(out)} highest-volume markets matching the filters, not "
-            f"the whole table."
+            f"covers the {ranked_total} highest-volume markets matching the filters, "
+            f"not all {total}. Paging beyond that window returns nothing rather than "
+            f"continuing the ranking."
         )
         out = out[offset : offset + limit]
 
     return envelope(
         out, mode, total=total, count=len(out), offset=offset, limit=limit,
-        sort=sort, sort_note=sort_note,
+        sort=sort, sort_note=sort_note, ranked_total=ranked_total,
     )
 
 

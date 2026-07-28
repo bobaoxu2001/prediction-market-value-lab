@@ -173,3 +173,52 @@ class TestDepthNaming:
         assert "total_displayed_depth_usd" in row
         # 0.50 * 100 contracts on the ask side.
         assert Decimal(str(row["yes_ask_depth_usd"])) == Decimal("50")
+
+
+class TestQuoteSortedPaginationIsBounded:
+    """A quote-derived sort ranks a window, and must say so.
+
+    `total` counts the table. The ranking only ever considers the highest-volume
+    slice, so reporting `total` alone let a client render "351-400 of 1,388"
+    under an ordering that never looked at 988 of those rows, and an offset past
+    the window returned an empty page while still claiming more existed.
+    """
+
+    @pytest.fixture()
+    def client(self, clean_db):  # noqa: ANN001, ANN201
+        from fastapi.testclient import TestClient
+
+        from pmvl_api.main import app
+
+        for i in range(12):
+            market = _market(clean_db, f"SORTWIN-{i}", volume_24h=Decimal(1000 - i))
+            _book(clean_db, market, yes_ask=f"0.{50 + i}", yes_bid=f"0.{40 + i}")
+        clean_db.commit()
+        return TestClient(app)
+
+    def test_quote_sorted_response_reports_what_was_ranked(self, client) -> None:  # noqa: ANN001
+        body = client.get("/markets?sort=spread&limit=5").json()
+        assert body["ranked_total"] is not None
+        assert body["ranked_total"] <= body["total"]
+        assert body["count"] <= body["ranked_total"]
+
+    def test_the_note_states_the_bound_and_the_paging_consequence(self, client) -> None:  # noqa: ANN001
+        note = client.get("/markets?sort=spread&limit=5").json()["sort_note"]
+        assert "not all" in note
+        assert "beyond that window returns nothing" in note
+
+    def test_offset_past_the_window_is_empty_and_still_declares_the_bound(
+        self, client  # noqa: ANN001
+    ) -> None:
+        body = client.get("/markets?sort=spread&limit=5&offset=100000").json()
+        assert body["count"] == 0
+        # The bound must still be reported, so an empty page is explicable rather
+        # than looking like the data disappeared.
+        assert body["ranked_total"] is not None
+
+    def test_a_plain_sql_sort_reports_no_ranked_bound(self, client) -> None:  # noqa: ANN001
+        """Volume sorts in SQL over the whole table, so `total` is the truth and
+        a `ranked_total` would imply a window that does not exist."""
+        body = client.get("/markets?sort=volume&limit=5").json()
+        assert body["ranked_total"] is None
+        assert body["sort_note"] is None

@@ -132,3 +132,49 @@ class TestCoherentQuote:
         payload = coherent_quote(clean_db, market).as_dict()
         assert payload["source"] == "orderbook"
         assert "latest order book" in payload["note"]
+
+
+class TestSpreadIsAlwaysDerivedFromTheDisplayedPrices:
+    """Including on the venue-summary fallback path.
+
+    That path used to copy the venue's own `spread` column. The venue computes it
+    from quotes it holds and we may not, so a market with no bid rendered as
+    "YES BID -, YES ASK 0.1c, SPREAD 0.1c" - a spread measured from nothing. The
+    order-book path already derived it; both paths must agree on the rule.
+    """
+
+    def test_missing_bid_yields_no_spread_even_when_the_venue_reports_one(
+        self, clean_db  # noqa: ANN001
+    ) -> None:
+        market = _market(
+            clean_db,
+            platform_market_id="SUMMARY-NO-BID",
+            best_yes_bid=None,
+            best_yes_ask=Decimal("0.0010"),
+            best_no_bid=Decimal("0.9990"),
+            best_no_ask=None,
+            spread=Decimal("0.0010"),  # what the venue claims
+        )
+        quote = coherent_quote(clean_db, market)
+
+        assert quote.source == "venue_summary"
+        assert quote.best_yes_bid is None
+        assert quote.spread is None, (
+            "a spread cannot be shown next to a missing bid: there is nothing to "
+            "measure it from"
+        )
+
+    def test_present_sides_derive_the_spread_and_ignore_the_venue_column(
+        self, clean_db  # noqa: ANN001
+    ) -> None:
+        market = _market(
+            clean_db,
+            platform_market_id="SUMMARY-BOTH-SIDES",
+            best_yes_bid=Decimal("0.4000"),
+            best_yes_ask=Decimal("0.4300"),
+            spread=Decimal("0.9900"),  # deliberately wrong
+        )
+        quote = coherent_quote(clean_db, market)
+
+        assert quote.spread == Decimal("0.0300")
+        assert quote.spread == quote.best_yes_ask - quote.best_yes_bid
