@@ -9,6 +9,11 @@ from fastapi import APIRouter, HTTPException, Query
 from sqlalchemy import func, or_, select
 from sqlalchemy.orm import Session
 
+from pmvl_shared.enums import (
+    DISCOVERABLE_VENUES,
+    UNDISCOVERABLE_VENUES,
+    availability_for,
+)
 from pmvl_shared.timeutil import horizons_for, utcnow
 
 from pmvl_markets.db_models import (
@@ -27,6 +32,37 @@ from pmvl_markets.db_models import (
 from ..deps import DataMode, DbDep, ModeDep, apply_provenance, envelope
 
 router = APIRouter(prefix="/markets", tags=["markets"])
+
+
+def _venue_availability(market: Market) -> list[dict[str, Any]]:
+    """Where this contract can actually be traded, per venue, with provenance.
+
+    The platform observes Kalshi and Polymarket directly. Brokers that resell Kalshi
+    event contracts (Moomoo among them) list a subset that changes without notice and
+    is gated by jurisdiction and account type, and there is no public endpoint here
+    that enumerates it. Reporting "available on Moomoo" because a contract exists on
+    Kalshi would be a claim the user cannot act on, so those venues stay UNVERIFIED.
+    """
+    observed = {market.platform}
+    venues = sorted(DISCOVERABLE_VENUES | UNDISCOVERABLE_VENUES)
+    rows = []
+    for venue in venues:
+        status = availability_for(venue, observed_platforms=observed)
+        rows.append(
+            {
+                "venue": venue,
+                "status": status.value,
+                "label": status.display_label,
+                "is_actionable_claim": status.is_actionable_claim,
+                "note": (
+                    "No contract-discovery source is wired up for this venue, so "
+                    "availability is not inferred from the exchange listing."
+                    if venue in UNDISCOVERABLE_VENUES
+                    else "Read directly from the venue's public API during ingest."
+                ),
+            }
+        )
+    return rows
 
 
 def _market_row(market: Market) -> dict[str, Any]:
@@ -314,6 +350,7 @@ def market_detail(
                 "yes_token_id": market.yes_token_id,
                 "no_token_id": market.no_token_id,
                 "condition_id": market.condition_id,
+                "venue_availability": _venue_availability(market),
             },
             "rule": {
                 "threshold_semantics": rule.threshold_semantics,

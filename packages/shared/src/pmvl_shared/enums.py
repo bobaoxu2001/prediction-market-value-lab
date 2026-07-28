@@ -124,3 +124,69 @@ class DataQuality(StrEnum):
     QUOTE = "quote"                # top-of-book only, depth unknown
     CANDLE = "candle"              # OHLC bar; NOT an executable price
     UNKNOWN = "unknown"
+
+
+class VenueAvailability(StrEnum):
+    """Where a contract has been *observed*, kept distinct from where it might trade.
+
+    A market existing on Kalshi says nothing about whether any particular broker
+    lists it. Brokers carry a subset of an exchange's contracts, change that subset
+    without notice, and gate it by jurisdiction and account type. Inferring broker
+    availability from exchange availability would produce a confident claim that a
+    user cannot act on - the failure mode this enum exists to prevent.
+
+    The platform only ever asserts what it has actually seen through an API it reads.
+    Anything else is UNVERIFIED, and UNVERIFIED is the default.
+    """
+
+    #: Observed directly in the venue's own public API during ingest.
+    OBSERVED_VIA_PUBLIC_API = "observed_via_public_api"
+    #: A discovery source confirmed the contract is listed and tradeable there.
+    CONFIRMED_AVAILABLE = "confirmed_available"
+    #: A discovery source was consulted and the contract was NOT listed.
+    CONFIRMED_UNAVAILABLE = "confirmed_unavailable"
+    #: No reliable discovery source exists for this venue. The default.
+    UNVERIFIED = "unverified"
+
+    @property
+    def is_actionable_claim(self) -> bool:
+        """Whether this status may be presented as somewhere a user can trade."""
+        return self in (
+            VenueAvailability.OBSERVED_VIA_PUBLIC_API,
+            VenueAvailability.CONFIRMED_AVAILABLE,
+        )
+
+    @property
+    def display_label(self) -> str:
+        return {
+            VenueAvailability.OBSERVED_VIA_PUBLIC_API: "Observed via public API",
+            VenueAvailability.CONFIRMED_AVAILABLE: "Confirmed available",
+            VenueAvailability.CONFIRMED_UNAVAILABLE: "Confirmed unavailable",
+            VenueAvailability.UNVERIFIED: "Unverified",
+        }[self]
+
+
+#: Venues the platform reads directly. Anything here can reach OBSERVED_VIA_PUBLIC_API.
+DISCOVERABLE_VENUES: frozenset[str] = frozenset({"kalshi", "polymarket"})
+
+#: Venues with no contract-discovery source wired up. These are pinned to UNVERIFIED
+#: and MUST NOT be inferred from an exchange listing. Moomoo is the live example: it
+#: brokers some Kalshi event contracts, but there is no public endpoint here that
+#: enumerates which ones, so the honest answer is that we do not know.
+UNDISCOVERABLE_VENUES: frozenset[str] = frozenset({"moomoo", "robinhood", "ibkr"})
+
+
+def availability_for(venue: str, *, observed_platforms: frozenset[str] | set[str]) -> VenueAvailability:
+    """Availability of a contract on ``venue``, given where it was actually observed.
+
+    Deliberately has no path from "listed on Kalshi" to "available on Moomoo".
+    """
+    key = venue.strip().lower()
+    if key in UNDISCOVERABLE_VENUES:
+        return VenueAvailability.UNVERIFIED
+    if key in {p.strip().lower() for p in observed_platforms}:
+        return VenueAvailability.OBSERVED_VIA_PUBLIC_API
+    if key in DISCOVERABLE_VENUES:
+        # Discoverable and we did look, but this contract was not among the results.
+        return VenueAvailability.CONFIRMED_UNAVAILABLE
+    return VenueAvailability.UNVERIFIED

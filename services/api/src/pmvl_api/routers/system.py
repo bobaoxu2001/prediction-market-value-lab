@@ -389,6 +389,19 @@ def methodology(mode: DataMode = ModeDep) -> dict[str, Any]:
                     "model that cannot beat the market price adds no information."
                 ),
             },
+            "venue_availability": {
+                "observed_directly": ["kalshi", "polymarket"],
+                "unverified": ["moomoo", "robinhood", "ibkr"],
+                "rule": (
+                    "Availability is reported only for venues this platform reads "
+                    "directly. Brokers that resell exchange event contracts list a "
+                    "subset that changes without notice and is gated by jurisdiction "
+                    "and account type, and no discovery source for them is wired up "
+                    "here. A contract existing on Kalshi is therefore NOT reported as "
+                    "available on Moomoo - that status stays 'Unverified'. Inferring "
+                    "it would be a confident claim the reader cannot act on."
+                ),
+            },
             "limitations": [
                 "Sports, macro and politics have no independent model in this release.",
                 "The equity index model uses REALISED volatility (EWMA of daily "
