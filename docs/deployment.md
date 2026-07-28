@@ -21,9 +21,14 @@ push branch
   → both production deployments
 ```
 
-Both projects expose the commit they were built from at `/system` under `deployment`
-(`commit_sha`, `commit_ref`, `vercel_env`). Check it before trusting a preview URL:
-the web project once served a commit two merges old with nothing on the page saying so.
+Both projects expose the commit they were built from. The API returns it at `/system`
+under `deployment` (`commit_sha`, `commit_ref`, `vercel_env`), and the web app's
+`/system` page renders **its own** build commit next to the API's, with a
+`Web / API match` row. Check that row before trusting any deployment: the web project
+once served a commit two merges old, and nothing on the page said so.
+
+Verifying the SHA is the whole point — a `READY` deployment and 200 responses prove
+neither project is serving the commit you think it is.
 
 ## The two settings that made this break
 

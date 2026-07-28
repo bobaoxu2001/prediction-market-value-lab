@@ -24,12 +24,47 @@ export default async function SystemPage() {
   if (!res) return <ApiDown />;
   const s = res.data;
 
+  // Available to the server render on Vercel; absent locally, where "—" is honest.
+  const short = (sha: string | undefined | null) => (sha ? sha.slice(0, 12) : "—");
+  const webCommit = short(process.env.VERCEL_GIT_COMMIT_SHA);
+  const webRef = process.env.VERCEL_GIT_COMMIT_REF ?? "—";
+  const apiCommit = short(s.deployment?.commit_sha);
+
   return (
     <div>
       <PageHeader
         title="System"
         subtitle="Data sources, job health and update cadences. A job that has silently stopped running shows here rather than being mistaken for 'no opportunities today'."
       />
+
+      {/* The web bundle's OWN commit, read from the build environment rather than
+          from the API. Without it the two projects can drift - the web app once
+          served a commit two merges behind the API with nothing on the page
+          saying so - and comparing these two rows is how you catch it. */}
+      <section className="card mb-4 p-4">
+        <h2 className="mb-3 text-sm font-semibold">Deployment</h2>
+        <div className="grid grid-cols-2 gap-4 sm:grid-cols-4">
+          <Metric label="Web commit" value={webCommit} />
+          <Metric label="Web branch" value={webRef} />
+          <Metric label="API commit" value={apiCommit} />
+          <Metric
+            label="Web / API match"
+            value={
+              webCommit === "—" || apiCommit === "—"
+                ? "unknown"
+                : webCommit === apiCommit
+                  ? "same commit"
+                  : "DIFFERENT"
+            }
+            tone={
+              webCommit !== "—" && apiCommit !== "—" && webCommit !== apiCommit
+                ? "warn"
+                : "neutral"
+            }
+            hint="The frontend and the API are deployed separately and can drift apart."
+          />
+        </div>
+      </section>
 
       <section className="card mb-4 p-4">
         <h2 className="mb-3 text-sm font-semibold">Status</h2>
