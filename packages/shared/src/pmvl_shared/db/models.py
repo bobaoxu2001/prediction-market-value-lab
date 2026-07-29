@@ -588,6 +588,34 @@ class RecommendationSnapshot(Base):
     orderbook_snapshot: Mapped[dict | None] = mapped_column(JSONColumn, nullable=True)
     risk_flags: Mapped[list | None] = mapped_column(JSONColumn, nullable=True)
 
+    # --- frozen inputs, so a re-run cannot rewrite what was published ---------
+    # `fair_probability` above is the market-informed figure. Storing only that
+    # loses the distinction the recommendation was actually made on: whether an
+    # independent estimate existed at all. A backtest reading it back has no way
+    # to reconstruct that from current data, because the answer changes as models
+    # are added.
+    independent_probability_at_publication: Mapped[Decimal | None] = mapped_column(
+        Money, nullable=True
+    )
+    market_informed_probability_at_publication: Mapped[Decimal | None] = mapped_column(
+        Money, nullable=True
+    )
+    conservative_probability_at_publication: Mapped[Decimal | None] = mapped_column(
+        Money, nullable=True
+    )
+    #: Which parser produced the settlement terms this call relied on. Without it
+    #: a re-grade cannot tell whether a later parser change altered the contract's
+    #: meaning underneath a historical recommendation.
+    parser_version: Mapped[str] = mapped_column(String(32), nullable=False, default="")
+    #: The exact rule wording in force at publication.
+    rule_version_id: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    #: Freshness of every input at publication, as assessed then. A stale input is
+    #: part of what the call was, not something to re-derive later.
+    input_freshness: Mapped[dict | None] = mapped_column(JSONColumn, nullable=True)
+    #: The newest observation this recommendation was permitted to see. Every
+    #: backtest read must filter on it; that is the whole leakage guard.
+    input_data_cutoff: Mapped[datetime | None] = _utc_col(nullable=True)
+
     final_result: Mapped[str | None] = mapped_column(String(16), nullable=True)
     realized_profit_per_contract: Mapped[Decimal | None] = mapped_column(Money, nullable=True)
     realized_profit_at_100_usd: Mapped[Decimal | None] = mapped_column(Money, nullable=True)
