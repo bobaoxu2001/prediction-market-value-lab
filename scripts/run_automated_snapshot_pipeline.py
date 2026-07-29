@@ -196,6 +196,11 @@ class RunOutcome:
     candidate_path: Path | None = None
     candidate_snapshot_id: str | None = None
     candidate_sha256: str | None = None
+    #: Row counts either side of the run. The incident was invisible because the
+    #: report said SUCCESS nine times and never said what the candidate contained
+    #: relative to what it started from.
+    parent_row_counts: dict[str, int] = field(default_factory=dict)
+    candidate_row_counts: dict[str, int] = field(default_factory=dict)
     candidate_disposition: str = CandidateDisposition.NOT_BUILT
     published: bool = False
     publication_blockers: list[str] = field(default_factory=list)
@@ -217,6 +222,12 @@ class RunOutcome:
             "state_persisted_across_runs": False,
             "candidate_snapshot_id": self.candidate_snapshot_id,
             "candidate_sha256": self.candidate_sha256,
+            "parent_row_counts": self.parent_row_counts,
+            "candidate_row_counts": self.candidate_row_counts,
+            "candidate_matches_parent": (
+                bool(self.parent_row_counts)
+                and self.parent_row_counts == self.candidate_row_counts
+            ),
             "candidate_disposition": self.candidate_disposition,
             "published": self.published,
             "publication_eligible": self.publication_eligible,
@@ -293,6 +304,39 @@ def initialise_operational_db(work_dir: Path, outcome: RunOutcome) -> Path:
         )
     outcome.operational_init_source = "bootstrap_empty"
     return operational
+
+
+def _bind_database(db_path: Path) -> None:
+    """Make every later import agree on which database this run uses.
+
+    Setting the environment variable is not enough on its own: `get_settings()`
+    is `@lru_cache(maxsize=1)`, so whichever call materialises it first wins for
+    the whole process. Alembic's env.py calls it, which is why migrating before
+    binding silently sent every job to the default database.
+
+    The cache is cleared as well as the variable set, so a caller that has
+    already read settings for some other reason cannot leave a stale binding
+    behind.
+    """
+    from pmvl_shared.config import get_settings
+    from pmvl_shared.db import reset_engine
+
+    os.environ["DATABASE_URL"] = f"sqlite+pysqlite:///{db_path}"
+    os.environ["PMVL_PIPELINE_RUN"] = "1"
+    get_settings.cache_clear()
+    # The engine is a module-level global built once from whatever settings said
+    # at the time, so clearing the settings cache alone leaves a connection
+    # pointing at the old database. Both layers have to be reset or the fix only
+    # looks like it worked.
+    reset_engine()
+
+    bound = get_settings().database_url
+    if str(db_path) not in bound:
+        raise PipelineError(
+            f"settings bound to {bound!r} rather than the operational database "
+            f"{db_path}. Jobs would write somewhere the candidate is not built "
+            "from, and the run would look successful."
+        )
 
 
 def migrate(db_path: Path, outcome: RunOutcome) -> None:
@@ -400,7 +444,37 @@ def build_and_validate_candidate(work_dir: Path, operational: Path, outcome: Run
         raise PipelineError(f"candidate failed validation: {validation.stdout[-800:]}")
 
     outcome.candidate_path = candidate
+    outcome.parent_row_counts = _row_counts(PUBLISHED_DB)
+    outcome.candidate_row_counts = _row_counts(candidate)
+    if outcome.parent_row_counts and outcome.parent_row_counts == outcome.candidate_row_counts:
+        # Not fatal on its own - a genuinely quiet interval could produce this -
+        # but it is exactly what a mis-bound database looks like, and it went
+        # unnoticed for a full production run precisely because nothing said it.
+        print(
+            "WARNING: the candidate has identical row counts to its parent in "
+            "every table. If jobs ran, they may have written to a different "
+            "database than the candidate was built from."
+        )
     return candidate
+
+
+def _row_counts(db_path: Path) -> dict[str, int]:
+    if not db_path.exists():
+        return {}
+    con = sqlite3.connect(f"file:{db_path}?mode=ro", uri=True)
+    try:
+        tables = [
+            r[0]
+            for r in con.execute(
+                "SELECT name FROM sqlite_master WHERE type='table' "
+                "AND name NOT LIKE 'sqlite_%' ORDER BY name"
+            )
+        ]
+        return {t: con.execute(f'SELECT COUNT(*) FROM "{t}"').fetchone()[0] for t in tables}
+    except sqlite3.Error:
+        return {}
+    finally:
+        con.close()
 
 
 def _record_candidate_identity(candidate: Path, outcome: RunOutcome) -> None:
@@ -506,14 +580,20 @@ def main(argv: list[str] | None = None) -> int:
     try:
         operational = initialise_operational_db(work_dir, outcome)
         print(f"operational store: {outcome.operational_init_source}")
+
+        # Point the process at the operational database BEFORE anything reads
+        # settings. `get_settings()` is lru_cached, and alembic's env.py calls it,
+        # so migrating first froze the cached Settings on the default path. Every
+        # job then wrote to that default database while the candidate was built
+        # from the untouched copy - a run that ingested 7,666 markets and produced
+        # a candidate byte-identical to its parent, reporting success throughout.
+        _bind_database(operational)
         migrate(operational, outcome)
         print(
             f"migrations: {outcome.migration_start_revision} -> "
             f"{outcome.migration_end_revision}"
         )
 
-        os.environ["DATABASE_URL"] = f"sqlite+pysqlite:///{operational}"
-        os.environ["PMVL_PIPELINE_RUN"] = "1"
         asyncio.run(run_jobs(scope, outcome))
 
         outcome.publication_blockers = publication_blockers(outcome.statuses)
