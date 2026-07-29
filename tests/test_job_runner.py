@@ -261,3 +261,106 @@ class TestJobRunContextManager:
         row = clean_db.query(JobRun).filter_by(job_name="settle").one()
         assert row.status == JobStatus.FAILED.value
         assert "upstream exploded" in row.error
+
+
+class TestIngestFailureIsolation:
+    """A venue outage must degrade the run, not delete it or hide it.
+
+    The failure this prevents: Polymarket returns 503, ingest writes only Kalshi
+    markets, the run is recorded SUCCESS, and the shorter list reads downstream as
+    "the scan found nothing today".
+    """
+
+    @staticmethod
+    def _report(**overrides):  # noqa: ANN205
+        from pmvl_markets.ingest.runner import IngestReport
+
+        base = dict(
+            markets_fetched=1300,
+            markets_written=1300,
+            by_platform={"kalshi": 1300, "polymarket": 0},
+            errors=["polymarket gamma returned HTTP 503"],
+        )
+        base.update(overrides)
+        return IngestReport(**base)
+
+    async def _run_ingest(self, monkeypatch, report):  # noqa: ANN001, ANN202
+        import sys
+        from pathlib import Path
+
+        worker_src = Path(__file__).resolve().parents[1] / "services/worker/src"
+        if str(worker_src) not in sys.path:
+            sys.path.insert(0, str(worker_src))
+        from pmvl_worker import jobs
+
+        async def fake_run_ingest(db, **kwargs):  # noqa: ANN001, ANN003, ARG001
+            return report
+
+        import pmvl_markets.ingest as ingest_module
+
+        monkeypatch.setattr(ingest_module, "run_ingest", fake_run_ingest)
+        return await jobs.job_ingest(market_limit=10)
+
+    async def test_one_venue_failing_yields_partial_success(
+        self, clean_db, monkeypatch  # noqa: ANN001
+    ) -> None:
+        from pmvl_markets.db_models import JobRun
+
+        await self._run_ingest(monkeypatch, self._report())
+
+        row = clean_db.query(JobRun).filter_by(job_name="ingest").one()
+        assert row.status == JobStatus.PARTIAL_SUCCESS.value
+        run = row.details["run"]
+        assert run["failed_providers"] == ["polymarket"]
+        # The healthy venue's work is preserved, not discarded.
+        assert run["provider_stats"]["kalshi"]["records"] == 1300
+        assert run["provider_stats"]["kalshi"]["healthy"] is True
+
+    async def test_a_silently_empty_venue_is_still_a_failure(
+        self, clean_db, monkeypatch  # noqa: ANN001
+    ) -> None:
+        """A venue returning zero markets and no error is not a normal result.
+
+        Without this, a provider that starts returning an empty list looks like a
+        market with nothing in it.
+        """
+        from pmvl_markets.db_models import JobRun
+
+        await self._run_ingest(
+            monkeypatch,
+            self._report(by_platform={"kalshi": 1300, "polymarket": 0}, errors=[]),
+        )
+
+        row = clean_db.query(JobRun).filter_by(job_name="ingest").one()
+        assert row.status == JobStatus.PARTIAL_SUCCESS.value
+        assert row.details["run"]["failed_providers"] == ["polymarket"]
+
+    async def test_both_venues_healthy_is_a_clean_success(
+        self, clean_db, monkeypatch  # noqa: ANN001
+    ) -> None:
+        from pmvl_markets.db_models import JobRun
+
+        await self._run_ingest(
+            monkeypatch,
+            self._report(by_platform={"kalshi": 1300, "polymarket": 400}, errors=[]),
+        )
+
+        row = clean_db.query(JobRun).filter_by(job_name="ingest").one()
+        assert row.status == JobStatus.SUCCESS.value
+        assert row.details["run"]["failed_providers"] == []
+
+    async def test_the_run_is_retryable_by_identity(
+        self, clean_db, monkeypatch  # noqa: ANN001
+    ) -> None:
+        """Two runs with the same parameters share an idempotency key, so a retry
+        is recognisable as the same work rather than as new work."""
+        from pmvl_markets.db_models import JobRun
+
+        await self._run_ingest(monkeypatch, self._report())
+        await self._run_ingest(monkeypatch, self._report())
+
+        keys = {
+            r.details["run"]["idempotency_key"]
+            for r in clean_db.query(JobRun).filter_by(job_name="ingest").all()
+        }
+        assert len(keys) == 1, "a retry produced a different identity"

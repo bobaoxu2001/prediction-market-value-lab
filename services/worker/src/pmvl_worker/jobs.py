@@ -121,11 +121,35 @@ def _jsonable(value: Any) -> Any:
 async def job_ingest(*, market_limit: int | None = None, orderbook_limit: int | None = None) -> dict[str, Any]:
     from pmvl_markets.ingest import run_ingest
 
-    with job_run("ingest") as details:
+    with job_run(
+        "ingest", params={"market_limit": market_limit, "orderbook_limit": orderbook_limit}
+    ) as details:
+        record = details["record"]
         with session_scope() as db:
             report = await run_ingest(
                 db, market_limit=market_limit, orderbook_limit=orderbook_limit
             )
+        # Per-venue outcomes, so one platform failing degrades the run to
+        # PARTIAL_SUCCESS instead of producing a shorter market list that reads
+        # downstream as "there was nothing to find today".
+        for platform, written in (report.by_platform or {}).items():
+            record.provider(platform).records = written
+        for message in report.errors:
+            platform = next(
+                (p for p in (report.by_platform or {}) if p.lower() in message.lower()),
+                None,
+            )
+            if platform:
+                record.fail_provider(platform, message)
+            else:
+                record.warn(message[:300])
+        # A platform that returned nothing at all is a failure even when it
+        # raised no error: an empty venue is not a normal ingest result.
+        for platform, written in (report.by_platform or {}).items():
+            if not written and record.provider(platform).healthy:
+                record.fail_provider(platform, "returned no markets")
+
+        record.records_read = report.markets_fetched
         details.update(report.as_dict())
         details["records_written"] = report.markets_written
         return report.as_dict()
