@@ -18,7 +18,13 @@ from pmvl_shared.enums import (
 
 from pmvl_markets.db_models import ArbitrageOpportunity, JobRun
 
+from pmvl_shared.cadence import DeploymentMode
+from pmvl_shared.config import get_settings
+from pmvl_shared.freshness import DataType
+from pmvl_shared.timeutil import age_seconds, ensure_utc
+
 from ..deps import DataMode, DbDep, ModeDep, apply_provenance, envelope
+from ..health import classify_empty_result
 
 router = APIRouter(prefix="/arbitrage", tags=["arbitrage"])
 
@@ -92,6 +98,23 @@ def list_arbitrage(
         ).limit(1)
     )
     diagnostics = _matching_diagnostics(db)
+    # Why this list is the length it is. An empty result is the platform's most
+    # common output and its most dangerous, because a scan that found nothing and
+    # a scanner that never ran render identically.
+    settings = get_settings()
+    mode_value = (
+        DeploymentMode.READ_ONLY_SNAPSHOT
+        if settings.snapshot_mode
+        else settings.deployment_mode
+    )
+    scan_age = (
+        age_seconds(ensure_utc(diagnostics["ran_at"]))
+        if diagnostics and diagnostics.get("ran_at")
+        else None
+    )
+    health = classify_empty_result(
+        db, mode_value, input_age_seconds=scan_age, input_type=DataType.ARBITRAGE_SCAN
+    )
 
     if not latest_batch:
         return envelope(
@@ -99,6 +122,7 @@ def list_arbitrage(
             batch_id=None,
             label_meanings=LABEL_MEANINGS,
             matching_diagnostics=diagnostics,
+            health=health,
             empty_reason=(
                 "No arbitrage scan has run yet, or the most recent scan found nothing. "
                 "Finding nothing is the normal result: both venues are actively "
@@ -173,6 +197,7 @@ def list_arbitrage(
         counts_by_label=counts,
         label_meanings=LABEL_MEANINGS,
         matching_diagnostics=diagnostics,
+        health=health,
         view=view,
         actionable_count=sum(1 for r in rows if r["actionable"]),
         diagnostic_count=sum(1 for r in rows if not r["actionable"]),
