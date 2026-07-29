@@ -280,6 +280,27 @@ export interface SystemInfo {
   provenance_split: Record<string, Record<string, number>>;
   jobs: JobStatusRow[];
   freshest_quote_observed_at: string | null;
+  deployment_mode?: string | null;
+  /** Configured cadence AND whether anything executes it. Rendering the cadence
+      without `cadence_notice` states something the deployment cannot back up. */
+  pipeline?: {
+    deployment_mode: string;
+    runs_scheduled_jobs: boolean;
+    scheduler_status: string;
+    cadence_notice: string | null;
+    jobs: {
+      job_name: string;
+      description: string;
+      configured_cadence: string;
+      active_cadence: string | null;
+      scheduler_status: string;
+      last_success_at: string | null;
+      last_failure_at: string | null;
+      last_error: string;
+      next_expected_run: string | null;
+    }[];
+  } | null;
+  update_frequencies_notice?: string | null;
   /** Never render the field above without this: it is one observation, not a
       capture time for the dataset. */
   freshest_quote_observed_at_note?: string | null;

@@ -29,6 +29,7 @@ export default async function SystemPage() {
   const webCommit = short(process.env.VERCEL_GIT_COMMIT_SHA);
   const webRef = process.env.VERCEL_GIT_COMMIT_REF ?? "—";
   const apiCommit = short(s.deployment?.commit_sha);
+  const pipeline = s.pipeline ?? null;
 
   return (
     <div>
@@ -177,18 +178,56 @@ export default async function SystemPage() {
           </div>
         </section>
 
+        {/* This was a bare list of intervals - "arbitrage scan: 1 minute" - on a
+            deployment with no worker and a frozen database. Every number described
+            scheduler.py correctly and the running system not at all. The caveat now
+            precedes the table, and each row shows whether that job is actually
+            running rather than only how often it is configured to. */}
         <section className="card p-4">
-          <h2 className="mb-3 text-sm font-semibold">Update cadence</h2>
-          <table className="w-full">
-            <tbody className="divide-y divide-neutral-100 dark:divide-neutral-800">
-              {Object.entries(s.update_frequencies).map(([job, freq]) => (
-                <tr key={job}>
-                  <td>{job.replace(/_/g, " ")}</td>
-                  <td className="num text-right">{freq}</td>
+          <h2 className="mb-1 text-sm font-semibold">Worker cadence</h2>
+          {pipeline?.cadence_notice ? (
+            <p className="mb-3 rounded border border-amber-500/40 bg-amber-500/10 px-2 py-1.5 text-xs text-amber-700 dark:text-amber-400">
+              {pipeline.cadence_notice}
+            </p>
+          ) : (
+            <p className="mb-3 text-xs text-neutral-500">
+              Scheduler {pipeline?.scheduler_status ?? "unknown"}.
+            </p>
+          )}
+          <div className="table-wrap">
+            <table className="w-full">
+              <thead className="border-b border-neutral-200 dark:border-neutral-800">
+                <tr>
+                  <th>Job</th>
+                  <th className="text-right">Configured</th>
+                  <th className="text-right">Active</th>
+                  <th className="text-right">Last success</th>
                 </tr>
-              ))}
-            </tbody>
-          </table>
+              </thead>
+              <tbody className="divide-y divide-neutral-100 dark:divide-neutral-800">
+                {(pipeline?.jobs ?? []).map((j) => (
+                  <tr key={j.job_name}>
+                    <td title={j.description}>{j.job_name.replace(/_/g, " ")}</td>
+                    <td className="num text-right text-neutral-500">
+                      {j.configured_cadence}
+                    </td>
+                    <td className="num text-right">
+                      {/* A dash here is the honest answer, not missing data: the
+                          job is configured but nothing is executing it. */}
+                      {j.active_cadence ?? (
+                        <span className="text-neutral-400">
+                          {j.scheduler_status === "not_deployed" ? "not deployed" : "—"}
+                        </span>
+                      )}
+                    </td>
+                    <td className="num text-right text-neutral-500">
+                      {j.last_success_at ? utcTime(j.last_success_at) : "never"}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
         </section>
       </div>
 
