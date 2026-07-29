@@ -28,11 +28,44 @@ The problems SQLite *does* create here, and how each is handled:
 | Problem | Handling |
 |---|---|
 | **Write concurrency** | One writer by construction; the job runner is serial. WAL mode on the operational store; jobs take the write lock for bounded transactions. |
-| **File durability** | The operational DB lives in the CI workspace and is uploaded as a build artifact each run. It is a cache, not the record — the record is the published snapshot in git. |
-| **Deployment persistence** | Solved by not needing it: each run restores the previous artifact, applies migrations, works, republishes. |
+| **File durability** | The operational DB lives in the CI workspace and is destroyed with it. It is scratch space, not a store — the record is the published snapshot in git. |
+| **Deployment persistence** | Solved by not needing it: each run is a **stateless recomputation** seeded from the last published snapshot. See below. |
 | **Lock handling** | `busy_timeout` plus serial jobs. A lock contention here indicates a bug, not load. |
 | **Backups** | Every published snapshot is a full backup, checksummed and in git history. Recovery is `git checkout`. |
 | **Artifact handoff** | Publication copies, validates, checksums, then renames. The public bundle never sees a partial file. |
+
+### The execution model: stateless recomputation
+
+Worth stating plainly, because the alternative reading is flattering and wrong.
+
+A run seeds a scratch database from the last **published** snapshot, computes, and
+then either hands a candidate to the publish job or drops it. A `publish=false` run
+leaves nothing behind. The next run seeds from the same published snapshot, not from
+the previous run's candidate.
+
+```
+Published snapshot N
+  ├─ run A (publish=false) → candidate A → discarded
+  ├─ run B (publish=false) → candidate B → discarded
+  └─ run C (publish=true)  → candidate C → committed → Published snapshot N+1
+```
+
+So two `publish=false` runs do **not** demonstrate cross-run continuity. Run B does
+not inherit run A's job history, rule versions, idempotency keys, settlement updates
+or backtest state, because run A wrote none of them anywhere durable. What two such
+runs do demonstrate is **deterministic recomputation from the same parent**: the same
+parent id, stable rule-version content hashes, stable recommendation identity, no
+duplicate rows within a run, and differences explained only by newly observed market
+data.
+
+**The only persistence boundary is a published snapshot.** That is a real constraint
+of the $0 architecture, not a temporary gap, and it is recorded in every run report
+as `execution_model` and `state_persisted_across_runs` rather than left for a reader
+to infer from silence.
+
+A persistent operational store would change this, and is deliberately not built in
+this pass: it is the Postgres decision below, and it should be made on the triggers
+listed there rather than because a stateless model was mistaken for a broken one.
 
 ### When to move to Postgres
 

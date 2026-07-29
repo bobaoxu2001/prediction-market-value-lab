@@ -1,10 +1,15 @@
 name: Pipeline
 
-# Thin by design. Every decision lives in
-# scripts/run_automated_snapshot_pipeline.py, which PR CI runs in smoke mode, so
-# the logic is exercised before it merges. workflow_dispatch and schedule only
-# fire from the default branch, so a workflow carrying its own logic cannot be
-# tested until after it lands - exactly when a mistake is most expensive.
+# Two jobs with two different tokens, because GitHub Actions permissions are
+# JOB-scoped. The previous single job held `contents: read` and ended with a
+# `git push`; setting GH_TOKEN on that step cannot elevate the token, so the first
+# real publication attempt would have failed. Research is read-only and hands the
+# candidate to a separate write-enabled job.
+#
+# Everything the pipeline decides lives in
+# scripts/run_automated_snapshot_pipeline.py, which PR CI runs in smoke mode.
+# workflow_dispatch and schedule only fire from the default branch, so a workflow
+# carrying its own logic cannot be tested until after it merges.
 
 on:
   workflow_dispatch:
@@ -23,19 +28,17 @@ on:
         type: boolean
         default: false
   schedule:
-    # Research refresh only; this never publishes. Hourly rather than every 15
-    # minutes because the whole job set runs each time and the research product
-    # does not need finer resolution than that.
+    # Research refresh only. This can never publish: the publish job requires
+    # workflow_dispatch.
     - cron: "17 * * * *"
 
 concurrency:
   # One pipeline at a time. Two concurrent runs would seed from the same parent
-  # snapshot and race to promote different children, and the loser's work would
-  # vanish with no record that it happened.
+  # and race to promote different children, and the loser's work would vanish.
   group: pipeline
   cancel-in-progress: false
 
-# Least privilege at the top; only the publish job widens it.
+# Read-only by default; only the publish job widens it.
 permissions:
   contents: read
 
@@ -44,16 +47,30 @@ jobs:
     name: Research refresh
     runs-on: ubuntu-latest
     timeout-minutes: 45
+    # Never writes to the repository. It computes and hands over.
     permissions:
       contents: read
-    # A snapshot commit must not trigger another pipeline. The publish job commits
-    # with [skip ci], and this guard is the second line of defence against a run
-    # loop that would publish continuously.
+    # A disabled schedule must SKIP, not fail. The previous version ran a step
+    # that exited 78, which Actions treats as a failure, so merging with the
+    # variable unset would have produced a red workflow every hour - and the
+    # `if: always()` report step would then fail again on the missing report.
+    # A job-level `if` produces a skipped job and a green run.
+    #
+    # Manual dispatch is unaffected: PMVL_SCHEDULE_ENABLED governs scheduled
+    # computation only, and is deliberately not coupled to publication.
     if: >-
-      github.event_name != 'push' &&
-      !contains(github.event.head_commit.message, '[skip ci]')
+      github.event_name != 'schedule' ||
+      vars.PMVL_SCHEDULE_ENABLED == 'true'
     outputs:
-      published: ${{ steps.run.outputs.published }}
+      candidate_exists: ${{ steps.summarise.outputs.candidate_exists }}
+      publication_eligible: ${{ steps.summarise.outputs.publication_eligible }}
+      parent_snapshot_id: ${{ steps.summarise.outputs.parent_snapshot_id }}
+      parent_snapshot_sha256: ${{ steps.summarise.outputs.parent_snapshot_sha256 }}
+      candidate_snapshot_id: ${{ steps.summarise.outputs.candidate_snapshot_id }}
+      candidate_sha256: ${{ steps.summarise.outputs.candidate_sha256 }}
+      source_commit_sha: ${{ github.sha }}
+      pipeline_run_id: ${{ steps.summarise.outputs.pipeline_run_id }}
+      artifact_name: pmvl-candidate-${{ github.run_id }}-${{ github.sha }}
     steps:
       - uses: actions/checkout@v4
 
@@ -68,99 +85,224 @@ jobs:
           pip install -e packages/shared -e packages/market-normalization \
                       -e services/api -e services/worker
 
-      - name: Check the schedule is enabled
-        # A repository variable, so the schedule can be turned off without editing
-        # and re-merging a workflow file. Default off: a merge must not silently
-        # start running production jobs.
-        if: github.event_name == 'schedule'
-        run: |
-          if [[ "${{ vars.PMVL_SCHEDULE_ENABLED }}" != "true" ]]; then
-            echo "PMVL_SCHEDULE_ENABLED is not 'true'; skipping scheduled run."
-            exit 78
-          fi
-
       - name: Run pipeline
-        id: run
         env:
           GITHUB_EVENT_NAME: ${{ github.event_name }}
           INPUT_SCOPE: ${{ inputs.scope }}
           INPUT_MARKET_LIMIT: ${{ inputs.market_limit }}
-          # Publication requires BOTH the dispatch input and the repository
-          # variable. Either alone is insufficient, so a mistaken checkbox cannot
-          # publish and neither can a variable somebody set and forgot.
-          INPUT_PUBLISH: >-
-            ${{ (inputs.publish == true &&
-                 vars.PMVL_SCHEDULE_PUBLISH_ENABLED == 'true') && 'true' || 'false' }}
+          # Deliberately NOT passed as INPUT_PUBLISH. The research job never
+          # promotes anything; it emits a held candidate and the publish job
+          # decides. Keeping promotion out of this job is what lets its token stay
+          # read-only.
           PMVL_COMMIT_SHA: ${{ github.sha }}
           ENVIRONMENT: production
         run: |
-          python scripts/run_automated_snapshot_pipeline.py --report run-report.json
-          echo "published=$(python -c "import json;print(json.load(open('run-report.json'))['published'])")" >> "$GITHUB_OUTPUT"
+          python scripts/run_automated_snapshot_pipeline.py \
+            --report run-report.json \
+            --candidate-out candidate/
 
-      - name: Report
+      - name: Summarise the run
+        id: summarise
         if: always()
         run: |
           if [[ ! -f run-report.json ]]; then
             echo "::error::the pipeline produced no report; it did not run to completion"
             exit 1
           fi
-          python - <<'PY'
+          python - <<'PY' >> "$GITHUB_OUTPUT"
           import json, sys
+          from pathlib import Path
+
           sys.path.insert(0, "packages/shared/src")
           from pmvl_shared.pipeline_dag import PIPELINE
 
           report = json.load(open("run-report.json"))
           statuses, skipped = report["statuses"], report["skipped"]
-          print(f"scope: {report['scope']}")
-          print(f"parent snapshot: {report['parent_snapshot_id']} "
-                f"({report['operational_init_source']})")
 
           missing = []
           for spec in PIPELINE:
               if spec.name in statuses:
-                  print(f"  {statuses[spec.name]:16} {spec.name}")
+                  print(f"::notice::{spec.name} {statuses[spec.name]}", file=sys.stderr)
               elif spec.name in skipped:
-                  print(f"  {'SKIPPED':16} {spec.name} - {skipped[spec.name]}")
+                  print(f"::warning::{spec.name} skipped - {skipped[spec.name]}", file=sys.stderr)
               else:
-                  # The failure this catches: a job silently vanishing from the
-                  # run and nobody noticing because nothing reported its absence.
+                  # A job silently vanishing from the run is the failure this catches.
                   missing.append(spec.name)
-                  print(f"::error::{spec.name} did not run and was not skipped")
+                  print(f"::error::{spec.name} did not run and was not skipped", file=sys.stderr)
 
-          for blocker in report["publication_blockers"]:
-              print(f"::warning::publication blocked: {blocker}")
+          candidate = Path("candidate/pmvl-snapshot.db").exists()
+          eligible = bool(report.get("publication_eligible")) and candidate and not missing
+
+          print(f"candidate_exists={str(candidate).lower()}")
+          print(f"publication_eligible={str(eligible).lower()}")
+          print(f"parent_snapshot_id={report.get('parent_snapshot_id') or ''}")
+          print(f"parent_snapshot_sha256={report.get('parent_snapshot_sha256') or ''}")
+          print(f"candidate_snapshot_id={report.get('candidate_snapshot_id') or ''}")
+          print(f"candidate_sha256={report.get('candidate_sha256') or ''}")
+          print(f"pipeline_run_id={report.get('run_id') or ''}")
+
+          for blocker in report.get("publication_blockers", []):
+              print(f"::warning::publication blocked: {blocker}", file=sys.stderr)
           if missing:
               raise SystemExit(1)
           PY
 
-      - name: Upload run report
-        if: always()
+      - name: Upload candidate and report
+        # Only a validated candidate is uploaded. An artefact that failed
+        # validation must not exist for a later job to find.
+        if: steps.summarise.outputs.publication_eligible == 'true'
         uses: actions/upload-artifact@v4
         with:
-          name: pipeline-run-report
-          path: run-report.json
-          retention-days: 30
+          name: pmvl-candidate-${{ github.run_id }}-${{ github.sha }}
+          path: |
+            candidate/pmvl-snapshot.db
+            candidate/pmvl-snapshot.manifest.json
+            run-report.json
+          retention-days: 7
+          if-no-files-found: error
 
-      - name: Commit published snapshot
-        # The ONLY step with write access, and only when the script actually
-        # promoted a candidate. Restricted to the default branch so a preview
-        # branch can never publish to main.
-        if: >-
-          steps.run.outputs.published == 'True' &&
-          github.ref == 'refs/heads/main'
+      - name: Upload run report only
+        # A failed or blocked run still leaves its report for diagnosis.
+        if: always() && steps.summarise.outputs.publication_eligible != 'true'
+        uses: actions/upload-artifact@v4
+        with:
+          name: pmvl-run-report-${{ github.run_id }}
+          path: run-report.json
+          retention-days: 7
+          if-no-files-found: ignore
+
+  publish:
+    name: Publish snapshot
+    needs: research
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    # The only write token in this workflow, held by the only job that writes.
+    permissions:
+      contents: write
+    # Every condition is required. A scheduled event fails the first test, a PR
+    # event never reaches this workflow, and a preview branch fails the ref test.
+    if: >-
+      github.event_name == 'workflow_dispatch' &&
+      inputs.publish == true &&
+      vars.PMVL_SCHEDULE_PUBLISH_ENABLED == 'true' &&
+      github.ref == 'refs/heads/main' &&
+      needs.research.result == 'success' &&
+      needs.research.outputs.publication_eligible == 'true'
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          # The exact commit the research job computed against. Checking out a
+          # moved main would publish a candidate built from different code.
+          ref: ${{ needs.research.outputs.source_commit_sha }}
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: pip
+
+      - name: Install
+        run: |
+          pip install -r requirements.txt
+          pip install -e packages/shared -e packages/market-normalization -e services/api
+
+      - name: Download the exact candidate
+        uses: actions/download-artifact@v4
+        with:
+          # Named for this run. Never "the latest artifact": that would let a
+          # concurrent or older run's candidate be published under this run's
+          # authorisation.
+          name: ${{ needs.research.outputs.artifact_name }}
+          path: incoming
+
+      - name: Revalidate the candidate independently
         env:
-          GH_TOKEN: ${{ github.token }}
+          EXPECTED_CANDIDATE_SHA: ${{ needs.research.outputs.candidate_sha256 }}
+          EXPECTED_CANDIDATE_ID: ${{ needs.research.outputs.candidate_snapshot_id }}
+          EXPECTED_PARENT_ID: ${{ needs.research.outputs.parent_snapshot_id }}
+          EXPECTED_PARENT_SHA: ${{ needs.research.outputs.parent_snapshot_sha256 }}
+          EXPECTED_COMMIT: ${{ needs.research.outputs.source_commit_sha }}
+        run: |
+          python scripts/verify_candidate.py \
+            --candidate incoming/candidate/pmvl-snapshot.db \
+            --manifest incoming/candidate/pmvl-snapshot.manifest.json \
+            --published data/pmvl-snapshot.manifest.json
+
+      - name: Rerun snapshot validation on the candidate
+        run: |
+          cp incoming/candidate/pmvl-snapshot.db /tmp/candidate.db
+          cp incoming/candidate/pmvl-snapshot.manifest.json /tmp/candidate.manifest.json
+          python scripts/validate_snapshot.py --snapshot /tmp/candidate.db
+
+      - name: Confirm main has not moved
+        run: |
+          git fetch origin main
+          if [[ "$(git rev-parse HEAD)" != "$(git rev-parse origin/main)" ]]; then
+            echo "::error::main moved since the research job started; re-run the pipeline"
+            exit 1
+          fi
+
+      - name: Commit both files together
         run: |
           git config user.name  "pmvl-pipeline[bot]"
           git config user.email "pmvl-pipeline@users.noreply.github.com"
-          # Refuse to publish onto a moved main. Two runs promoting from different
-          # parents would otherwise overwrite each other's history silently.
-          git fetch origin main
-          if [[ "$(git rev-parse HEAD)" != "$(git rev-parse origin/main)" ]]; then
-            echo "::error::main moved during this run; refusing to publish. Re-run."
+
+          # release_status becomes 'published' only now, after the candidate has
+          # been revalidated and immediately before the commit that makes it true.
+          python - <<'PY'
+          import json
+          from pathlib import Path
+
+          src = Path("incoming/candidate")
+          manifest = json.loads((src / "pmvl-snapshot.manifest.json").read_text())
+          manifest["release_status"] = "published"
+          Path("data/pmvl-snapshot.manifest.json").write_text(
+              json.dumps(manifest, indent=2, sort_keys=True) + "\n"
+          )
+          Path("data/pmvl-snapshot.db").write_bytes((src / "pmvl-snapshot.db").read_bytes())
+          PY
+
+          # The real publication boundary is the git commit, not os.replace in a
+          # working directory. Both files must move in ONE commit: a commit
+          # carrying only one leaves the public pair internally inconsistent.
+          git add data/pmvl-snapshot.db data/pmvl-snapshot.manifest.json
+          CHANGED=$(git diff --cached --name-only -- data/pmvl-snapshot.db data/pmvl-snapshot.manifest.json | wc -l | tr -d ' ')
+          if [[ "$CHANGED" != "2" ]]; then
+            echo "::error::expected both snapshot files to change, got $CHANGED; refusing to publish a mismatched pair"
+            git diff --cached --name-only -- data/
             exit 1
           fi
-          git add data/pmvl-snapshot.db data/pmvl-snapshot.manifest.json
+
           git commit -m "data: publish validated snapshot from ${GITHUB_SHA:0:12} [skip ci]"
-          # Never force. A rejected push means main moved and the run must be redone.
-          git push origin HEAD:main
+
+      - name: Verify the committed pair matches
+        # Working-tree validation is not enough: what the public serves is what
+        # the commit contains.
+        run: |
+          python - <<'PY'
+          import subprocess, sys
+          sys.path.insert(0, "packages/shared/src")
+          from pathlib import Path
+          from pmvl_shared.manifest import verify_artifact
+
+          for name in ("data/pmvl-snapshot.db", "data/pmvl-snapshot.manifest.json"):
+              blob = subprocess.run(["git", "show", f"HEAD:{name}"], capture_output=True)
+              Path("/tmp/committed-" + Path(name).name).write_bytes(blob.stdout)
+
+          problems = verify_artifact(
+              Path("/tmp/committed-pmvl-snapshot.db"),
+              Path("/tmp/committed-pmvl-snapshot.manifest.json"),
+          )
+          if problems:
+              print("::error::the committed pair does not verify: " + "; ".join(problems))
+              raise SystemExit(1)
+          print("committed manifest matches committed database bytes")
+          PY
+
+      - name: Push
+        run: |
+          # Never --force. A rejected push means main moved and the run must be
+          # redone from a fresh research job against the new parent.
+          if ! git push origin HEAD:main; then
+            echo "::error::push rejected (non-fast-forward). main moved during publication; re-run the pipeline. NOT force-pushing."
+            exit 1
+          fi

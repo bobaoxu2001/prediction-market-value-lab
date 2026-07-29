@@ -131,13 +131,32 @@ jobs:
           import json, sys
 
           report = json.load(open("run-report.json"))
+          failures = []
           if report["published"]:
-              print("::error::a pull-request run published a snapshot")
-              sys.exit(1)
-          print(f"scope: {report['scope']}")
-          print(f"init:  {report['operational_init_source']}")
+              failures.append("a pull-request run published a snapshot")
+          # A PR run must also not claim to have handed a candidate onward, and
+          # must not assert cross-run persistence it does not have.
+          if report["candidate_disposition"] != "discarded":
+              failures.append(
+                  f"candidate_disposition is {report['candidate_disposition']!r}; "
+                  "a PR run must discard"
+              )
+          if report["state_persisted_across_runs"] is not False:
+              failures.append("the run claims state persisted across runs")
+          if report["execution_model"] != "stateless_recompute_from_published_snapshot":
+              failures.append(f"unexpected execution_model {report['execution_model']!r}")
+
+          print(f"scope:           {report['scope']}")
+          print(f"execution model: {report['execution_model']}")
+          print(f"init:            {report['operational_init_source']}")
+          print(f"parent:          {report['parent_snapshot_id']}")
+          print(f"disposition:     {report['candidate_disposition']}")
           for job, status in report["statuses"].items():
               print(f"  {status:16} {job}")
+
+          for failure in failures:
+              print(f"::error::{failure}")
+          sys.exit(1 if failures else 0)
           PY
 
   frontend:

@@ -102,6 +102,33 @@ The publication gate is the point. A run that fails validation leaves the previo
 artifact in place, so the worst outcome of a broken pipeline is **stale data that is
 labelled stale**, never corrupt data that looks fresh.
 
+## Workflow control plane
+
+Two jobs, two tokens. GitHub Actions permissions are **job-scoped**, so a step
+cannot elevate a `contents: read` token by setting `GH_TOKEN`; a single job that
+computed and then pushed would have failed on its first real publication.
+
+```
+research  (contents: read)   → computes, validates, uploads a HELD candidate
+   │                            never commits, never pushes
+   ▼  artifact: pmvl-candidate-<run_id>-<sha>
+publish   (contents: write)  → revalidates, commits DB+manifest together, pushes
+```
+
+The publish job runs only when **all** of these hold: manual dispatch, the
+`publish` input, `PMVL_SCHEDULE_PUBLISH_ENABLED`, `refs/heads/main`, a successful
+research job, and `publication_eligible`. There is no `||` in that condition, so
+there is no alternative branch a scheduled or preview run could satisfy.
+
+`PMVL_SCHEDULE_ENABLED` gates scheduled **computation** at the job level, so a
+disabled schedule produces a *skipped* job. It was previously a shell `exit 78`,
+which Actions treats as a failure — merging with the variable unset would have
+painted the repository red every hour, and the `if: always()` report step would
+then have failed again on the report the skipped run never wrote.
+
+The two variables are deliberately uncoupled: enabling scheduled research must not
+require enabling publication.
+
 ## What is deliberately not being built
 
 - **No live database behind the public site.** The read-only artifact is the safety

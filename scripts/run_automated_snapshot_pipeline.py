@@ -28,6 +28,20 @@ degraded upstream means for each downstream job.
 **Publishing non-atomically.** The candidate is built in a temporary directory and
 only renamed into place after it validates, so a failed run leaves the previously
 published pair untouched rather than half-written.
+
+**The execution model, stated plainly.** Every run is a *stateless recomputation
+from the latest validated published snapshot*. A run with ``publish=false``
+computes a candidate and then lets it go; the next run starts from the same
+published parent, not from that candidate. Two such runs therefore demonstrate
+deterministic recomputation and stable idempotent output - they do NOT demonstrate
+that the second inherited the first's job history, rule versions, settlements or
+idempotency keys, because it did not. The only thing that carries state across
+runs is a snapshot somebody published.
+
+That is a real constraint of the $0 architecture and it is written into the run
+report rather than left for a reader to infer. A stateless recomputation described
+as continuity is the same class of overclaim as a configured cadence described as
+a running one.
 """
 
 from __future__ import annotations
@@ -73,6 +87,29 @@ CI_SMOKE_MARKET_LIMIT = 20
 
 class PipelineError(RuntimeError):
     """A condition that must stop the run rather than degrade it."""
+
+
+class CandidateDisposition:
+    """What became of the artefact this run produced.
+
+    Three outcomes, and only one of them persists anything. Naming them keeps the
+    report from implying that a computed-then-dropped candidate left a trace.
+    """
+
+    #: Computed, validated, then let go. Nothing outside this run changed.
+    DISCARDED = "discarded"
+    #: Written to a durable path for a separate publish job to collect. Still not
+    #: published: the repository is unchanged until that job commits.
+    UPLOADED_FOR_PUBLISH = "uploaded_for_publish"
+    #: Promoted into the published pair.
+    PUBLISHED = "published"
+    #: Never built, because a required job failed or did not run.
+    NOT_BUILT = "not_built"
+
+
+#: Every run is a fresh computation from the last published snapshot. Recorded in
+#: the report so nobody has to infer it from the absence of a contrary statement.
+EXECUTION_MODEL = "stateless_recompute_from_published_snapshot"
 
 
 @dataclass
@@ -157,6 +194,9 @@ class RunOutcome:
     migration_start_revision: str | None = None
     migration_end_revision: str | None = None
     candidate_path: Path | None = None
+    candidate_snapshot_id: str | None = None
+    candidate_sha256: str | None = None
+    candidate_disposition: str = CandidateDisposition.NOT_BUILT
     published: bool = False
     publication_blockers: list[str] = field(default_factory=list)
 
@@ -171,9 +211,31 @@ class RunOutcome:
             "operational_init_source": self.operational_init_source,
             "migration_start_revision": self.migration_start_revision,
             "migration_end_revision": self.migration_end_revision,
+            # The execution model is stated, not implied. A reader must not have to
+            # deduce from an absence that this run inherited nothing.
+            "execution_model": EXECUTION_MODEL,
+            "state_persisted_across_runs": False,
+            "candidate_snapshot_id": self.candidate_snapshot_id,
+            "candidate_sha256": self.candidate_sha256,
+            "candidate_disposition": self.candidate_disposition,
             "published": self.published,
+            "publication_eligible": self.publication_eligible,
             "publication_blockers": self.publication_blockers,
         }
+
+    @property
+    def publication_eligible(self) -> bool:
+        """Whether a separate publish job would be permitted to promote this.
+
+        Eligibility is a property of the candidate, not of the run's intent: a
+        research run that was never asked to publish can still produce a candidate
+        that WOULD be publishable, and the publish job needs to know that.
+        """
+        return (
+            not self.publication_blockers
+            and self.candidate_disposition
+            in (CandidateDisposition.UPLOADED_FOR_PUBLISH, CandidateDisposition.PUBLISHED)
+        )
 
 
 # --------------------------------------------------------------- initialisation
@@ -341,6 +403,46 @@ def build_and_validate_candidate(work_dir: Path, operational: Path, outcome: Run
     return candidate
 
 
+def _record_candidate_identity(candidate: Path, outcome: RunOutcome) -> None:
+    """Read the candidate's own manifest so the run report can name it."""
+    from pmvl_shared.manifest import sha256_of
+
+    manifest_path = candidate.with_suffix(".manifest.json")
+    if manifest_path.exists():
+        outcome.candidate_snapshot_id = json.loads(manifest_path.read_text()).get(
+            "snapshot_id"
+        )
+    outcome.candidate_sha256 = sha256_of(candidate)
+
+
+def _emit_candidate(candidate: Path, out_dir: Path, outcome: RunOutcome) -> Path:
+    """Copy the validated candidate pair somewhere a later job can pick it up.
+
+    The manifest is written with ``release_status: held``. It becomes ``published``
+    only after the git commit succeeds - marking it published here would produce an
+    artefact asserting a publication that had not happened, and a publish job that
+    later failed would leave that assertion standing.
+    """
+    from pmvl_shared.manifest import ReleaseStatus
+
+    out_dir.mkdir(parents=True, exist_ok=True)
+    db_out = out_dir / "pmvl-snapshot.db"
+    manifest_out = out_dir / "pmvl-snapshot.manifest.json"
+
+    shutil.copy2(candidate, db_out)
+    manifest = json.loads(candidate.with_suffix(".manifest.json").read_text())
+    manifest["release_status"] = ReleaseStatus.HELD
+    manifest["parent_snapshot_id"] = outcome.parent_snapshot_id
+    manifest["parent_snapshot_sha256"] = outcome.parent_snapshot_sha256
+    manifest["pipeline_run_id"] = outcome.run_id
+    manifest["workflow_run_id"] = os.environ.get("GITHUB_RUN_ID", "")
+    manifest_out.write_text(json.dumps(manifest, indent=2, sort_keys=True) + "\n")
+
+    _record_candidate_identity(db_out, outcome)
+    outcome.candidate_disposition = CandidateDisposition.UPLOADED_FOR_PUBLISH
+    return db_out
+
+
 def promote(candidate: Path, outcome: RunOutcome) -> None:
     """Atomically replace the published pair.
 
@@ -359,6 +461,8 @@ def promote(candidate: Path, outcome: RunOutcome) -> None:
     os.replace(candidate, PUBLISHED_DB)
     os.replace(candidate_manifest, PUBLISHED_MANIFEST)
     outcome.published = True
+    outcome.candidate_disposition = CandidateDisposition.PUBLISHED
+    _record_candidate_identity(PUBLISHED_DB, outcome)
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -370,6 +474,14 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--work-dir", default=None)
     parser.add_argument(
         "--report", default=None, help="write the run outcome as JSON to this path"
+    )
+    parser.add_argument(
+        "--candidate-out",
+        default=None,
+        help=(
+            "emit the validated candidate pair here for a separate publish job. "
+            "Implies the candidate is HELD, not published."
+        ),
     )
     args = parser.parse_args(argv)
 
@@ -410,17 +522,33 @@ def main(argv: list[str] | None = None) -> int:
                 outcome.publication_blockers.append(f"{name} did not run at all")
 
         if outcome.publication_blockers:
+            outcome.candidate_disposition = CandidateDisposition.NOT_BUILT
             print("\npublication blocked:")
             for blocker in outcome.publication_blockers:
                 print(f"   {blocker}")
         else:
             candidate = build_and_validate_candidate(work_dir, operational, outcome)
             print(f"candidate validated: {candidate.name}")
-            if scope.publish:
+
+            if args.candidate_out:
+                # Copied to a durable path so a SEPARATE publish job can collect
+                # it. The research job holds a read-only token and must not be the
+                # thing that writes to the repository; handing the artefact over is
+                # what makes that separation possible.
+                destination = _emit_candidate(candidate, Path(args.candidate_out), outcome)
+                print(f"candidate emitted for publication: {destination}")
+            elif scope.publish:
                 promote(candidate, outcome)
                 print("published")
             else:
-                print("publication not requested; candidate discarded")
+                # Not "discarded" as an aside - this is the execution model. The
+                # next run starts from the published parent, not from this.
+                outcome.candidate_disposition = CandidateDisposition.DISCARDED
+                print(
+                    "candidate discarded: this run is a stateless recomputation "
+                    "and persists nothing. The next run starts from the same "
+                    "published snapshot."
+                )
 
         if args.report:
             Path(args.report).write_text(json.dumps(outcome.as_dict(), indent=2) + "\n")
