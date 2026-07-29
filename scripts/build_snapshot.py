@@ -24,6 +24,12 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[1]
 SOURCE = ROOT / "data" / "pmvl.db"
 TARGET = ROOT / "data" / "pmvl-snapshot.db"
+MANIFEST = ROOT / "data" / "pmvl-snapshot.manifest.json"
+
+sys.path[:0] = [
+    str(ROOT / "packages/shared/src"),
+    str(ROOT / "packages/market-normalization/src"),
+]
 
 
 def main() -> int:
@@ -100,11 +106,79 @@ def main() -> int:
     con.close()
 
     after = TARGET.stat().st_size
+    _write_manifest(counts, after)
+
     print(f"snapshot: {before/1e6:.1f} MB -> {after/1e6:.1f} MB  ({TARGET})")
     for table, n in counts.items():
         if n:
             print(f"   {table:28s} {n:>7,}")
+    print(f"manifest: {MANIFEST.name}")
     return 0
+
+
+def _write_manifest(counts: dict[str, int], size: int) -> None:
+    """Record what this artefact is, so a deploy can check rather than assume.
+
+    Written with validation_status PENDING and release_status HELD. The validator
+    promotes it on success; nothing else may. An artefact whose manifest still
+    says PENDING has not been checked, and `verify_artifact` refuses it - which is
+    the behaviour that makes "never deploy an unvalidated snapshot" enforceable
+    rather than a convention.
+    """
+    import sqlite3 as _sqlite3
+
+    from pmvl_shared.job_record import code_version
+    from pmvl_shared.manifest import SnapshotManifest, sha256_of
+
+    con = _sqlite3.connect(TARGET)
+    try:
+        def scalar(sql: str):  # noqa: ANN202
+            try:
+                return con.execute(sql).fetchone()[0]
+            except _sqlite3.Error:
+                return None
+
+        schema_version = scalar("SELECT version_num FROM alembic_version") or "unknown"
+        model_version = scalar(
+            "SELECT model_version FROM model_predictions "
+            "ORDER BY created_at DESC LIMIT 1"
+        ) or "unknown"
+        jobs = {}
+        try:
+            for name, status in con.execute(
+                "SELECT job_name, status FROM job_runs "
+                "WHERE (job_name, started_at) IN "
+                "(SELECT job_name, MAX(started_at) FROM job_runs GROUP BY job_name)"
+            ):
+                jobs[name] = status
+        except _sqlite3.Error:
+            pass
+        freshest = scalar("SELECT MAX(quote_observed_at) FROM markets")
+        oldest = scalar(
+            "SELECT MIN(quote_observed_at) FROM markets WHERE quote_observed_at IS NOT NULL"
+        )
+    finally:
+        con.close()
+
+    from pmvl_shared.timeutil import parse_ts
+
+    manifest = SnapshotManifest(
+        snapshot_id=f"{code_version()}-{int(TARGET.stat().st_mtime)}",
+        code_commit_sha=code_version(),
+        schema_version=str(schema_version),
+        model_version=str(model_version),
+        # The rule parser has no version of its own yet; saying so beats inventing
+        # a number that implies reproducibility we cannot offer.
+        parser_version="unversioned",
+        source_data_cutoff=parse_ts(freshest),
+        freshest_quote_observed_at=parse_ts(freshest),
+        oldest_quote_observed_at=parse_ts(oldest),
+        row_counts={t: n for t, n in counts.items() if n},
+        job_statuses=jobs,
+        file_size_bytes=size,
+        sha256=sha256_of(TARGET),
+    )
+    manifest.write(MANIFEST)
 
 
 if __name__ == "__main__":

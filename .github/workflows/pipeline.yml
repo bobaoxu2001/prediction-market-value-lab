@@ -1,0 +1,139 @@
+name: Pipeline
+
+# The scheduler has always existed and has only ever run on a laptop. This is the
+# thing that actually executes it.
+#
+# `workflow_dispatch` is first deliberately: a schedule that cannot be triggered by
+# hand is a schedule nobody can test, and every failure investigation starts with
+# "run it again and watch".
+on:
+  workflow_dispatch:
+    inputs:
+      publish:
+        description: "Commit the snapshot artifact if validation passes"
+        type: boolean
+        default: false
+      market_limit:
+        description: "Cap markets ingested (leave blank for all)"
+        type: string
+        default: "50"
+  schedule:
+    # Every 15 minutes. NOT the 1-minute arbitrage cadence in the configured
+    # schedule: GitHub's minimum practical interval is ~5 minutes and contended
+    # runners make even that unreliable. docs/production-architecture.md records
+    # that sub-minute scanning is not achievable here, and /system reports the
+    # configured cadence as inactive rather than implying this run is it.
+    - cron: "*/15 * * * *"
+
+concurrency:
+  # One pipeline at a time. Two concurrent ingests would double the API load on
+  # exactly the venue that is already slow, and the operational store has one
+  # writer by design.
+  group: pipeline
+  cancel-in-progress: false
+
+permissions:
+  contents: write
+
+jobs:
+  run:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: pip
+
+      - name: Install
+        run: |
+          pip install -r requirements.txt
+          pip install -e packages/shared -e packages/market-normalization \
+                      -e services/api -e services/worker
+
+      - name: Migrate
+        env:
+          DATABASE_URL: sqlite+pysqlite:///${{ github.workspace }}/data/pmvl-operational.db
+        run: alembic upgrade head
+
+      - name: Run pipeline
+        id: pipeline
+        env:
+          DATABASE_URL: sqlite+pysqlite:///${{ github.workspace }}/data/pmvl-operational.db
+          PMVL_COMMIT_SHA: ${{ github.sha }}
+          ENVIRONMENT: production
+        # `continue-on-error` so that a failed run still reaches the reporting step
+        # below. A pipeline that dies silently is the failure mode this whole branch
+        # exists to remove.
+        continue-on-error: true
+        run: |
+          python -m pmvl_worker.cli ingest \
+            --market-limit "${{ github.event.inputs.market_limit || '50' }}"
+          python -m pmvl_worker.cli rank
+          python -m pmvl_worker.cli arbitrage
+
+      - name: Report run outcome
+        env:
+          DATABASE_URL: sqlite+pysqlite:///${{ github.workspace }}/data/pmvl-operational.db
+        run: |
+          python - <<'PY'
+          import os, sys
+          sys.path[:0] = ["packages/shared/src", "packages/market-normalization/src"]
+          from sqlalchemy import select
+          from pmvl_shared.db import session_scope
+          from pmvl_markets.db_models import JobRun
+
+          with session_scope() as db:
+              rows = db.scalars(
+                  select(JobRun).order_by(JobRun.started_at.desc()).limit(10)
+              ).all()
+              if not rows:
+                  print("::error::no job runs recorded - the pipeline did not execute")
+                  raise SystemExit(1)
+              failed = []
+              for r in rows:
+                  print(f"{r.job_name:12} {r.status:16} {r.records_written or 0} rows")
+                  if r.status == "failed":
+                      failed.append(r.job_name)
+                  if r.status == "partial_success":
+                      run = (r.details or {}).get("run", {})
+                      print(f"::warning::{r.job_name} partial; "
+                            f"failed providers: {run.get('failed_providers')}")
+              if failed:
+                  print(f"::error::failed jobs: {', '.join(failed)}")
+                  raise SystemExit(1)
+          PY
+
+      - name: Build and validate snapshot
+        if: success()
+        env:
+          DATABASE_URL: sqlite+pysqlite:///${{ github.workspace }}/data/pmvl-operational.db
+        run: |
+          python scripts/build_snapshot.py
+          # The gate. An unvalidated artifact is never published, so the worst
+          # outcome of a broken pipeline is stale data that is labelled stale
+          # rather than corrupt data that looks fresh.
+          python scripts/validate_snapshot.py
+
+      - name: Publish snapshot
+        if: success() && github.event.inputs.publish == 'true'
+        run: |
+          if git diff --quiet data/pmvl-snapshot.db; then
+            echo "snapshot unchanged; nothing to publish"
+            exit 0
+          fi
+          git config user.name  "pmvl-pipeline[bot]"
+          git config user.email "pmvl-pipeline@users.noreply.github.com"
+          git add data/pmvl-snapshot.db data/pmvl-snapshot.manifest.json
+          git commit -m "data: publish validated snapshot from ${GITHUB_SHA:0:12}"
+          git push
+
+      - name: Upload operational database
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: operational-db
+          path: data/pmvl-operational.db
+          retention-days: 7

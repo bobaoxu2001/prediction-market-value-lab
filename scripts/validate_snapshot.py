@@ -13,6 +13,7 @@ This checks all three, plus the size ceiling, so CI fails instead of production.
 
 from __future__ import annotations
 
+import json
 import os
 import sqlite3
 import subprocess
@@ -291,6 +292,16 @@ def main() -> int:
     if header[18] == 2 or header[19] == 2:
         problems.append("snapshot is still in WAL mode after the restore attempt")
 
+    # The manifest is promoted here and nowhere else. An artefact whose manifest
+    # still reads PENDING has not been checked, and `verify_artifact` refuses it -
+    # which is what turns "never deploy an unvalidated snapshot" from a convention
+    # into something a deploy step can enforce.
+    #
+    # The checksum is recomputed AFTER the journal-mode restore above, because that
+    # rewrites the file. Hashing before it would record a digest of bytes that no
+    # longer exist, and every later verification would fail for the wrong reason.
+    _finalise_manifest(problems)
+
     if problems:
         print("SNAPSHOT VALIDATION FAILED:")
         for problem in problems:
@@ -299,6 +310,32 @@ def main() -> int:
 
     print(f"snapshot OK ({size / 1e6:.1f} MB, rollback journal, serves the API)")
     return 0
+
+
+def _finalise_manifest(problems: list[str]) -> None:
+    """Record the verdict on the manifest, or say plainly that there is none."""
+    manifest_path = SNAPSHOT.parent / "pmvl-snapshot.manifest.json"
+    if not manifest_path.exists():
+        # Not a validation failure on its own: an artefact built before manifests
+        # existed is still serviceable. But the absence is stated rather than
+        # passed over, because a deploy that checks the manifest needs to know.
+        print("   note: no manifest found; run scripts/build_snapshot.py to create one")
+        return
+
+    sys.path.insert(0, str(ROOT / "packages/shared/src"))
+    from pmvl_shared.manifest import ReleaseStatus, ValidationStatus, sha256_of
+
+    data = json.loads(manifest_path.read_text())
+    passed = not problems
+    data["validation_status"] = (
+        ValidationStatus.PASSED if passed else ValidationStatus.FAILED
+    )
+    data["release_status"] = ReleaseStatus.PUBLISHED if passed else ReleaseStatus.HELD
+    data["validation_failures"] = problems[:20]
+    data["sha256"] = sha256_of(SNAPSHOT)
+    data["file_size_bytes"] = SNAPSHOT.stat().st_size
+    manifest_path.write_text(json.dumps(data, indent=2, sort_keys=True) + "\n")
+    print(f"   manifest: {data['validation_status']} / {data['release_status']}")
 
 
 if __name__ == "__main__":
