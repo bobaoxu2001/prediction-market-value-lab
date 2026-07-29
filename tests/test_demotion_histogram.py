@@ -74,8 +74,17 @@ class TestDiagnosis:
         # venues list no equivalent contracts" from "the generator did not find
         # them". Asserting the recall figure keeps the two claims tied together.
         assert "result about the venues rather than about the generator" in h.diagnosis
-        assert "Candidate-generation recall is" in h.diagnosis
-        assert "hand-labelled benchmark" in h.diagnosis
+        # The numerator and denominator must travel with the claim. A bare "100%
+        # recall" reads as a property of the generator; "3/3" makes the sample
+        # size impossible to miss.
+        assert "3/3 known equivalent examples" in h.diagnosis
+        assert "12 manually reviewed pairs" in h.diagnosis
+        assert "too small to generalise from" in h.diagnosis
+        # The recall claim itself must never be a bare percentage: "100% recall"
+        # reads as a property of the generator, while 3/3 makes the sample size
+        # impossible to miss. (The 100% earlier in the sentence is the share of
+        # demotions that are contradictions, which is a different quantity.)
+        assert "100% recall" not in h.diagnosis
 
     def test_a_pair_with_both_is_not_counted_as_fixable(self) -> None:
         """Better parsing cannot promote a pair that also has a real conflict."""

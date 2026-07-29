@@ -178,14 +178,19 @@ def _write_manifest(counts: dict[str, int], size: int) -> None:
 
     from pmvl_shared.timeutil import parse_ts
 
+    from pmvl_markets.matching.rule_history import PARSER_VERSION
+
+    commit = code_version()
+    # A deterministic id: same commit + same source cutoff => same id. A wall-clock
+    # component would make two artefacts built from identical inputs look
+    # different, which defeats the point of an id you can compare.
+    snapshot_id = f"{commit}-{(freshest or 'no-cutoff')}".replace(" ", "T")[:64]
     manifest = SnapshotManifest(
-        snapshot_id=f"{code_version()}-{int(TARGET.stat().st_mtime)}",
-        code_commit_sha=code_version(),
+        snapshot_id=snapshot_id,
+        code_commit_sha=commit,
         schema_version=str(schema_version),
         model_version=str(model_version),
-        # The rule parser has no version of its own yet; saying so beats inventing
-        # a number that implies reproducibility we cannot offer.
-        parser_version="unversioned",
+        parser_version=PARSER_VERSION,
         source_data_cutoff=parse_ts(freshest),
         freshest_quote_observed_at=parse_ts(freshest),
         oldest_quote_observed_at=parse_ts(oldest),

@@ -118,6 +118,48 @@ class SnapshotManifest:
         return json.loads(path.read_text())
 
 
+#: Values that mean "nobody recorded this". Acceptable on the legacy artefact that
+#: predates manifests; never on anything newly generated, because a manifest whose
+#: whole job is provenance must not itself be unattributable.
+PLACEHOLDERS = frozenset({"", "unknown", "unversioned", None})
+
+#: Fields a newly generated artefact must have real values for.
+REQUIRED_PROVENANCE = (
+    "code_commit_sha",
+    "schema_version",
+    "model_version",
+    "parser_version",
+    "snapshot_id",
+    "generated_at",
+)
+
+
+def provenance_problems(manifest: dict[str, Any], *, legacy_exempt: bool = False) -> list[str]:
+    """Fields a newly generated manifest may not leave unattributed.
+
+    The committed artefact carries ``code_commit_sha: unknown`` and
+    ``parser_version: unversioned`` because it was built before either was
+    recorded. That is tolerable for a rollback artefact whose provenance gap is
+    documented, and intolerable for anything generated from now on: a manifest
+    exists to say which code produced which bytes, and one that cannot is a
+    reassuring-looking null.
+    """
+    if legacy_exempt:
+        return []
+    problems = []
+    for name in REQUIRED_PROVENANCE:
+        value = manifest.get(name)
+        if value in PLACEHOLDERS or (
+            isinstance(value, str) and value.strip().lower() in PLACEHOLDERS
+        ):
+            problems.append(f"{name} is {value!r}; newly generated artifacts need a real value")
+        elif name == "snapshot_id" and str(value).startswith("unknown-"):
+            problems.append(
+                f"snapshot_id {value!r} is derived from an unknown commit"
+            )
+    return problems
+
+
 def verify_artifact(artifact: Path, manifest_path: Path) -> list[str]:
     """Check an artefact against its manifest. Empty list means it matches.
 

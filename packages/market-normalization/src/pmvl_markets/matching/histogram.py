@@ -107,9 +107,12 @@ class DemotionHistogram:
         return (
             f"No pair reached IDENTICAL, and {1 - share:.0%} of demotions are genuine "
             "contradictions. On this sample the two venues do not list contracts with "
-            "identical settlement terms. Candidate-generation recall is "
-            f"{_recall_phrase()}, so this is a result about the venues rather than "
-            "about the generator - subject to that benchmark's size."
+            "identical settlement terms. The candidate generator retrieved "
+            f"{BENCHMARK_EQUIVALENT_RETRIEVED}/{BENCHMARK_EQUIVALENT_TOTAL} known "
+            f"equivalent examples from {BENCHMARK_SIZE} manually reviewed pairs, so "
+            "on the cases reviewed so far this is a result "
+            "about the venues rather than about the generator - on a benchmark too "
+            "small to generalise from."
         )
 
     def top_codes(self, limit: int = 10) -> list[tuple[str, int, str]]:
@@ -166,27 +169,66 @@ def histogram_from_pairs(
 #: Recomputed by the benchmark test rather than at import time: loading a fixture
 #: and running the generator on every API request would be absurd, and a stale
 #: constant that the test pins is honest as long as the test is what pins it.
-BENCHMARK_CANDIDATE_RECALL = 1.0
+#: Retrieved / known-equivalent, on the reviewed benchmark. Published as a
+#: fraction rather than a percentage, deliberately: "100% recall" reads as a
+#: property of the generator, while "3/3" makes the sample size impossible to
+#: miss. Three positives cannot support a population estimate, and a reader who
+#: sees only the percentage has no way to know that.
+BENCHMARK_EQUIVALENT_RETRIEVED = 3
+BENCHMARK_EQUIVALENT_TOTAL = 3
 BENCHMARK_SIZE = 12
+
+#: What the benchmark must reach before recall may be described as measured
+#: rather than illustrated. Recorded here so the gap is visible in the product
+#: rather than living only in a review comment.
+ROBUST_BENCHMARK_TARGET = {
+    "reviewed_pairs": 40,
+    "positive_equivalent_pairs": 10,
+    "categories": ["sports", "weather", "crypto", "economics", "politics"],
+    "structures": [
+        "threshold",
+        "interval",
+        "time_scope_mismatch",
+        "source_mismatch",
+        "cancellation_mismatch",
+    ],
+    "both_venue_directions": True,
+}
 
 
 def _recall_phrase() -> str:
     return (
-        f"{BENCHMARK_CANDIDATE_RECALL:.0%} on a {BENCHMARK_SIZE}-pair hand-labelled "
-        "benchmark"
+        f"{BENCHMARK_EQUIVALENT_RETRIEVED}/{BENCHMARK_EQUIVALENT_TOTAL} known "
+        f"equivalent examples retrieved from {BENCHMARK_SIZE} manually reviewed pairs"
     )
 
 
 def recall_context() -> dict[str, object]:
     """What the product must publish next to a zero-match result."""
     return {
-        "candidate_recall": BENCHMARK_CANDIDATE_RECALL,
-        "benchmark_size": BENCHMARK_SIZE,
+        "equivalent_retrieved": BENCHMARK_EQUIVALENT_RETRIEVED,
+        "equivalent_total": BENCHMARK_EQUIVALENT_TOTAL,
+        "reviewed_pairs": BENCHMARK_SIZE,
+        # No bare percentage. A ratio of three cannot be quoted as a rate without
+        # implying a precision it does not have.
+        "headline": (
+            f"Candidate-generation benchmark: {BENCHMARK_EQUIVALENT_RETRIEVED}/"
+            f"{BENCHMARK_EQUIVALENT_TOTAL} known equivalent examples retrieved; "
+            f"{BENCHMARK_SIZE} manually reviewed pairs total. Small benchmark - "
+            "not a population recall estimate."
+        ),
+        "confidence_interval": None,
+        "confidence_interval_note": (
+            "Not offered. With three positive examples any interval would span "
+            "most of the unit range, and quoting one would suggest the sample "
+            "supports an estimate it cannot."
+        ),
+        "is_robust_estimate": False,
+        "robust_target": ROBUST_BENCHMARK_TARGET,
         "note": (
             "Recall is how many known-equivalent pairs the candidate generator "
             "proposes. Without it, 'no verified equivalent pair' cannot be "
             "distinguished from 'the generator did not look in the right place'. "
-            f"Measured at {_recall_phrase()}; indicative only, since a set that "
-            "size cannot support a population estimate."
+            f"Measured at {_recall_phrase()}."
         ),
     }

@@ -350,9 +350,25 @@ def _finalise_manifest(problems: list[str]) -> None:
         return
 
     sys.path.insert(0, str(ROOT / "packages/shared/src"))
-    from pmvl_shared.manifest import ReleaseStatus, ValidationStatus, sha256_of
+    from pmvl_shared.manifest import (
+        ReleaseStatus,
+        ValidationStatus,
+        provenance_problems,
+        sha256_of,
+    )
 
     data = json.loads(manifest_path.read_text())
+
+    # A newly generated artefact must be attributable. The committed rollback
+    # snapshot predates commit and parser recording, so it carries a documented
+    # exemption rather than being retro-labelled with a fabricated SHA.
+    legacy = bool(data.get("legacy_provenance_exemption"))
+    provenance = provenance_problems(data, legacy_exempt=legacy)
+    if provenance:
+        problems.extend(provenance)
+    elif legacy:
+        print("   note: legacy provenance exemption applies to this artifact")
+
     passed = not problems
     data["validation_status"] = (
         ValidationStatus.PASSED if passed else ValidationStatus.FAILED

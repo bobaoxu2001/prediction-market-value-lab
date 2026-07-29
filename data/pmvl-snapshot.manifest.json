@@ -13,6 +13,7 @@
     "settle": "success",
     "snapshot": "success"
   },
+  "legacy_provenance_exemption": "Built before the pipeline recorded a commit SHA or parser version. Retained as the documented rollback artifact for production commit e2b7515. Newly generated artifacts are rejected by validate_snapshot.py if they carry 'unknown' or 'unversioned' in any provenance field.",
   "median_quote_observed_at": null,
   "model_version": "ensemble-v1.0.0-demo",
   "oldest_quote_observed_at": "2026-06-13T13:00:00Z",
