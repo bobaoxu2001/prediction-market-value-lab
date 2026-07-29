@@ -36,6 +36,22 @@ def code_version() -> str:
         value = os.environ.get(var)
         if value:
             return value[:12]
+
+    # Outside CI the commit is still knowable, and asking git is not a guess. A
+    # local pipeline run that stamped its artefact "unknown" would be rejected by
+    # the provenance gate for a fact the machine could have looked up.
+    try:
+        import subprocess
+
+        result = subprocess.run(
+            ["git", "rev-parse", "HEAD"],
+            capture_output=True, text=True, timeout=5,
+            cwd=os.path.dirname(os.path.dirname(os.path.dirname(__file__))),
+        )
+        if result.returncode == 0 and result.stdout.strip():
+            return result.stdout.strip()[:12]
+    except Exception:  # noqa: BLE001 - not a git checkout, or git is absent
+        pass
     return "unknown"
 
 

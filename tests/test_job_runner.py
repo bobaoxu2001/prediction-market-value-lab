@@ -168,11 +168,33 @@ class TestRunProvenance:
         ):
             assert field in payload, field
 
-    def test_an_unknown_commit_is_admitted_not_faked(self, monkeypatch) -> None:  # noqa: ANN001
-        """A row claiming to come from commit 0000000 is worse than one admitting
-        it does not know which code wrote it."""
+    def test_the_commit_is_derived_from_git_outside_ci(self, monkeypatch) -> None:  # noqa: ANN001
+        """Outside CI the commit is still knowable, and asking git is not a guess.
+
+        A local run that stamped its artefact "unknown" would be rejected by the
+        provenance gate for a fact the machine could have looked up.
+        """
         for var in ("VERCEL_GIT_COMMIT_SHA", "GITHUB_SHA", "PMVL_COMMIT_SHA"):
             monkeypatch.delenv(var, raising=False)
+        resolved = code_version()
+        assert resolved != "unknown"
+        assert len(resolved) == 12
+
+    def test_an_unknowable_commit_is_admitted_not_faked(self, monkeypatch) -> None:  # noqa: ANN001
+        """When git cannot answer either, the answer is "unknown".
+
+        A row claiming to come from commit 0000000 is worse than one admitting it
+        does not know which code wrote it.
+        """
+        import subprocess
+
+        for var in ("VERCEL_GIT_COMMIT_SHA", "GITHUB_SHA", "PMVL_COMMIT_SHA"):
+            monkeypatch.delenv(var, raising=False)
+
+        def no_git(*args, **kwargs):  # noqa: ANN002, ANN003, ANN202
+            raise FileNotFoundError("git")
+
+        monkeypatch.setattr(subprocess, "run", no_git)
         assert code_version() == "unknown"
 
     def test_the_commit_is_read_from_the_ci_environment(self, monkeypatch) -> None:  # noqa: ANN001
