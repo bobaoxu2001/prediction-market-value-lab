@@ -396,6 +396,24 @@ class ModelPrediction(Base, TimestampMixin):
     #: prediction can never produce a value recommendation.
     has_independent_prior: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
     market_implied_probability: Mapped[Decimal | None] = mapped_column(Money, nullable=True)
+
+    # The three probability classes. `fair_probability_mean` above pools every
+    # component including the target market's own price, so it is the
+    # market-informed figure and is stored again under that name; publishing it as
+    # "fair probability" alone let the model partly agree with itself and called
+    # the residual an edge. Nullable because historical rows predate the split and
+    # must not be backfilled with a guess.
+    market_informed_probability: Mapped[Decimal | None] = mapped_column(Money, nullable=True)
+    independent_probability: Mapped[Decimal | None] = mapped_column(Money, nullable=True)
+    independent_probability_low: Mapped[Decimal | None] = mapped_column(Money, nullable=True)
+    independent_probability_high: Mapped[Decimal | None] = mapped_column(Money, nullable=True)
+    #: What eligibility is decided on. NULL means there is no independent estimate,
+    #: which is not a probability of zero - the question has no answer for this row.
+    conservative_decision_probability: Mapped[Decimal | None] = mapped_column(
+        Money, nullable=True
+    )
+    #: Which components backed each class, and the distinct correlation groups.
+    independence: Mapped[dict | None] = mapped_column(JSONColumn, nullable=True)
     components: Mapped[dict | None] = mapped_column(JSONColumn, nullable=True)
     explanation: Mapped[str] = mapped_column(Text, nullable=False, default="")
     category: Mapped[str] = mapped_column(String(32), nullable=False, default="other")

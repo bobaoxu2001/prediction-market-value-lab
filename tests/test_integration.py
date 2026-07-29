@@ -198,7 +198,21 @@ class TestProbabilityIndependence:
         width = output.fair.fair_probability_high - output.fair.fair_probability_low
         assert width >= Decimal("0.3")
 
-    async def test_cross_platform_quote_creates_independence(self, kalshi_market) -> None:  # noqa: ANN001
+    async def test_a_cross_platform_quote_does_not_create_independence(
+        self, kalshi_market  # noqa: ANN001
+    ) -> None:
+        """This assertion was inverted.
+
+        It used to require that a Polymarket quote made a Kalshi estimate
+        independent. Another venue is a separate order flow, but the two are
+        arbitraged against each other, so its price is not independent evidence
+        *about the world* - it is largely the same information reaching us twice.
+        Treating it as independent let a recommendation clear the
+        `require_independent_prior` gate on two correlated copies of one number.
+
+        The quote is still used: it enters the market-informed estimate, which is
+        the better-calibrated figure. It just cannot license an edge claim.
+        """
         from pmvl_markets.probability import ModelContext, ProbabilityEnsemble
 
         market = kalshi_market.model_copy(
@@ -217,7 +231,15 @@ class TestProbabilityIndependence:
         finally:
             await ensemble.aclose()
 
-        assert output.fair.has_independent_prior is True
+        assert output.fair.has_independent_prior is False
+        assert output.fair.conservative_decision_probability is None, (
+            "no independent estimate means eligibility has no answer, and must "
+            "fail closed rather than substitute a number"
+        )
+        # The quote is not discarded - it informs the market-informed figure.
+        assert "cross_platform_consensus" in (
+            output.fair.independence or {}
+        ).get("market_informed_components", [])
 
     def test_aggregate_confidence_penalises_disagreement(self) -> None:
         from pmvl_markets.probability.ensemble import aggregate_confidence

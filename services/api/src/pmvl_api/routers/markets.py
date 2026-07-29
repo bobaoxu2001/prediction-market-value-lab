@@ -348,7 +348,16 @@ def market_detail(
     predictions = [
         {
             "created_at": p.created_at,
+            # Retained under its original name for existing clients, and published
+            # alongside `market_informed_probability`, which is what it has always
+            # been: a pool that includes the target market's own price.
             "fair_probability_mean": p.fair_probability_mean,
+            "market_informed_probability": p.market_informed_probability,
+            "independent_probability": p.independent_probability,
+            "independent_probability_low": p.independent_probability_low,
+            "independent_probability_high": p.independent_probability_high,
+            "conservative_decision_probability": p.conservative_decision_probability,
+            "independence": p.independence,
             "fair_probability_low": p.fair_probability_low,
             "fair_probability_high": p.fair_probability_high,
             "model_confidence": p.model_confidence,
