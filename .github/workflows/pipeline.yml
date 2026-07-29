@@ -1,44 +1,59 @@
 name: Pipeline
 
-# The scheduler has always existed and has only ever run on a laptop. This is the
-# thing that actually executes it.
-#
-# `workflow_dispatch` is first deliberately: a schedule that cannot be triggered by
-# hand is a schedule nobody can test, and every failure investigation starts with
-# "run it again and watch".
+# Thin by design. Every decision lives in
+# scripts/run_automated_snapshot_pipeline.py, which PR CI runs in smoke mode, so
+# the logic is exercised before it merges. workflow_dispatch and schedule only
+# fire from the default branch, so a workflow carrying its own logic cannot be
+# tested until after it lands - exactly when a mistake is most expensive.
+
 on:
   workflow_dispatch:
     inputs:
+      scope:
+        description: "smoke (capped) or full (entire market universe)"
+        type: choice
+        options: [smoke, full]
+        default: smoke
+      market_limit:
+        description: "Override the smoke cap. Ignored when scope=full."
+        type: string
+        default: ""
       publish:
-        description: "Commit the snapshot artifact if validation passes"
+        description: "Promote the validated candidate to the published snapshot"
         type: boolean
         default: false
-      market_limit:
-        description: "Cap markets ingested (leave blank for all)"
-        type: string
-        default: "50"
   schedule:
-    # Every 15 minutes. NOT the 1-minute arbitrage cadence in the configured
-    # schedule: GitHub's minimum practical interval is ~5 minutes and contended
-    # runners make even that unreliable. docs/production-architecture.md records
-    # that sub-minute scanning is not achievable here, and /system reports the
-    # configured cadence as inactive rather than implying this run is it.
-    - cron: "*/15 * * * *"
+    # Research refresh only; this never publishes. Hourly rather than every 15
+    # minutes because the whole job set runs each time and the research product
+    # does not need finer resolution than that.
+    - cron: "17 * * * *"
 
 concurrency:
-  # One pipeline at a time. Two concurrent ingests would double the API load on
-  # exactly the venue that is already slow, and the operational store has one
-  # writer by design.
+  # One pipeline at a time. Two concurrent runs would seed from the same parent
+  # snapshot and race to promote different children, and the loser's work would
+  # vanish with no record that it happened.
   group: pipeline
   cancel-in-progress: false
 
+# Least privilege at the top; only the publish job widens it.
 permissions:
-  contents: write
+  contents: read
 
 jobs:
-  run:
+  research:
+    name: Research refresh
     runs-on: ubuntu-latest
-    timeout-minutes: 30
+    timeout-minutes: 45
+    permissions:
+      contents: read
+    # A snapshot commit must not trigger another pipeline. The publish job commits
+    # with [skip ci], and this guard is the second line of defence against a run
+    # loop that would publish continuously.
+    if: >-
+      github.event_name != 'push' &&
+      !contains(github.event.head_commit.message, '[skip ci]')
+    outputs:
+      published: ${{ steps.run.outputs.published }}
     steps:
       - uses: actions/checkout@v4
 
@@ -53,87 +68,99 @@ jobs:
           pip install -e packages/shared -e packages/market-normalization \
                       -e services/api -e services/worker
 
-      - name: Migrate
-        env:
-          DATABASE_URL: sqlite+pysqlite:///${{ github.workspace }}/data/pmvl-operational.db
-        run: alembic upgrade head
+      - name: Check the schedule is enabled
+        # A repository variable, so the schedule can be turned off without editing
+        # and re-merging a workflow file. Default off: a merge must not silently
+        # start running production jobs.
+        if: github.event_name == 'schedule'
+        run: |
+          if [[ "${{ vars.PMVL_SCHEDULE_ENABLED }}" != "true" ]]; then
+            echo "PMVL_SCHEDULE_ENABLED is not 'true'; skipping scheduled run."
+            exit 78
+          fi
 
       - name: Run pipeline
-        id: pipeline
+        id: run
         env:
-          DATABASE_URL: sqlite+pysqlite:///${{ github.workspace }}/data/pmvl-operational.db
+          GITHUB_EVENT_NAME: ${{ github.event_name }}
+          INPUT_SCOPE: ${{ inputs.scope }}
+          INPUT_MARKET_LIMIT: ${{ inputs.market_limit }}
+          # Publication requires BOTH the dispatch input and the repository
+          # variable. Either alone is insufficient, so a mistaken checkbox cannot
+          # publish and neither can a variable somebody set and forgot.
+          INPUT_PUBLISH: >-
+            ${{ (inputs.publish == true &&
+                 vars.PMVL_SCHEDULE_PUBLISH_ENABLED == 'true') && 'true' || 'false' }}
           PMVL_COMMIT_SHA: ${{ github.sha }}
           ENVIRONMENT: production
-        # `continue-on-error` so that a failed run still reaches the reporting step
-        # below. A pipeline that dies silently is the failure mode this whole branch
-        # exists to remove.
-        continue-on-error: true
         run: |
-          python -m pmvl_worker.cli ingest \
-            --market-limit "${{ github.event.inputs.market_limit || '50' }}"
-          python -m pmvl_worker.cli rank
-          python -m pmvl_worker.cli arbitrage
+          python scripts/run_automated_snapshot_pipeline.py --report run-report.json
+          echo "published=$(python -c "import json;print(json.load(open('run-report.json'))['published'])")" >> "$GITHUB_OUTPUT"
 
-      - name: Report run outcome
-        env:
-          DATABASE_URL: sqlite+pysqlite:///${{ github.workspace }}/data/pmvl-operational.db
+      - name: Report
+        if: always()
         run: |
+          if [[ ! -f run-report.json ]]; then
+            echo "::error::the pipeline produced no report; it did not run to completion"
+            exit 1
+          fi
           python - <<'PY'
-          import os, sys
-          sys.path[:0] = ["packages/shared/src", "packages/market-normalization/src"]
-          from sqlalchemy import select
-          from pmvl_shared.db import session_scope
-          from pmvl_markets.db_models import JobRun
+          import json, sys
+          sys.path.insert(0, "packages/shared/src")
+          from pmvl_shared.pipeline_dag import PIPELINE
 
-          with session_scope() as db:
-              rows = db.scalars(
-                  select(JobRun).order_by(JobRun.started_at.desc()).limit(10)
-              ).all()
-              if not rows:
-                  print("::error::no job runs recorded - the pipeline did not execute")
-                  raise SystemExit(1)
-              failed = []
-              for r in rows:
-                  print(f"{r.job_name:12} {r.status:16} {r.records_written or 0} rows")
-                  if r.status == "failed":
-                      failed.append(r.job_name)
-                  if r.status == "partial_success":
-                      run = (r.details or {}).get("run", {})
-                      print(f"::warning::{r.job_name} partial; "
-                            f"failed providers: {run.get('failed_providers')}")
-              if failed:
-                  print(f"::error::failed jobs: {', '.join(failed)}")
-                  raise SystemExit(1)
+          report = json.load(open("run-report.json"))
+          statuses, skipped = report["statuses"], report["skipped"]
+          print(f"scope: {report['scope']}")
+          print(f"parent snapshot: {report['parent_snapshot_id']} "
+                f"({report['operational_init_source']})")
+
+          missing = []
+          for spec in PIPELINE:
+              if spec.name in statuses:
+                  print(f"  {statuses[spec.name]:16} {spec.name}")
+              elif spec.name in skipped:
+                  print(f"  {'SKIPPED':16} {spec.name} - {skipped[spec.name]}")
+              else:
+                  # The failure this catches: a job silently vanishing from the
+                  # run and nobody noticing because nothing reported its absence.
+                  missing.append(spec.name)
+                  print(f"::error::{spec.name} did not run and was not skipped")
+
+          for blocker in report["publication_blockers"]:
+              print(f"::warning::publication blocked: {blocker}")
+          if missing:
+              raise SystemExit(1)
           PY
 
-      - name: Build and validate snapshot
-        if: success()
-        env:
-          DATABASE_URL: sqlite+pysqlite:///${{ github.workspace }}/data/pmvl-operational.db
-        run: |
-          python scripts/build_snapshot.py
-          # The gate. An unvalidated artifact is never published, so the worst
-          # outcome of a broken pipeline is stale data that is labelled stale
-          # rather than corrupt data that looks fresh.
-          python scripts/validate_snapshot.py
-
-      - name: Publish snapshot
-        if: success() && github.event.inputs.publish == 'true'
-        run: |
-          if git diff --quiet data/pmvl-snapshot.db; then
-            echo "snapshot unchanged; nothing to publish"
-            exit 0
-          fi
-          git config user.name  "pmvl-pipeline[bot]"
-          git config user.email "pmvl-pipeline@users.noreply.github.com"
-          git add data/pmvl-snapshot.db data/pmvl-snapshot.manifest.json
-          git commit -m "data: publish validated snapshot from ${GITHUB_SHA:0:12}"
-          git push
-
-      - name: Upload operational database
+      - name: Upload run report
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: operational-db
-          path: data/pmvl-operational.db
-          retention-days: 7
+          name: pipeline-run-report
+          path: run-report.json
+          retention-days: 30
+
+      - name: Commit published snapshot
+        # The ONLY step with write access, and only when the script actually
+        # promoted a candidate. Restricted to the default branch so a preview
+        # branch can never publish to main.
+        if: >-
+          steps.run.outputs.published == 'True' &&
+          github.ref == 'refs/heads/main'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          git config user.name  "pmvl-pipeline[bot]"
+          git config user.email "pmvl-pipeline@users.noreply.github.com"
+          # Refuse to publish onto a moved main. Two runs promoting from different
+          # parents would otherwise overwrite each other's history silently.
+          git fetch origin main
+          if [[ "$(git rev-parse HEAD)" != "$(git rev-parse origin/main)" ]]; then
+            echo "::error::main moved during this run; refusing to publish. Re-run."
+            exit 1
+          fi
+          git add data/pmvl-snapshot.db data/pmvl-snapshot.manifest.json
+          git commit -m "data: publish validated snapshot from ${GITHUB_SHA:0:12} [skip ci]"
+          # Never force. A rejected push means main moved and the run must be redone.
+          git push origin HEAD:main

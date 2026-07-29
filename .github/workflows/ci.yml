@@ -16,6 +16,11 @@ concurrency:
   group: ci-${{ github.ref }}
   cancel-in-progress: true
 
+# Read-only by default. No CI job needs to write to the repository, and a fork PR
+# must not be able to. The publishing workflow grants write per job instead.
+permissions:
+  contents: read
+
 jobs:
   python:
     name: Python tests
@@ -64,6 +69,76 @@ jobs:
         # bundle, the snapshot in WAL mode (unopenable read-only on a serverless
         # mount), and the snapshot present but unable to answer the API's queries.
         run: python scripts/validate_snapshot.py
+
+  pipeline-smoke:
+    name: Pipeline smoke
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    # Read-only: a PR run must never be able to publish, and a fork PR must never
+    # see a provider secret. The pipeline works against public endpoints only.
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: pip
+      - name: Install
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements-dev.txt
+          pip install -e packages/shared -e packages/market-normalization \
+                      -e services/api -e services/worker
+      - name: Lint the workflow files
+        # A workflow that only runs from the default branch cannot be tested by
+        # running it, so its syntax and its safety properties are checked here.
+        run: |
+          python - <<'PY'
+          import sys, yaml
+          from pathlib import Path
+
+          failures = []
+          for path in sorted(Path(".github/workflows").glob("*.yml")):
+              doc = yaml.safe_load(path.read_text())
+              # PyYAML parses the `on:` key as the boolean True.
+              triggers = doc.get("on", doc.get(True, {}))
+              if not triggers:
+                  failures.append(f"{path}: no triggers")
+              perms = doc.get("permissions")
+              if perms is None:
+                  failures.append(f"{path}: no top-level permissions block")
+              elif perms.get("contents") == "write":
+                  # Write must be granted per job, never to the whole workflow.
+                  failures.append(f"{path}: contents:write at workflow level")
+              print(f"{path}: ok")
+          if failures:
+              print("\n".join(f"::error::{f}" for f in failures))
+              sys.exit(1)
+          PY
+      - name: Run the pipeline in smoke mode
+        # The same script the scheduled workflow calls, on a handful of markets,
+        # with publication impossible. This is what makes the pipeline testable
+        # before it merges - workflow_dispatch and schedule only fire from the
+        # default branch.
+        env:
+          GITHUB_EVENT_NAME: pull_request
+          PMVL_COMMIT_SHA: ${{ github.sha }}
+        run: python scripts/run_automated_snapshot_pipeline.py --report run-report.json
+      - name: Assert the smoke run published nothing
+        run: |
+          python - <<'PY'
+          import json, sys
+
+          report = json.load(open("run-report.json"))
+          if report["published"]:
+              print("::error::a pull-request run published a snapshot")
+              sys.exit(1)
+          print(f"scope: {report['scope']}")
+          print(f"init:  {report['operational_init_source']}")
+          for job, status in report["statuses"].items():
+              print(f"  {status:16} {job}")
+          PY
 
   frontend:
     name: Frontend build

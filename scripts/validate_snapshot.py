@@ -60,6 +60,18 @@ def select_markets_with_books():  # noqa: ANN201
 
 
 def main() -> int:
+    # Overridable so a CANDIDATE artefact can be validated in place before it is
+    # promoted. Validation that could only run against the published path would
+    # have to publish first and check afterwards, which is the wrong order.
+    import argparse
+
+    global SNAPSHOT
+    parser = argparse.ArgumentParser(description="Validate a snapshot artifact")
+    parser.add_argument("--snapshot", default=None)
+    args = parser.parse_args()
+    if args.snapshot:
+        SNAPSHOT = Path(args.snapshot)
+
     problems: list[str] = []
 
     if not SNAPSHOT.exists():
@@ -80,12 +92,20 @@ def main() -> int:
         )
 
     # It must be tracked, or the deploy bundle will not contain it.
-    tracked = subprocess.run(
-        ["git", "ls-files", "--error-unmatch", str(SNAPSHOT.relative_to(ROOT))],
-        cwd=ROOT, capture_output=True, text=True,
-    )
-    if tracked.returncode != 0:
-        problems.append("snapshot is not tracked by git, so a deploy bundle will omit it")
+    #
+    # Only meaningful for the PUBLISHED artefact. A candidate under validation
+    # lives in a temporary directory by design - it is not tracked precisely
+    # because it has not been promoted yet, and failing it here would make the
+    # validation gate unusable for the thing it is supposed to gate.
+    if _is_published_path():
+        tracked = subprocess.run(
+            ["git", "ls-files", "--error-unmatch", str(SNAPSHOT.relative_to(ROOT))],
+            cwd=ROOT, capture_output=True, text=True,
+        )
+        if tracked.returncode != 0:
+            problems.append(
+                "snapshot is not tracked by git, so a deploy bundle will omit it"
+            )
 
     # It must open read-only exactly as the serverless function opens it.
     try:
@@ -312,9 +332,16 @@ def main() -> int:
     return 0
 
 
+def _is_published_path() -> bool:
+    """Whether SNAPSHOT points at the committed artefact rather than a candidate."""
+    return SNAPSHOT == ROOT / "data" / "pmvl-snapshot.db"
+
+
 def _finalise_manifest(problems: list[str]) -> None:
     """Record the verdict on the manifest, or say plainly that there is none."""
-    manifest_path = SNAPSHOT.parent / "pmvl-snapshot.manifest.json"
+    # Derived from the artefact under validation, not hardcoded: a candidate is
+    # named candidate.db and its manifest is candidate.manifest.json.
+    manifest_path = SNAPSHOT.with_suffix(".manifest.json")
     if not manifest_path.exists():
         # Not a validation failure on its own: an artefact built before manifests
         # existed is still serviceable. But the absence is stated rather than

@@ -32,7 +32,23 @@ sys.path[:0] = [
 ]
 
 
-def main() -> int:
+def main(argv: list[str] | None = None) -> int:
+    # Paths are overridable so the pipeline can build a CANDIDATE in a temporary
+    # directory. Building straight onto the published path would mean a failed
+    # validation had already replaced the artefact it was meant to gate.
+    import argparse
+
+    global SOURCE, TARGET, MANIFEST
+    parser = argparse.ArgumentParser(description="Build a read-only snapshot")
+    parser.add_argument("--source", default=None)
+    parser.add_argument("--target", default=None)
+    args = parser.parse_args(argv)
+    if args.source:
+        SOURCE = Path(args.source)
+    if args.target:
+        TARGET = Path(args.target)
+        MANIFEST = TARGET.with_suffix(".manifest.json")
+
     if not SOURCE.exists():
         print(f"missing {SOURCE}; run `make ingest && make rank` first", file=sys.stderr)
         return 1
