@@ -28,10 +28,23 @@ from enum import StrEnum
 
 
 class DeploymentMode(StrEnum):
-    """What this process actually is, which decides whether cadences mean anything."""
+    """What this deployment actually is.
 
-    #: A worker and scheduler are running against a read-write operational store.
-    LIVE_PIPELINE = "live_pipeline"
+    ``AUTOMATED_SNAPSHOT_PIPELINE`` and ``CONTINUOUS_LIVE_PIPELINE`` are different
+    things and the distinction is the whole point of this enum. A GitHub Actions
+    workflow that wakes up, ingests, computes and publishes an immutable artefact
+    is not a live pipeline: between runs nothing is watching, no worker is
+    resident, and no query touches current data. Calling it live would restate the
+    exact overclaim - printing a configured cadence as though it were running -
+    that this module exists to prevent, one level up.
+    """
+
+    #: A scheduled publisher (GitHub Actions) ingests, computes and publishes a
+    #: new read-only artefact periodically. No resident worker between runs.
+    AUTOMATED_SNAPSHOT_PIPELINE = "automated_snapshot_pipeline"
+    #: A resident worker and scheduler against a persistent read-write store.
+    #: Nothing in this repository is deployed this way today.
+    CONTINUOUS_LIVE_PIPELINE = "continuous_live_pipeline"
     #: Serving a frozen, validated artefact. No scheduler, no writes, no cadence.
     READ_ONLY_SNAPSHOT = "read_only_snapshot"
     #: Seeded synthetic data for demonstrations. Never presented as real.
@@ -41,14 +54,53 @@ class DeploymentMode(StrEnum):
 
     @property
     def runs_scheduled_jobs(self) -> bool:
-        """Whether a configured cadence is capable of being active here.
+        """Whether jobs execute here at all, by any mechanism.
 
-        LOCAL_DEVELOPMENT is deliberately excluded: a developer may or may not have
-        the scheduler up, so the answer comes from observed job runs rather than
-        from the mode. Assuming "yes" here is how a laptop reports itself as a
-        live pipeline.
+        True for both pipeline modes. It does NOT mean a component's configured
+        cadence is honoured - a 1-minute arbitrage cadence inside a 60-minute
+        publisher runs hourly - which is why `active_cadence` is derived from the
+        publisher, not from this flag.
+
+        LOCAL_DEVELOPMENT is excluded deliberately: a developer may or may not have
+        the scheduler up, so the answer comes from observed runs rather than from
+        the mode. Assuming "yes" is how a laptop reports itself as production.
         """
-        return self is DeploymentMode.LIVE_PIPELINE
+        return self in (
+            DeploymentMode.AUTOMATED_SNAPSHOT_PIPELINE,
+            DeploymentMode.CONTINUOUS_LIVE_PIPELINE,
+        )
+
+    @property
+    def has_resident_worker(self) -> bool:
+        """Whether a process is watching between scheduled runs."""
+        return self is DeploymentMode.CONTINUOUS_LIVE_PIPELINE
+
+    @property
+    def description(self) -> str:
+        return _MODE_DESCRIPTIONS[self]
+
+
+_MODE_DESCRIPTIONS: dict["DeploymentMode", str] = {
+    DeploymentMode.AUTOMATED_SNAPSHOT_PIPELINE: (
+        "A scheduled publisher ingests current data, runs the research jobs and "
+        "publishes a validated read-only artefact. Nothing runs between publisher "
+        "runs."
+    ),
+    DeploymentMode.CONTINUOUS_LIVE_PIPELINE: (
+        "A resident worker runs the schedule continuously against a persistent "
+        "read-write store."
+    ),
+    DeploymentMode.READ_ONLY_SNAPSHOT: (
+        "Serving a frozen validated artefact. No scheduler and no writes."
+    ),
+    DeploymentMode.SYNTHETIC_DEMO: (
+        "Seeded synthetic data for demonstration. Never real market data."
+    ),
+    DeploymentMode.LOCAL_DEVELOPMENT: (
+        "A developer machine. Whether jobs run is an observation, not a property "
+        "of the deployment."
+    ),
+}
 
 
 class SchedulerStatus(StrEnum):
@@ -99,14 +151,21 @@ class Cadence:
         minutes = seconds // 60
         return f"every {minutes} minute{'s' if minutes != 1 else ''}"
 
-    def stall_threshold_seconds(self) -> int:
-        """When a missing run stops being a skipped tick and becomes an outage."""
+    def stall_threshold_seconds(self, effective_seconds: int | None = None) -> int:
+        """When a missing run stops being a skipped tick and becomes an outage.
+
+        Measured against the EFFECTIVE period, not the desired one. A job asking
+        for 60 seconds inside a 3600-second publisher genuinely runs hourly, and
+        judging it against its own wish would report every healthy hourly run as
+        stalled ten minutes after it finished.
+        """
         if self.stall_after_seconds is not None:
             return self.stall_after_seconds
-        if self.interval_seconds is not None:
-            # Three missed intervals, floored at ten minutes so a one-minute job does
-            # not flap into STALLED on a single slow run.
-            return max(self.interval_seconds * 3, 600)
+        period = effective_seconds if effective_seconds is not None else self.interval_seconds
+        if period is not None:
+            # Three missed intervals, floored at ten minutes so a fast job does not
+            # flap into STALLED on a single slow run.
+            return max(period * 3, 600)
         return 26 * 3600  # a daily cron is late once it misses more than a day
 
 
@@ -165,6 +224,48 @@ CADENCES: tuple[Cadence, ...] = (
 
 CADENCE_BY_JOB: dict[str, Cadence] = {c.job_name: c for c in CADENCES}
 
+#: How often the external publisher actually runs the whole job set. Set from the
+#: workflow schedule; a component's own cadence cannot beat this, because nothing
+#: executes between publisher runs.
+#:
+#: This is the number that makes "arbitrage: every 1 minute" false on this
+#: architecture. The component still *wants* a minute; the publisher gives it an
+#: hour; and the honest report is both, labelled.
+PUBLISHER_INTERVAL_SECONDS = 3600
+
+#: Publication is deliberately rarer than computation. Committing an 8 MB artefact
+#: at the research cadence would add tens of GB of binary history per month, and
+#: the research product does not need hourly public updates.
+PUBLICATION_INTERVAL_SECONDS = 6 * 3600
+
+
+def effective_cadence_seconds(cadence: Cadence, mode: "DeploymentMode") -> int | None:
+    """What this job's period really is on this deployment.
+
+    A component asking for 60 seconds inside a 3600-second publisher gets 3600.
+    Reporting the component's own number would repeat the original error in a new
+    place: a truthful description of the code and a false description of the
+    running system.
+    """
+    if not mode.runs_scheduled_jobs:
+        return None
+    if mode is DeploymentMode.CONTINUOUS_LIVE_PIPELINE:
+        return cadence.interval_seconds
+    if cadence.interval_seconds is None:
+        return None
+    return max(cadence.interval_seconds, PUBLISHER_INTERVAL_SECONDS)
+
+
+def humanize_interval(seconds: int | None) -> str | None:
+    if seconds is None:
+        return None
+    if seconds % 3600 == 0:
+        hours = seconds // 3600
+        return f"every {hours} hour{'s' if hours != 1 else ''}"
+    minutes = seconds // 60
+    return f"every {minutes} minute{'s' if minutes != 1 else ''}"
+
+
 #: Shown wherever a cadence appears on a deployment that does not run one. The
 #: wording has to name the cadence as *configured* and the deployment as *not
 #: running it*, in that order, because the number is what the eye lands on.
@@ -174,6 +275,11 @@ INACTIVE_CADENCE_NOTICE = (
 
 INACTIVE_CADENCE_NOTICE_BY_MODE: dict[DeploymentMode, str] = {
     DeploymentMode.READ_ONLY_SNAPSHOT: INACTIVE_CADENCE_NOTICE,
+    DeploymentMode.AUTOMATED_SNAPSHOT_PIPELINE: (
+        "Component cadences are desired intervals. This deployment runs the whole "
+        "job set on the publisher's schedule, so no component runs more often than "
+        "the publisher does."
+    ),
     DeploymentMode.SYNTHETIC_DEMO: (
         "Configured worker cadence - inactive; this deployment serves synthetic "
         "demonstration data"

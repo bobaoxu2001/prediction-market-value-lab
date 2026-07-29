@@ -37,7 +37,7 @@ class TestTheThreeCauses:
     def test_a_recent_scan_on_fresh_data_is_a_real_finding(self, clean_db) -> None:  # noqa: ANN001
         _run(clean_db, minutes_ago=1)
         result = classify_empty_result(
-            clean_db, DeploymentMode.LIVE_PIPELINE, input_age_seconds=60
+            clean_db, DeploymentMode.AUTOMATED_SNAPSHOT_PIPELINE, input_age_seconds=60
         )
         assert result["cause"] == EmptyResultCause.ZERO_OPPORTUNITIES.value
         assert result["level"] == HealthLevel.OK.value
@@ -47,7 +47,7 @@ class TestTheThreeCauses:
         """Nothing looked, so the empty list says nothing about the market."""
         _run(clean_db, minutes_ago=600)
         result = classify_empty_result(
-            clean_db, DeploymentMode.LIVE_PIPELINE, input_age_seconds=60
+            clean_db, DeploymentMode.AUTOMATED_SNAPSHOT_PIPELINE, input_age_seconds=60
         )
         assert result["cause"] == EmptyResultCause.PIPELINE_DID_NOT_RUN.value
         assert result["level"] == HealthLevel.FAILING.value
@@ -56,7 +56,7 @@ class TestTheThreeCauses:
     def test_a_scan_on_stale_data_is_a_coverage_statement(self, clean_db) -> None:  # noqa: ANN001
         _run(clean_db, minutes_ago=1)
         result = classify_empty_result(
-            clean_db, DeploymentMode.LIVE_PIPELINE, input_age_seconds=99999
+            clean_db, DeploymentMode.AUTOMATED_SNAPSHOT_PIPELINE, input_age_seconds=99999
         )
         assert (
             result["cause"]
@@ -68,7 +68,7 @@ class TestTheThreeCauses:
     def test_never_observed_input_is_treated_as_stale(self, clean_db) -> None:  # noqa: ANN001
         _run(clean_db, minutes_ago=1)
         result = classify_empty_result(
-            clean_db, DeploymentMode.LIVE_PIPELINE, input_age_seconds=None
+            clean_db, DeploymentMode.AUTOMATED_SNAPSHOT_PIPELINE, input_age_seconds=None
         )
         assert (
             result["cause"]

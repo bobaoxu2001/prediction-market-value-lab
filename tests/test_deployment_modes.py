@@ -31,8 +31,8 @@ from pmvl_api.pipeline_status import job_status, pipeline_status, scheduler_stat
 
 
 class TestDeploymentModes:
-    def test_only_a_live_pipeline_runs_scheduled_jobs(self) -> None:
-        assert DeploymentMode.LIVE_PIPELINE.runs_scheduled_jobs
+    def test_both_pipeline_modes_run_scheduled_jobs(self) -> None:
+        assert DeploymentMode.AUTOMATED_SNAPSHOT_PIPELINE.runs_scheduled_jobs
         assert not DeploymentMode.READ_ONLY_SNAPSHOT.runs_scheduled_jobs
         assert not DeploymentMode.SYNTHETIC_DEMO.runs_scheduled_jobs
 
@@ -57,9 +57,22 @@ class TestDeploymentModes:
         assert notice, f"{mode} renders cadences with no caveat"
         assert "Configured worker cadence" in notice
 
-    def test_live_pipeline_has_no_notice(self) -> None:
-        """The caveat must not appear where it would be false."""
-        assert cadence_notice(DeploymentMode.LIVE_PIPELINE) is None
+    def test_a_continuous_live_pipeline_has_no_notice(self) -> None:
+        """The caveat must not appear where it would be false.
+
+        Only a resident worker honours a component's own cadence, so only that
+        mode may print one without qualification.
+        """
+        assert cadence_notice(DeploymentMode.CONTINUOUS_LIVE_PIPELINE) is None
+
+    def test_the_snapshot_publisher_carries_its_own_caveat(self) -> None:
+        """Its jobs DO run, but not at the intervals the components ask for."""
+        notice = cadence_notice(DeploymentMode.AUTOMATED_SNAPSHOT_PIPELINE)
+        assert notice and "desired intervals" in notice
+
+    def test_only_a_continuous_pipeline_has_a_resident_worker(self) -> None:
+        assert DeploymentMode.CONTINUOUS_LIVE_PIPELINE.has_resident_worker
+        assert not DeploymentMode.AUTOMATED_SNAPSHOT_PIPELINE.has_resident_worker
 
     def test_the_snapshot_wording_is_exact(self) -> None:
         """Pinned because this sentence is the whole correction."""
@@ -125,7 +138,7 @@ class TestActiveVersusConfigured:
             j["scheduler_status"] for j in status["jobs"]
         }
 
-    def test_a_recent_run_on_a_live_pipeline_is_active(self, clean_db) -> None:  # noqa: ANN001
+    def test_a_recent_run_on_a_pipeline_is_active(self, clean_db) -> None:  # noqa: ANN001
         from pmvl_markets.db_models import JobRun
 
         clean_db.add(
@@ -139,13 +152,18 @@ class TestActiveVersusConfigured:
         clean_db.flush()
 
         job = job_status(
-            clean_db, CADENCE_BY_JOB["arbitrage"], DeploymentMode.LIVE_PIPELINE
+            clean_db, CADENCE_BY_JOB["arbitrage"], DeploymentMode.AUTOMATED_SNAPSHOT_PIPELINE
         )
         assert job["scheduler_status"] == SchedulerStatus.ACTIVE.value
-        assert job["active_cadence"] == "every 1 minute"
+        # The component asks for a minute; the publisher runs hourly; the active
+        # cadence is the one that actually happens. Reporting "every 1 minute"
+        # here would repeat the original overclaim one level down.
+        assert job["desired_cadence"] == "every 1 minute"
+        assert job["active_cadence"] == "every 1 hour"
+        assert job["effective_interval_seconds"] == 3600
         assert job["next_expected_run"] is not None
 
-    def test_an_overdue_run_on_a_live_pipeline_is_stalled(self, clean_db) -> None:  # noqa: ANN001
+    def test_an_overdue_run_on_a_pipeline_is_stalled(self, clean_db) -> None:  # noqa: ANN001
         from pmvl_markets.db_models import JobRun
 
         clean_db.add(
@@ -159,8 +177,11 @@ class TestActiveVersusConfigured:
         clean_db.flush()
 
         job = job_status(
-            clean_db, CADENCE_BY_JOB["arbitrage"], DeploymentMode.LIVE_PIPELINE
+            clean_db, CADENCE_BY_JOB["arbitrage"], DeploymentMode.AUTOMATED_SNAPSHOT_PIPELINE
         )
+        # Six hours against a three-hour tolerance derived from the hourly
+        # publisher - not from the component's one-minute wish, which would call
+        # every healthy hourly run stalled ten minutes after it finished.
         assert job["scheduler_status"] == SchedulerStatus.STALLED.value
         assert job["active_cadence"] is None
         assert job["next_expected_run"] is None
@@ -182,7 +203,7 @@ class TestActiveVersusConfigured:
         clean_db.flush()
 
         job = job_status(
-            clean_db, CADENCE_BY_JOB["ingest"], DeploymentMode.LIVE_PIPELINE
+            clean_db, CADENCE_BY_JOB["ingest"], DeploymentMode.AUTOMATED_SNAPSHOT_PIPELINE
         )
         assert job["scheduler_status"] == SchedulerStatus.ACTIVE.value
 
@@ -192,7 +213,7 @@ class TestActiveVersusConfigured:
             {"job_name": "b", "scheduler_status": SchedulerStatus.STALLED.value},
         ]
         assert (
-            scheduler_status(jobs, DeploymentMode.LIVE_PIPELINE)
+            scheduler_status(jobs, DeploymentMode.AUTOMATED_SNAPSHOT_PIPELINE)
             is SchedulerStatus.STALLED
         )
 
@@ -232,3 +253,125 @@ class TestSystemRouteWording:
     def test_every_scheduled_job_is_reported(self, client) -> None:  # noqa: ANN001
         reported = {j["job_name"] for j in client.get("/system").json()["data"]["pipeline"]["jobs"]}
         assert reported == {c.job_name for c in CADENCES}
+
+
+class TestThreeCadencesAreDistinct:
+    """Desired, effective and observed are three different numbers.
+
+    A component asking for 60 seconds inside a 3600-second publisher runs hourly.
+    Publishing the component's own figure as the active cadence would repeat, one
+    level down, exactly the overclaim this module was written to remove.
+    """
+
+    def test_the_publisher_floors_a_faster_component(self) -> None:
+        from pmvl_shared.cadence import effective_cadence_seconds
+
+        assert (
+            effective_cadence_seconds(
+                CADENCE_BY_JOB["arbitrage"], DeploymentMode.AUTOMATED_SNAPSHOT_PIPELINE
+            )
+            == 3600
+        )
+
+    def test_a_slower_component_keeps_its_own_period(self) -> None:
+        """The publisher is a floor, not an override: a two-hourly job does not
+        become hourly just because the publisher wakes up more often."""
+        from pmvl_shared.cadence import effective_cadence_seconds
+
+        assert (
+            effective_cadence_seconds(
+                CADENCE_BY_JOB["score"], DeploymentMode.AUTOMATED_SNAPSHOT_PIPELINE
+            )
+            == 7200
+        )
+
+    def test_a_resident_worker_honours_the_component_cadence(self) -> None:
+        from pmvl_shared.cadence import effective_cadence_seconds
+
+        assert (
+            effective_cadence_seconds(
+                CADENCE_BY_JOB["arbitrage"], DeploymentMode.CONTINUOUS_LIVE_PIPELINE
+            )
+            == 60
+        )
+
+    def test_a_snapshot_has_no_effective_cadence_at_all(self) -> None:
+        from pmvl_shared.cadence import effective_cadence_seconds
+
+        assert (
+            effective_cadence_seconds(
+                CADENCE_BY_JOB["arbitrage"], DeploymentMode.READ_ONLY_SNAPSHOT
+            )
+            is None
+        )
+
+    def test_observed_interval_is_measured_from_two_real_runs(self, clean_db) -> None:  # noqa: ANN001
+        """Measured, not restated. The observed gap is the only one of the three
+        that is evidence rather than intent."""
+        from pmvl_markets.db_models import JobRun
+
+        now = utcnow()
+        for minutes in (128, 64, 0):
+            clean_db.add(
+                JobRun(
+                    job_name="arbitrage",
+                    status=JobStatus.SUCCESS.value,
+                    started_at=now - timedelta(minutes=minutes),
+                    finished_at=now - timedelta(minutes=minutes),
+                )
+            )
+        clean_db.flush()
+
+        job = job_status(
+            clean_db,
+            CADENCE_BY_JOB["arbitrage"],
+            DeploymentMode.AUTOMATED_SNAPSHOT_PIPELINE,
+        )
+        assert job["observed_interval_seconds"] == 64 * 60
+        assert job["observed_cadence"] == "every 64 minutes"
+        # All three coexist and disagree, which is the honest state.
+        assert job["desired_cadence"] == "every 1 minute"
+        assert job["effective_cadence"] == "every 1 hour"
+
+    def test_observed_is_absent_until_there_are_two_runs(self, clean_db) -> None:  # noqa: ANN001
+        from pmvl_markets.db_models import JobRun
+
+        clean_db.add(
+            JobRun(
+                job_name="arbitrage",
+                status=JobStatus.SUCCESS.value,
+                started_at=utcnow(),
+                finished_at=utcnow(),
+            )
+        )
+        clean_db.flush()
+        job = job_status(
+            clean_db,
+            CADENCE_BY_JOB["arbitrage"],
+            DeploymentMode.AUTOMATED_SNAPSHOT_PIPELINE,
+        )
+        assert job["observed_interval_seconds"] is None
+
+
+class TestDeploymentSelfDescription:
+    def test_the_four_headline_lines_are_reported(self, clean_db) -> None:  # noqa: ANN001
+        status = pipeline_status(
+            clean_db, DeploymentMode.AUTOMATED_SNAPSHOT_PIPELINE
+        )
+        assert status["pipeline_type"] == "Automated snapshot publication"
+        assert status["public_serving_mode"] == "Read-only snapshot"
+        assert status["publisher"] == "GitHub Actions"
+        assert status["persistent_live_worker"] is False
+
+    def test_a_snapshot_names_no_publisher(self, clean_db) -> None:  # noqa: ANN001
+        status = pipeline_status(clean_db, DeploymentMode.READ_ONLY_SNAPSHOT)
+        assert status["publisher"] == "None"
+        assert status["persistent_live_worker"] is False
+        assert status["publisher_interval_seconds"] is None
+
+    def test_nothing_claims_a_resident_worker_that_does_not_exist(self) -> None:
+        """No deployment in this repository has one, and the enum must not let a
+        configuration accidentally assert otherwise."""
+        from pmvl_shared.config import get_settings
+
+        assert get_settings().deployment_mode is not DeploymentMode.CONTINUOUS_LIVE_PIPELINE

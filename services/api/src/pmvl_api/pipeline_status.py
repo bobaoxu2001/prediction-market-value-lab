@@ -21,10 +21,14 @@ from sqlalchemy.orm import Session
 
 from pmvl_shared.cadence import (
     CADENCES,
+    PUBLICATION_INTERVAL_SECONDS,
+    PUBLISHER_INTERVAL_SECONDS,
     Cadence,
     DeploymentMode,
     SchedulerStatus,
     cadence_notice,
+    effective_cadence_seconds,
+    humanize_interval,
 )
 from pmvl_shared.enums import JobStatus
 from pmvl_shared.timeutil import age_seconds, ensure_utc
@@ -51,13 +55,31 @@ def job_status(session: Session, cadence: Cadence, mode: DeploymentMode) -> dict
     last_ok = _latest(session, cadence.job_name, statuses=_OK_STATUSES)
     last_failed = _latest(session, cadence.job_name, statuses=(JobStatus.FAILED.value,))
 
+    # The previous successful run, so the OBSERVED interval is a measurement rather
+    # than a restatement of the configured one.
+    previous_ok = None
+    if last_ok is not None:
+        previous_ok = session.scalar(
+            select(JobRun)
+            .where(
+                JobRun.job_name == cadence.job_name,
+                JobRun.status.in_(_OK_STATUSES),
+                JobRun.started_at < last_ok.started_at,
+            )
+            .order_by(JobRun.started_at.desc())
+            .limit(1)
+        )
+    previous_ok_at = ensure_utc(previous_ok.started_at) if previous_ok else None
+
     # SQLite returns naive datetimes; ensure_utc is the repo's existing normaliser.
     last_ok_at = ensure_utc(last_ok.started_at) if last_ok else None
     last_failed_at = ensure_utc(last_failed.started_at) if last_failed else None
 
+    effective_seconds = effective_cadence_seconds(cadence, mode)
+
     next_expected = None
-    if last_ok_at is not None and cadence.interval_seconds is not None:
-        next_expected = last_ok_at + timedelta(seconds=cadence.interval_seconds)
+    if last_ok_at is not None and effective_seconds is not None:
+        next_expected = last_ok_at + timedelta(seconds=effective_seconds)
 
     if not mode.runs_scheduled_jobs:
         # No scheduler exists here by construction. Reporting STALLED would claim a
@@ -69,25 +91,47 @@ def job_status(session: Session, cadence: Cadence, mode: DeploymentMode) -> dict
         age = age_seconds(last_ok_at) or 0.0
         status = (
             SchedulerStatus.ACTIVE
-            if age <= cadence.stall_threshold_seconds()
+            if age <= cadence.stall_threshold_seconds(effective_seconds)
             else SchedulerStatus.STALLED
         )
+
+    # Three different numbers, none of which may stand in for another:
+    #   desired   - what the component asks for
+    #   effective - what the publisher's schedule actually permits
+    #   observed  - the gap between the last two real runs
+    # A 1-minute arbitrage cadence inside a 60-minute publisher is hourly, and
+    # reporting the component's own figure as "active" would repeat the original
+    # overclaim in a new place.
+    observed_seconds = None
+    if last_ok_at is not None and previous_ok_at is not None:
+        observed_seconds = int((last_ok_at - previous_ok_at).total_seconds())
 
     return {
         "job_name": cadence.job_name,
         "description": cadence.description,
+        "desired_cadence": cadence.human,
+        "desired_interval_seconds": cadence.interval_seconds,
+        "effective_cadence": humanize_interval(effective_seconds),
+        "effective_interval_seconds": effective_seconds,
+        "observed_interval_seconds": observed_seconds,
+        "observed_cadence": humanize_interval(observed_seconds),
+        # Retained under the old names for existing clients. `configured_cadence`
+        # is the component's desire, never the running period.
         "configured_cadence": cadence.human,
         "configured_interval_seconds": cadence.interval_seconds,
-        # `active_cadence` is None whenever nothing is executing the schedule. It is
-        # a separate field from `configured_cadence` so a client cannot render one
-        # while meaning the other.
-        "active_cadence": cadence.human if status is SchedulerStatus.ACTIVE else None,
+        # `active_cadence` is the EFFECTIVE period, and None whenever nothing is
+        # executing the schedule.
+        "active_cadence": (
+            humanize_interval(effective_seconds)
+            if status is SchedulerStatus.ACTIVE
+            else None
+        ),
         "scheduler_status": status.value,
         "last_success_at": last_ok_at,
         "last_failure_at": last_failed_at,
         "last_error": (last_failed.error[:300] if last_failed and last_failed.error else ""),
         "next_expected_run": next_expected if status is SchedulerStatus.ACTIVE else None,
-        "stall_threshold_seconds": cadence.stall_threshold_seconds(),
+        "stall_threshold_seconds": cadence.stall_threshold_seconds(effective_seconds),
     }
 
 
@@ -111,6 +155,26 @@ def pipeline_status(session: Session, mode: DeploymentMode) -> dict[str, Any]:
     overall = scheduler_status(jobs, mode)
     return {
         "deployment_mode": mode.value,
+        "deployment_mode_description": mode.description,
+        # The four lines a reader needs to understand what this deployment is.
+        "pipeline_type": (
+            "Automated snapshot publication"
+            if mode is DeploymentMode.AUTOMATED_SNAPSHOT_PIPELINE
+            else "Continuous live pipeline"
+            if mode is DeploymentMode.CONTINUOUS_LIVE_PIPELINE
+            else "None"
+        ),
+        "public_serving_mode": "Read-only snapshot",
+        "publisher": (
+            "GitHub Actions" if mode.runs_scheduled_jobs else "None"
+        ),
+        "persistent_live_worker": mode.has_resident_worker,
+        "publisher_interval_seconds": (
+            PUBLISHER_INTERVAL_SECONDS if mode.runs_scheduled_jobs else None
+        ),
+        "publication_interval_seconds": (
+            PUBLICATION_INTERVAL_SECONDS if mode.runs_scheduled_jobs else None
+        ),
         "runs_scheduled_jobs": mode.runs_scheduled_jobs,
         "scheduler_status": overall.value,
         # Present and non-null on every deployment that is not executing the

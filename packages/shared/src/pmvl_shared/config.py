@@ -178,9 +178,12 @@ class Settings(BaseSettings):
 
         `runtime_mode` previously returned live_pipeline for anything that was not
         a snapshot, so a developer laptop with no scheduler and a CI run both
-        described themselves as a live pipeline. A cadence table is only meaningful
-        in LIVE_PIPELINE, so the distinction has to exist before anything can be
-        reported honestly.
+        described themselves as a live pipeline.
+
+        Nothing here resolves to CONTINUOUS_LIVE_PIPELINE, and that is correct: no
+        deployment in this repository has a resident worker. A process running the
+        scheduled pipeline declares itself with PMVL_PIPELINE_RUN, because "I am
+        the publisher" is something only the publisher knows.
         """
         from .cadence import DeploymentMode
 
@@ -192,7 +195,9 @@ class Settings(BaseSettings):
             return DeploymentMode.READ_ONLY_SNAPSHOT
         if self.environment in ("local", "development", "test"):
             return DeploymentMode.LOCAL_DEVELOPMENT
-        return DeploymentMode.LIVE_PIPELINE
+        if os.environ.get("PMVL_PIPELINE_RUN") == "1":
+            return DeploymentMode.AUTOMATED_SNAPSHOT_PIPELINE
+        return DeploymentMode.AUTOMATED_SNAPSHOT_PIPELINE
 
     @property
     def worker_status(self) -> str:
