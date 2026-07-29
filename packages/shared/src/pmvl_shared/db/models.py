@@ -218,6 +218,65 @@ class MarketRule(Base, TimestampMixin):
     resolution_hash: Mapped[str] = mapped_column(String(64), nullable=False, default="", index=True)
 
 
+class MarketRuleVersion(Base):
+    """Every distinct wording of a market's settlement rules, kept forever.
+
+    Rules were stored as one mutable column on the market, so a venue editing its
+    resolution criteria silently overwrote the text that every stored verdict had
+    been derived from. Afterwards there was no way to tell whether a match had
+    been verified against the current wording or an older one, and no way to
+    reproduce the parse that produced it.
+
+    A new row is written only when the content hash changes, so a re-ingest that
+    sees identical rules extends `last_observed_at` rather than accumulating
+    duplicates. Nothing here is ever updated in place except that timestamp.
+    """
+
+    __tablename__ = "market_rule_versions"
+    __table_args__ = (
+        Index("ix_rulever_market_hash", "market_id", "rule_hash", unique=True),
+        Index("ix_rulever_market_seen", "market_id", "first_observed_at"),
+    )
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    market_id: Mapped[int] = mapped_column(
+        ForeignKey("markets.id", ondelete="CASCADE"), nullable=False, index=True
+    )
+    version: Mapped[int] = mapped_column(Integer, nullable=False, default=1)
+
+    # --- the venue's own words, exactly as received ------------------------
+    raw_title: Mapped[str] = mapped_column(Text, nullable=False, default="")
+    raw_subtitle: Mapped[str] = mapped_column(Text, nullable=False, default="")
+    raw_rules: Mapped[str] = mapped_column(Text, nullable=False, default="")
+    raw_resolution_source: Mapped[str] = mapped_column(Text, nullable=False, default="")
+    raw_cancellation_language: Mapped[str] = mapped_column(Text, nullable=False, default="")
+    raw_postponement_language: Mapped[str] = mapped_column(Text, nullable=False, default="")
+    platform_metadata: Mapped[dict | None] = mapped_column(JSONColumn, nullable=True)
+
+    # --- provenance of the fetch -------------------------------------------
+    fetched_at: Mapped[datetime] = _utc_col(nullable=False)
+    source_endpoint: Mapped[str] = mapped_column(Text, nullable=False, default="")
+    source_payload_hash: Mapped[str] = mapped_column(String(64), nullable=False, default="")
+    parser_version: Mapped[str] = mapped_column(String(32), nullable=False, default="")
+
+    # --- what the parser made of it ----------------------------------------
+    normalized_terms: Mapped[dict | None] = mapped_column(JSONColumn, nullable=True)
+    normalized_rule_hash: Mapped[str] = mapped_column(String(64), nullable=False, default="")
+    extraction_confidence: Mapped[Decimal] = mapped_column(
+        Money, nullable=False, default=Decimal("0")
+    )
+    completeness: Mapped[str] = mapped_column(String(16), nullable=False, default="unavailable")
+
+    #: Identity of this exact wording; the uniqueness constraint above is what
+    #: makes re-ingesting unchanged rules a no-op rather than a duplicate.
+    rule_hash: Mapped[str] = mapped_column(String(64), nullable=False, default="", index=True)
+    #: Fields that moved relative to the previous version. Empty on the first.
+    changed_fields: Mapped[list | None] = mapped_column(JSONColumn, nullable=True)
+    first_observed_at: Mapped[datetime] = _utc_col(nullable=False)
+    #: The only mutable column. Extended when unchanged rules are seen again.
+    last_observed_at: Mapped[datetime] = _utc_col(nullable=False)
+
+
 class MarketMatch(Base, TimestampMixin):
     """A candidate cross-platform pairing plus its compatibility audit."""
 

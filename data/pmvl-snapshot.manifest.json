@@ -1,6 +1,6 @@
 {
   "code_commit_sha": "unknown",
-  "file_size_bytes": 8126464,
+  "file_size_bytes": 8146944,
   "freshest_quote_observed_at": "2026-07-28T08:07:03.042781Z",
   "generated_at": "2026-07-29T01:59:28.671418Z",
   "ingest_window_end": null,
@@ -35,8 +35,8 @@
     "recommendations": 462,
     "settlements": 1218
   },
-  "schema_version": "a1b2c3d4e5f6",
-  "sha256": "d6b698b514aaa7e9c23c47acfa42c1543b6a468c7b1b3cd6fe0a0950a8629c9c",
+  "schema_version": "b2c3d4e5f6a7",
+  "sha256": "041ec23b5d16d720a3360a492997e2608574a1f7122905968ce5e9d66f19275f",
   "snapshot_id": "unknown-1785289933",
   "source_data_cutoff": "2026-07-28T08:07:03.042781Z",
   "validation_failures": [],
