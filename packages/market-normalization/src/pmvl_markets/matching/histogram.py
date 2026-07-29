@@ -107,7 +107,9 @@ class DemotionHistogram:
         return (
             f"No pair reached IDENTICAL, and {1 - share:.0%} of demotions are genuine "
             "contradictions. On this sample the two venues do not list contracts with "
-            "identical settlement terms - that is a result, not a bug."
+            "identical settlement terms. Candidate-generation recall is "
+            f"{_recall_phrase()}, so this is a result about the venues rather than "
+            "about the generator - subject to that benchmark's size."
         )
 
     def top_codes(self, limit: int = 10) -> list[tuple[str, int, str]]:
@@ -155,3 +157,36 @@ def histogram_from_pairs(
 ) -> DemotionHistogram:
     """Convenience for the ``verify_all`` return shape."""
     return build_histogram(verdict for _candidate, verdict in pairs)
+
+
+#: Measured on `tests/fixtures/matching_benchmark.json`. Stated as a number rather
+#: than left implicit, because "no equivalent pairs were found" and "no equivalent
+#: pairs exist" are different claims and only a recall figure separates them.
+#:
+#: Recomputed by the benchmark test rather than at import time: loading a fixture
+#: and running the generator on every API request would be absurd, and a stale
+#: constant that the test pins is honest as long as the test is what pins it.
+BENCHMARK_CANDIDATE_RECALL = 1.0
+BENCHMARK_SIZE = 12
+
+
+def _recall_phrase() -> str:
+    return (
+        f"{BENCHMARK_CANDIDATE_RECALL:.0%} on a {BENCHMARK_SIZE}-pair hand-labelled "
+        "benchmark"
+    )
+
+
+def recall_context() -> dict[str, object]:
+    """What the product must publish next to a zero-match result."""
+    return {
+        "candidate_recall": BENCHMARK_CANDIDATE_RECALL,
+        "benchmark_size": BENCHMARK_SIZE,
+        "note": (
+            "Recall is how many known-equivalent pairs the candidate generator "
+            "proposes. Without it, 'no verified equivalent pair' cannot be "
+            "distinguished from 'the generator did not look in the right place'. "
+            f"Measured at {_recall_phrase()}; indicative only, since a set that "
+            "size cannot support a population estimate."
+        ),
+    }

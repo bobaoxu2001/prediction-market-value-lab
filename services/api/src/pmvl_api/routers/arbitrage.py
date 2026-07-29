@@ -17,6 +17,7 @@ from pmvl_shared.enums import (
 )
 
 from pmvl_markets.db_models import ArbitrageOpportunity, JobRun
+from pmvl_markets.matching.histogram import recall_context
 
 from pmvl_shared.cadence import DeploymentMode
 from pmvl_shared.config import get_settings
@@ -235,4 +236,8 @@ def _matching_diagnostics(db: Session) -> dict[str, Any] | None:
         "contradiction_count": histogram.get("contradiction_count"),
         "top_reasons": (histogram.get("by_code") or [])[:8],
         "diagnosis": histogram.get("diagnosis"),
+        # Published alongside the zero-match result, because "no verified
+        # equivalent pair was found" and "no equivalent pair exists" are different
+        # claims and only a recall figure separates them.
+        "candidate_generation": recall_context(),
     }

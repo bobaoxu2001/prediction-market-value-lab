@@ -69,7 +69,13 @@ class TestDiagnosis:
             ]
         )
         assert h.blocked_only_by_missing_info == 0
-        assert "result, not a bug" in h.diagnosis
+        # The claim is now stronger than "result, not a bug": it names the measured
+        # candidate-generation recall, which is the only thing that separates "the
+        # venues list no equivalent contracts" from "the generator did not find
+        # them". Asserting the recall figure keeps the two claims tied together.
+        assert "result about the venues rather than about the generator" in h.diagnosis
+        assert "Candidate-generation recall is" in h.diagnosis
+        assert "hand-labelled benchmark" in h.diagnosis
 
     def test_a_pair_with_both_is_not_counted_as_fixable(self) -> None:
         """Better parsing cannot promote a pair that also has a real conflict."""
