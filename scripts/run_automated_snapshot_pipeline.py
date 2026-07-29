@@ -199,7 +199,12 @@ class RunOutcome:
     #: Row counts either side of the run. The incident was invisible because the
     #: report said SUCCESS nine times and never said what the candidate contained
     #: relative to what it started from.
+    #: Which database each stage actually used. The Canary A incident was
+    #: invisible because nothing recorded that the jobs and the candidate were
+    #: looking at different files.
+    database_binding: dict[str, str] = field(default_factory=dict)
     parent_row_counts: dict[str, int] = field(default_factory=dict)
+    operational_row_counts: dict[str, int] = field(default_factory=dict)
     candidate_row_counts: dict[str, int] = field(default_factory=dict)
     candidate_disposition: str = CandidateDisposition.NOT_BUILT
     published: bool = False
@@ -222,7 +227,9 @@ class RunOutcome:
             "state_persisted_across_runs": False,
             "candidate_snapshot_id": self.candidate_snapshot_id,
             "candidate_sha256": self.candidate_sha256,
+            "database_binding": self.database_binding,
             "parent_row_counts": self.parent_row_counts,
+            "operational_row_counts": self.operational_row_counts,
             "candidate_row_counts": self.candidate_row_counts,
             "candidate_matches_parent": (
                 bool(self.parent_row_counts)
@@ -306,7 +313,7 @@ def initialise_operational_db(work_dir: Path, outcome: RunOutcome) -> Path:
     return operational
 
 
-def _bind_database(db_path: Path) -> None:
+def _bind_database(db_path: Path) -> dict[str, str]:
     """Make every later import agree on which database this run uses.
 
     Setting the environment variable is not enough on its own: `get_settings()`
@@ -337,6 +344,24 @@ def _bind_database(db_path: Path) -> None:
             f"{db_path}. Jobs would write somewhere the candidate is not built "
             "from, and the run would look successful."
         )
+
+    # The engine is what the jobs will actually connect through. Verifying only
+    # settings would pass while a stale engine still pointed elsewhere - which is
+    # precisely how the first version of this fix looked correct and was not.
+    from pmvl_shared.db import get_engine
+
+    engine_url = str(get_engine().url)
+    if str(db_path) not in engine_url:
+        raise PipelineError(
+            f"engine bound to {engine_url!r} rather than {db_path}. Settings were "
+            "corrected but the connection was not."
+        )
+
+    return {
+        "requested_operational_db": str(db_path),
+        "settings_database_url": bound,
+        "engine_url": engine_url,
+    }
 
 
 def migrate(db_path: Path, outcome: RunOutcome) -> None:
@@ -444,7 +469,9 @@ def build_and_validate_candidate(work_dir: Path, operational: Path, outcome: Run
         raise PipelineError(f"candidate failed validation: {validation.stdout[-800:]}")
 
     outcome.candidate_path = candidate
+    outcome.database_binding["candidate_source_db"] = str(operational)
     outcome.parent_row_counts = _row_counts(PUBLISHED_DB)
+    outcome.operational_row_counts = _row_counts(operational)
     outcome.candidate_row_counts = _row_counts(candidate)
     if outcome.parent_row_counts and outcome.parent_row_counts == outcome.candidate_row_counts:
         # Not fatal on its own - a genuinely quiet interval could produce this -
@@ -587,8 +614,13 @@ def main(argv: list[str] | None = None) -> int:
         # job then wrote to that default database while the candidate was built
         # from the untouched copy - a run that ingested 7,666 markets and produced
         # a candidate byte-identical to its parent, reporting success throughout.
-        _bind_database(operational)
+        outcome.database_binding = _bind_database(operational)
         migrate(operational, outcome)
+        outcome.database_binding["migration_target_db"] = str(operational)
+        print(
+            "database binding: "
+            + json.dumps(outcome.database_binding, sort_keys=True)
+        )
         print(
             f"migrations: {outcome.migration_start_revision} -> "
             f"{outcome.migration_end_revision}"

@@ -192,3 +192,115 @@ class TestOrderingIsEnforcedInSource:
             "migrate() runs before _bind_database(); alembic's env.py will "
             "materialise the settings cache on the wrong database"
         )
+
+
+class TestAnEngineBuiltBeforeBindingIsReplaced:
+    """The second cache layer, which the first version of this fix missed.
+
+    Clearing the settings cache is not enough: the SQLAlchemy engine is a
+    module-level global built once from whatever settings said at the time. A fix
+    that corrected settings and left the engine alone passed its own unit
+    assertions and still could not write to the operational database.
+    """
+
+    def test_a_stale_engine_does_not_survive_binding(self, tmp_path, monkeypatch) -> None:  # noqa: ANN001
+        import sqlite3
+
+        from pmvl_shared.db import get_engine
+
+        monkeypatch.delenv("DATABASE_URL", raising=False)
+        get_settings.cache_clear()
+
+        # Build the engine first, then move settings underneath it. The engine
+        # keeps its original URL - that staleness is the bug, and it is what makes
+        # a settings-only fix insufficient.
+        stale_url = str(get_engine().url)
+        decoy = tmp_path / "decoy.db"
+        monkeypatch.setenv("DATABASE_URL", f"sqlite+pysqlite:///{decoy}")
+        get_settings.cache_clear()
+        assert str(get_engine().url) == stale_url, (
+            "the engine is no longer cached; reset_engine may be redundant, but "
+            "removing it needs a deliberate decision"
+        )
+
+        operational = tmp_path / "operational.db"
+        sqlite3.connect(operational).executescript(
+            "CREATE TABLE probe (id INTEGER PRIMARY KEY);"
+        )
+        evidence = _bind_database(operational)
+
+        assert "operational.db" in str(get_engine().url)
+        assert str(get_engine().url) != stale_url
+        assert "operational.db" in evidence["engine_url"]
+
+    def test_binding_reports_both_layers(self, tmp_path, monkeypatch) -> None:  # noqa: ANN001
+        """The report must be able to show they agree, not just assert it."""
+        monkeypatch.delenv("DATABASE_URL", raising=False)
+        get_settings.cache_clear()
+
+        operational = tmp_path / "operational.db"
+        evidence = _bind_database(operational)
+
+        assert str(operational) in evidence["requested_operational_db"]
+        assert str(operational) in evidence["settings_database_url"]
+        assert str(operational) in evidence["engine_url"]
+
+
+class TestTheDefaultDatabaseIsLeftAlone:
+    """A run must not touch the repository's own working database.
+
+    In the incident every job wrote to `data/pmvl.db`, silently building a local
+    database nobody asked for while the candidate stayed empty. Binding correctly
+    means that file is never opened.
+    """
+
+    def test_binding_points_away_from_the_repository_default(
+        self, tmp_path, monkeypatch  # noqa: ANN001
+    ) -> None:
+        monkeypatch.delenv("DATABASE_URL", raising=False)
+        get_settings.cache_clear()
+        default_url = get_settings().database_url
+        assert "data/pmvl.db" in default_url, "unexpected default; test needs updating"
+
+        operational = tmp_path / "operational.db"
+        evidence = _bind_database(operational)
+
+        assert "data/pmvl.db" not in evidence["settings_database_url"]
+        assert "data/pmvl.db" not in evidence["engine_url"]
+
+    def test_a_write_after_binding_does_not_reach_the_default_file(
+        self, tmp_path, monkeypatch  # noqa: ANN001
+    ) -> None:
+        """The observable form of the incident: the default file growing while the
+        candidate stayed empty."""
+        import sqlite3
+        from pathlib import Path as _Path
+
+        monkeypatch.delenv("DATABASE_URL", raising=False)
+        get_settings.cache_clear()
+        default_path = _Path(get_settings().database_url.split("///")[-1])
+        before = default_path.stat().st_mtime if default_path.exists() else None
+
+        operational = tmp_path / "operational.db"
+        sqlite3.connect(operational).executescript(
+            "CREATE TABLE probe (id INTEGER PRIMARY KEY, note TEXT);"
+        )
+        _bind_database(operational)
+
+        from sqlalchemy import text
+
+        from pmvl_shared.db import session_scope
+
+        with session_scope() as session:
+            session.execute(text("INSERT INTO probe (note) VALUES ('job write')"))
+
+        after = default_path.stat().st_mtime if default_path.exists() else None
+        assert after == before, "the run modified the repository's default database"
+
+        rows = [
+            r[0]
+            for r in sqlite3.connect(f"file:{operational}?mode=ro", uri=True).execute(
+                "SELECT note FROM probe"
+            )
+        ]
+        assert rows == ["job write"]
