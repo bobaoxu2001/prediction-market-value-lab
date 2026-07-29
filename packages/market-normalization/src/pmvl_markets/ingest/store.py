@@ -32,6 +32,7 @@ from ..db_models import (
     PriceSnapshot,
     Trade,
 )
+from ..matching.rule_history import record_rule_version
 from ..normalize.rules import normalize_rules
 
 log = get_logger(__name__)
@@ -225,6 +226,78 @@ def _upsert_rule(session: Session, row: Market, m: NormalizedMarket) -> None:
     rule.entities = rules.entities[:12]
     rule.normalized_terms = rules.hash_payload()
     rule.resolution_hash = rules.resolution_hash
+
+    # `rule` above is a single mutable row: a venue editing its resolution criteria
+    # overwrites the text every stored verdict was derived from, and afterwards
+    # nobody can tell whether a match was verified against the current wording or
+    # an older one. The version history is append-only and keeps both.
+    record_rule_version(
+        session,
+        market_id=row.id,
+        raw_title=m.title,
+        raw_subtitle=m.subtitle or "",
+        raw_rules=m.settlement_rules_raw or "",
+        raw_resolution_source=m.settlement_source or "",
+        raw_cancellation_language=_extract_clause(m.settlement_rules_raw, _CANCELLATION_CUES),
+        raw_postponement_language=_extract_clause(m.settlement_rules_raw, _POSTPONEMENT_CUES),
+        platform_metadata={
+            "platform": m.platform.value,
+            "platform_market_id": m.platform_market_id,
+            "market_type": m.market_type,
+            "strike_type": m.strike_type,
+        },
+        source_endpoint=_SOURCE_ENDPOINTS.get(m.platform.value, ""),
+        source_payload=m.raw,
+        normalized_terms=rules.hash_payload(),
+        extraction_confidence=_extraction_confidence(m, rules),
+    )
+
+
+#: Sentences a venue uses to describe voiding or rescheduling. Matched on the raw
+#: text because neither venue exposes these as structured fields, and a
+#: cancellation clause nobody captured is a settlement risk nobody can audit.
+_CANCELLATION_CUES = (
+    "cancel", "void", "annul", "no contest", "refund", "not resolve", "invalid",
+)
+_POSTPONEMENT_CUES = (
+    "postpone", "delay", "reschedul", "suspend", "rain", "abandon",
+)
+
+_SOURCE_ENDPOINTS = {
+    "kalshi": "https://api.elections.kalshi.com/trade-api/v2/markets",
+    "polymarket": "https://gamma-api.polymarket.com/markets",
+}
+
+
+def _extract_clause(text: str | None, cues: tuple[str, ...]) -> str:
+    """The sentences mentioning any cue, or empty when none do.
+
+    Deliberately conservative: it returns the venue's own sentences rather than a
+    paraphrase, because the point of preserving this is that a human can read what
+    the venue actually committed to.
+    """
+    if not text:
+        return ""
+    sentences = [s.strip() for s in text.replace("\n", " ").split(". ") if s.strip()]
+    hits = [s for s in sentences if any(cue in s.lower() for cue in cues)]
+    return ". ".join(hits)[:2000]
+
+
+def _extraction_confidence(m: NormalizedMarket, rules) -> Decimal:  # noqa: ANN001
+    """How much of the settlement terms the parser actually pinned down.
+
+    Not a model score - a count of the fields that were established, so a reader
+    can tell a fully-parsed threshold market from one where only the title was
+    understood.
+    """
+    signals = (
+        bool((m.settlement_rules_raw or "").strip()),
+        bool((m.settlement_source or "").strip()),
+        rules.threshold is not None,
+        bool(rules.comparator),
+        rules.cutoff_utc is not None,
+    )
+    return (Decimal(sum(signals)) / Decimal(len(signals))).quantize(Decimal("0.0001"))
 
 
 def store_orderbooks(
