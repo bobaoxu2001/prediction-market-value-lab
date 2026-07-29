@@ -1,0 +1,109 @@
+{
+  "_README": [
+    "A hand-labelled set of cross-platform pairs, used to measure what the candidate",
+    "generator FINDS - not what the verifier does with what it is given.",
+    "",
+    "The deployed diagnostic reports '109 pairs examined, 0 verified equivalent'.",
+    "That is a statement about the 109 pairs the generator proposed. It cannot",
+    "distinguish 'the venues list no equivalent contracts' from 'the generator did",
+    "not find the equivalent contracts that exist', and those have opposite",
+    "implications for what to work on.",
+    "",
+    "Labels are deliberate:",
+    "  equivalent   - a human reading both rule sets would trade one against the",
+    "                 other. The generator MUST propose these; missing one is a",
+    "                 recall failure.",
+    "  near_miss    - same event, materially different settlement. The generator",
+    "                 SHOULD propose these so the verifier can reject them with a",
+    "                 stated reason; proposing them is correct behaviour.",
+    "  false_friend - high surface similarity, unrelated or contradictory contract.",
+    "                 Proposing these is a precision cost, not an error, but a",
+    "                 generator that proposes only these has learned nothing."
+  ],
+  "pairs": [
+    {
+      "id": "btc-threshold-exact",
+      "label": "equivalent",
+      "why": "Same underlying, same threshold, same instant, same index.",
+      "a": {"platform": "kalshi", "id": "KXBTC-26JUL31-T70000", "title": "Bitcoin price above $70,000 on Jul 31, 2026?", "category": "crypto"},
+      "b": {"platform": "polymarket", "id": "btc-above-70000-jul-31", "title": "Will Bitcoin be above $70,000 on July 31, 2026?", "category": "crypto"}
+    },
+    {
+      "id": "fed-cut-september",
+      "label": "equivalent",
+      "why": "Same FOMC meeting, same decision, same source.",
+      "a": {"platform": "kalshi", "id": "KXFED-26SEP", "title": "Will the Fed cut rates at the September 2026 meeting?", "category": "economics"},
+      "b": {"platform": "polymarket", "id": "fed-rate-cut-september-2026", "title": "Fed rate cut in September 2026?", "category": "economics"}
+    },
+    {
+      "id": "eth-threshold-exact",
+      "label": "equivalent",
+      "why": "Same asset, threshold and settlement date.",
+      "a": {"platform": "kalshi", "id": "KXETH-26AUG15-T4000", "title": "Ethereum price above $4,000 on Aug 15, 2026?", "category": "crypto"},
+      "b": {"platform": "polymarket", "id": "eth-above-4000-aug-15", "title": "Will Ethereum be above $4,000 on August 15, 2026?", "category": "crypto"}
+    },
+    {
+      "id": "btc-threshold-neighbouring",
+      "label": "near_miss",
+      "why": "Thresholds differ by $1,000. Same event, different contract.",
+      "a": {"platform": "kalshi", "id": "KXBTC-26JUL31-T70000", "title": "Bitcoin price above $70,000 on Jul 31, 2026?", "category": "crypto"},
+      "b": {"platform": "polymarket", "id": "btc-above-71000-jul-31", "title": "Will Bitcoin be above $71,000 on July 31, 2026?", "category": "crypto"}
+    },
+    {
+      "id": "btc-comparator-differs",
+      "label": "near_miss",
+      "why": "'above' vs 'at or above'. Differs only when the price lands exactly on the threshold.",
+      "a": {"platform": "kalshi", "id": "KXBTC-26JUL31-T70000", "title": "Bitcoin price above $70,000 on Jul 31, 2026?", "category": "crypto"},
+      "b": {"platform": "polymarket", "id": "btc-at-or-above-70000", "title": "Will Bitcoin reach $70,000 or higher on July 31, 2026?", "category": "crypto"}
+    },
+    {
+      "id": "soccer-90min-vs-advancement",
+      "label": "near_miss",
+      "why": "One settles on 90 minutes, the other on who advances. Extra time and penalties separate them.",
+      "a": {"platform": "kalshi", "id": "KXSOCCER-ARG-BRA-90", "title": "Will Argentina beat Brazil in 90 minutes?", "category": "sports"},
+      "b": {"platform": "polymarket", "id": "argentina-advance-vs-brazil", "title": "Will Argentina advance past Brazil?", "category": "sports"}
+    },
+    {
+      "id": "cpi-initial-vs-revised",
+      "label": "near_miss",
+      "why": "One settles on the initial print, the other permits revisions.",
+      "a": {"platform": "kalshi", "id": "KXCPI-26AUG-INITIAL", "title": "Will August 2026 CPI come in above 3.0% (initial release)?", "category": "economics"},
+      "b": {"platform": "polymarket", "id": "cpi-august-above-3", "title": "Will August 2026 CPI be above 3.0%?", "category": "economics"}
+    },
+    {
+      "id": "temp-interval-vs-one-sided",
+      "label": "near_miss",
+      "why": "An interval contract against a one-sided threshold on the same reading.",
+      "a": {"platform": "kalshi", "id": "KXHIGHMIA-26JUL30-B85", "title": "Will the high temp in Miami be between 85 and 86 degrees on Jul 30?", "category": "other"},
+      "b": {"platform": "polymarket", "id": "miami-high-above-85-jul-30", "title": "Will the high temperature in Miami exceed 85 degrees on July 30?", "category": "other"}
+    },
+    {
+      "id": "different-dates-same-question",
+      "label": "false_friend",
+      "why": "Identical wording, two weeks apart.",
+      "a": {"platform": "kalshi", "id": "KXBTC-26JUL31-T70000", "title": "Bitcoin price above $70,000 on Jul 31, 2026?", "category": "crypto"},
+      "b": {"platform": "polymarket", "id": "btc-above-70000-aug-15", "title": "Will Bitcoin be above $70,000 on August 15, 2026?", "category": "crypto"}
+    },
+    {
+      "id": "different-source-same-metric",
+      "label": "false_friend",
+      "why": "Same nominal metric, incompatible measurement basis.",
+      "a": {"platform": "kalshi", "id": "KXBTC-CME-26JUL31", "title": "Bitcoin CME futures settlement above $70,000 on Jul 31, 2026?", "category": "crypto"},
+      "b": {"platform": "polymarket", "id": "btc-coinbase-above-70000", "title": "Will Bitcoin on Coinbase be above $70,000 on July 31, 2026?", "category": "crypto"}
+    },
+    {
+      "id": "opposite-polarity",
+      "label": "false_friend",
+      "why": "One is the negation of the other; equivalent only after inversion, which is a different claim.",
+      "a": {"platform": "kalshi", "id": "KXBTC-26JUL31-T70000", "title": "Bitcoin price above $70,000 on Jul 31, 2026?", "category": "crypto"},
+      "b": {"platform": "polymarket", "id": "btc-below-70000-jul-31", "title": "Will Bitcoin be below $70,000 on July 31, 2026?", "category": "crypto"}
+    },
+    {
+      "id": "unrelated-shared-vocabulary",
+      "label": "false_friend",
+      "why": "Shares 'will', 'be', 'in', '2026' and nothing that matters.",
+      "a": {"platform": "kalshi", "id": "KXELECTION-26", "title": "Will the Republicans win the House in 2026?", "category": "politics"},
+      "b": {"platform": "polymarket", "id": "recession-2026", "title": "Will there be a recession in 2026?", "category": "economics"}
+    }
+  ]
+}

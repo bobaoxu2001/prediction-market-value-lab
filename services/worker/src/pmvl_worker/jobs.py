@@ -8,6 +8,7 @@ running is visible rather than being mistaken for "no opportunities today".
 from __future__ import annotations
 
 import time
+import uuid
 import traceback
 from contextlib import contextmanager
 from datetime import datetime
@@ -18,17 +19,40 @@ from pmvl_shared.enums import JobStatus
 from pmvl_shared.logging_setup import get_logger
 from pmvl_shared.timeutil import utcnow
 
+from pmvl_shared.job_record import RunRecord, idempotency_key
+
 from pmvl_markets.db_models import JobRun
 
 log = get_logger(__name__)
 
 
 @contextmanager
-def job_run(job_name: str) -> Iterator[dict[str, Any]]:
-    """Record a job's lifecycle. Yields a mutable dict for the job's own details."""
+def job_run(
+    job_name: str,
+    *,
+    cutoff: datetime | None = None,
+    params: dict[str, Any] | None = None,
+    upstream: list[str] | None = None,
+) -> Iterator[dict[str, Any]]:
+    """Record a job's lifecycle. Yields a mutable dict for the job's own details.
+
+    The yielded dict carries a ``record`` key holding a :class:`RunRecord`. A job
+    that reports per-provider outcomes on it gets PARTIAL_SUCCESS automatically
+    when some sources failed and others did not - which is the case that used to
+    be indistinguishable from "there was nothing to find".
+    """
     started = utcnow()
     monotonic = time.monotonic()
-    details: dict[str, Any] = {}
+    run_id = uuid.uuid4().hex[:16]
+    record = RunRecord(
+        job_name=job_name,
+        run_id=run_id,
+        idempotency_key=idempotency_key(job_name, cutoff=cutoff, params=params),
+        scheduled_at=started,
+        input_data_cutoff=cutoff,
+        upstream_dependencies=list(upstream or []),
+    )
+    details: dict[str, Any] = {"record": record}
     record_id: int | None = None
 
     with session_scope() as db:
@@ -55,12 +79,31 @@ def job_run(job_name: str) -> Iterator[dict[str, Any]]:
         with session_scope() as db:
             row = db.get(JobRun, record_id)
             if row is not None:
+                # A run that lost one provider and kept the rest is neither a
+                # success nor a failure, and calling it either loses the fact an
+                # operator needs. Derived here so a job cannot forget to say so.
+                if status is JobStatus.SUCCESS and record.is_partial:
+                    status = JobStatus.PARTIAL_SUCCESS
+                    log.warning(
+                        "job %s partially succeeded; failed providers: %s",
+                        job_name, ", ".join(record.failed_providers),
+                    )
                 row.status = status.value
                 row.finished_at = utcnow()
                 row.duration_seconds = round(duration, 3)
-                row.records_written = int(details.get("records_written", 0) or 0)
+                record.records_written = int(
+                    details.get("records_written", record.records_written) or 0
+                )
+                if error:
+                    record.errors.append(error[:500])
+                row.records_written = record.records_written
                 row.error = error
-                row.details = _jsonable(details)
+                # The RunRecord is not JSON-serialisable; replace it with its
+                # dict form so the full provenance persists alongside the job's
+                # own details rather than being dropped by _jsonable's fallback.
+                payload = {k: v for k, v in details.items() if k != "record"}
+                payload["run"] = record.as_dict()
+                row.details = _jsonable(payload)
 
 
 def _jsonable(value: Any) -> Any:
@@ -78,11 +121,35 @@ def _jsonable(value: Any) -> Any:
 async def job_ingest(*, market_limit: int | None = None, orderbook_limit: int | None = None) -> dict[str, Any]:
     from pmvl_markets.ingest import run_ingest
 
-    with job_run("ingest") as details:
+    with job_run(
+        "ingest", params={"market_limit": market_limit, "orderbook_limit": orderbook_limit}
+    ) as details:
+        record = details["record"]
         with session_scope() as db:
             report = await run_ingest(
                 db, market_limit=market_limit, orderbook_limit=orderbook_limit
             )
+        # Per-venue outcomes, so one platform failing degrades the run to
+        # PARTIAL_SUCCESS instead of producing a shorter market list that reads
+        # downstream as "there was nothing to find today".
+        for platform, written in (report.by_platform or {}).items():
+            record.provider(platform).records = written
+        for message in report.errors:
+            platform = next(
+                (p for p in (report.by_platform or {}) if p.lower() in message.lower()),
+                None,
+            )
+            if platform:
+                record.fail_provider(platform, message)
+            else:
+                record.warn(message[:300])
+        # A platform that returned nothing at all is a failure even when it
+        # raised no error: an empty venue is not a normal ingest result.
+        for platform, written in (report.by_platform or {}).items():
+            if not written and record.provider(platform).healthy:
+                record.fail_provider(platform, "returned no markets")
+
+        record.records_read = report.markets_fetched
         details.update(report.as_dict())
         details["records_written"] = report.markets_written
         return report.as_dict()

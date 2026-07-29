@@ -289,6 +289,30 @@ class FairProbability(StrictModel):
     market_implied_probability: Decimal | None = None
     components: list[ProbabilityComponent] = Field(default_factory=list)
 
+    # --- the three probability classes -----------------------------------------
+    # `fair_probability_mean` above pools every component, including the one whose
+    # content is the target market's own price. It is kept for existing clients and
+    # is the same value as `market_informed_probability`, which is what it has
+    # always actually been. Publishing it under a name that says so is the point.
+    #: Pools everything: target price, cross-venue quotes, models, evidence. Better
+    #: calibrated, and cannot be used to argue the market is wrong.
+    market_informed_probability: Decimal | None = None
+    #: Pools only components that never observed the target price. The ONLY figure
+    #: that can demonstrate an edge.
+    independent_probability: Decimal | None = None
+    independent_probability_low: Decimal | None = None
+    independent_probability_high: Decimal | None = None
+    #: The independent lower bound after reliability, freshness and model-risk
+    #: penalties. Eligibility is decided on this. None means there is no independent
+    #: estimate, which is not a probability of zero - it means the question has no
+    #: answer here and eligibility must fail closed.
+    conservative_decision_probability: Decimal | None = None
+    #: Which components backed each class, and how many distinct correlation groups
+    #: the independent estimate really rests on.
+    independence: dict[str, Any] | None = None
+    #: Per-component source declaration.
+    component_independence: dict[str, Any] | None = None
+
 
 class EvidenceRecord(StrictModel):
     source_name: str

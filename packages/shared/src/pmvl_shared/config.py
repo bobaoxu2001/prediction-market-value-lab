@@ -7,6 +7,10 @@ and are never logged, serialised into API responses, or written to the database.
 from __future__ import annotations
 
 import os
+from typing import TYPE_CHECKING
+
+if TYPE_CHECKING:
+    from .cadence import DeploymentMode
 from decimal import Decimal
 from functools import lru_cache
 from pathlib import Path
@@ -166,7 +170,34 @@ class Settings(BaseSettings):
 
     @property
     def runtime_mode(self) -> str:
-        return "read_only_snapshot" if self.snapshot_mode else "live_pipeline"
+        return self.deployment_mode.value
+
+    @property
+    def deployment_mode(self) -> "DeploymentMode":
+        """Which of the four real modes this process is in.
+
+        `runtime_mode` previously returned live_pipeline for anything that was not
+        a snapshot, so a developer laptop with no scheduler and a CI run both
+        described themselves as a live pipeline.
+
+        Nothing here resolves to CONTINUOUS_LIVE_PIPELINE, and that is correct: no
+        deployment in this repository has a resident worker. A process running the
+        scheduled pipeline declares itself with PMVL_PIPELINE_RUN, because "I am
+        the publisher" is something only the publisher knows.
+        """
+        from .cadence import DeploymentMode
+
+        if self.snapshot_mode:
+            return DeploymentMode.READ_ONLY_SNAPSHOT
+        if os.environ.get("VERCEL_ENV"):
+            # A serverless deployment that is not snapshot-backed still has no
+            # long-running scheduler; the platform gives it no process to be one.
+            return DeploymentMode.READ_ONLY_SNAPSHOT
+        if self.environment in ("local", "development", "test"):
+            return DeploymentMode.LOCAL_DEVELOPMENT
+        if os.environ.get("PMVL_PIPELINE_RUN") == "1":
+            return DeploymentMode.AUTOMATED_SNAPSHOT_PIPELINE
+        return DeploymentMode.AUTOMATED_SNAPSHOT_PIPELINE
 
     @property
     def worker_status(self) -> str:

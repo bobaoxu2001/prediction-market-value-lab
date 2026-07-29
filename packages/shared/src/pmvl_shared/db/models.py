@@ -218,6 +218,65 @@ class MarketRule(Base, TimestampMixin):
     resolution_hash: Mapped[str] = mapped_column(String(64), nullable=False, default="", index=True)
 
 
+class MarketRuleVersion(Base):
+    """Every distinct wording of a market's settlement rules, kept forever.
+
+    Rules were stored as one mutable column on the market, so a venue editing its
+    resolution criteria silently overwrote the text that every stored verdict had
+    been derived from. Afterwards there was no way to tell whether a match had
+    been verified against the current wording or an older one, and no way to
+    reproduce the parse that produced it.
+
+    A new row is written only when the content hash changes, so a re-ingest that
+    sees identical rules extends `last_observed_at` rather than accumulating
+    duplicates. Nothing here is ever updated in place except that timestamp.
+    """
+
+    __tablename__ = "market_rule_versions"
+    __table_args__ = (
+        Index("ix_rulever_market_hash", "market_id", "rule_hash", unique=True),
+        Index("ix_rulever_market_seen", "market_id", "first_observed_at"),
+    )
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    market_id: Mapped[int] = mapped_column(
+        ForeignKey("markets.id", ondelete="CASCADE"), nullable=False, index=True
+    )
+    version: Mapped[int] = mapped_column(Integer, nullable=False, default=1)
+
+    # --- the venue's own words, exactly as received ------------------------
+    raw_title: Mapped[str] = mapped_column(Text, nullable=False, default="")
+    raw_subtitle: Mapped[str] = mapped_column(Text, nullable=False, default="")
+    raw_rules: Mapped[str] = mapped_column(Text, nullable=False, default="")
+    raw_resolution_source: Mapped[str] = mapped_column(Text, nullable=False, default="")
+    raw_cancellation_language: Mapped[str] = mapped_column(Text, nullable=False, default="")
+    raw_postponement_language: Mapped[str] = mapped_column(Text, nullable=False, default="")
+    platform_metadata: Mapped[dict | None] = mapped_column(JSONColumn, nullable=True)
+
+    # --- provenance of the fetch -------------------------------------------
+    fetched_at: Mapped[datetime] = _utc_col(nullable=False)
+    source_endpoint: Mapped[str] = mapped_column(Text, nullable=False, default="")
+    source_payload_hash: Mapped[str] = mapped_column(String(64), nullable=False, default="")
+    parser_version: Mapped[str] = mapped_column(String(32), nullable=False, default="")
+
+    # --- what the parser made of it ----------------------------------------
+    normalized_terms: Mapped[dict | None] = mapped_column(JSONColumn, nullable=True)
+    normalized_rule_hash: Mapped[str] = mapped_column(String(64), nullable=False, default="")
+    extraction_confidence: Mapped[Decimal] = mapped_column(
+        Money, nullable=False, default=Decimal("0")
+    )
+    completeness: Mapped[str] = mapped_column(String(16), nullable=False, default="unavailable")
+
+    #: Identity of this exact wording; the uniqueness constraint above is what
+    #: makes re-ingesting unchanged rules a no-op rather than a duplicate.
+    rule_hash: Mapped[str] = mapped_column(String(64), nullable=False, default="", index=True)
+    #: Fields that moved relative to the previous version. Empty on the first.
+    changed_fields: Mapped[list | None] = mapped_column(JSONColumn, nullable=True)
+    first_observed_at: Mapped[datetime] = _utc_col(nullable=False)
+    #: The only mutable column. Extended when unchanged rules are seen again.
+    last_observed_at: Mapped[datetime] = _utc_col(nullable=False)
+
+
 class MarketMatch(Base, TimestampMixin):
     """A candidate cross-platform pairing plus its compatibility audit."""
 
@@ -396,6 +455,24 @@ class ModelPrediction(Base, TimestampMixin):
     #: prediction can never produce a value recommendation.
     has_independent_prior: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
     market_implied_probability: Mapped[Decimal | None] = mapped_column(Money, nullable=True)
+
+    # The three probability classes. `fair_probability_mean` above pools every
+    # component including the target market's own price, so it is the
+    # market-informed figure and is stored again under that name; publishing it as
+    # "fair probability" alone let the model partly agree with itself and called
+    # the residual an edge. Nullable because historical rows predate the split and
+    # must not be backfilled with a guess.
+    market_informed_probability: Mapped[Decimal | None] = mapped_column(Money, nullable=True)
+    independent_probability: Mapped[Decimal | None] = mapped_column(Money, nullable=True)
+    independent_probability_low: Mapped[Decimal | None] = mapped_column(Money, nullable=True)
+    independent_probability_high: Mapped[Decimal | None] = mapped_column(Money, nullable=True)
+    #: What eligibility is decided on. NULL means there is no independent estimate,
+    #: which is not a probability of zero - the question has no answer for this row.
+    conservative_decision_probability: Mapped[Decimal | None] = mapped_column(
+        Money, nullable=True
+    )
+    #: Which components backed each class, and the distinct correlation groups.
+    independence: Mapped[dict | None] = mapped_column(JSONColumn, nullable=True)
     components: Mapped[dict | None] = mapped_column(JSONColumn, nullable=True)
     explanation: Mapped[str] = mapped_column(Text, nullable=False, default="")
     category: Mapped[str] = mapped_column(String(32), nullable=False, default="other")
@@ -510,6 +587,34 @@ class RecommendationSnapshot(Base):
     evidence_snapshot: Mapped[dict | None] = mapped_column(JSONColumn, nullable=True)
     orderbook_snapshot: Mapped[dict | None] = mapped_column(JSONColumn, nullable=True)
     risk_flags: Mapped[list | None] = mapped_column(JSONColumn, nullable=True)
+
+    # --- frozen inputs, so a re-run cannot rewrite what was published ---------
+    # `fair_probability` above is the market-informed figure. Storing only that
+    # loses the distinction the recommendation was actually made on: whether an
+    # independent estimate existed at all. A backtest reading it back has no way
+    # to reconstruct that from current data, because the answer changes as models
+    # are added.
+    independent_probability_at_publication: Mapped[Decimal | None] = mapped_column(
+        Money, nullable=True
+    )
+    market_informed_probability_at_publication: Mapped[Decimal | None] = mapped_column(
+        Money, nullable=True
+    )
+    conservative_probability_at_publication: Mapped[Decimal | None] = mapped_column(
+        Money, nullable=True
+    )
+    #: Which parser produced the settlement terms this call relied on. Without it
+    #: a re-grade cannot tell whether a later parser change altered the contract's
+    #: meaning underneath a historical recommendation.
+    parser_version: Mapped[str] = mapped_column(String(32), nullable=False, default="")
+    #: The exact rule wording in force at publication.
+    rule_version_id: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    #: Freshness of every input at publication, as assessed then. A stale input is
+    #: part of what the call was, not something to re-derive later.
+    input_freshness: Mapped[dict | None] = mapped_column(JSONColumn, nullable=True)
+    #: The newest observation this recommendation was permitted to see. Every
+    #: backtest read must filter on it; that is the whole leakage guard.
+    input_data_cutoff: Mapped[datetime | None] = _utc_col(nullable=True)
 
     final_result: Mapped[str | None] = mapped_column(String(16), nullable=True)
     realized_profit_per_contract: Mapped[Decimal | None] = mapped_column(Money, nullable=True)

@@ -333,6 +333,15 @@ def _write_prediction(session: Session, row: Market, fair: FairProbability) -> M
         evidence_quality=fair.evidence_quality,
         has_independent_prior=fair.has_independent_prior,
         market_implied_probability=fair.market_implied_probability,
+        # Persisted separately so a stored recommendation records which estimate
+        # actually justified it. Reading the blended mean back later cannot tell
+        # you whether an independent source ever existed.
+        market_informed_probability=fair.market_informed_probability,
+        independent_probability=fair.independent_probability,
+        independent_probability_low=fair.independent_probability_low,
+        independent_probability_high=fair.independent_probability_high,
+        conservative_decision_probability=fair.conservative_decision_probability,
+        independence=fair.independence,
         components=[c.model_dump(mode="json") for c in fair.components],
         explanation=fair.probability_explanation,
         category=fair.category.value,

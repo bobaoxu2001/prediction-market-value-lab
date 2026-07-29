@@ -15,6 +15,7 @@ from pmvl_shared.db.models import (  # noqa: F401
     Market,
     MarketMatch,
     MarketRule,
+    MarketRuleVersion,
     ModelPrediction,
     ModelVersion,
     OrderbookLevel,

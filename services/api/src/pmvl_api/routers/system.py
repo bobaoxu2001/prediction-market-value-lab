@@ -9,6 +9,7 @@ from fastapi import APIRouter, Query
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
+from pmvl_shared.cadence import DeploymentMode
 from pmvl_shared.config import get_settings
 from pmvl_shared.enums import DataProvenance
 from pmvl_shared.timeutil import utcnow
@@ -30,6 +31,7 @@ from pmvl_markets.db_models import (
 from pmvl_markets.probability.ensemble import MODEL_VERSION
 
 from ..deps import DataMode, DbDep, ModeDep, envelope
+from ..pipeline_status import pipeline_status
 from ..snapshot_timing import QUOTE_SPREAD_NOTE, snapshot_timing
 
 router = APIRouter(tags=["system"])
@@ -93,6 +95,12 @@ def system(db: Session = DbDep, mode: DataMode = ModeDep) -> dict[str, Any]:
         )
     ]
 
+    # SNAPSHOT_MODE is read from the serverless entrypoint's env, and the settings
+    # object may have been constructed before it was set, so the router's own view
+    # of snapshot mode wins. Both must agree or the cadence caveat goes missing on
+    # exactly the deployment that needs it.
+    mode = DeploymentMode.READ_ONLY_SNAPSHOT if SNAPSHOT_MODE else settings.deployment_mode
+    pipeline = pipeline_status(db, mode)
     timing = snapshot_timing(db)
     # Kept at the top level because clients read it, but it is the single most
     # recent observation in the database - not a capture time for the dataset.
@@ -102,7 +110,8 @@ def system(db: Session = DbDep, mode: DataMode = ModeDep) -> dict[str, Any]:
     return envelope(
         {
             "environment": settings.runtime_environment,
-            "runtime_mode": settings.runtime_mode,
+            "runtime_mode": mode.value,
+            "deployment_mode": mode.value,
             "deployment": settings.deployment_metadata,
             "worker_status": settings.worker_status,
             "model_version": MODEL_VERSION,
@@ -172,19 +181,17 @@ def system(db: Session = DbDep, mode: DataMode = ModeDep) -> dict[str, Any]:
                     "docs": "https://docs.anthropic.com",
                 },
             ],
+            # Configured cadence AND whether anything is executing it. These were a
+            # bare table of intervals, which described scheduler.py accurately and
+            # the running deployment not at all: a reader saw "arbitrage scan: 1
+            # minute" on an artefact where no scan had run since it was built.
+            "pipeline": pipeline,
+            # Retained for existing clients, but every value now carries the
+            # deployment's cadence notice rather than standing alone.
             "update_frequencies": {
-                "market_discovery": "10 minutes",
-                "orderbook_refresh": "3 minutes",
-                "arbitrage_scan": "1 minute",
-                "probability_scoring": "2 hours",
-                "ranking": "1 hour",
-                "settlement_sync": "30 minutes",
-                "daily_snapshot": (
-                    f"{settings.daily_snapshot_hour_utc:02d}:"
-                    f"{settings.daily_snapshot_minute_utc:02d} UTC"
-                ),
-                "backtest": "daily, one hour after the snapshot",
+                job["job_name"]: job["configured_cadence"] for job in pipeline["jobs"]
             },
+            "update_frequencies_notice": pipeline["cadence_notice"],
             "trading_execution_enabled": settings.trading_execution_enabled,
             # A serverless deployment ships a pre-built database inside the bundle,
             # so it is frozen at build time. Say so plainly: a stale snapshot

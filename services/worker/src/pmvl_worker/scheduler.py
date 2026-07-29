@@ -1,6 +1,9 @@
 """APScheduler-based recurring jobs.
 
-Cadences follow the spec. Two deliberate choices:
+Cadences come from :mod:`pmvl_shared.cadence`, which the API also reports from.
+They were previously written here as trigger arguments and again in the API as
+display strings; two copies of the same number drift, and the reader has no way to
+tell which one is real. Two deliberate choices:
 
 * ``max_instances=1`` and ``coalesce=True`` on every job. If an ingest overruns its
   interval, the next tick is skipped rather than queued - two concurrent ingests
@@ -23,6 +26,7 @@ from apscheduler.schedulers.blocking import BlockingScheduler
 from apscheduler.triggers.cron import CronTrigger
 from apscheduler.triggers.interval import IntervalTrigger
 
+from pmvl_shared.cadence import CADENCE_BY_JOB
 from pmvl_shared.config import get_settings
 from pmvl_shared.logging_setup import get_logger, setup_logging
 
@@ -63,7 +67,7 @@ def build_scheduler() -> BlockingScheduler:
     # Market discovery: metadata changes slowly.
     scheduler.add_job(
         _sync(lambda: jobs.job_ingest()),
-        IntervalTrigger(minutes=10),
+        IntervalTrigger(seconds=CADENCE_BY_JOB["ingest"].interval_seconds),
         id="ingest",
         name="market discovery + orderbooks",
     )
@@ -72,7 +76,7 @@ def build_scheduler() -> BlockingScheduler:
     # minutes is not an executable price, which is the whole premise of the platform.
     scheduler.add_job(
         _sync(lambda: jobs.job_orderbooks()),
-        IntervalTrigger(minutes=3),
+        IntervalTrigger(seconds=CADENCE_BY_JOB["orderbooks"].interval_seconds),
         id="orderbooks",
         name="orderbook refresh",
     )
@@ -80,7 +84,7 @@ def build_scheduler() -> BlockingScheduler:
     # Arbitrage is the most time-sensitive scan: these windows close in seconds.
     scheduler.add_job(
         _guard(jobs.job_arbitrage),
-        IntervalTrigger(minutes=1),
+        IntervalTrigger(seconds=CADENCE_BY_JOB["arbitrage"].interval_seconds),
         id="arbitrage",
         name="arbitrage scan",
     )
@@ -89,20 +93,20 @@ def build_scheduler() -> BlockingScheduler:
     # the scale of hours, so a 2-hour cadence with an hourly re-rank is sufficient.
     scheduler.add_job(
         _sync(lambda: jobs.job_score()),
-        IntervalTrigger(hours=2),
+        IntervalTrigger(seconds=CADENCE_BY_JOB["score"].interval_seconds),
         id="score",
         name="probability ensemble",
     )
     scheduler.add_job(
         _sync(lambda: jobs.job_rank()),
-        IntervalTrigger(hours=1),
+        IntervalTrigger(seconds=CADENCE_BY_JOB["rank"].interval_seconds),
         id="rank",
         name="ranking + recommendations",
     )
 
     scheduler.add_job(
         _sync(lambda: jobs.job_settle()),
-        IntervalTrigger(minutes=30),
+        IntervalTrigger(seconds=CADENCE_BY_JOB["settle"].interval_seconds),
         id="settle",
         name="settlement sync + grading",
     )

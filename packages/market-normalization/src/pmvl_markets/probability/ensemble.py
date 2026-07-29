@@ -42,6 +42,12 @@ from typing import Sequence
 from pmvl_shared.enums import Category
 from pmvl_shared.logging_setup import get_logger
 from pmvl_shared.money import D, ONE, ZERO, clamp_prob, quantize_prob, safe_div
+from .independence import (
+    classify,
+    conservative_decision_probability,
+    metadata_for,
+    model_risk_multiplier,
+)
 from pmvl_shared.schemas import FairProbability, ProbabilityComponent
 from pmvl_shared.timeutil import utcnow
 
@@ -245,9 +251,36 @@ class ProbabilityEnsemble:
             pooled_log_odds += weight * to_log_odds(result.probability)  # type: ignore[arg-type]
         mean = from_log_odds(pooled_log_odds)
 
-        has_independent = any(
-            model.independent and result.independent for model, result in opinions
-        )
+        # Independence is decided by the declared source in
+        # `probability.independence`, not by a per-model boolean. The boolean said a
+        # cross-platform quote counted as independent evidence; it is a separate
+        # order flow, but the two venues are arbitraged against each other, so it is
+        # not independent evidence *about the world*. The declaration is stricter
+        # and eligibility fails closed, which is the right direction for a gate.
+
+        # ---- the independent subset ----------------------------------------
+        # `mean` above pools EVERY component, including target_market_reference,
+        # whose entire content is the price being evaluated. Published as "fair
+        # probability" it made the model partly agree with itself and called the
+        # residual an edge. The same components are pooled again here with the
+        # market-dependent ones removed, so the two questions - "what is this worth"
+        # and "is this price wrong" - stop sharing one number.
+        independence = classify([model.name for model, _ in opinions])
+        has_independent = independence.has_independent_prior
+        independent_opinions = [
+            (model, result)
+            for model, result in opinions
+            if metadata_for(model.name).is_independent
+        ]
+        independent_mean: Decimal | None = None
+        if independent_opinions:
+            ind_weight = sum((r.confidence for _, r in independent_opinions), ZERO)
+            if ind_weight > ZERO:
+                ind_log_odds = ZERO
+                for _model, result in independent_opinions:
+                    w = safe_div(result.confidence, ind_weight)
+                    ind_log_odds += w * to_log_odds(result.probability)  # type: ignore[arg-type]
+                independent_mean = from_log_odds(ind_log_odds)
 
         # ---- interval -------------------------------------------------------
         # Built in LOG-ODDS space, the same space the mean is pooled in.
@@ -321,6 +354,28 @@ class ProbabilityEnsemble:
         low = quantize_prob(from_log_odds(mean_log_odds - half_width))
         high = quantize_prob(from_log_odds(mean_log_odds + half_width))
 
+        # The independent estimate's own band. It is widened by model risk, because
+        # an estimate resting on one correlation group is a single point of failure
+        # however confident that one source claims to be.
+        independent_low = independent_high = None
+        conservative = None
+        if independent_mean is not None:
+            ind_sigma = sigma * model_risk_multiplier(independence)
+            ind_half = D("1.2816") * ind_sigma
+            ind_log_odds = to_log_odds(independent_mean)
+            independent_low = quantize_prob(from_log_odds(ind_log_odds - ind_half))
+            independent_high = quantize_prob(from_log_odds(ind_log_odds + ind_half))
+            reliability = max(
+                (metadata_for(m.name).reliability_weight for m, _ in independent_opinions),
+                default=ZERO,
+            )
+            conservative = conservative_decision_probability(
+                independent_low=independent_low,
+                report=independence,
+                reliability=reliability,
+                freshness_penalty=D("0.02") if max_age > 3600 else ZERO,
+            )
+
         research_result = self._research_model.last_result
         evidence_quality = (
             research_result.evidence_quality() if research_result else ZERO
@@ -348,6 +403,22 @@ class ProbabilityEnsemble:
             has_independent_prior=has_independent,
             market_implied_probability=market_implied,
             components=components,
+            # Three distinct quantities, each labelled with what it may be used for.
+            # `fair_probability_mean` is retained for existing clients but is the
+            # market-informed figure and is now named as such alongside it.
+            market_informed_probability=quantize_prob(mean),
+            independent_probability=(
+                quantize_prob(independent_mean) if independent_mean is not None else None
+            ),
+            independent_probability_low=independent_low,
+            independent_probability_high=independent_high,
+            conservative_decision_probability=(
+                quantize_prob(conservative) if conservative is not None else None
+            ),
+            independence=independence.as_dict(),
+            component_independence={
+                model.name: metadata_for(model.name).as_dict() for model, _ in opinions
+            },
         )
         return EnsembleOutput(fair=fair, research=research_result)
 

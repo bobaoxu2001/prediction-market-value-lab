@@ -104,10 +104,32 @@ class SettlementResult(StrEnum):
 
 
 class JobStatus(StrEnum):
+    """Lifecycle of one scheduled run.
+
+    PARTIAL_SUCCESS exists because collapsing it into either neighbour loses the
+    thing an operator needs. Called SUCCESS, a run that lost Polymarket looks
+    healthy and the resulting shorter opportunity list reads as "no opportunities
+    today". Called FAILED, a run that refreshed 90% of markets discards work that
+    is good. STALE marks a run whose inputs were already past their hard freshness
+    threshold, so its output should not gate recommendations.
+    """
+
+    PENDING = "pending"
     RUNNING = "running"
     SUCCESS = "success"
+    PARTIAL_SUCCESS = "partial_success"
     FAILED = "failed"
     SKIPPED = "skipped"
+    STALE = "stale"
+
+    @property
+    def produced_usable_output(self) -> bool:
+        """Whether downstream jobs may consume this run's output."""
+        return self in (JobStatus.SUCCESS, JobStatus.PARTIAL_SUCCESS)
+
+    @property
+    def is_terminal(self) -> bool:
+        return self not in (JobStatus.PENDING, JobStatus.RUNNING)
 
 
 class EvidenceStance(StrEnum):
