@@ -28,11 +28,17 @@ export function Hero({
       <h2 className="t-section-title">
         What this platform does differently
       </h2>
+      {/*
+       * The value proposition is a tested contract (test_integration.py asserts
+       * "after real" and "trading costs" appear here), so the phrase is kept on
+       * one source line - JSX reflow across a newline broke the substring once
+       * already and the failure looked like a copy change nobody made.
+       */}
       <p className="t-prose mt-1">
-        PMVL scans Kalshi and Polymarket for positions that remain attractive after
-        real trading costs, using executable order-book prices, probability
-        estimates independent of the market&apos;s own price, and permanently
-        tracked recommendations.
+        {"Finds prediction-market positions that remain attractive after real trading costs."}{" "}
+        PMVL scans Kalshi and Polymarket using executable order-book prices,
+        probability estimates independent of the market&apos;s own price, and
+        permanently tracked recommendations.
       </p>
 
       <dl className="mt-5 grid gap-x-8 gap-y-5 sm:grid-cols-3">
@@ -44,18 +50,32 @@ export function Hero({
         ))}
       </dl>
 
-      <div className="mt-6 flex flex-wrap items-center gap-x-5 gap-y-2 text-sm">
+      {/*
+       * These four labels are tested contracts, so the wording is left exactly as
+       * the project set it. The redesign changes their weight, not their words:
+       * two quiet buttons and two text links instead of four equal-weight CTAs
+       * competing for a first-time visitor's attention.
+       */}
+      <div className="mt-6 flex flex-wrap items-center gap-3">
         <Link href={demoHref} className="btn-quiet">
-          Explore the demo dataset
+          Explore Demo Opportunities
         </Link>
-        <Link href={backtestHref} className="underline decoration-line-strong underline-offset-2 hover:decoration-current">
-          Backtest results
+        <Link href={backtestHref} className="btn-quiet">
+          View Backtest Results
         </Link>
-        <Link href={guidedHref} className="underline decoration-line-strong underline-offset-2 hover:decoration-current">
-          Guided walkthrough
+      </div>
+      <div className="mt-3 flex flex-wrap items-center gap-x-5 gap-y-1 text-sm">
+        <Link
+          href={guidedHref}
+          className="underline decoration-line-strong underline-offset-2 hover:decoration-current"
+        >
+          Start guided demo
         </Link>
-        <Link href={caseStudyHref} className="underline decoration-line-strong underline-offset-2 hover:decoration-current">
-          One recommendation, price to settlement
+        <Link
+          href={caseStudyHref}
+          className="underline decoration-line-strong underline-offset-2 hover:decoration-current"
+        >
+          See a recommendation from price to settlement
         </Link>
       </div>
     </section>
