@@ -24,7 +24,20 @@ export function ModeNav({
     mode && mode !== "live" ? `${href}${href.includes("?") ? "&" : "?"}mode=${mode}` : href;
 
   return (
-    <nav className="table-wrap flex items-center gap-1 text-sm">
+    /*
+     * Not `table-wrap`, and `min-w-0` is load-bearing.
+     *
+     * `table-wrap` carries `w-full`, which on a flex item resolves against the
+     * whole header and pinned this nav to the container's full width - so the
+     * mode switch and theme toggle were pushed past the right edge. And a flex
+     * item defaults to `min-width: auto`, so `overflow-x-auto` never engaged:
+     * instead of scrolling internally, the nav forced the entire page to scroll
+     * sideways at every width below 1440.
+     *
+     * Long-standing rather than new - production shows the same 76px overflow at
+     * 1024 and 109px at 768.
+     */
+    <nav className="flex min-w-0 flex-1 items-center gap-1 overflow-x-auto text-sm">
       {items.map((item) => {
         const active =
           item.href === "/" ? pathname === "/" : pathname.startsWith(item.href);

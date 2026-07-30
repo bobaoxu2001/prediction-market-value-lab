@@ -131,9 +131,15 @@ export default async function MarketDetailPage({
         </div>
       </section>
 
+      {/*
+        * `min-w-0` on both cells: a grid item defaults to `min-width: auto`, so
+        * the wide components table inside the model section stretched its track,
+        * which stretched the row, which made every sibling section wider than the
+        * viewport. The table scrolls inside its own container instead.
+        */}
       <div className="grid gap-4 lg:grid-cols-3">
         {/* ---- orderbook ---- */}
-        <section className="panel p-4">
+        <section className="panel min-w-0 p-4">
           <h2 className="t-section-title mb-1">Order book</h2>
           <p className="mb-3 text-xs text-ink-faint">
             Observed {localTime(d.orderbook?.observed_at)}
@@ -152,7 +158,7 @@ export default async function MarketDetailPage({
         </section>
 
         {/* ---- model ---- */}
-        <section className="card p-4 lg:col-span-2">
+        <section className="panel min-w-0 p-4 lg:col-span-2">
           <h2 className="t-section-title mb-3">Model estimate</h2>
           {latest ? (
             <>

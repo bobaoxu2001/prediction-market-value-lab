@@ -114,6 +114,32 @@
     -webkit-text-size-adjust: 100%;
   }
 
+  /*
+   * The page itself never scrolls sideways; wide content scrolls inside its own
+   * container instead.
+   *
+   * Every wide element already has one - `.table-wrap` on each table, and the
+   * nav - but a descendant could still extend the root scroll extent and leave
+   * the whole document draggable a few hundred pixels right, which it did at
+   * every width below 1440 (and still does on production).
+   *
+   * Scoped to `main`, and `hidden` rather than `clip`. Two findings drove that:
+   * Chrome did not stop the root scrolling for `overflow-x: clip` on either
+   * `html` or the shell wrapper (both rules compiled and the page still dragged
+   * 404px sideways), and `hidden` on the shell itself would have made the shell a
+   * scroll container and broken the sticky header.
+   *
+   * Applied to the header and `main` individually rather than to the shell: the
+   * shell would have become a scroll container and broken the sticky header,
+   * whereas setting overflow on the sticky header itself leaves its own
+   * stickiness intact. Each table keeps its nested `.table-wrap` scroller, so the
+   * wide columns stay reachable rather than being cut off.
+   */
+  .app-shell > header,
+  .app-shell > main {
+    overflow-x: hidden;
+  }
+
   body {
     @apply bg-base text-ink antialiased;
     font-family: var(--font-sans);

@@ -146,8 +146,11 @@ export default async function SystemPage() {
         )}
       </section>
 
+      {/* min-w-0: grid items default to `min-width: auto`, so the wide row-count
+          and cadence tables stretched their tracks instead of scrolling inside
+          their own containers. */}
       <div className="grid gap-4 lg:grid-cols-2">
-        <section className="block">
+        <section className="block min-w-0">
           <h2 className="t-section-title mb-3">Row counts</h2>
           <div className="table-wrap">
             <table className="w-full">
@@ -189,7 +192,7 @@ export default async function SystemPage() {
             scheduler.py correctly and the running system not at all. The caveat now
             precedes the table, and each row shows whether that job is actually
             running rather than only how often it is configured to. */}
-        <section className="block">
+        <section className="block min-w-0">
           <h2 className="t-section-title mb-1">Worker cadence</h2>
           {pipeline?.cadence_notice ? (
             <p className="mb-3 rounded-[2px] border border-stale/50 bg-stale/10 px-2 py-1.5 text-xs text-stale">

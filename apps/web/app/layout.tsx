@@ -69,7 +69,7 @@ export default async function RootLayout({ children }: { children: React.ReactNo
         >
           Skip to content
         </a>
-        <div className="min-h-screen">
+        <div className="app-shell min-h-screen">
           {/* Opaque, not translucent: a backdrop-blur header puts shifting
               contrast behind the one element that must stay legible while dense
               numeric rows scroll under it. */}
