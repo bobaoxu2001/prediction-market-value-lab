@@ -62,15 +62,25 @@ export default async function RootLayout({ children }: { children: React.ReactNo
         />
       </head>
       <body>
+        {/* Keyboard users should not have to tab the whole nav to reach the data. */}
+        <a
+          href="#main"
+          className="sr-only focus:not-sr-only focus:fixed focus:left-3 focus:top-3 focus:z-50 focus:rounded-[2px] focus:bg-accent focus:px-3 focus:py-2 focus:text-sm focus:text-accent-ink"
+        >
+          Skip to content
+        </a>
         <div className="min-h-screen">
-          <header className="sticky top-0 z-20 border-b border-neutral-200 bg-white/90 backdrop-blur dark:border-neutral-800 dark:bg-neutral-950/90">
+          {/* Opaque, not translucent: a backdrop-blur header puts shifting
+              contrast behind the one element that must stay legible while dense
+              numeric rows scroll under it. */}
+          <header className="sticky top-0 z-20 border-b border-line bg-base">
             <div className="mx-auto max-w-7xl px-4">
               <div className="flex h-14 items-center justify-between gap-4">
                 <Link href="/" className="flex shrink-0 items-center gap-2">
                   <span className="font-mono text-sm font-bold tracking-tight">
                     PMVL
                   </span>
-                  <span className="hidden text-xs text-neutral-500 sm:inline">
+                  <span className="hidden text-xs text-ink-faint sm:inline">
                     Prediction Market Value Lab
                   </span>
                 </Link>
@@ -87,7 +97,7 @@ export default async function RootLayout({ children }: { children: React.ReactNo
             </div>
           </header>
 
-          <main className="mx-auto max-w-7xl px-4 py-6">
+          <main id="main" className="mx-auto max-w-7xl px-4 py-6">
             <SnapshotBanner
               active={snapshotActive}
               latestQuoteAt={latestQuoteAt}
@@ -96,7 +106,7 @@ export default async function RootLayout({ children }: { children: React.ReactNo
             {children}
           </main>
 
-          <footer className="mt-12 border-t border-neutral-200 py-6 text-xs text-neutral-500 dark:border-neutral-800">
+          <footer className="mt-12 border-t border-line py-6 text-xs text-ink-faint">
             <div className="mx-auto max-w-7xl space-y-2 px-4">
               <p>
                 <strong>Research and information only.</strong> Not investment

@@ -13,11 +13,9 @@ export function PageHeader({
   return (
     <div className="mb-5 flex flex-wrap items-end justify-between gap-3">
       <div>
-        <h1 className="text-xl font-semibold tracking-tight">{title}</h1>
+        <h1 className="t-page-title">{title}</h1>
         {subtitle && (
-          <p className="mt-1 max-w-3xl text-sm text-neutral-600 dark:text-neutral-400">
-            {subtitle}
-          </p>
+          <p className="t-prose mt-2">{subtitle}</p>
         )}
       </div>
       {right}
@@ -32,11 +30,9 @@ export function PageHeader({
 export function DemoBanner({ notice }: { notice?: string }) {
   if (!notice) return null;
   return (
-    <div className="mb-4 rounded-lg border-2 border-warn/60 bg-warn/10 px-4 py-3 text-sm dark:border-warn-dark/50 dark:bg-warn-dark/10">
-      <div className="font-semibold text-warn dark:text-warn-dark">
-        SYNTHETIC DEMO DATA
-      </div>
-      <p className="mt-1 text-neutral-700 dark:text-neutral-300">{notice}</p>
+    <div className="mb-4 rounded-[3px] border border-demo/50 border-l-2 border-l-demo bg-demo/10 px-4 py-3 text-sm">
+      <div className="t-label text-demo">Synthetic demo data</div>
+      <p className="mt-1.5 text-ink">{notice}</p>
     </div>
   );
 }
@@ -51,11 +47,9 @@ export function EmptyState({
   action?: React.ReactNode;
 }) {
   return (
-    <div className="card p-8 text-center">
-      <p className="text-sm font-semibold">{title}</p>
-      <p className="mx-auto mt-2 max-w-2xl text-sm text-neutral-600 dark:text-neutral-400">
-        {body}
-      </p>
+    <div className="panel p-8 text-center">
+      <p className="t-sub-title">{title}</p>
+      <p className="mx-auto mt-2 max-w-2xl text-sm text-ink-muted">{body}</p>
       {action && <div className="mt-4">{action}</div>}
     </div>
   );
@@ -90,11 +84,11 @@ export function Metric({
 }) {
   const toneClass =
     tone === "good"
-      ? "text-edge dark:text-edge-dark"
+      ? "text-edge"
       : tone === "bad"
-        ? "text-risk dark:text-risk-dark"
+        ? "text-risk"
         : tone === "warn"
-          ? "text-warn dark:text-warn-dark"
+          ? "text-warn"
           : "";
   return (
     <div title={hint}>
@@ -105,11 +99,12 @@ export function Metric({
 }
 
 export function PlatformChip({ platform }: { platform: string | null }) {
+  // Venue is an identifier, not a status: it gets a neutral outline, and only the
+  // demo pill is tinted, because that one IS a status.
   const styles: Record<string, string> = {
-    kalshi: "bg-blue-100 text-blue-800 dark:bg-blue-950 dark:text-blue-300",
-    polymarket:
-      "bg-violet-100 text-violet-800 dark:bg-violet-950 dark:text-violet-300",
-    demo: "bg-warn/20 text-warn dark:bg-warn-dark/20 dark:text-warn-dark",
+    kalshi: "text-ink-muted ring-1 ring-inset ring-line",
+    polymarket: "text-ink-muted ring-1 ring-inset ring-line",
+    demo: "bg-demo/15 text-demo",
   };
   const label =
     platform === "kalshi"
@@ -119,7 +114,7 @@ export function PlatformChip({ platform }: { platform: string | null }) {
         : (platform ?? "—");
   return (
     <span
-      className={`chip ${styles[platform ?? ""] ?? "bg-neutral-100 text-neutral-700 dark:bg-neutral-800 dark:text-neutral-300"}`}
+      className={`chip ${styles[platform ?? ""] ?? "bg-sunken text-ink-muted"}`}
     >
       {label}
     </span>
@@ -132,8 +127,8 @@ export function SideChip({ side }: { side: string }) {
     <span
       className={`chip ${
         isYes
-          ? "bg-edge/15 text-edge dark:bg-edge-dark/15 dark:text-edge-dark"
-          : "bg-risk/15 text-risk dark:bg-risk-dark/15 dark:text-risk-dark"
+          ? "bg-edge/15 text-edge"
+          : "bg-risk/15 text-risk"
       }`}
     >
       {isYes ? "BUY YES" : "BUY NO"}
@@ -149,7 +144,7 @@ export function RiskFlags({ flags }: { flags: string[] }) {
         <span
           key={flag}
           title={RISK_FLAG_EXPLANATIONS[flag] ?? flag}
-          className="chip cursor-help bg-neutral-100 text-neutral-600 dark:bg-neutral-800 dark:text-neutral-400"
+          className="chip cursor-help bg-sunken text-ink-muted"
         >
           {humanizeFlag(flag)}
         </span>
@@ -160,16 +155,16 @@ export function RiskFlags({ flags }: { flags: string[] }) {
 
 export function StateChip({ state }: { state: string }) {
   const styles: Record<string, string> = {
-    still_actionable: "bg-edge/15 text-edge dark:bg-edge-dark/15 dark:text-edge-dark",
-    edge_reduced: "bg-warn/15 text-warn dark:bg-warn-dark/15 dark:text-warn-dark",
+    still_actionable: "bg-edge/15 text-edge",
+    edge_reduced: "bg-warn/15 text-warn",
     no_longer_actionable:
-      "bg-neutral-200 text-neutral-600 dark:bg-neutral-800 dark:text-neutral-400",
+      "bg-sunken text-ink-muted",
     market_closed:
-      "bg-neutral-200 text-neutral-600 dark:bg-neutral-800 dark:text-neutral-400",
-    settled: "bg-blue-100 text-blue-800 dark:bg-blue-950 dark:text-blue-300",
+      "bg-sunken text-ink-muted",
+    settled: "bg-info/15 text-info",
   };
   return (
-    <span className={`chip ${styles[state] ?? "bg-neutral-100 text-neutral-600"}`}>
+    <span className={`chip ${styles[state] ?? "bg-sunken text-ink-muted"}`}>
       {humanizeFlag(state)}
     </span>
   );
@@ -178,16 +173,16 @@ export function StateChip({ state }: { state: string }) {
 /** Colour-coded by whether the label claims a locked-in result. */
 export function ArbLabelChip({ label }: { label: string }) {
   const styles: Record<string, string> = {
-    executable: "bg-edge/20 text-edge dark:bg-edge-dark/20 dark:text-edge-dark",
+    executable: "bg-edge/20 text-edge",
     logical_mispricing:
-      "bg-amber-100 text-amber-800 dark:bg-amber-950 dark:text-amber-300",
-    stale_quote: "bg-orange-100 text-orange-800 dark:bg-orange-950 dark:text-orange-300",
+      "bg-unverified/15 text-unverified",
+    stale_quote: "bg-stale/15 text-stale",
   };
   return (
     <span
       className={`chip font-semibold ${
         styles[label] ??
-        "bg-neutral-200 text-neutral-700 dark:bg-neutral-800 dark:text-neutral-300"
+        "bg-sunken text-ink-muted"
       }`}
     >
       {humanizeFlag(label)}
@@ -198,7 +193,7 @@ export function ArbLabelChip({ label }: { label: string }) {
 export function ValueTone({ value, children }: { value: string | number | null; children: React.ReactNode }) {
   const parsed = num(value);
   const tone =
-    parsed === null ? "" : parsed > 0 ? "text-edge dark:text-edge-dark" : parsed < 0 ? "text-risk dark:text-risk-dark" : "";
+    parsed === null ? "" : parsed > 0 ? "text-edge" : parsed < 0 ? "text-risk" : "";
   return <span className={`num ${tone}`}>{children}</span>;
 }
 
@@ -212,7 +207,7 @@ export function MarketLink({ id, children }: { id: number; children: React.React
 
 export function Disclaimer({ text }: { text: string }) {
   return (
-    <p className="mt-6 text-xs text-neutral-500 dark:text-neutral-400">{text}</p>
+    <p className="mt-6 t-meta">{text}</p>
   );
 }
 
@@ -237,11 +232,11 @@ export function SnapshotBanner({
 }) {
   if (!active) return null;
   return (
-    <div className="mb-4 rounded-lg border border-amber-500/40 bg-amber-500/10 px-4 py-3 text-sm">
-      <span className="font-semibold text-amber-700 dark:text-amber-400">
+    <div className="mb-4 rounded-[3px] border border-stale/50 border-l-2 border-l-stale bg-stale/10 px-4 py-3 text-sm">
+      <span className="font-semibold text-stale">
         Research snapshot.
       </span>{" "}
-      <span className="text-neutral-700 dark:text-neutral-300">
+      <span className="text-ink">
         This hosted demo serves frozen data, not a live scan. Orderbooks and model
         estimates are stale. Run the pipeline locally (
         <code className="font-mono text-xs">make ingest &amp;&amp; make rank</code>)
@@ -252,7 +247,7 @@ export function SnapshotBanner({
           described 12 markets out of 1850. Both times are labelled for what they
           are, and the spread is stated rather than left to be inferred. */}
       {(latestQuoteAt || arbitrageScanAt) && (
-        <span className="mt-2 flex flex-wrap gap-x-4 gap-y-1 text-xs text-neutral-600 dark:text-neutral-400">
+        <span className="mt-2 flex flex-wrap gap-x-4 gap-y-1 text-xs text-ink-muted">
           {latestQuoteAt && (
             <span>
               Latest captured quote:{" "}
@@ -277,12 +272,12 @@ export function HelpDot({ text }: { text: string }) {
   return (
     <details className="group relative inline-block align-middle">
       <summary
-        className="ml-1 inline-flex h-4 w-4 cursor-pointer list-none items-center justify-center rounded-full border border-neutral-300 text-[10px] leading-none text-neutral-500 hover:border-neutral-500 hover:text-neutral-900 dark:border-neutral-700 dark:hover:border-neutral-400 dark:hover:text-neutral-100"
+        className="ml-1 inline-flex h-4 w-4 cursor-pointer list-none items-center justify-center rounded-full border border-line text-[10px] leading-none text-ink-faint hover:border-line-strong hover:text-ink"
         aria-label="What does this mean?"
       >
         ?
       </summary>
-      <span className="absolute left-0 top-6 z-30 block w-64 rounded-lg border border-neutral-200 bg-white p-3 text-xs font-normal normal-case leading-relaxed text-neutral-700 shadow-lg dark:border-neutral-700 dark:bg-neutral-900 dark:text-neutral-300">
+      <span className="absolute left-0 top-6 z-30 block w-64 rounded-lg border border-line bg-raised p-3 text-xs font-normal normal-case leading-relaxed text-ink shadow-lg">
         {text}
       </span>
     </details>
@@ -297,10 +292,10 @@ export function HelpDot({ text }: { text: string }) {
  * means "no answer"; neither is bad news.
  */
 export function toneFor(value: number | null | undefined): string {
-  if (value == null || Number.isNaN(value)) return "text-neutral-500";
-  if (value > 0) return "text-edge dark:text-edge-dark";
-  if (value < 0) return "text-risk dark:text-risk-dark";
-  return "text-neutral-500";
+  if (value == null || Number.isNaN(value)) return "text-ink-faint";
+  if (value > 0) return "text-edge";
+  if (value < 0) return "text-risk";
+  return "text-ink-faint";
 }
 
 /** Headline answer card for the top of a results page. */
@@ -318,8 +313,8 @@ export function VerdictCard({
   help?: string;
 }) {
   return (
-    <div className="card p-4">
-      <div className="flex items-center text-xs uppercase tracking-wide text-neutral-500">
+    <div className="panel p-4">
+      <div className="flex items-center t-label">
         {label}
         {help ? <HelpDot text={help} /> : null}
       </div>
@@ -327,7 +322,7 @@ export function VerdictCard({
         {value}
       </div>
       {sub ? (
-        <div className="mt-1 text-xs text-neutral-500">{sub}</div>
+        <div className="mt-1 t-meta">{sub}</div>
       ) : null}
     </div>
   );
@@ -358,10 +353,10 @@ export function VenueAvailability({
   if (!shown.length) return null;
   const tone = (status: string) =>
     status === "observed_via_public_api" || status === "confirmed_available"
-      ? "border-edge/40 text-edge dark:text-edge-dark"
+      ? "border-edge/40 text-edge"
       : status === "confirmed_unavailable"
-        ? "border-neutral-300 text-neutral-500 dark:border-neutral-700"
-        : "border-amber-500/40 text-amber-700 dark:text-amber-400";
+        ? "border-line text-ink-faint"
+        : "border-unverified/50 text-unverified";
   return (
     <div className="flex flex-wrap gap-1">
       {shown.map((v) => (

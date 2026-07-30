@@ -35,8 +35,8 @@ export function ModeNav({
             aria-current={active ? "page" : undefined}
             className={
               active
-                ? "rounded bg-neutral-100 px-2 py-1 font-medium text-neutral-900 dark:bg-neutral-800 dark:text-neutral-100"
-                : "rounded px-2 py-1 text-neutral-600 hover:bg-neutral-100 hover:text-neutral-900 dark:text-neutral-400 dark:hover:bg-neutral-800 dark:hover:text-neutral-100"
+                ? "rounded-[2px] bg-sunken px-2 py-1 font-medium text-ink"
+                : "rounded-[2px] px-2 py-1 text-ink-muted hover:bg-sunken hover:text-ink"
             }
           >
             {item.label}
@@ -69,7 +69,7 @@ export function ModeSwitch({ snapshot = false }: { snapshot?: boolean }) {
   };
 
   return (
-    <div className="flex shrink-0 items-center rounded-lg border border-neutral-200 p-0.5 text-xs dark:border-neutral-800">
+    <div className="flex shrink-0 items-center rounded-[3px] border border-line bg-sunken p-0.5 text-xs">
       {(["live", "demo"] as const).map((target) => (
         <Link
           key={target}
@@ -77,8 +77,8 @@ export function ModeSwitch({ snapshot = false }: { snapshot?: boolean }) {
           aria-current={mode === target ? "true" : undefined}
           className={
             mode === target
-              ? "rounded-md bg-neutral-900 px-2.5 py-1 font-medium text-white dark:bg-neutral-100 dark:text-neutral-900"
-              : "rounded-md px-2.5 py-1 text-neutral-500 hover:text-neutral-900 dark:hover:text-neutral-100"
+              ? "rounded-[2px] bg-raised px-2.5 py-1 font-medium text-ink shadow-[0_1px_0_rgb(var(--line))]"
+              : "rounded-[2px] px-2.5 py-1 text-ink-faint hover:text-ink"
           }
         >
           {/* Full wording from sm up; abbreviated below, where the long labels

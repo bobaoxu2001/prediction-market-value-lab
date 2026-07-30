@@ -2,35 +2,320 @@
 @tailwind components;
 @tailwind utilities;
 
+/*
+ * Design tokens.
+ *
+ * Stored as space-separated RGB channels rather than hex so Tailwind can apply
+ * opacity modifiers to them (`bg-edge/15` compiles to `rgb(var(--edge) / 0.15)`).
+ * Hex custom properties cannot do that, and the existing markup relies on the
+ * modifier in ~20 places.
+ *
+ * Components read tokens and never restate the theme, so a colour decision lives
+ * in one place instead of behind a `dark:` variant on every element that uses it.
+ * The previous approach repeated `text-neutral-500 dark:text-neutral-400` in
+ * about forty places, which is why the muted tone had already drifted.
+ *
+ * The neutrals carry a slight cool bias toward the accent. A pure grey reads as
+ * unconsidered; these were picked.
+ */
 :root {
-  color-scheme: light dark;
+  /*
+   * A serif display face against a sans body and a mono for figures. Three
+   * roles, system faces only - Iowan Old Style and Palatino cover Apple and
+   * Windows respectively, with Georgia as the floor, so no webfont is fetched at
+   * build time and there is no silent fallback to guess at.
+   */
+  --font-sans: ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto,
+    "Helvetica Neue", Arial, sans-serif;
+  --font-serif: "Iowan Old Style", "Palatino Linotype", Palatino, "Book Antiqua",
+    ui-serif, Georgia, Cambria, "Times New Roman", serif;
+  --font-mono: ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas,
+    "Liberation Mono", monospace;
+
+  color-scheme: light;
+
+  /* Grounds and surfaces, lowest to highest. */
+  --surface-sunken: 244 245 247;
+  --surface-base: 251 251 252;
+  --surface-raised: 255 255 255;
+
+  /* Border hierarchy: hairline rules inside a block, stronger edges around one. */
+  --line-subtle: 232 234 238;
+  --line: 217 220 226;
+  --line-strong: 190 195 204;
+
+  /* Text hierarchy. */
+  --ink: 20 23 28;
+  --ink-muted: 92 100 112;
+  --ink-faint: 132 140 152;
+
+  /*
+   * One accent, for interaction and for the platform's own voice. Deliberately
+   * not the semantic colours below: an accent that doubles as "good" leaves no
+   * way to render a neutral link.
+   */
+  --accent: 31 92 139;
+  --accent-ink: 255 255 255;
+
+  /*
+   * Semantic states. Deepened from the original greens and reds so a column of
+   * them reads as settlement notation rather than as a gain/loss ticker.
+   */
+  --edge: 16 121 74;
+  --risk: 179 38 30;
+  --warn: 138 90 0;
+  --info: 31 92 139;
+
+  /*
+   * Provenance and confidence, which this product needs as first-class states.
+   * Previously each of these was improvised per page from an amber utility.
+   */
+  --demo: 138 90 0;
+  --live: 16 121 74;
+  --stale: 152 87 12;
+  --unverified: 118 82 8;
+
+  --focus: 31 92 139;
+}
+
+.dark {
+  color-scheme: dark;
+
+  --surface-sunken: 8 10 13;
+  --surface-base: 12 14 18;
+  --surface-raised: 21 24 30;
+
+  --line-subtle: 30 34 42;
+  --line: 42 47 57;
+  --line-strong: 62 69 82;
+
+  --ink: 233 236 240;
+  --ink-muted: 155 163 175;
+  --ink-faint: 113 121 133;
+
+  --accent: 122 174 219;
+  --accent-ink: 8 10 13;
+
+  --edge: 52 211 153;
+  --risk: 248 113 113;
+  --warn: 224 162 43;
+  --info: 122 174 219;
+
+  --demo: 224 162 43;
+  --live: 52 211 153;
+  --stale: 233 168 74;
+  --unverified: 214 158 64;
+
+  --focus: 122 174 219;
 }
 
 @layer base {
-  html { -webkit-text-size-adjust: 100%; }
-  body {
-    @apply bg-white text-neutral-900 antialiased;
-    @apply dark:bg-neutral-950 dark:text-neutral-100;
-    font-feature-settings: "tnum" 1; /* tabular numerals keep price columns aligned */
+  html {
+    -webkit-text-size-adjust: 100%;
   }
-  /* Numeric cells are monospace so digits line up down a column. */
-  .num { @apply font-mono tabular-nums; }
+
+  body {
+    @apply bg-base text-ink antialiased;
+    font-family: var(--font-sans);
+    /* Tabular numerals everywhere, so any column of digits lines up. */
+    font-feature-settings: "tnum" 1;
+  }
+
+  /*
+   * Serif headings against a sans body. The register this product needs is the
+   * institutional research note, and a serif display face gets there without
+   * decoration - it also avoids the interchangeable-sans look that a scanner
+   * dashboard defaults into.
+   *
+   * System faces only. Fetching a webfont at build time would put the Vercel
+   * build on the network for a typographic preference.
+   */
+  h1,
+  h2,
+  h3 {
+    font-family: var(--font-serif);
+    font-weight: 600;
+    letter-spacing: -0.011em;
+    text-wrap: balance;
+  }
+
+  /* A visible focus ring on everything focusable. Previously one component had
+     one and the rest inherited whatever the UA chose. */
+  :focus-visible {
+    outline: 2px solid rgb(var(--focus));
+    outline-offset: 2px;
+    border-radius: 2px;
+  }
+
+  /* Honour the OS setting rather than animating regardless. */
+  @media (prefers-reduced-motion: reduce) {
+    *,
+    *::before,
+    *::after {
+      animation-duration: 0.01ms !important;
+      animation-iteration-count: 1 !important;
+      transition-duration: 0.01ms !important;
+      scroll-behavior: auto !important;
+    }
+  }
 }
 
 @layer components {
-  .card {
-    @apply rounded-lg border border-neutral-200 bg-white
-           dark:border-neutral-800 dark:bg-neutral-900;
+  /* ---- type scale ------------------------------------------------------- */
+
+  .t-page-title {
+    @apply text-[1.6rem] leading-[1.2] sm:text-[1.9rem];
+  }
+  .t-section-title {
+    @apply text-[1.0625rem] leading-snug;
+  }
+  .t-sub-title {
+    @apply text-[0.9375rem] leading-snug font-semibold;
+  }
+  .t-body {
+    @apply text-sm leading-relaxed text-ink-muted;
+  }
+  /* Running prose is capped near 68 characters; the tables are not. */
+  .t-prose {
+    @apply text-sm leading-relaxed text-ink-muted;
+    max-width: 68ch;
+  }
+  .t-meta {
+    @apply text-xs leading-normal text-ink-faint;
+  }
+  .t-label {
+    @apply text-[10.5px] font-medium uppercase tracking-[0.07em] text-ink-faint;
+  }
+  .t-mono {
+    font-family: var(--font-mono);
+    @apply tabular-nums;
+  }
+
+  /* ---- numerics --------------------------------------------------------- */
+
+  /*
+   * Monospace and tabular. Numeric table cells also get right alignment via
+   * `td.num` below: the tabular-numeral work was already here, but the columns
+   * were left-aligned, so the digits still did not line up.
+   */
+  .num {
+    font-family: var(--font-mono);
+    @apply tabular-nums;
   }
   .metric-label {
-    @apply text-[11px] uppercase tracking-wide text-neutral-500 dark:text-neutral-400;
+    @apply t-label;
   }
-  .metric-value { @apply num text-sm font-semibold; }
+  .metric-value {
+    @apply num text-sm font-semibold text-ink;
+  }
+
+  /* ---- containers ------------------------------------------------------- */
+
+  /*
+   * Two tiers, so a page is not a uniform field of rounded cards.
+   * `panel` frames a primary block; `block` separates a subordinate one with a
+   * rule and no enclosure.
+   */
+  .panel {
+    @apply rounded-[3px] border border-line bg-raised;
+  }
+  .block {
+    @apply border-t border-line-subtle pt-4;
+  }
+  /* Kept as an alias so existing markup keeps compiling while pages migrate. */
+  .card {
+    @apply panel;
+  }
+
   .chip {
-    @apply inline-flex items-center rounded px-1.5 py-0.5 text-[11px] font-medium;
+    @apply inline-flex items-center rounded-[2px] px-1.5 py-0.5 text-[11px] font-medium;
   }
-  .table-wrap { @apply w-full overflow-x-auto; }
-  th { @apply whitespace-nowrap px-3 py-2 text-left text-[11px] uppercase tracking-wide
-              text-neutral-500 dark:text-neutral-400; }
-  td { @apply whitespace-nowrap px-3 py-2 text-sm; }
+
+  /* ---- tables ----------------------------------------------------------- */
+
+  .table-wrap {
+    @apply w-full overflow-x-auto;
+  }
+
+  th {
+    @apply whitespace-nowrap px-3 py-2 text-left align-bottom;
+    @apply t-label;
+  }
+  td {
+    @apply whitespace-nowrap px-3 py-2 text-sm;
+  }
+
+  /* Numbers right-align so the column is scannable. */
+  th.num,
+  td.num,
+  th.numeric,
+  td.numeric {
+    @apply text-right;
+  }
+
+  /*
+   * Opt-in for the identifier column of a wide table: it wraps instead of
+   * truncating, and stays put while the measurements scroll.
+   *
+   * A truncated contract title with no recovery mechanism is worse than a
+   * two-line one - the title is the only thing that identifies the row, and
+   * scrolling right used to lose it entirely.
+   */
+  .col-title {
+    @apply whitespace-normal;
+    /* Narrow on a phone, where 18rem is most of the viewport and pushes the
+       first measurement column off screen entirely. */
+    min-width: 11rem;
+  }
+  @screen sm {
+    .col-title {
+      min-width: 18rem;
+    }
+  }
+  /*
+   * Sticky only where there is room for it. On a 390px viewport a pinned 11rem
+   * identity column leaves too little for the columns it is meant to keep
+   * company, so the phone gets an ordinary scrolling table instead.
+   */
+  .col-sticky {
+    @apply bg-raised;
+  }
+  @screen sm {
+    .col-sticky {
+      @apply sticky left-0 z-10;
+    }
+    thead .col-sticky {
+      @apply z-20;
+    }
+  }
+  .row-hover {
+    @apply hover:bg-sunken;
+  }
+
+  /* ---- controls --------------------------------------------------------- */
+
+  .field {
+    @apply rounded-[2px] border border-line bg-transparent px-2 py-1 text-sm text-ink;
+  }
+  .btn {
+    @apply inline-flex items-center rounded-[2px] px-3 py-1.5 text-sm font-medium transition-colors;
+  }
+  .btn-primary {
+    @apply btn bg-accent text-accent-ink hover:bg-accent/90;
+  }
+  .btn-quiet {
+    @apply btn border border-line text-ink hover:bg-sunken;
+  }
+
+  /* Segmented control for a view switch, distinct from a filter pill so
+     changing epistemic status does not look like narrowing a list. */
+  .seg {
+    @apply inline-flex items-center gap-1 rounded-[3px] border border-line bg-sunken p-0.5;
+  }
+  .seg-item {
+    @apply rounded-[2px] px-3 py-1.5 text-sm font-medium text-ink-muted transition-colors;
+  }
+  .seg-item-on {
+    @apply bg-raised text-ink shadow-[0_1px_0_rgb(var(--line))];
+  }
 }

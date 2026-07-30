@@ -39,14 +39,14 @@ export default async function TrackRecordPage({
       <DemoBanner notice={res.demo_notice} />
 
       <div className="card mb-4 p-3 text-sm">
-        <p className="text-neutral-600 dark:text-neutral-400">
+        <p className="text-ink-muted">
           {(res.integrity_note as string) ??
             "Snapshots are append-only. Losing recommendations are shown and cannot be filtered out."}
         </p>
         {(wins > 0 || losses > 0) && (
           <p className="mt-2">
-            On this page: <strong className="text-edge dark:text-edge-dark">{wins} winners</strong>{" "}
-            and <strong className="text-risk dark:text-risk-dark">{losses} losers</strong> among
+            On this page: <strong className="text-edge">{wins} winners</strong>{" "}
+            and <strong className="text-risk">{losses} losers</strong> among
             settled recommendations.
           </p>
         )}
@@ -56,12 +56,12 @@ export default async function TrackRecordPage({
         {["", "24h", "7d", "30d"].map((h) => (
           <Link key={h || "all"}
             href={`/track-record${qs({ mode, horizon: h || undefined, settled: params.settled })}`}
-            className={`rounded border px-3 py-1 ${(params.horizon ?? "") === h ? "border-neutral-900 bg-neutral-900 text-white dark:border-neutral-100 dark:bg-neutral-100 dark:text-neutral-900" : "border-neutral-300 dark:border-neutral-700"}`}>
+            className={`rounded border px-3 py-1 ${(params.horizon ?? "") === h ? "border-neutral-900 bg-neutral-900 text-white dark:border-line-subtle dark:bg-neutral-100 dark:text-neutral-900" : "border-line"}`}>
             {h || "All horizons"}
           </Link>
         ))}
         <Link href={`/track-record${qs({ mode, horizon: params.horizon, settled: params.settled === "1" ? undefined : "1" })}`}
-          className={`rounded border px-3 py-1 ${params.settled === "1" ? "border-neutral-900 bg-neutral-900 text-white dark:border-neutral-100 dark:bg-neutral-100 dark:text-neutral-900" : "border-neutral-300 dark:border-neutral-700"}`}>
+          className={`rounded border px-3 py-1 ${params.settled === "1" ? "border-neutral-900 bg-neutral-900 text-white dark:border-line-subtle dark:bg-neutral-100 dark:text-neutral-900" : "border-line"}`}>
           Settled only
         </Link>
       </div>
@@ -78,9 +78,9 @@ export default async function TrackRecordPage({
         />
       ) : (
         <>
-          <div className="card table-wrap">
+          <div className="panel table-wrap">
             <table className="w-full">
-              <thead className="border-b border-neutral-200 dark:border-neutral-800">
+              <thead className="border-b border-line">
                 <tr>
                   <th>Published</th><th>Market</th><th>Venue</th><th>Side</th>
                   <th>Entry then</th><th>All-in cost</th><th>Fair prob</th>
@@ -88,13 +88,13 @@ export default async function TrackRecordPage({
                   <th>Realised / ct</th><th>On $100</th>
                 </tr>
               </thead>
-              <tbody className="divide-y divide-neutral-100 dark:divide-neutral-800">
+              <tbody className="divide-y divide-line-subtle">
                 {rows.map((r) => {
                   const realised = r.realized_profit_per_contract
                     ? Number(r.realized_profit_per_contract) : null;
                   return (
                     <tr key={r.id} className="hover:bg-neutral-50 dark:hover:bg-neutral-900">
-                      <td className="text-neutral-500">{localTime(r.recommendation_created_at)}</td>
+                      <td className="text-ink-faint">{localTime(r.recommendation_created_at)}</td>
                       <td className="max-w-xs truncate">
                         <Link href={`/market/${r.market_id}`} className="hover:underline">
                           {displayTitle(r.market_title)}
@@ -105,23 +105,23 @@ export default async function TrackRecordPage({
                       <td className="num">{cents(r.entry_price_at_recommendation)}</td>
                       <td className="num">{cents(r.total_cost_at_recommendation)}</td>
                       <td className="num">{prob(r.fair_probability)}</td>
-                      <td className="num text-neutral-500">
+                      <td className="num text-ink-faint">
                         {prob(r.confidence_interval?.[0])}–{prob(r.confidence_interval?.[1])}
                       </td>
                       <td className="num">{signedCents(r.expected_value)}</td>
                       <td>
                         {r.final_result ? (
-                          <span className="chip bg-neutral-100 uppercase text-neutral-600 dark:bg-neutral-800 dark:text-neutral-400">
+                          <span className="chip bg-neutral-100 uppercase text-neutral-600 dark:bg-neutral-800 dark:text-ink-faint">
                             {r.final_result}
                           </span>
                         ) : (
-                          <span className="text-neutral-400">pending</span>
+                          <span className="text-ink-faint">pending</span>
                         )}
                       </td>
-                      <td className={`num ${realised == null ? "" : realised > 0 ? "text-edge dark:text-edge-dark" : "text-risk dark:text-risk-dark"}`}>
+                      <td className={`num ${realised == null ? "" : realised > 0 ? "text-edge" : "text-risk"}`}>
                         {signedCents(r.realized_profit_per_contract)}
                       </td>
-                      <td className={`num ${realised == null ? "" : realised > 0 ? "text-edge dark:text-edge-dark" : "text-risk dark:text-risk-dark"}`}>
+                      <td className={`num ${realised == null ? "" : realised > 0 ? "text-edge" : "text-risk"}`}>
                         {r.realized_profit_at_100_usd ? usd(r.realized_profit_at_100_usd) : "—"}
                       </td>
                     </tr>
@@ -131,7 +131,7 @@ export default async function TrackRecordPage({
             </table>
           </div>
           <div className="mt-3 flex items-center justify-between text-sm">
-            <span className="text-neutral-500">
+            <span className="text-ink-faint">
               {offset + 1}–{offset + rows.length} of {total.toLocaleString()}
             </span>
             <div className="flex gap-2">
@@ -147,7 +147,7 @@ export default async function TrackRecordPage({
           </div>
         </>
       )}
-      <p className="mt-6 text-xs text-neutral-500 dark:text-neutral-400">{res.disclaimer}</p>
+      <p className="mt-6 text-xs text-ink-faint">{res.disclaimer}</p>
     </div>
   );
 }

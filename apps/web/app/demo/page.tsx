@@ -51,7 +51,7 @@ export default async function GuidedDemoPage({
           <h1 className="text-xl font-semibold tracking-tight">Guided demo</h1>
           <Link
             href={`/${qs({ mode })}`}
-            className="text-sm text-neutral-500 underline hover:text-neutral-900 dark:hover:text-neutral-100"
+            className="text-sm text-ink-faint underline hover:text-neutral-900 dark:hover:text-neutral-100"
           >
             Exit guided demo
           </Link>
@@ -73,7 +73,7 @@ export default async function GuidedDemoPage({
 function Progress({ step }: { step: number }) {
   return (
     <div className="mt-3">
-      <p className="text-xs uppercase tracking-wide text-neutral-500">
+      <p className="text-xs uppercase tracking-wide text-ink-faint">
         Step {step} of {TOTAL_STEPS}
       </p>
       <ol className="mt-2 flex gap-1.5" aria-label="Progress">
@@ -98,7 +98,7 @@ function Progress({ step }: { step: number }) {
 
 function Controls({ step }: { step: number }) {
   return (
-    <nav className="mt-6 flex flex-wrap items-center gap-3 border-t border-neutral-200 pt-4 dark:border-neutral-800">
+    <nav className="mt-6 flex flex-wrap items-center gap-3 border-t border-line pt-4">
       {step > 1 ? (
         <Link href={`/demo${qs({ step: step - 1, mode: "demo" })}`} className="rounded-lg border border-neutral-300 px-3 py-2 text-sm transition hover:bg-neutral-100 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 dark:border-neutral-700 dark:hover:bg-neutral-800">
           Previous
@@ -112,7 +112,7 @@ function Controls({ step }: { step: number }) {
       <Link href={`/case-study${qs({ mode: "demo" })}`} className="text-sm underline">
         Skip to case study
       </Link>
-      <Link href={`/${qs({ mode: "demo" })}`} className="text-sm text-neutral-500 underline">
+      <Link href={`/${qs({ mode: "demo" })}`} className="text-sm text-ink-faint underline">
         Exit
       </Link>
     </nav>
@@ -128,9 +128,9 @@ const NEXT_LABELS: Record<number, string> = {
 
 function Section({ title, lead, children }: { title: string; lead: string; children: React.ReactNode }) {
   return (
-    <section className="card p-5">
+    <section className="panel p-5">
       <h2 className="text-lg font-semibold tracking-tight">{title}</h2>
-      <p className="mt-2 max-w-2xl text-sm leading-relaxed text-neutral-600 dark:text-neutral-400">
+      <p className="mt-2 max-w-2xl text-sm leading-relaxed text-ink-muted">
         {lead}
       </p>
       <div className="mt-5">{children}</div>
@@ -155,7 +155,7 @@ function StepScan({ system }: { system?: SystemInfo }) {
           sub="frozen, not live"
         />
       </div>
-      <p className="mt-4 text-sm text-neutral-600 dark:text-neutral-400">
+      <p className="mt-4 text-sm text-ink-muted">
         Venues: {(system?.data_sources ?? []).filter((s) => /kalshi|polymarket/i.test(s.name)).map((s) => s.name).join(" · ") || "Kalshi · Polymarket"}
       </p>
     </Section>
@@ -178,20 +178,20 @@ function StepFilter({ stages, conclusion }: { stages: FunnelStage[]; conclusion?
                 <span className={last ? "font-semibold" : ""}>{stage.label}</span>
                 <span className="num shrink-0 font-mono font-semibold">{count(stage.count)}</span>
               </div>
-              <div className="mt-1 h-1.5 w-full overflow-hidden rounded-full bg-neutral-100 dark:bg-neutral-800">
+              <div className="mt-1 h-1.5 w-full overflow-hidden rounded-full bg-sunken">
                 <div
                   className={`h-full rounded-full ${last && stage.count === 0 ? "bg-neutral-400 dark:bg-neutral-600" : "bg-neutral-900 dark:bg-neutral-100"}`}
                   style={{ width: `${Math.max(2, (stage.count / widest) * 100)}%` }}
                 />
               </div>
-              <div className="mt-0.5 text-xs text-neutral-500">{stage.note}</div>
+              <div className="mt-0.5 text-xs text-ink-faint">{stage.note}</div>
             </li>
           );
         })}
       </ol>
-      <p className="mt-5 border-t border-neutral-200 pt-4 text-sm font-medium dark:border-neutral-800">
+      <p className="mt-5 border-t border-line pt-4 text-sm font-medium">
         Reporting zero opportunities is a feature, not a failure.{" "}
-        <span className="font-normal text-neutral-600 dark:text-neutral-400">
+        <span className="font-normal text-ink-muted">
           {conclusion} The most common rejection is the independence gate: a model
           estimate derived from the market&apos;s own price cannot demonstrate an edge
           against that price.
@@ -261,7 +261,7 @@ function StepBacktest({ runs }: { runs: BacktestRun[] }) {
             <VerdictCard label="Settled trades" value={count(m?.n_settled ?? 0)} sub="sample size" help={METRIC_HELP.settled} />
             <VerdictCard label="Max drawdown" value={m?.max_drawdown != null ? usd(m.max_drawdown) : "—"} sub="worst stretch" tone={toneFor(Number(m?.max_drawdown ?? 0))} help={METRIC_HELP.max_drawdown} />
           </div>
-          <p className="mt-4 rounded-lg border border-neutral-200 bg-neutral-50 p-3 text-sm dark:border-neutral-800 dark:bg-neutral-900">
+          <p className="mt-4 rounded-lg border border-line bg-neutral-50 p-3 text-sm dark:bg-neutral-900">
             {m?.roi != null && m.roi > 0 && !beatsMarket ? (
               <>
                 <span className="font-semibold">Positive ROI, but it did not beat the market.</span>{" "}
@@ -275,7 +275,7 @@ function StepBacktest({ runs }: { runs: BacktestRun[] }) {
           </p>
         </>
       ) : (
-        <p className="text-sm text-neutral-500">No settled backtest results yet.</p>
+        <p className="text-sm text-ink-faint">No settled backtest results yet.</p>
       )}
       <Link href={`/backtest${qs({ mode: "demo" })}`} className="mt-3 inline-block text-sm underline">
         Open the full backtest
@@ -297,10 +297,10 @@ function StepTrackRecord({ rows, total }: { rows: TrackRecordRow[]; total?: numb
       <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
         <VerdictCard label="Published" value={count(total ?? rows.length)} sub="total recommendations" />
         <VerdictCard label="Settled" value={count(settled.length)} sub="graded" />
-        <VerdictCard label="Winners" value={count(winners.length)} tone="text-edge dark:text-edge-dark" />
-        <VerdictCard label="Losers" value={count(losers.length)} tone="text-risk dark:text-risk-dark" sub="cannot be hidden" />
+        <VerdictCard label="Winners" value={count(winners.length)} tone="text-edge" />
+        <VerdictCard label="Losers" value={count(losers.length)} tone="text-risk" sub="cannot be hidden" />
       </div>
-      <p className="mt-4 text-sm text-neutral-600 dark:text-neutral-400">
+      <p className="mt-4 text-sm text-ink-muted">
         Published recommendations cannot be removed from the track record simply
         because they lost.
       </p>

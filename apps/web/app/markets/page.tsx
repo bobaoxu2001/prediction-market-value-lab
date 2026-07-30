@@ -61,19 +61,19 @@ export default async function MarketsPage({
       />
       <DemoBanner notice={res.demo_notice} />
 
-      <form className="card mb-4 flex flex-wrap items-end gap-3 p-3" action="/markets">
+      <form className="panel mb-4 flex flex-wrap items-end gap-3 p-3" action="/markets">
         <input type="hidden" name="mode" value={mode} />
         <label className="flex flex-col gap-1">
           <span className="metric-label">Search</span>
           <input
             name="q" defaultValue={params.q ?? ""} placeholder="title contains…"
-            className="w-56 rounded border border-neutral-300 bg-transparent px-2 py-1 text-sm dark:border-neutral-700"
+            className="field w-56"
           />
         </label>
         <label className="flex flex-col gap-1">
           <span className="metric-label">Venue</span>
           <select name="platform" defaultValue={params.platform ?? ""}
-            className="rounded border border-neutral-300 bg-transparent px-2 py-1 text-sm dark:border-neutral-700">
+            className="field">
             <option value="">All</option>
             <option value="kalshi">Kalshi</option>
             <option value="polymarket">Polymarket</option>
@@ -82,7 +82,7 @@ export default async function MarketsPage({
         <label className="flex flex-col gap-1">
           <span className="metric-label">Category</span>
           <select name="category" defaultValue={params.category ?? ""}
-            className="rounded border border-neutral-300 bg-transparent px-2 py-1 text-sm dark:border-neutral-700">
+            className="field">
             <option value="">All</option>
             {(cats?.data ?? []).map((c) => (
               <option key={c.category} value={c.category}>
@@ -94,7 +94,7 @@ export default async function MarketsPage({
         <label className="flex flex-col gap-1">
           <span className="metric-label">Horizon</span>
           <select name="horizon" defaultValue={params.horizon ?? ""}
-            className="rounded border border-neutral-300 bg-transparent px-2 py-1 text-sm dark:border-neutral-700">
+            className="field">
             <option value="">Any</option>
             <option value="24h">24h</option>
             <option value="7d">7d</option>
@@ -104,14 +104,14 @@ export default async function MarketsPage({
         <label className="flex flex-col gap-1">
           <span className="metric-label">Sort</span>
           <select name="sort" defaultValue={sort}
-            className="rounded border border-neutral-300 bg-transparent px-2 py-1 text-sm dark:border-neutral-700">
+            className="field">
             <option value="volume">24h volume</option>
             <option value="liquidity">Book depth</option>
             <option value="spread">Tightest spread</option>
             <option value="resolution">Resolves soonest</option>
           </select>
         </label>
-        <button className="rounded bg-neutral-900 px-3 py-1.5 text-sm text-white dark:bg-neutral-100 dark:text-neutral-900">
+        <button className="btn-primary">
           Apply
         </button>
       </form>
@@ -123,20 +123,40 @@ export default async function MarketsPage({
         />
       ) : (
         <>
-          <div className="card table-wrap">
+          <div className="panel table-wrap">
             <table className="w-full">
-              <thead className="border-b border-neutral-200 dark:border-neutral-800">
+              <caption className="sr-only">
+                Ingested markets with latest captured quotes
+              </caption>
+              <thead className="border-b border-line">
                 <tr>
-                  <th>Market</th><th>Venue</th><th>Category</th>
-                  <th>YES bid</th><th>YES ask</th><th>NO ask</th>
-                  <th>Spread</th><th>Ask depth</th><th>24h vol</th>
-                  <th>Resolves</th><th>Quote</th>
+                  {/* Sticky: scrolling right through nine measurement columns used
+                      to lose the only thing identifying the row. */}
+                  <th scope="col" className="col-sticky col-title">Market</th>
+                  <th scope="col">Venue</th>
+                  <th scope="col">Category</th>
+                  <th scope="col" className="num">YES bid</th>
+                  <th scope="col" className="num">YES ask</th>
+                  <th scope="col" className="num">NO ask</th>
+                  <SortableTh label="Spread" sortKey="spread" current={sort} href={link} />
+                  <SortableTh label="Ask depth" sortKey="liquidity" current={sort} href={link} />
+                  <SortableTh label="24h vol" sortKey="volume" current={sort} href={link} />
+                  <SortableTh
+                    label="Resolves"
+                    sortKey="resolution"
+                    current={sort}
+                    href={link}
+                    numeric={false}
+                  />
+                  <th scope="col">Quote</th>
                 </tr>
               </thead>
-              <tbody className="divide-y divide-neutral-100 dark:divide-neutral-800">
+              <tbody className="divide-y divide-line-subtle">
                 {rows.map((m) => (
-                  <tr key={m.id} className="hover:bg-neutral-50 dark:hover:bg-neutral-900">
-                    <td className="max-w-md">
+                  <tr key={m.id} className="row-hover">
+                    {/* Wraps rather than truncating. A clipped contract title with
+                        no way to recover it is worse than a two-line one. */}
+                    <td className="col-sticky col-title">
                       <Link href={`/market/${m.id}`} className="hover:underline">{displayTitle(m.title)}</Link>
                       {m.venue_availability ? (
                         <div className="mt-1">
@@ -145,30 +165,28 @@ export default async function MarketsPage({
                       ) : null}
                     </td>
                     <td><PlatformChip platform={m.platform} /></td>
-                    <td className="text-neutral-500">{m.category}</td>
-                    <td className="num">{cents(m.best_yes_bid)}</td>
-                    <td className="num font-semibold">{cents(m.best_yes_ask)}</td>
-                    <td className="num">{cents(m.best_no_ask)}</td>
-                    <td className="num">{cents(m.spread)}</td>
-                    <td className="num">{compactUsd(m.yes_ask_depth_usd ?? m.orderbook_depth_usd)}</td>
-                    <td className="num">{compactUsd(m.volume_24h)}</td>
-                    <td className="text-neutral-500">{relativeToSnapshot(m.expected_resolution_time, snapshotAt)}</td>
-                    <td className="text-neutral-500">
+                    <td className="text-ink-faint">{m.category}</td>
+                    <td className="num text-ink-muted">{cents(m.best_yes_bid)}</td>
+                    <td className="num font-semibold text-ink">{cents(m.best_yes_ask)}</td>
+                    <td className="num text-ink-muted">{cents(m.best_no_ask)}</td>
+                    <td className="num text-ink-muted">{cents(m.spread)}</td>
+                    <td className="num text-ink-muted">{compactUsd(m.yes_ask_depth_usd ?? m.orderbook_depth_usd)}</td>
+                    <td className="num text-ink-muted">{compactUsd(m.volume_24h)}</td>
+                    <td className="text-ink-muted">{relativeToSnapshot(m.expected_resolution_time, snapshotAt)}</td>
+                    <td className="text-ink-faint">
                       {ageRelativeToSnapshot(m.quote_observed_at, snapshotAt)}
                       <div className="mt-0.5 text-[10px] uppercase tracking-wide">
                         {m.quote_source === "orderbook" ? (
-                          <span className="text-neutral-400">Order book</span>
+                          <span className="text-ink-faint">Order book</span>
                         ) : m.quote_source === "venue_summary" ? (
-                          <span className="text-amber-700 dark:text-amber-400">
-                            Venue summary fallback
-                          </span>
+                          <span className="text-unverified">Venue summary fallback</span>
                         ) : (
-                          <span className="text-neutral-400">No quote</span>
+                          <span className="text-ink-faint">No quote</span>
                         )}
                         {m.quote_is_stale_summary ? (
                           <span
                             title="The venue's summary price disagrees with the latest order book, so metadata ingest has fallen behind. The order book is shown."
-                            className="ml-1 text-amber-700 dark:text-amber-400"
+                            className="ml-1 text-stale"
                           >
                             · summary stale
                           </span>
@@ -181,14 +199,14 @@ export default async function MarketsPage({
             </table>
           </div>
           <div className="mt-3 flex items-center justify-between text-sm">
-            <span className="text-neutral-500">
+            <span className="text-ink-muted">
               Showing {offset + 1}–{offset + rows.length} of{" "}
               {shownOf.toLocaleString()}
               {rankedTotal !== null && (
                 <>
                   {" "}
                   ranked
-                  <span className="text-neutral-400">
+                  <span className="text-ink-faint">
                     {" "}
                     (of {total.toLocaleString()} total)
                   </span>
@@ -197,14 +215,12 @@ export default async function MarketsPage({
             </span>
             <div className="flex gap-2">
               {offset > 0 && (
-                <Link href={link({ offset: Math.max(0, offset - 50) })}
-                  className="rounded border border-neutral-300 px-3 py-1 dark:border-neutral-700">
+                <Link href={link({ offset: Math.max(0, offset - 50) })} className="btn-quiet">
                   Previous
                 </Link>
               )}
               {rows.length === 50 && (
-                <Link href={link({ offset: offset + 50 })}
-                  className="rounded border border-neutral-300 px-3 py-1 dark:border-neutral-700">
+                <Link href={link({ offset: offset + 50 })} className="btn-quiet">
                   Next
                 </Link>
               )}
@@ -212,7 +228,52 @@ export default async function MarketsPage({
           </div>
         </>
       )}
-      <p className="mt-6 text-xs text-neutral-500 dark:text-neutral-400">{res.disclaimer}</p>
+      <p className="mt-6 t-meta">{res.disclaimer}</p>
     </div>
+  );
+}
+
+/**
+ * A column header that sorts.
+ *
+ * Sorting was previously only reachable through a select plus an Apply
+ * round-trip, and nothing on the table said which column was ordering it. The
+ * four sortable keys the API accepts are exposed where a reader looks for them,
+ * and the active one is marked in text (`aria-sort` plus a caret) rather than by
+ * colour alone.
+ */
+function SortableTh({
+  label,
+  sortKey,
+  current,
+  href,
+  numeric = true,
+}: {
+  label: string;
+  sortKey: string;
+  current: string;
+  href: (patch: Record<string, string | number | undefined>) => string;
+  numeric?: boolean;
+}) {
+  const active = current === sortKey;
+  return (
+    <th
+      scope="col"
+      className={numeric ? "num" : undefined}
+      aria-sort={active ? "descending" : "none"}
+    >
+      <Link
+        href={href({ sort: sortKey, offset: 0 })}
+        className={`inline-flex items-center gap-1 hover:text-ink ${
+          active ? "text-ink" : ""
+        }`}
+      >
+        {label}
+        <span aria-hidden className={active ? "" : "opacity-30"}>
+          {active ? "▾" : "▿"}
+        </span>
+        {active ? <span className="sr-only">(sorted)</span> : null}
+      </Link>
+    </th>
   );
 }

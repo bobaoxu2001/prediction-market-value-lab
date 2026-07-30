@@ -54,8 +54,8 @@ export default async function CaseStudyPage({
               aria-current={active ? "page" : undefined}
               className={`rounded-lg border px-3 py-2 text-sm transition focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 ${
                 active
-                  ? "border-neutral-900 bg-neutral-900 text-white dark:border-neutral-100 dark:bg-neutral-100 dark:text-neutral-900"
-                  : "border-neutral-200 hover:bg-neutral-50 dark:border-neutral-800 dark:hover:bg-neutral-900"
+                  ? "border-neutral-900 bg-neutral-900 text-white dark:border-line-subtle dark:bg-neutral-100 dark:text-neutral-900"
+                  : "border-line hover:bg-neutral-50 dark:hover:bg-neutral-900"
               }`}
             >
               {r.label}
@@ -84,7 +84,7 @@ export default async function CaseStudyPage({
               <PlatformChip platform={cs.market.platform} />
               <SideChip side={cs.market.side} />
               {cs.market.category ? (
-                <span className="text-neutral-500">{cs.market.category}</span>
+                <span className="text-ink-faint">{cs.market.category}</span>
               ) : null}
             </div>
             <dl className="mt-4 grid gap-x-6 gap-y-2 sm:grid-cols-2">
@@ -95,10 +95,10 @@ export default async function CaseStudyPage({
             </dl>
             {cs.market.settlement_rules ? (
               <details className="mt-3">
-                <summary className="cursor-pointer text-sm text-neutral-600 dark:text-neutral-400">
+                <summary className="cursor-pointer text-sm text-ink-muted">
                   Settlement rule
                 </summary>
-                <p className="mt-2 whitespace-pre-wrap text-xs leading-relaxed text-neutral-600 dark:text-neutral-400">
+                <p className="mt-2 whitespace-pre-wrap text-xs leading-relaxed text-ink-muted">
                   {cs.market.settlement_rules.slice(0, 1200)}
                 </p>
               </details>
@@ -144,7 +144,7 @@ export default async function CaseStudyPage({
                 value={cs.probability.has_independent_prior ? "Yes" : "No"}
               />
             </dl>
-            <p className="mt-3 text-xs text-neutral-500">
+            <p className="mt-3 text-xs text-ink-faint">
               Bound used: {cs.probability.conservative_bound_label}. For a NO
               recommendation the conservative case is the one where YES turns out more
               likely than estimated, so the bound is mirrored rather than reused.
@@ -157,7 +157,7 @@ export default async function CaseStudyPage({
 
           <Step n={4} title="Real cost stack">
             <table className="w-full text-sm">
-              <tbody className="divide-y divide-neutral-100 dark:divide-neutral-800">
+              <tbody className="divide-y divide-line-subtle">
                 {cs.costs.components.map((c) => (
                   <tr key={c.key}>
                     <td className="py-1.5">{c.label}</td>
@@ -175,7 +175,7 @@ export default async function CaseStudyPage({
                 </tr>
               </tbody>
             </table>
-            <p className="mt-2 text-xs text-neutral-500">
+            <p className="mt-2 text-xs text-ink-faint">
               Costs added {cents(cs.costs.cost_above_entry)} on top of the entry price.
             </p>
             <Note>A visible model–market disagreement can disappear after trading costs.</Note>
@@ -204,7 +204,7 @@ export default async function CaseStudyPage({
             <p
               className={`mt-4 rounded-lg border p-3 text-sm font-medium ${
                 cs.decision.qualified
-                  ? "border-edge/40 bg-edge/10 text-edge dark:text-edge-dark"
+                  ? "border-edge/40 bg-edge/10 text-edge"
                   : "border-neutral-300 bg-neutral-50 dark:border-neutral-700 dark:bg-neutral-900"
               }`}
             >
@@ -243,10 +243,10 @@ export default async function CaseStudyPage({
                     }
                     tone={
                       cs.outcome.forecast_beat_market == null
-                        ? "text-neutral-500"
+                        ? "text-ink-faint"
                         : cs.outcome.forecast_beat_market
-                          ? "text-edge dark:text-edge-dark"
-                          : "text-risk dark:text-risk-dark"
+                          ? "text-edge"
+                          : "text-risk"
                     }
                     help={METRIC_HELP.brier}
                   />
@@ -259,12 +259,12 @@ export default async function CaseStudyPage({
                     tone={toneFor(Number(cs.outcome.realized_profit_at_100_usd ?? 0))}
                   />
                 </dl>
-                <p className="mt-4 rounded-lg border border-neutral-200 bg-neutral-50 p-3 text-sm dark:border-neutral-800 dark:bg-neutral-900">
+                <p className="mt-4 rounded-lg border border-line bg-neutral-50 p-3 text-sm dark:bg-neutral-900">
                   {cs.outcome.summary}
                 </p>
               </>
             ) : (
-              <p className="text-sm text-neutral-600 dark:text-neutral-400">
+              <p className="text-sm text-ink-muted">
                 This recommendation has not settled yet.
               </p>
             )}
@@ -279,7 +279,7 @@ export default async function CaseStudyPage({
             </Link>
           </div>
 
-          <p className="pt-2 text-xs text-neutral-500">{res.audit_note as string}</p>
+          <p className="pt-2 text-xs text-ink-faint">{res.audit_note as string}</p>
         </div>
       )}
     </div>
@@ -288,7 +288,7 @@ export default async function CaseStudyPage({
 
 function Step({ n, title, children }: { n: number; title: string; children: React.ReactNode }) {
   return (
-    <section className="card p-5">
+    <section className="panel p-5">
       <div className="mb-3 flex items-center gap-3">
         <span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-neutral-900 font-mono text-xs font-semibold text-white dark:bg-neutral-100 dark:text-neutral-900">
           {n}
@@ -306,8 +306,8 @@ function Row({
   label: string; value: string; strong?: boolean; tone?: string; help?: string;
 }) {
   return (
-    <div className="flex items-baseline justify-between gap-4 border-b border-neutral-100 py-1.5 dark:border-neutral-800">
-      <dt className="flex items-center text-sm text-neutral-600 dark:text-neutral-400">
+    <div className="flex items-baseline justify-between gap-4 border-b border-line-subtle py-1.5">
+      <dt className="flex items-center text-sm text-ink-muted">
         {label}
         {help ? <HelpDot text={help} /> : null}
       </dt>
@@ -324,20 +324,20 @@ function Verdict({
   label: string; value: string; sub?: string; tone?: string; help?: string;
 }) {
   return (
-    <div className="rounded-lg border border-neutral-200 p-3 dark:border-neutral-800">
-      <div className="flex items-center text-xs uppercase tracking-wide text-neutral-500">
+    <div className="rounded-lg border border-line p-3">
+      <div className="flex items-center text-xs uppercase tracking-wide text-ink-faint">
         {label}
         {help ? <HelpDot text={help} /> : null}
       </div>
       <div className={`mt-1 font-mono text-xl font-semibold ${tone ?? ""}`}>{value}</div>
-      {sub ? <div className="mt-0.5 text-xs text-neutral-500">{sub}</div> : null}
+      {sub ? <div className="mt-0.5 text-xs text-ink-faint">{sub}</div> : null}
     </div>
   );
 }
 
 function Note({ children }: { children: React.ReactNode }) {
   return (
-    <p className="mt-3 border-l-2 border-neutral-300 pl-3 text-sm text-neutral-600 dark:border-neutral-700 dark:text-neutral-400">
+    <p className="mt-3 border-l-2 border-neutral-300 pl-3 text-sm text-neutral-600 dark:border-neutral-700 dark:text-ink-faint">
       {children}
     </p>
   );
