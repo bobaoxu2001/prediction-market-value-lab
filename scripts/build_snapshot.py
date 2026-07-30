@@ -16,7 +16,6 @@ Pruning targets the bulk without touching anything the UI reads:
 
 from __future__ import annotations
 
-import shutil
 import sqlite3
 import sys
 from pathlib import Path
@@ -55,7 +54,29 @@ def main(argv: list[str] | None = None) -> int:
 
     if TARGET.exists():
         TARGET.unlink()
-    shutil.copy2(SOURCE, TARGET)
+
+    # SQLite's backup API rather than shutil.copy2.
+    #
+    # A raw file copy takes the main .db and leaves the -wal behind, so every
+    # transaction committed since the last automatic checkpoint is missing from
+    # the copy. That produced a published candidate containing `settle` still
+    # marked RUNNING while the run had finished it successfully - and which writes
+    # survived depended on how many pages happened to be written afterwards.
+    #
+    # backup() reads through SQLite itself, so it sees committed data wherever it
+    # physically lives, and the destination is a single self-contained file with
+    # no sidecars. The pipeline also finalises the source first; this is the
+    # second line of defence, and the one that holds even if a future caller
+    # forgets.
+    source = sqlite3.connect(f"file:{SOURCE}?mode=ro", uri=True)
+    destination = sqlite3.connect(TARGET)
+    try:
+        source.backup(destination)
+        destination.commit()
+    finally:
+        destination.close()
+        source.close()
+
     before = TARGET.stat().st_size
 
     con = sqlite3.connect(TARGET)
