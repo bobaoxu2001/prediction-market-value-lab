@@ -65,7 +65,7 @@ export default async function BacktestPage({
       ) : null}
 
       {focus && focus.n_settled > 0 ? (
-        <Verdict run={focus} />
+        <Verdict run={focus} mode={mode} />
       ) : null}
 
       {runs.length === 0 ? (
@@ -255,7 +255,7 @@ export default async function BacktestPage({
  * did it make money, was it more accurate than the market, and is the sample big
  * enough to mean anything.
  */
-function Verdict({ run }: { run: BacktestRun }) {
+function Verdict({ run, mode }: { run: BacktestRun; mode: DataMode }) {
   const m = run.metrics;
   const beat = m.brier_improvement_vs_market;
   const beatsMarket = beat != null && beat > 0;
@@ -273,11 +273,20 @@ function Verdict({ run }: { run: BacktestRun }) {
           tone={beat == null ? "text-ink-faint" : toneFor(beat)}
           help={METRIC_HELP.vs_market}
         />
+        {/*
+          * Uncoloured in demo mode, for the same reason the ROI column is: a
+          * green headline return from a forecaster the page has just called
+          * deliberately imperfect reads as a result rather than an illustration.
+          */}
         <VerdictCard
           label="Net ROI"
           value={roi == null ? "—" : `${roi > 0 ? "+" : ""}${(roi * 100).toFixed(1)}%`}
-          sub={m.total_pnl != null ? `${usd(m.total_pnl)} on ${m.total_stake != null ? usd(m.total_stake) : "—"} staked` : undefined}
-          tone={toneFor(roi)}
+          sub={
+            m.total_pnl != null
+              ? `${usd(m.total_pnl)} on ${m.total_stake != null ? usd(m.total_stake) : "—"} staked${mode === "demo" ? " (demo)" : ""}`
+              : undefined
+          }
+          tone={mode === "demo" ? "text-ink" : toneFor(roi)}
           help={METRIC_HELP.roi}
         />
         <VerdictCard
