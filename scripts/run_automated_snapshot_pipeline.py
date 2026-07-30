@@ -203,6 +203,12 @@ class RunOutcome:
     #: invisible because nothing recorded that the jobs and the candidate were
     #: looking at different files.
     database_binding: dict[str, str] = field(default_factory=dict)
+    finalization: dict[str, Any] = field(default_factory=dict)
+    current_run_job_statuses_in_operational: dict[str, str] = field(default_factory=dict)
+    current_run_job_statuses_in_candidate: dict[str, str] = field(default_factory=dict)
+    non_terminal_jobs_in_operational: list[str] = field(default_factory=list)
+    non_terminal_jobs_in_candidate: list[str] = field(default_factory=list)
+    job_status_report_candidate_match: bool = False
     parent_row_counts: dict[str, int] = field(default_factory=dict)
     operational_row_counts: dict[str, int] = field(default_factory=dict)
     candidate_row_counts: dict[str, int] = field(default_factory=dict)
@@ -228,6 +234,14 @@ class RunOutcome:
             "candidate_snapshot_id": self.candidate_snapshot_id,
             "candidate_sha256": self.candidate_sha256,
             "database_binding": self.database_binding,
+            "finalization": self.finalization,
+            "current_run_job_statuses_in_operational":
+                self.current_run_job_statuses_in_operational,
+            "current_run_job_statuses_in_candidate":
+                self.current_run_job_statuses_in_candidate,
+            "non_terminal_jobs_in_operational": self.non_terminal_jobs_in_operational,
+            "non_terminal_jobs_in_candidate": self.non_terminal_jobs_in_candidate,
+            "job_status_report_candidate_match": self.job_status_report_candidate_match,
             "parent_row_counts": self.parent_row_counts,
             "operational_row_counts": self.operational_row_counts,
             "candidate_row_counts": self.candidate_row_counts,
@@ -451,6 +465,32 @@ def build_and_validate_candidate(work_dir: Path, operational: Path, outcome: Run
     """
     import subprocess
 
+    # Quiesce and checkpoint BEFORE anything reads the file. The builder runs as a
+    # subprocess; while this process still holds a WAL connection, whatever it
+    # copies is missing every transaction since the last automatic checkpoint.
+    from pmvl_shared.db.finalize import FinalizationError, finalize_operational_database
+
+    run_jobs_seen = set(outcome.statuses)
+    try:
+        finalization = finalize_operational_database(
+            operational, run_job_names=run_jobs_seen
+        )
+    except FinalizationError as exc:
+        raise PipelineError(f"operational database not safe to build from: {exc}") from exc
+
+    outcome.finalization = finalization.as_dict()
+    outcome.current_run_job_statuses_in_operational = {
+        name: status
+        for name, status in finalization.job_statuses.items()
+        if name in run_jobs_seen
+    }
+    outcome.non_terminal_jobs_in_operational = finalization.non_terminal_jobs
+    print(
+        f"finalised: journal {finalization.journal_mode_before} -> "
+        f"{finalization.journal_mode_after}, integrity {finalization.integrity}, "
+        f"wal removed {finalization.wal_removed}"
+    )
+
     candidate = work_dir / "candidate.db"
     env = {**os.environ, "DATABASE_URL": f"sqlite+pysqlite:///{operational}"}
     result = subprocess.run(
@@ -467,6 +507,33 @@ def build_and_validate_candidate(work_dir: Path, operational: Path, outcome: Run
     )
     if validation.returncode != 0:
         raise PipelineError(f"candidate failed validation: {validation.stdout[-800:]}")
+
+    # The candidate must agree with the report about this run's own jobs. A
+    # disagreement means the artefact describes a run that did not happen.
+    from pmvl_shared.db.finalize import job_states_in
+
+    candidate_states, candidate_non_terminal = job_states_in(candidate, run_jobs_seen)
+    outcome.current_run_job_statuses_in_candidate = {
+        name: status for name, status in candidate_states.items() if name in run_jobs_seen
+    }
+    outcome.non_terminal_jobs_in_candidate = candidate_non_terminal
+    outcome.job_status_report_candidate_match = all(
+        outcome.current_run_job_statuses_in_candidate.get(name) == status.value
+        for name, status in outcome.statuses.items()
+    )
+
+    if candidate_non_terminal:
+        raise PipelineError(
+            "the candidate contains jobs from this run that are still "
+            f"non-terminal: {', '.join(candidate_non_terminal)}. This is the "
+            "stale-copy failure; refusing to treat it as publishable."
+        )
+    if not outcome.job_status_report_candidate_match:
+        raise PipelineError(
+            "the candidate's job statuses disagree with the run report. "
+            f"report={ {k: v.value for k, v in outcome.statuses.items()} } "
+            f"candidate={outcome.current_run_job_statuses_in_candidate}"
+        )
 
     outcome.candidate_path = candidate
     outcome.database_binding["candidate_source_db"] = str(operational)

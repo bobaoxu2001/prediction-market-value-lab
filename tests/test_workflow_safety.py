@@ -264,9 +264,20 @@ class TestPublicationSafety:
         assert '"git", "show"' in publish_code, "the committed blobs are never read back"
         assert "verify_artifact" in publish_code
 
-    def test_the_commit_skips_ci(self, publish_code: str) -> None:
-        """A published snapshot must not trigger the next pipeline run."""
-        assert "[skip ci]" in publish_code
+    def test_the_commit_does_not_skip_ci(self, publish_code: str) -> None:
+        """Inverted deliberately.
+
+        [skip ci] was here to stop a publication triggering the next pipeline.
+        That protection now comes from the trigger list - the pipeline runs only
+        on workflow_dispatch and schedule, never on push - so skipping CI bought
+        nothing and cost everything: it made the commit that changes what the
+        public site serves the only unverified commit in the repository.
+        """
+        commit_lines = [
+            line for line in publish_code.splitlines() if "git commit" in line
+        ]
+        assert commit_lines
+        assert all("[skip ci]" not in line for line in commit_lines)
 
     def test_release_status_becomes_published_only_at_the_commit(
         self, publish_code: str
@@ -399,3 +410,76 @@ class TestGatingEvaluatedNotJustInspected:
                         f"schedule published with sched={schedule!r} "
                         f"var={publish_var!r} input={publish_input}"
                     )
+
+
+class TestPublicationCommitsAreVerified:
+    """A publication changes what the public site serves. Skipping CI on it made
+    the riskiest commit in the repository the only unverified one."""
+
+    @pytest.fixture()
+    def publish_script(self, pipeline: dict) -> str:
+        return "\n".join(
+            (s.get("run") or "") for s in pipeline["jobs"]["publish"]["steps"]
+        )
+
+    def test_the_publication_commit_carries_no_skip_marker(self, publish_script: str) -> None:
+        commit_lines = [
+            line for line in publish_script.splitlines()
+            if "git commit" in line and not line.strip().startswith("#")
+        ]
+        assert commit_lines, "no commit step found"
+        for line in commit_lines:
+            for marker in ("[skip ci]", "[ci skip]", "[no ci]", "***NO_CI***"):
+                assert marker not in line, f"publication commit skips CI: {line.strip()}"
+
+    def test_the_pipeline_cannot_be_triggered_by_a_push(self, pipeline: dict) -> None:
+        """This is what makes removing [skip ci] safe: a publication commit
+        triggers verification, but cannot start another pipeline."""
+        assert "push" not in pipeline["triggers"]
+        assert set(pipeline["triggers"]) <= {"workflow_dispatch", "schedule"}
+
+    def test_no_recursive_publication_loop_exists(self, pipeline: dict) -> None:
+        """The publish job is the only thing that commits, and only a dispatch or
+        schedule can reach it. Neither is caused by a commit."""
+        triggers = set(pipeline["triggers"])
+        assert not (triggers & {"push", "create", "repository_dispatch"}), (
+            "a commit-driven trigger would let a publication start the next "
+            "publication"
+        )
+
+
+class TestPostDeploySmokeWorkflow:
+    """A green build says the code compiled. It says nothing about whether the
+    deployment answers."""
+
+    @pytest.fixture(scope="class")
+    def smoke(self) -> dict:
+        return _load("postdeploy-smoke.yml")
+
+    def test_it_runs_on_pushes_to_main(self, smoke: dict) -> None:
+        assert "main" in smoke["triggers"]["push"]["branches"]
+
+    def test_it_is_read_only(self, smoke: dict) -> None:
+        """It observes production; it must never change it."""
+        assert smoke["permissions"] == {"contents": "read"}
+        for job in smoke["jobs"].values():
+            assert job.get("permissions", {}).get("contents") != "write"
+
+    def test_it_does_not_start_the_pipeline(self, smoke: dict, pipeline: dict) -> None:
+        """Triggering data work from a push is how a publication would recurse."""
+        body = "\n".join(
+            (s.get("run") or "") for j in smoke["jobs"].values() for s in j.get("steps", [])
+        )
+        assert "run_automated_snapshot_pipeline" not in body
+        assert "workflow run pipeline" not in body
+
+    def test_it_checks_the_pushed_commit(self, smoke: dict) -> None:
+        body = "\n".join(
+            (s.get("run") or "") for j in smoke["jobs"].values() for s in j.get("steps", [])
+        )
+        assert "--commit" in body and "GITHUB_SHA" in body
+
+    def test_it_uploads_a_report_even_on_failure(self, smoke: dict) -> None:
+        steps = smoke["jobs"]["smoke"]["steps"]
+        upload = next(s for s in steps if "upload-artifact" in str(s.get("uses")))
+        assert "always()" in str(upload.get("if"))

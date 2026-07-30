@@ -1,0 +1,72 @@
+name: Post-deploy production smoke
+
+# A green build is not proof that production works. PR #4 shipped with green CI, a
+# successful Vercel build and a deployment marked READY, and every production API
+# route returned FastAPI's own 404 - the redeploy had exposed changed Vercel
+# rewrite semantics. Nothing noticed until a human looked.
+#
+# This runs on every push to main and fails loudly when production is unusable or
+# serving the wrong commit.
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+# Read-only. This workflow observes production; it must never change it.
+permissions:
+  contents: read
+
+concurrency:
+  # Only the newest push matters; an older smoke chasing a superseded commit
+  # would fail for a reason nobody needs to act on.
+  group: postdeploy-smoke
+  cancel-in-progress: true
+
+jobs:
+  smoke:
+    name: Production smoke
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Wait for deployment and check production
+        run: |
+          python scripts/postdeploy_smoke.py \
+            --commit "${GITHUB_SHA}" \
+            --wait-minutes 12 \
+            --report smoke-report.json
+
+      - name: Upload smoke report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: postdeploy-smoke-${{ github.run_id }}
+          path: smoke-report.json
+          retention-days: 14
+          if-no-files-found: warn
+
+      - name: Summarise
+        if: always()
+        run: |
+          if [[ ! -f smoke-report.json ]]; then
+            echo "::error::the smoke check produced no report"
+            exit 1
+          fi
+          python - <<'PY'
+          import json
+          report = json.load(open("smoke-report.json"))
+          print(f"expected {report['expected_commit'][:12]}")
+          print(f"api      {report['api_commit'][:12] or '-'}")
+          print(f"web      {report['web_commit'][:12] or '-'}")
+          print(f"parity   {report['parity']}  snapshot_mode {report['snapshot_mode']}")
+          for error in report["errors"]:
+              print(f"::error::[{error['category']}] {error['detail']}")
+          PY
