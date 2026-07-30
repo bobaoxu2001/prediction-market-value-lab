@@ -18,6 +18,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import os
 import ssl
 import sys
 import time
@@ -83,13 +84,30 @@ class SmokeReport:
         }
 
 
+def _ssl_context() -> ssl.SSLContext:
+    """TLS context honouring a custom CA bundle.
+
+    Reused from scripts/smoke_test.py rather than reinvented. A machine behind a
+    TLS-inspecting proxy presents a private CA that is not in the default trust
+    store, and a plain default context there reports every route as unreachable -
+    a smoke check that cries outage on a healthy production is worse than none.
+
+    Verification is never disabled; the bundle is pointed at, not ignored.
+    """
+    bundle = os.environ.get("SSL_CERT_FILE") or os.environ.get("REQUESTS_CA_BUNDLE")
+    if not bundle:
+        local = Path(__file__).resolve().parents[1] / ".venv" / "ca.pem"
+        bundle = str(local) if local.exists() else None
+    return ssl.create_default_context(cafile=bundle) if bundle else ssl.create_default_context()
+
+
 def _get(url: str, timeout: int = 45, attempts: int = 4) -> tuple[int, str]:
     """GET with retries for TRANSPORT failures only.
 
     A 4xx or 5xx is returned immediately: retrying a real defect until it passes
     is how a smoke test becomes decoration.
     """
-    context = ssl.create_default_context()
+    context = _ssl_context()
     status, body = 0, ""
     for attempt in range(attempts):
         request = urllib.request.Request(url, headers={"User-Agent": "pmvl-postdeploy/1.0"})
