@@ -175,3 +175,45 @@ Follows the brief's Phase B10, narrowed by the findings above:
   would help (`/system` publication state) it is documented here rather than added.
 - No pipeline workflow change, no snapshot mutation.
 - All existing API calls, route shapes and query parameters preserved.
+
+## Post-publication responsive closure
+
+Re-audited after the first compressed Snapshot was published and this branch was
+rebased onto `main` (2026-07-31 UTC). The remaining `/markets` blocker is closed
+without changing the API, pipeline, or Snapshot.
+
+- Below Tailwind's `md` breakpoint, the eleven-column table is replaced by one
+  divided, compact list. Each row keeps contract identity, venue, status, YES ask,
+  and resolution visible; native `details` / `summary` disclosures carry spread,
+  depth, model-coverage routing, quote age/status, and venue coverage.
+- Model coverage is not invented from unrelated fields. The market-index API does
+  not expose a per-row coverage value, so the disclosure says so and links to the
+  existing contract analysis where prediction coverage is source-backed.
+- At 768px, the semantic sortable table remains, but only Market, Venue, YES ask,
+  and Resolves are shown. Columns reveal progressively at `lg` and `xl`; the Market
+  identity remains sticky and numeric cells remain right-aligned.
+- Root-level horizontal clipping was removed. Wide desktop content, where needed,
+  is reachable inside `.table-wrap` rather than hidden from the page.
+- A stale venue summary remains visible on mobile when the captured order book
+  disagrees with it.
+
+Measured in Chrome against the production-mode branch build and the published
+compressed Snapshot:
+
+| Viewport | Before: root overflow | After: root overflow | Active representation |
+|---|---:|---:|---|
+| 375 x 812 | not previously recorded | 0px | mobile list; 50 disclosures |
+| 390 x 844 | 397px | 0px | mobile list; desktop table hidden |
+| 768 x 1024 | 131px | 0px | four-column table; mobile list hidden |
+| 1440 x 900 | 0px | 0px | all eleven columns; internal table scroll only |
+
+The first mobile disclosure opened with the Enter key. At 768px the measured
+Market cell was `position: sticky`, the numeric cell was right-aligned, and the
+table wrapper fit exactly (`734px` client and scroll width). At 1440px all eleven
+headers were visible while the wrapper contained its own overflow (`1246px` client,
+`1345px` scroll width), with no document-level overflow.
+
+Accepted screenshots:
+
+- [`markets-mobile-dark.png`](screenshots/pr-8/markets-mobile-dark.png) — 390 x 844
+- [`markets-768-light.png`](screenshots/pr-8/markets-768-light.png) — 768 x 1024
