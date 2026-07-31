@@ -76,6 +76,7 @@ from pmvl_shared.pipeline_dag import (  # noqa: E402
 )
 
 PUBLISHED_DB = ROOT / "data" / "pmvl-snapshot.db"
+PUBLISHED_GZIP = ROOT / "data" / "pmvl-snapshot.db.gz"
 PUBLISHED_MANIFEST = ROOT / "data" / "pmvl-snapshot.manifest.json"
 
 #: Manual smoke runs stay small so a human waiting on a dispatch gets an answer.
@@ -195,7 +196,16 @@ class RunOutcome:
     migration_end_revision: str | None = None
     candidate_path: Path | None = None
     candidate_snapshot_id: str | None = None
+    # ``candidate_sha256`` remains the canonical uncompressed checksum for
+    # compatibility with existing reports.  The explicit fields prevent a
+    # publisher from confusing the validated SQLite bytes with their gzip
+    # transport representation.
     candidate_sha256: str | None = None
+    candidate_uncompressed_sha256: str | None = None
+    candidate_compressed_sha256: str | None = None
+    candidate_uncompressed_size_bytes: int | None = None
+    candidate_compressed_size_bytes: int | None = None
+    parent_resolved_path: str = field(default="", repr=False)
     #: Row counts either side of the run. The incident was invisible because the
     #: report said SUCCESS nine times and never said what the candidate contained
     #: relative to what it started from.
@@ -219,6 +229,8 @@ class RunOutcome:
     def as_dict(self) -> dict[str, Any]:
         return {
             "run_id": self.run_id,
+            "workflow_run_id": os.environ.get("GITHUB_RUN_ID", ""),
+            "workflow_run_attempt": os.environ.get("GITHUB_RUN_ATTEMPT", ""),
             "scope": self.scope.label,
             "statuses": {k: v.value for k, v in self.statuses.items()},
             "skipped": self.skipped,
@@ -233,6 +245,10 @@ class RunOutcome:
             "state_persisted_across_runs": False,
             "candidate_snapshot_id": self.candidate_snapshot_id,
             "candidate_sha256": self.candidate_sha256,
+            "candidate_uncompressed_sha256": self.candidate_uncompressed_sha256,
+            "candidate_compressed_sha256": self.candidate_compressed_sha256,
+            "candidate_uncompressed_size_bytes": self.candidate_uncompressed_size_bytes,
+            "candidate_compressed_size_bytes": self.candidate_compressed_size_bytes,
             "database_binding": self.database_binding,
             "finalization": self.finalization,
             "current_run_job_statuses_in_operational":
@@ -293,27 +309,41 @@ def initialise_operational_db(work_dir: Path, outcome: RunOutcome) -> Path:
 
     The published file is never opened read-write; it is copied first.
     """
-    from pmvl_shared.manifest import verify_artifact
-
     # Self-contained: callers other than main() (tests, a future bootstrap tool)
     # must not have to know that this function needs its directory pre-made.
     work_dir.mkdir(parents=True, exist_ok=True)
     operational = work_dir / "pmvl-operational.db"
 
-    if PUBLISHED_DB.exists() and PUBLISHED_MANIFEST.exists():
-        problems = verify_artifact(PUBLISHED_DB, PUBLISHED_MANIFEST)
-        if problems:
+    if PUBLISHED_MANIFEST.exists():
+        from pmvl_shared.snapshot_artifact import (
+            SnapshotArtifactError,
+            resolve_snapshot_path,
+        )
+
+        try:
+            published = resolve_snapshot_path(
+                PUBLISHED_MANIFEST,
+                PUBLISHED_DB,
+            )
+        except SnapshotArtifactError as exc:
             # A corrupt parent is not something to work around silently: every
             # downstream row would inherit its provenance.
             raise PipelineError(
                 "the published snapshot failed verification and cannot seed a run: "
-                + "; ".join(problems)
-            )
+                f"{exc}"
+            ) from exc
+
         manifest = json.loads(PUBLISHED_MANIFEST.read_text())
         outcome.parent_snapshot_id = manifest.get("snapshot_id")
-        outcome.parent_snapshot_sha256 = manifest.get("sha256")
+        outcome.parent_snapshot_sha256 = (
+            manifest.get("uncompressed_sha256") or manifest.get("sha256")
+        )
+        outcome.parent_resolved_path = str(published)
         outcome.operational_init_source = "published_snapshot"
-        shutil.copy2(PUBLISHED_DB, operational)
+        # The resolved cache is deliberately read-only.  A pipeline run needs its
+        # own writable operational copy, so do not preserve cache permissions.
+        shutil.copyfile(published, operational)
+        operational.chmod(0o600)
         return operational
 
     if not outcome.scope.bootstrap_allowed:
@@ -502,11 +532,23 @@ def build_and_validate_candidate(work_dir: Path, operational: Path, outcome: Run
         raise PipelineError(f"snapshot build failed: {result.stderr[-800:]}")
 
     validation = subprocess.run(
-        [sys.executable, str(ROOT / "scripts/validate_snapshot.py"), "--snapshot", str(candidate)],
+        [
+            sys.executable,
+            str(ROOT / "scripts/validate_snapshot.py"),
+            "--snapshot",
+            str(candidate),
+            "--finalize-candidate",
+        ],
         env=env, capture_output=True, text=True,
     )
     if validation.returncode != 0:
         raise PipelineError(f"candidate failed validation: {validation.stdout[-800:]}")
+    compressed = candidate.with_name(candidate.name + ".gz")
+    if not compressed.exists():
+        raise PipelineError(
+            "candidate validation passed without producing its deterministic gzip "
+            "representation"
+        )
 
     # The candidate must agree with the report about this run's own jobs. A
     # disagreement means the artefact describes a run that did not happen.
@@ -537,7 +579,11 @@ def build_and_validate_candidate(work_dir: Path, operational: Path, outcome: Run
 
     outcome.candidate_path = candidate
     outcome.database_binding["candidate_source_db"] = str(operational)
-    outcome.parent_row_counts = _row_counts(PUBLISHED_DB)
+    outcome.parent_row_counts = _row_counts(
+        Path(outcome.parent_resolved_path)
+        if outcome.parent_resolved_path
+        else PUBLISHED_DB
+    )
     outcome.operational_row_counts = _row_counts(operational)
     outcome.candidate_row_counts = _row_counts(candidate)
     if outcome.parent_row_counts and outcome.parent_row_counts == outcome.candidate_row_counts:
@@ -577,14 +623,27 @@ def _record_candidate_identity(candidate: Path, outcome: RunOutcome) -> None:
 
     manifest_path = candidate.with_suffix(".manifest.json")
     if manifest_path.exists():
-        outcome.candidate_snapshot_id = json.loads(manifest_path.read_text()).get(
-            "snapshot_id"
+        manifest = json.loads(manifest_path.read_text())
+        outcome.candidate_snapshot_id = manifest.get("snapshot_id")
+        outcome.candidate_uncompressed_sha256 = (
+            manifest.get("uncompressed_sha256") or manifest.get("sha256")
+        )
+        outcome.candidate_compressed_sha256 = manifest.get("compressed_sha256")
+        outcome.candidate_uncompressed_size_bytes = (
+            manifest.get("uncompressed_size_bytes")
+            or manifest.get("file_size_bytes")
+        )
+        outcome.candidate_compressed_size_bytes = manifest.get(
+            "compressed_size_bytes"
         )
     outcome.candidate_sha256 = sha256_of(candidate)
+    outcome.candidate_uncompressed_sha256 = (
+        outcome.candidate_uncompressed_sha256 or outcome.candidate_sha256
+    )
 
 
 def _emit_candidate(candidate: Path, out_dir: Path, outcome: RunOutcome) -> Path:
-    """Copy the validated candidate pair somewhere a later job can pick it up.
+    """Copy the validated candidate bundle somewhere a later job can pick it up.
 
     The manifest is written with ``release_status: held``. It becomes ``published``
     only after the git commit succeeds - marking it published here would produce an
@@ -595,42 +654,82 @@ def _emit_candidate(candidate: Path, out_dir: Path, outcome: RunOutcome) -> Path
 
     out_dir.mkdir(parents=True, exist_ok=True)
     db_out = out_dir / "pmvl-snapshot.db"
+    gzip_out = out_dir / "pmvl-snapshot.db.gz"
     manifest_out = out_dir / "pmvl-snapshot.manifest.json"
 
     shutil.copy2(candidate, db_out)
+    candidate_gzip = candidate.with_name(candidate.name + ".gz")
+    if not candidate_gzip.exists():
+        raise PipelineError("validated candidate has no gzip representation")
+    shutil.copy2(candidate_gzip, gzip_out)
     manifest = json.loads(candidate.with_suffix(".manifest.json").read_text())
     manifest["release_status"] = ReleaseStatus.HELD
     manifest["parent_snapshot_id"] = outcome.parent_snapshot_id
     manifest["parent_snapshot_sha256"] = outcome.parent_snapshot_sha256
     manifest["pipeline_run_id"] = outcome.run_id
     manifest["workflow_run_id"] = os.environ.get("GITHUB_RUN_ID", "")
+    manifest["workflow_run_attempt"] = os.environ.get("GITHUB_RUN_ATTEMPT", "")
     manifest_out.write_text(json.dumps(manifest, indent=2, sort_keys=True) + "\n")
 
+    from pmvl_shared.snapshot_artifact import verify_compressed_snapshot
+
+    problems = verify_compressed_snapshot(db_out, gzip_out, manifest_out)
+    if problems:
+        raise PipelineError(
+            "emitted candidate bundle failed verification: " + "; ".join(problems)
+        )
     _record_candidate_identity(db_out, outcome)
     outcome.candidate_disposition = CandidateDisposition.UPLOADED_FOR_PUBLISH
     return db_out
 
 
 def promote(candidate: Path, outcome: RunOutcome) -> None:
-    """Atomically replace the published pair.
+    """Promote a validated candidate into the local published representation.
 
-    The database is renamed FIRST and the manifest second. If the process dies
-    between the two, the manifest still describes the previous database and
-    `verify_artifact` reports a checksum mismatch - a loud, detectable state. The
-    reverse order would leave a manifest asserting a validated artefact that is
-    not the one on disk, which verifies clean and is wrong.
+    Production publication is the single Git commit in ``pipeline.yml``.  This
+    helper remains for local/manual runs and mirrors the same format transition.
+    A legacy raw candidate is still supported for backward-compatible tests and
+    rollback tooling; every newly built candidate carries deterministic gzip.
     """
+    from pmvl_shared.manifest import ReleaseStatus
+
     candidate_manifest = candidate.with_suffix(".manifest.json")
     if not candidate_manifest.exists():
         raise PipelineError("candidate has no manifest; refusing to promote")
 
-    # os.replace is atomic within a filesystem; the temporary directory is placed
-    # alongside the target for that reason.
-    os.replace(candidate, PUBLISHED_DB)
-    os.replace(candidate_manifest, PUBLISHED_MANIFEST)
+    manifest = json.loads(candidate_manifest.read_text())
+    candidate_gzip = candidate.with_name(candidate.name + ".gz")
+    _record_candidate_identity(candidate, outcome)
+    if manifest.get("artifact_encoding") == "gzip":
+        if not candidate_gzip.exists():
+            raise PipelineError("gzip candidate manifest has no compressed artefact")
+        from pmvl_shared.snapshot_artifact import verify_compressed_snapshot
+
+        problems = verify_compressed_snapshot(
+            candidate, candidate_gzip, candidate_manifest
+        )
+        if problems:
+            raise PipelineError(
+                "candidate bundle failed verification: " + "; ".join(problems)
+            )
+        # The validator deliberately leaves every candidate HELD. Local/manual
+        # promotion has no later Git commit step to flip that boundary, so do it
+        # only after the exact bundle has passed its final verification and
+        # immediately before installing the pair.
+        manifest["release_status"] = ReleaseStatus.PUBLISHED
+        candidate_manifest.write_text(
+            json.dumps(manifest, indent=2, sort_keys=True) + "\n"
+        )
+        os.replace(candidate_gzip, PUBLISHED_GZIP)
+        os.replace(candidate_manifest, PUBLISHED_MANIFEST)
+        PUBLISHED_DB.unlink(missing_ok=True)
+        candidate.unlink(missing_ok=True)
+    else:
+        # Legacy rollback path.
+        os.replace(candidate, PUBLISHED_DB)
+        os.replace(candidate_manifest, PUBLISHED_MANIFEST)
     outcome.published = True
     outcome.candidate_disposition = CandidateDisposition.PUBLISHED
-    _record_candidate_identity(PUBLISHED_DB, outcome)
 
 
 def main(argv: list[str] | None = None) -> int:

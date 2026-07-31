@@ -67,10 +67,14 @@ jobs:
       parent_snapshot_id: ${{ steps.summarise.outputs.parent_snapshot_id }}
       parent_snapshot_sha256: ${{ steps.summarise.outputs.parent_snapshot_sha256 }}
       candidate_snapshot_id: ${{ steps.summarise.outputs.candidate_snapshot_id }}
-      candidate_sha256: ${{ steps.summarise.outputs.candidate_sha256 }}
+      candidate_uncompressed_sha256: ${{ steps.summarise.outputs.candidate_uncompressed_sha256 }}
+      candidate_compressed_sha256: ${{ steps.summarise.outputs.candidate_compressed_sha256 }}
       source_commit_sha: ${{ github.sha }}
       pipeline_run_id: ${{ steps.summarise.outputs.pipeline_run_id }}
-      artifact_name: pmvl-candidate-${{ github.run_id }}-${{ github.sha }}
+      # A rerun keeps github.run_id and github.sha. run_attempt is therefore part
+      # of the identity too, or attempt 2 can collide with attempt 1's immutable
+      # Actions artefact.
+      artifact_name: pmvl-candidate-${{ github.run_id }}-${{ github.run_attempt }}-${{ github.sha }}
     steps:
       - uses: actions/checkout@v4
 
@@ -130,7 +134,36 @@ jobs:
                   missing.append(spec.name)
                   print(f"::error::{spec.name} did not run and was not skipped", file=sys.stderr)
 
-          candidate = Path("candidate/pmvl-snapshot.db").exists()
+          candidate_files = (
+              Path("candidate/pmvl-snapshot.db"),
+              Path("candidate/pmvl-snapshot.db.gz"),
+              Path("candidate/pmvl-snapshot.manifest.json"),
+              Path("run-report.json"),
+          )
+          missing_candidate_files = [str(path) for path in candidate_files if not path.is_file()]
+          required_candidate_metadata = (
+              "candidate_snapshot_id",
+              "candidate_uncompressed_sha256",
+              "candidate_compressed_sha256",
+              "parent_snapshot_id",
+              "parent_snapshot_sha256",
+              "run_id",
+          )
+          missing_candidate_metadata = [
+              field for field in required_candidate_metadata if not report.get(field)
+          ]
+          for field in (
+              "candidate_uncompressed_sha256",
+              "candidate_compressed_sha256",
+              "parent_snapshot_sha256",
+          ):
+              value = str(report.get(field) or "")
+              if value and (
+                  len(value) != 64
+                  or any(char not in "0123456789abcdef" for char in value.lower())
+              ):
+                  missing_candidate_metadata.append(f"{field} (invalid SHA-256)")
+          candidate = not missing_candidate_files and not missing_candidate_metadata
           eligible = bool(report.get("publication_eligible")) and candidate and not missing
 
           print(f"candidate_exists={str(candidate).lower()}")
@@ -138,11 +171,32 @@ jobs:
           print(f"parent_snapshot_id={report.get('parent_snapshot_id') or ''}")
           print(f"parent_snapshot_sha256={report.get('parent_snapshot_sha256') or ''}")
           print(f"candidate_snapshot_id={report.get('candidate_snapshot_id') or ''}")
-          print(f"candidate_sha256={report.get('candidate_sha256') or ''}")
+          print(
+              "candidate_uncompressed_sha256="
+              f"{report.get('candidate_uncompressed_sha256') or ''}"
+          )
+          print(
+              "candidate_compressed_sha256="
+              f"{report.get('candidate_compressed_sha256') or ''}"
+          )
           print(f"pipeline_run_id={report.get('run_id') or ''}")
 
           for blocker in report.get("publication_blockers", []):
               print(f"::warning::publication blocked: {blocker}", file=sys.stderr)
+          if report.get("publication_eligible") and missing_candidate_files:
+              for path in missing_candidate_files:
+                  print(
+                      f"::error::publication-eligible run did not produce {path}",
+                      file=sys.stderr,
+                  )
+              raise SystemExit(1)
+          if report.get("publication_eligible") and missing_candidate_metadata:
+              for field in missing_candidate_metadata:
+                  print(
+                      f"::error::publication-eligible run has no valid {field}",
+                      file=sys.stderr,
+                  )
+              raise SystemExit(1)
           if missing:
               raise SystemExit(1)
           PY
@@ -153,9 +207,10 @@ jobs:
         if: steps.summarise.outputs.publication_eligible == 'true'
         uses: actions/upload-artifact@v4
         with:
-          name: pmvl-candidate-${{ github.run_id }}-${{ github.sha }}
+          name: pmvl-candidate-${{ github.run_id }}-${{ github.run_attempt }}-${{ github.sha }}
           path: |
             candidate/pmvl-snapshot.db
+            candidate/pmvl-snapshot.db.gz
             candidate/pmvl-snapshot.manifest.json
             run-report.json
           retention-days: 7
@@ -216,22 +271,29 @@ jobs:
 
       - name: Revalidate the candidate independently
         env:
-          EXPECTED_CANDIDATE_SHA: ${{ needs.research.outputs.candidate_sha256 }}
+          EXPECTED_UNCOMPRESSED_SHA: ${{ needs.research.outputs.candidate_uncompressed_sha256 }}
+          EXPECTED_COMPRESSED_SHA: ${{ needs.research.outputs.candidate_compressed_sha256 }}
           EXPECTED_CANDIDATE_ID: ${{ needs.research.outputs.candidate_snapshot_id }}
           EXPECTED_PARENT_ID: ${{ needs.research.outputs.parent_snapshot_id }}
           EXPECTED_PARENT_SHA: ${{ needs.research.outputs.parent_snapshot_sha256 }}
           EXPECTED_COMMIT: ${{ needs.research.outputs.source_commit_sha }}
+          EXPECTED_PIPELINE_RUN_ID: ${{ needs.research.outputs.pipeline_run_id }}
+          EXPECTED_WORKFLOW_RUN_ID: ${{ github.run_id }}
+          EXPECTED_WORKFLOW_RUN_ATTEMPT: ${{ github.run_attempt }}
         run: |
           python scripts/verify_candidate.py \
-            --candidate incoming/candidate/pmvl-snapshot.db \
+            --candidate-raw incoming/candidate/pmvl-snapshot.db \
+            --candidate-gzip incoming/candidate/pmvl-snapshot.db.gz \
             --manifest incoming/candidate/pmvl-snapshot.manifest.json \
-            --published data/pmvl-snapshot.manifest.json
+            --report incoming/run-report.json \
+            --published-manifest data/pmvl-snapshot.manifest.json
 
       - name: Rerun snapshot validation on the candidate
         run: |
-          cp incoming/candidate/pmvl-snapshot.db /tmp/candidate.db
-          cp incoming/candidate/pmvl-snapshot.manifest.json /tmp/candidate.manifest.json
-          python scripts/validate_snapshot.py --snapshot /tmp/candidate.db
+          python scripts/validate_snapshot.py \
+            --snapshot incoming/candidate/pmvl-snapshot.db \
+            --compressed incoming/candidate/pmvl-snapshot.db.gz \
+            --manifest incoming/candidate/pmvl-snapshot.manifest.json
 
       - name: Confirm main has not moved
         run: |
@@ -241,7 +303,7 @@ jobs:
             exit 1
           fi
 
-      - name: Commit both files together
+      - name: Commit the compressed snapshot and manifest together
         run: |
           git config user.name  "pmvl-pipeline[bot]"
           git config user.email "pmvl-pipeline@users.noreply.github.com"
@@ -250,6 +312,7 @@ jobs:
           # been revalidated and immediately before the commit that makes it true.
           python - <<'PY'
           import json
+          import shutil
           from pathlib import Path
 
           src = Path("incoming/candidate")
@@ -258,19 +321,118 @@ jobs:
           Path("data/pmvl-snapshot.manifest.json").write_text(
               json.dumps(manifest, indent=2, sort_keys=True) + "\n"
           )
-          Path("data/pmvl-snapshot.db").write_bytes((src / "pmvl-snapshot.db").read_bytes())
+          shutil.copyfile(
+              src / "pmvl-snapshot.db.gz",
+              Path("data/pmvl-snapshot.db.gz"),
+          )
+          # Initial migration: the raw Git artefact is deleted in the same commit
+          # that introduces its deterministic gzip representation. On later
+          # publications this is already absent.
+          Path("data/pmvl-snapshot.db").unlink(missing_ok=True)
           PY
 
           # The real publication boundary is the git commit, not os.replace in a
-          # working directory. Both files must move in ONE commit: a commit
-          # carrying only one leaves the public pair internally inconsistent.
-          git add data/pmvl-snapshot.db data/pmvl-snapshot.manifest.json
-          CHANGED=$(git diff --cached --name-only -- data/pmvl-snapshot.db data/pmvl-snapshot.manifest.json | wc -l | tr -d ' ')
-          if [[ "$CHANGED" != "2" ]]; then
-            echo "::error::expected both snapshot files to change, got $CHANGED; refusing to publish a mismatched pair"
-            git diff --cached --name-only -- data/
-            exit 1
+          # working directory. Stage only the three exact artefact paths, including
+          # the legacy deletion, then inspect the ENTIRE index. A scoped count would
+          # accept the wrong statuses and would not detect an unrelated staged file.
+          git add -- \
+            data/pmvl-snapshot.db.gz \
+            data/pmvl-snapshot.manifest.json
+          # `git add -A -- <raw> ...` fails once <raw> is no longer tracked,
+          # which would break every gzip-to-gzip publication. Stage its deletion
+          # only during the one legacy transition where it exists in HEAD.
+          if git ls-files --error-unmatch -- data/pmvl-snapshot.db >/dev/null 2>&1; then
+            git add -u -- data/pmvl-snapshot.db
           fi
+
+          python - <<'PY'
+          import json
+          import subprocess
+
+          RAW = "data/pmvl-snapshot.db"
+          GZIP = "data/pmvl-snapshot.db.gz"
+          MANIFEST = "data/pmvl-snapshot.manifest.json"
+
+          def git_bytes(*args: str) -> bytes:
+              result = subprocess.run(
+                  ["git", *args],
+                  check=True,
+                  capture_output=True,
+              )
+              return result.stdout
+
+          def tree_has(spec: str) -> bool:
+              return subprocess.run(
+                  ["git", "cat-file", "-e", spec],
+                  capture_output=True,
+              ).returncode == 0
+
+          # The manifest is authoritative. File presence must agree with it; never
+          # infer gzip merely because a .gz happens to be present.
+          previous = json.loads(git_bytes("show", f"HEAD:{MANIFEST}"))
+          previous_encoding = previous.get("artifact_encoding")
+          if previous_encoding == "gzip":
+              if tree_has(f"HEAD:{RAW}") or not tree_has(f"HEAD:{GZIP}"):
+                  raise SystemExit(
+                      "::error::HEAD declares gzip but its tracked artefact set disagrees"
+                  )
+              expected = frozenset({
+                  ("M", GZIP),
+                  ("M", MANIFEST),
+              })
+          elif previous_encoding in (None, "raw", "identity", "none"):
+              if not tree_has(f"HEAD:{RAW}") or tree_has(f"HEAD:{GZIP}"):
+                  raise SystemExit(
+                      "::error::HEAD declares a legacy raw snapshot but its tracked "
+                      "artefact set disagrees"
+                  )
+              expected = frozenset({
+                  ("D", RAW),
+                  ("A", GZIP),
+                  ("M", MANIFEST),
+              })
+          else:
+              raise SystemExit(
+                  f"::error::unsupported previous artifact_encoding "
+                  f"{previous_encoding!r}"
+              )
+
+          fields = git_bytes(
+              "diff", "--cached", "--name-status", "--no-renames", "-z", "HEAD"
+          ).decode().split("\0")
+          if fields and fields[-1] == "":
+              fields.pop()
+          if len(fields) % 2:
+              raise SystemExit("::error::could not parse the staged name/status set")
+          actual = frozenset(zip(fields[0::2], fields[1::2], strict=True))
+          if actual != expected:
+              def render(changes):
+                  return ", ".join(f"{status} {path}" for status, path in sorted(changes))
+              raise SystemExit(
+                  "::error::publication staged the wrong exact change set; "
+                  f"expected [{render(expected)}], got [{render(actual)}]"
+              )
+
+          # Assert the resulting INDEX, not the working tree: this is exactly what
+          # the commit will contain.
+          if tree_has(f":{RAW}"):
+              raise SystemExit(
+                  "::error::raw and gzip snapshots would both remain after publication"
+              )
+          if not tree_has(f":{GZIP}") or not tree_has(f":{MANIFEST}"):
+              raise SystemExit(
+                  "::error::the staged gzip/manifest pair is incomplete"
+              )
+          staged_manifest = json.loads(git_bytes("show", f":{MANIFEST}"))
+          if staged_manifest.get("artifact_encoding") != "gzip":
+              raise SystemExit(
+                  "::error::the staged manifest does not authoritatively declare gzip"
+              )
+          if staged_manifest.get("release_status") != "published":
+              raise SystemExit(
+                  "::error::the staged manifest is not marked published"
+              )
+          PY
 
           # No [skip ci]. A publication changes the data the public site serves,
           # which is exactly when snapshot integrity, both deployments and the
@@ -281,29 +443,31 @@ jobs:
           # workflow_dispatch and schedule, never on push.
           git commit -m "data: publish validated snapshot from ${GITHUB_SHA:0:12}"
 
-      - name: Verify the committed pair matches
+      - name: Verify the committed gzip contains the validated candidate
         # Working-tree validation is not enough: what the public serves is what
         # the commit contains.
         run: |
           python - <<'PY'
-          import subprocess, sys
-          sys.path.insert(0, "packages/shared/src")
+          import subprocess
           from pathlib import Path
-          from pmvl_shared.manifest import verify_artifact
 
-          for name in ("data/pmvl-snapshot.db", "data/pmvl-snapshot.manifest.json"):
-              blob = subprocess.run(["git", "show", f"HEAD:{name}"], capture_output=True)
-              Path("/tmp/committed-" + Path(name).name).write_bytes(blob.stdout)
-
-          problems = verify_artifact(
-              Path("/tmp/committed-pmvl-snapshot.db"),
-              Path("/tmp/committed-pmvl-snapshot.manifest.json"),
+          names = (
+              "data/pmvl-snapshot.db.gz",
+              "data/pmvl-snapshot.manifest.json",
           )
-          if problems:
-              print("::error::the committed pair does not verify: " + "; ".join(problems))
-              raise SystemExit(1)
-          print("committed manifest matches committed database bytes")
+          for name in names:
+              blob = subprocess.run(
+                  ["git", "show", f"HEAD:{name}"],
+                  check=True,
+                  capture_output=True,
+              )
+              Path("/tmp/committed-" + Path(name).name).write_bytes(blob.stdout)
           PY
+          python scripts/verify_artifact.py \
+            --compressed /tmp/committed-pmvl-snapshot.db.gz \
+            --manifest /tmp/committed-pmvl-snapshot.manifest.json \
+            --expected-uncompressed incoming/candidate/pmvl-snapshot.db \
+            --expected-release published
 
       - name: Push
         run: |
@@ -320,12 +484,12 @@ jobs:
           # exposed this tripped "Twilio Account String Identifier" on a market id
           # sitting between two sibling ids of the same 32-hex form (AB…, AC…,
           # AD…), which no Twilio credential ever does.
-          if git push origin HEAD:main 2>push.log; then
+          if git push origin HEAD:main >push.log 2>&1; then
             cat push.log
           else
             cat push.log
             if grep -qiE "GH013|push protection|repository rule violations" push.log; then
-              echo "::error::push BLOCKED by GitHub push protection, not by a race. main did NOT move and nothing was published. The snapshot is a binary database of venue identifiers, so this is most likely a shape-match false positive - inspect the flagged offset before allowing anything. Resolving it is a human decision: review the finding in the repository's secret-scanning alerts. Do NOT disable push protection to get a snapshot out."
+              echo "::error::push BLOCKED by GitHub Push Protection. Nothing was published. Inspect the exact flagged bytes; do NOT allowlist the finding, bypass the rule, or disable secret scanning. This is not being classified as a non-fast-forward rejection."
             elif grep -qiE "non-fast-forward|fetch first|rejected.*behind" push.log; then
               echo "::error::push rejected as non-fast-forward: main moved during publication. Re-run the pipeline so research recomputes against the new parent. NOT force-pushing."
             else

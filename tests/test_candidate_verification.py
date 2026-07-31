@@ -40,6 +40,7 @@ def candidate(tmp_path):  # noqa: ANN001, ANN201
                 "model_version": "ensemble-v1.0.0",
                 "parser_version": "1.0.0",
                 "generated_at": "2026-07-29T10:00:00Z",
+                "source_commit_sha": "9c0da76be9e9",
                 "sha256": sha256_of(db),
                 "file_size_bytes": db.stat().st_size,
                 "validation_status": "passed",
@@ -186,3 +187,18 @@ class TestMissingFiles:
     def test_a_missing_candidate_is_reported(self, tmp_path, published) -> None:  # noqa: ANN001
         problems = check(tmp_path / "absent.db", tmp_path / "absent.json", published)
         assert any("missing" in p for p in problems)
+
+    def test_a_requested_run_report_must_exist(
+        self, candidate, published, tmp_path  # noqa: ANN001
+    ) -> None:
+        db, manifest = candidate
+        missing_report = tmp_path / "missing-run-report.json"
+
+        problems = check(
+            db,
+            manifest,
+            published,
+            run_report=missing_report,
+        )
+
+        assert any("run report is missing" in problem for problem in problems)

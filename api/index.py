@@ -17,6 +17,7 @@ from __future__ import annotations
 import os
 import sys
 from pathlib import Path
+from urllib.parse import quote
 
 ROOT = Path(__file__).resolve().parent.parent
 
@@ -30,22 +31,37 @@ for package_dir in (
         sys.path.insert(0, path)
 
 SNAPSHOT = ROOT / "data" / "pmvl-snapshot.db"
+SNAPSHOT_MANIFEST = ROOT / "data" / "pmvl-snapshot.manifest.json"
 
 if not os.environ.get("DATABASE_URL"):
-    if not SNAPSHOT.exists():
+    try:
+        from pmvl_shared.snapshot_artifact import (
+            SnapshotArtifactError,
+            resolve_snapshot_path,
+        )
+
+        resolved_snapshot = resolve_snapshot_path(
+            SNAPSHOT_MANIFEST,
+            SNAPSHOT,
+        )
+    except (SnapshotArtifactError, OSError) as exc:
         listing = sorted(p.name for p in (ROOT / "data").glob("*")) if (
             ROOT / "data"
         ).exists() else ["<no data/ directory in bundle>"]
         raise RuntimeError(
             "Deployment configuration error: the read-only database snapshot is "
-            f"missing from the bundle at {SNAPSHOT}. Build it with "
-            "`make snapshot-build` before deploying, and make sure the file is not "
+            "missing, corrupt, or inconsistent with its manifest. Build and validate "
+            "it before deploying, and make sure the declared artefact is not "
             "excluded by .gitignore or .vercelignore - the Vercel uploader honours "
-            f".gitignore. Contents of data/: {listing}"
-        )
+            f".gitignore. Cause: {exc}. Contents of data/: {listing}"
+        ) from exc
     # mode=ro is explicit: the bundle is read-only, and an accidental write should
-    # fail here rather than half-succeed.
-    os.environ["DATABASE_URL"] = f"sqlite+pysqlite:///file:{SNAPSHOT}?mode=ro&uri=true"
+    # fail here rather than half-succeed. immutable=1 is safe because resolution
+    # already checked that the Snapshot is self-contained and has no WAL/SHM state.
+    sqlite_path = quote(str(resolved_snapshot.resolve()), safe="/")
+    os.environ["DATABASE_URL"] = (
+        f"sqlite+pysqlite:///file:{sqlite_path}?mode=ro&immutable=1&uri=true"
+    )
 
 os.environ.setdefault("PMVL_SNAPSHOT_MODE", "1")
 

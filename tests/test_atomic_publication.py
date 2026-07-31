@@ -13,6 +13,7 @@ validated pair, and never a mixture.
 from __future__ import annotations
 
 import json
+import sqlite3
 import sys
 from pathlib import Path
 
@@ -23,6 +24,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "packages/shared/sr
 
 import run_automated_snapshot_pipeline as pipeline  # noqa: E402
 from pmvl_shared.manifest import sha256_of, verify_artifact  # noqa: E402
+from pmvl_shared.snapshot_artifact import compress_snapshot  # noqa: E402
 
 from run_automated_snapshot_pipeline import (  # noqa: E402
     PipelineError,
@@ -54,6 +56,11 @@ def _pair(directory: Path, name: str, payload: bytes, snapshot_id: str):  # noqa
 def published(tmp_path, monkeypatch):  # noqa: ANN001, ANN201
     db, manifest = _pair(tmp_path, "pmvl-snapshot", b"OLD-VALIDATED-DATABASE", "old-1")
     monkeypatch.setattr(pipeline, "PUBLISHED_DB", db)
+    monkeypatch.setattr(
+        pipeline,
+        "PUBLISHED_GZIP",
+        tmp_path / "pmvl-snapshot.db.gz",
+    )
     monkeypatch.setattr(pipeline, "PUBLISHED_MANIFEST", manifest)
     return db, manifest
 
@@ -89,6 +96,75 @@ class TestSuccessfulPromotion:
 
         promote(candidate, _outcome())
         assert verify_artifact(db, manifest) == []
+
+    def test_a_held_compressed_candidate_becomes_a_published_pair(
+        self, published, tmp_path  # noqa: ANN001
+    ) -> None:
+        db, published_manifest = published
+        candidate = tmp_path / "candidate.db"
+        connection = sqlite3.connect(candidate)
+        try:
+            connection.execute("CREATE TABLE records (id INTEGER PRIMARY KEY)")
+            connection.execute("INSERT INTO records DEFAULT VALUES")
+            connection.execute(
+                "CREATE TABLE alembic_version (version_num VARCHAR(32) PRIMARY KEY)"
+            )
+            connection.execute(
+                "INSERT INTO alembic_version VALUES ('c3d4e5f6a7b8')"
+            )
+            connection.execute(
+                "CREATE TABLE job_runs ("
+                "id INTEGER PRIMARY KEY, job_name TEXT, status TEXT, started_at TEXT"
+                ")"
+            )
+            connection.execute(
+                "INSERT INTO job_runs VALUES "
+                "(1, 'ingest', 'success', '2026-07-31T08:00:00Z')"
+            )
+            connection.commit()
+            connection.execute("PRAGMA journal_mode=DELETE")
+        finally:
+            connection.close()
+        encoded = compress_snapshot(
+            candidate,
+            candidate.with_name(candidate.name + ".gz"),
+        )
+        candidate_manifest = candidate.with_suffix(".manifest.json")
+        candidate_manifest.write_text(
+            json.dumps(
+                {
+                    "artifact_format": "sqlite",
+                    "artifact_encoding": "gzip",
+                    "compression_algorithm": "gzip",
+                    "compression_level": 9,
+                    "compression_deterministic": True,
+                    "compressed_path": "data/pmvl-snapshot.db.gz",
+                    "compressed_sha256": sha256_of(encoded),
+                    "uncompressed_sha256": sha256_of(candidate),
+                    "compressed_size_bytes": encoded.stat().st_size,
+                    "uncompressed_size_bytes": candidate.stat().st_size,
+                    "sha256": sha256_of(candidate),
+                    "file_size_bytes": candidate.stat().st_size,
+                    "snapshot_id": "new-compressed-1",
+                    "schema_version": "c3d4e5f6a7b8",
+                    "schema_revision": "c3d4e5f6a7b8",
+                    "code_commit_sha": "1" * 12,
+                    "source_commit_sha": "1" * 12,
+                    "built_at": "2026-07-31T08:00:00Z",
+                    "job_statuses": {"ingest": "success"},
+                    "validation_status": "passed",
+                    "release_status": "held",
+                }
+            )
+        )
+
+        outcome = _outcome()
+        promote(candidate, outcome)
+
+        assert not db.exists()
+        assert pipeline.PUBLISHED_GZIP.exists()
+        assert json.loads(published_manifest.read_text())["release_status"] == "published"
+        assert outcome.published is True
 
 
 class TestFailureLeavesThePreviousPairIntact:
@@ -175,15 +251,22 @@ class TestInterruptedPublication:
         assert any("checksum" in p for p in problems)
 
     def test_the_manifest_is_never_written_before_the_database(self) -> None:
-        """Pinned by reading the source: the ordering is the safety property, and
-        a future edit that swaps the two lines would pass every other test here."""
+        """The compressed bytes must be installed before their manifest.
+
+        Production uses one Git commit as the atomic boundary; this pins the same
+        fail-loud ordering for the local/manual promotion helper.
+        """
         source = Path(pipeline.__file__).read_text()
         promote_body = source[source.index("def promote("):]
         promote_body = promote_body[: promote_body.index("\ndef ")]
 
-        db_line = promote_body.index("PUBLISHED_DB")
-        manifest_line = promote_body.index("PUBLISHED_MANIFEST", promote_body.index("os.replace"))
-        assert db_line < manifest_line, (
-            "the manifest is promoted before the database, so an interruption "
-            "would leave a manifest describing an artefact that is not on disk"
+        gzip_line = promote_body.index(
+            "os.replace(candidate_gzip, PUBLISHED_GZIP)"
+        )
+        manifest_line = promote_body.index(
+            "os.replace(candidate_manifest, PUBLISHED_MANIFEST)"
+        )
+        assert gzip_line < manifest_line, (
+            "the manifest is promoted before the compressed artefact, so an "
+            "interruption could leave a manifest describing absent bytes"
         )

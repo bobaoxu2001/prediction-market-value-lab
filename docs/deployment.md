@@ -127,8 +127,15 @@ freshest equals oldest, or if either unavailable field is ever populated.
 
 ## The snapshot
 
-The API serves a committed SQLite snapshot (`data/pmvl-snapshot.db`). Three
-deployment outages traced to it, so all three are now checked by
+The API serves a committed SQLite Snapshot. Legacy commits contain
+`data/pmvl-snapshot.db`; current publications contain its deterministic
+`data/pmvl-snapshot.db.gz` representation and a manifest that records both the
+compressed transport identity and the canonical uncompressed SQLite identity.
+The API verifies and atomically resolves gzip into a read-only `/tmp` cache before
+opening it with `mode=ro&immutable=1`. The manifest is authoritative, so a declared
+gzip never falls back to an old raw file.
+
+Three deployment outages traced to this boundary, so all three are checked by
 `scripts/validate_snapshot.py` in CI:
 
 1. **Missing from the bundle.** It was gitignored, and Vercel's uploader honours
@@ -141,4 +148,7 @@ deployment outages traced to it, so all three are now checked by
    500 on a column that did not exist. The validator now serves the real routes
    against the committed file.
 
-Rebuild with `make snapshot-build`; never hand-edit the binary.
+The scheduled pipeline is the production builder. For the complete compression,
+publication, runtime and rollback contract, see
+[Deterministic compressed Snapshot publication](compressed-snapshot-publication.md).
+Never hand-edit either binary representation.

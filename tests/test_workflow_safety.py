@@ -18,6 +18,9 @@ once; any single missing condition lets a scheduled or preview run publish.
 
 from __future__ import annotations
 
+import json
+import subprocess
+import sys
 from pathlib import Path
 
 import pytest
@@ -31,6 +34,95 @@ def _load(name: str) -> dict:
     # PyYAML parses the `on:` key as the boolean True.
     document["triggers"] = document.get("on", document.get(True, {}))
     return document
+
+
+def _publication_guard_code(pipeline: dict) -> str:
+    """Extract the executable staged-change guard from the workflow heredoc."""
+    step = next(
+        s
+        for s in pipeline["jobs"]["publish"]["steps"]
+        if s.get("name") == "Commit the compressed snapshot and manifest together"
+    )
+    chunks = step["run"].split("python - <<'PY'\n")
+    assert len(chunks) == 3, "the publication step should contain two Python heredocs"
+    return chunks[2].split("\nPY", 1)[0]
+
+
+def _git(repo: Path, *args: str) -> subprocess.CompletedProcess[str]:
+    return subprocess.run(
+        ["git", *args],
+        cwd=repo,
+        check=True,
+        capture_output=True,
+        text=True,
+    )
+
+
+def _seed_publication_repo(repo: Path, *, encoding: str | None) -> None:
+    """A tiny repository whose tracked Snapshot state matches its manifest."""
+    _git(repo, "init", "-q")
+    _git(repo, "config", "user.name", "test")
+    _git(repo, "config", "user.email", "test@example.invalid")
+    data = repo / "data"
+    data.mkdir()
+    if encoding == "gzip":
+        (data / "pmvl-snapshot.db.gz").write_bytes(b"old gzip")
+    else:
+        (data / "pmvl-snapshot.db").write_bytes(b"old raw")
+    (data / "pmvl-snapshot.manifest.json").write_text(
+        json.dumps(
+            {
+                "artifact_encoding": encoding,
+                "compressed_sha256": "old",
+                "release_status": "published",
+            }
+        )
+    )
+    _git(repo, "add", "data")
+    _git(repo, "commit", "-qm", "seed")
+
+
+def _stage_gzip_publication(repo: Path, *, keep_raw: bool = False) -> None:
+    data = repo / "data"
+    raw = data / "pmvl-snapshot.db"
+    if raw.exists() and not keep_raw:
+        raw.unlink()
+    (data / "pmvl-snapshot.db.gz").write_bytes(b"new gzip")
+    (data / "pmvl-snapshot.manifest.json").write_text(
+        json.dumps(
+            {
+                "artifact_encoding": "gzip",
+                "compressed_sha256": "new",
+                "release_status": "published",
+            }
+        )
+    )
+    _git(
+        repo,
+        "add",
+        "--",
+        "data/pmvl-snapshot.db.gz",
+        "data/pmvl-snapshot.manifest.json",
+    )
+    tracked_raw = subprocess.run(
+        ["git", "ls-files", "--error-unmatch", "--", "data/pmvl-snapshot.db"],
+        cwd=repo,
+        check=False,
+        capture_output=True,
+        text=True,
+    )
+    if tracked_raw.returncode == 0:
+        _git(repo, "add", "-u", "--", "data/pmvl-snapshot.db")
+
+
+def _run_publication_guard(repo: Path, code: str) -> subprocess.CompletedProcess[str]:
+    return subprocess.run(
+        [sys.executable, "-c", code],
+        cwd=repo,
+        check=False,
+        capture_output=True,
+        text=True,
+    )
 
 
 @pytest.fixture(scope="module")
@@ -175,17 +267,68 @@ class TestDisabledScheduleSkipsRatherThanFails:
 
 
 class TestCandidateHandover:
-    def test_the_artifact_name_is_unique_per_run(self, pipeline: dict) -> None:
+    def test_the_artifact_name_is_unique_per_run_attempt(self, pipeline: dict) -> None:
         """Never "the latest artifact": that would let a concurrent or older run's
-        candidate be published under this run's authorisation."""
+        candidate be published under this run's authorisation. A rerun retains the
+        run id and SHA, so the attempt number is part of the identity too."""
         name = pipeline["jobs"]["research"]["outputs"]["artifact_name"]
         assert "github.run_id" in name
+        assert "github.run_attempt" in name
         assert "github.sha" in name
 
     def test_publish_downloads_that_exact_artifact(self, pipeline: dict) -> None:
         steps = pipeline["jobs"]["publish"]["steps"]
         download = next(s for s in steps if "download-artifact" in str(s.get("uses")))
         assert download["with"]["name"] == "${{ needs.research.outputs.artifact_name }}"
+
+    def test_research_uploads_the_complete_candidate_bundle(self, pipeline: dict) -> None:
+        steps = pipeline["jobs"]["research"]["steps"]
+        upload = next(
+            s
+            for s in steps
+            if "upload-artifact" in str(s.get("uses"))
+            and "candidate" in str(s.get("with", {}).get("path", ""))
+        )
+        paths = {
+            line.strip()
+            for line in upload["with"]["path"].splitlines()
+            if line.strip()
+        }
+        assert paths == {
+            "candidate/pmvl-snapshot.db",
+            "candidate/pmvl-snapshot.db.gz",
+            "candidate/pmvl-snapshot.manifest.json",
+            "run-report.json",
+        }
+        assert upload["with"]["name"] == pipeline["jobs"]["research"]["outputs"]["artifact_name"]
+
+    def test_a_partial_candidate_bundle_is_not_called_eligible(self, pipeline: dict) -> None:
+        summarise = next(
+            s
+            for s in pipeline["jobs"]["research"]["steps"]
+            if s.get("name") == "Summarise the run"
+        )["run"]
+        for path in (
+            "candidate/pmvl-snapshot.db",
+            "candidate/pmvl-snapshot.db.gz",
+            "candidate/pmvl-snapshot.manifest.json",
+            "run-report.json",
+        ):
+            assert path in summarise
+        assert "missing_candidate_files" in summarise
+        assert "missing_candidate_metadata" in summarise
+        for field in (
+            "candidate_snapshot_id",
+            "candidate_uncompressed_sha256",
+            "candidate_compressed_sha256",
+            "parent_snapshot_id",
+            "parent_snapshot_sha256",
+            "run_id",
+        ):
+            assert f'"{field}"' in summarise
+        assert "invalid SHA-256" in summarise
+        assert "publication-eligible run did not produce" in summarise
+        assert "publication-eligible run has no valid" in summarise
 
     def test_a_failed_candidate_is_never_uploaded(self, pipeline: dict) -> None:
         steps = pipeline["jobs"]["research"]["steps"]
@@ -211,12 +354,45 @@ class TestCandidateHandover:
             "parent_snapshot_id",
             "parent_snapshot_sha256",
             "candidate_snapshot_id",
-            "candidate_sha256",
+            "candidate_uncompressed_sha256",
+            "candidate_compressed_sha256",
             "source_commit_sha",
             "pipeline_run_id",
             "artifact_name",
         ):
             assert field in outputs, f"{field} is not handed to the publish job"
+        assert "candidate_sha256" not in outputs, (
+            "an unqualified checksum is ambiguous once the committed bytes are gzip"
+        )
+
+    def test_publish_binds_both_hashes_and_both_run_ids(
+        self, pipeline: dict
+    ) -> None:
+        step = next(
+            s
+            for s in pipeline["jobs"]["publish"]["steps"]
+            if s.get("name") == "Revalidate the candidate independently"
+        )
+        assert step["env"]["EXPECTED_UNCOMPRESSED_SHA"] == (
+            "${{ needs.research.outputs.candidate_uncompressed_sha256 }}"
+        )
+        assert step["env"]["EXPECTED_COMPRESSED_SHA"] == (
+            "${{ needs.research.outputs.candidate_compressed_sha256 }}"
+        )
+        assert step["env"]["EXPECTED_PIPELINE_RUN_ID"] == (
+            "${{ needs.research.outputs.pipeline_run_id }}"
+        )
+        assert step["env"]["EXPECTED_WORKFLOW_RUN_ID"] == "${{ github.run_id }}"
+        assert step["env"]["EXPECTED_WORKFLOW_RUN_ATTEMPT"] == "${{ github.run_attempt }}"
+        body = step["run"]
+        for argument in (
+            "--candidate-raw incoming/candidate/pmvl-snapshot.db",
+            "--candidate-gzip incoming/candidate/pmvl-snapshot.db.gz",
+            "--manifest incoming/candidate/pmvl-snapshot.manifest.json",
+            "--report incoming/run-report.json",
+            "--published-manifest data/pmvl-snapshot.manifest.json",
+        ):
+            assert argument in body
 
 
 class TestPublicationSafety:
@@ -244,6 +420,24 @@ class TestPublicationSafety:
         for forbidden in ("--force", "push -f", "+HEAD:", "+refs/"):
             assert forbidden not in publish_code, f"publish uses {forbidden}"
 
+    def test_it_contains_no_push_protection_bypass(self, pipeline: dict) -> None:
+        publish = pipeline["jobs"]["publish"]
+        assert not publish.get("continue-on-error")
+        for step in publish["steps"]:
+            assert not step.get("continue-on-error")
+            code = step.get("run") or ""
+            for forbidden in (
+                "gh api",
+                "curl ",
+                "--push-option",
+                "secret-scanning/alerts/",
+                "secret_scanning_alert",
+            ):
+                assert forbidden not in code, (
+                    f"publish step {step.get('name')!r} may bypass Push Protection "
+                    f"through {forbidden!r}"
+                )
+
     def test_it_revalidates_the_candidate(self, publish_code: str) -> None:
         assert "verify_candidate.py" in publish_code
         assert "validate_snapshot.py" in publish_code
@@ -252,17 +446,84 @@ class TestPublicationSafety:
         assert "git fetch origin main" in publish_code
         assert "rev-parse origin/main" in publish_code
 
-    def test_both_files_must_change_together(self, publish_code: str) -> None:
-        """A commit carrying only one leaves the public pair internally
-        inconsistent - a manifest describing a database that is not there."""
-        assert "--cached --name-only" in publish_code
-        assert "refusing to publish a mismatched pair" in publish_code
+    def test_the_guard_inspects_exact_statuses_across_the_entire_index(
+        self, publish_code: str
+    ) -> None:
+        """A scoped count accepts the wrong statuses and cannot detect an extra
+        staged source file. Name and status are checked without a pathspec."""
+        command = (
+            '"diff", "--cached", "--name-status", "--no-renames", "-z", "HEAD"'
+        )
+        assert command in publish_code
+        assert "git diff --cached --name-only --" not in publish_code
+        assert "actual != expected" in publish_code
+
+    def test_raw_deletion_is_staged_only_while_raw_is_tracked(
+        self, publish_code: str
+    ) -> None:
+        """Naming an absent raw path in one `git add -A` command fails after the
+        migration, before the gzip-to-gzip guard can run."""
+        assert (
+            "git ls-files --error-unmatch -- data/pmvl-snapshot.db"
+            in publish_code
+        )
+        assert "git add -u -- data/pmvl-snapshot.db" in publish_code
+        assert "git add -A -- \\\n  data/pmvl-snapshot.db" not in publish_code
+
+    def test_initial_raw_to_gzip_set_is_exact(self, publish_code: str) -> None:
+        for change in (
+            '("D", RAW)',
+            '("A", GZIP)',
+            '("M", MANIFEST)',
+        ):
+            assert change in publish_code
+
+    def test_future_gzip_to_gzip_set_is_exact(self, publish_code: str) -> None:
+        expected_block = publish_code[
+            publish_code.index('if previous_encoding == "gzip"') :
+            publish_code.index("elif previous_encoding")
+        ]
+        assert '("M", GZIP)' in expected_block
+        assert '("M", MANIFEST)' in expected_block
+        assert '("D", RAW)' not in expected_block
+        assert '("A", GZIP)' not in expected_block
+
+    def test_manifest_decides_the_transition_not_file_guessing(
+        self, publish_code: str
+    ) -> None:
+        assert 'previous.get("artifact_encoding")' in publish_code
+        assert 'previous_encoding == "gzip"' in publish_code
+        assert "unsupported previous artifact_encoding" in publish_code
+
+    def test_the_resulting_index_has_only_gzip_and_manifest(
+        self, publish_code: str
+    ) -> None:
+        assert 'tree_has(f":{RAW}")' in publish_code
+        assert 'tree_has(f":{GZIP}")' in publish_code
+        assert 'tree_has(f":{MANIFEST}")' in publish_code
+        assert "raw and gzip snapshots would both remain" in publish_code
+        assert "the staged gzip/manifest pair is incomplete" in publish_code
+        assert 'staged_manifest.get("artifact_encoding") != "gzip"' in publish_code
 
     def test_it_verifies_the_committed_bytes(self, publish_code: str) -> None:
         """Working-tree validation is not enough: what the public serves is what
         the commit contains."""
         assert '"git", "show"' in publish_code, "the committed blobs are never read back"
-        assert "verify_artifact" in publish_code
+        assert '"data/pmvl-snapshot.db.gz"' in publish_code
+        assert '"data/pmvl-snapshot.manifest.json"' in publish_code
+        assert 'f"HEAD:{name}"' in publish_code
+        assert "scripts/verify_artifact.py" in publish_code
+        assert "--expected-uncompressed incoming/candidate/pmvl-snapshot.db" in publish_code
+        assert "--expected-release published" in publish_code
+
+    def test_publish_copies_research_gzip_without_recompressing(
+        self, publish_code: str
+    ) -> None:
+        assert 'src / "pmvl-snapshot.db.gz"' in publish_code
+        assert 'Path("data/pmvl-snapshot.db.gz")' in publish_code
+        assert "gzip.compress" not in publish_code
+        assert "GzipFile" not in publish_code
+        assert 'Path("data/pmvl-snapshot.db").unlink(missing_ok=True)' in publish_code
 
     def test_the_commit_does_not_skip_ci(self, publish_code: str) -> None:
         """Inverted deliberately.
@@ -289,6 +550,93 @@ class TestPublicationSafety:
         commit_at = publish_code.index("git commit -m")
         assert published_at < commit_at
         assert "git push" not in publish_code[:published_at]
+
+
+class TestPushFailureDiagnosis:
+    @pytest.fixture()
+    def push_step(self, pipeline: dict) -> str:
+        return next(
+            s["run"]
+            for s in pipeline["jobs"]["publish"]["steps"]
+            if s.get("name") == "Push"
+        )
+
+    def test_it_captures_the_complete_push_diagnostic(self, push_step: str) -> None:
+        assert "git push origin HEAD:main >push.log 2>&1" in push_step
+        assert "cat push.log" in push_step
+
+    def test_push_protection_is_classified_before_non_fast_forward(
+        self, push_step: str
+    ) -> None:
+        protection = push_step.index(
+            'grep -qiE "GH013|push protection|repository rule violations"'
+        )
+        race = push_step.index(
+            'grep -qiE "non-fast-forward|fetch first|rejected.*behind"'
+        )
+        assert protection < race
+        assert "BLOCKED by GitHub Push Protection" in push_step
+
+    def test_the_diagnostic_forbids_security_bypass(self, push_step: str) -> None:
+        assert "do NOT allowlist the finding" in push_step
+        assert "bypass the rule" in push_step
+        assert "disable secret scanning" in push_step
+
+    def test_unknown_failures_stay_unknown(self, push_step: str) -> None:
+        assert "push failed for a reason this step does not recognise" in push_step
+        assert "NOT force-pushing" in push_step
+
+
+class TestPublicationChangedFileGuardExecution:
+    """Execute the workflow's real guard against representative Git indexes."""
+
+    def test_initial_raw_to_gzip_transition_is_accepted(
+        self, pipeline: dict, tmp_path: Path
+    ) -> None:
+        _seed_publication_repo(tmp_path, encoding=None)
+        _stage_gzip_publication(tmp_path)
+
+        result = _run_publication_guard(
+            tmp_path, _publication_guard_code(pipeline)
+        )
+        assert result.returncode == 0, result.stderr + result.stdout
+
+    def test_future_gzip_to_gzip_transition_is_accepted(
+        self, pipeline: dict, tmp_path: Path
+    ) -> None:
+        _seed_publication_repo(tmp_path, encoding="gzip")
+        _stage_gzip_publication(tmp_path)
+
+        result = _run_publication_guard(
+            tmp_path, _publication_guard_code(pipeline)
+        )
+        assert result.returncode == 0, result.stderr + result.stdout
+
+    def test_an_extra_staged_source_file_is_rejected(
+        self, pipeline: dict, tmp_path: Path
+    ) -> None:
+        _seed_publication_repo(tmp_path, encoding=None)
+        _stage_gzip_publication(tmp_path)
+        (tmp_path / "unexpected.py").write_text("print('must not publish')\n")
+        _git(tmp_path, "add", "unexpected.py")
+
+        result = _run_publication_guard(
+            tmp_path, _publication_guard_code(pipeline)
+        )
+        assert result.returncode != 0
+        assert "wrong exact change set" in result.stderr
+
+    def test_raw_and_gzip_together_after_publication_are_rejected(
+        self, pipeline: dict, tmp_path: Path
+    ) -> None:
+        _seed_publication_repo(tmp_path, encoding=None)
+        _stage_gzip_publication(tmp_path, keep_raw=True)
+
+        result = _run_publication_guard(
+            tmp_path, _publication_guard_code(pipeline)
+        )
+        assert result.returncode != 0
+        assert "wrong exact change set" in result.stderr
 
 
 def _evaluate(expression: str, context: dict) -> bool:
