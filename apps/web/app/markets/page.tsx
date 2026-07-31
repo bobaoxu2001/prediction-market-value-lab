@@ -434,11 +434,13 @@ function MarketStatus({
 }
 
 function quoteStatusLabel(market: MarketRow): string {
-  if (market.quote_source === "orderbook") return "Order book captured";
-  if (market.quote_source === "venue_summary") {
+  if (market.quote_source === "orderbook") {
     return market.quote_is_stale_summary
-      ? "Venue summary fallback · summary stale"
-      : "Venue summary fallback";
+      ? "Order book captured · venue summary stale"
+      : "Order book captured";
+  }
+  if (market.quote_source === "venue_summary") {
+    return "Venue summary fallback";
   }
   return "No quote";
 }
