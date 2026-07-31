@@ -848,6 +848,15 @@ class TestPublicationCommitsAreVerified:
             step["with"]["ref"] == "${{ inputs.commit_sha || github.sha }}"
             for step in checkouts
         )
+        pipeline_smoke = ci["jobs"]["pipeline-smoke"]
+        run_step = next(
+            step
+            for step in pipeline_smoke["steps"]
+            if step.get("name") == "Run the pipeline in smoke mode"
+        )
+        assert run_step["env"]["PMVL_COMMIT_SHA"] == (
+            "${{ inputs.commit_sha || github.sha }}"
+        )
 
 
 class TestPostDeploySmokeWorkflow:
@@ -895,6 +904,9 @@ class TestPostDeploySmokeWorkflow:
         )
         assert checkout["with"]["ref"] == (
             "${{ inputs.commit_sha || github.sha }}"
+        )
+        assert smoke["concurrency"]["group"] == (
+            "postdeploy-smoke-${{ inputs.commit_sha || github.ref }}"
         )
 
     def test_it_uploads_a_report_even_on_failure(self, smoke: dict) -> None:

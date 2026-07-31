@@ -27,9 +27,10 @@ permissions:
   contents: read
 
 concurrency:
-  # Only the newest push matters; an older smoke chasing a superseded commit
-  # would fail for a reason nobody needs to act on.
-  group: postdeploy-smoke
+  # Normal main-push checks still supersede one another by ref. A publication
+  # verification is keyed by its immutable commit so an unrelated later push or
+  # manual smoke cannot cancel the evidence for that release.
+  group: postdeploy-smoke-${{ inputs.commit_sha || github.ref }}
   cancel-in-progress: true
 
 jobs:

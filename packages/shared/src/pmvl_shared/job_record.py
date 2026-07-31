@@ -32,7 +32,11 @@ def code_version() -> str:
     Never a placeholder that looks like a real SHA. A row claiming to come from
     commit 0000000 is worse than one admitting it does not know.
     """
-    for var in ("VERCEL_GIT_COMMIT_SHA", "GITHUB_SHA", "PMVL_COMMIT_SHA"):
+    # PMVL_COMMIT_SHA is an explicit provenance override. Reusable Actions
+    # workflows retain the caller's GITHUB_SHA even when they check out a
+    # different exact publication commit, so the ambient CI variable must not
+    # overwrite the ref the caller deliberately supplied.
+    for var in ("PMVL_COMMIT_SHA", "VERCEL_GIT_COMMIT_SHA", "GITHUB_SHA"):
         value = os.environ.get(var)
         if value:
             return value[:12]

@@ -139,7 +139,9 @@ jobs:
         # default branch.
         env:
           GITHUB_EVENT_NAME: pull_request
-          PMVL_COMMIT_SHA: ${{ github.sha }}
+          # Reusable workflows retain the caller's github.sha. The explicit
+          # input is the publication commit and must win for provenance.
+          PMVL_COMMIT_SHA: ${{ inputs.commit_sha || github.sha }}
         run: python scripts/run_automated_snapshot_pipeline.py --report run-report.json
       - name: Assert the smoke run published nothing
         run: |
