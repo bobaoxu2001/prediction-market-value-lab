@@ -201,6 +201,14 @@ class TestRunProvenance:
         monkeypatch.setenv("GITHUB_SHA", "abcdef1234567890")
         assert code_version() == "abcdef123456"
 
+    def test_an_explicit_publication_commit_overrides_ambient_ci_sha(
+        self, monkeypatch
+    ) -> None:  # noqa: ANN001
+        monkeypatch.setenv("PMVL_COMMIT_SHA", "1111111111111111")
+        monkeypatch.setenv("GITHUB_SHA", "2222222222222222")
+        monkeypatch.setenv("VERCEL_GIT_COMMIT_SHA", "3333333333333333")
+        assert code_version() == "111111111111"
+
     def test_input_cutoff_is_recorded_for_backtest_safety(self) -> None:
         """A backtest that ignores the cutoff and reads current data measures a
         model that could not have been run at the time."""

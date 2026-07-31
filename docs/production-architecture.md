@@ -119,12 +119,19 @@ research  (contents: read)   → computes, validates, uploads raw+gzip HELD cand
    │                            never commits, never pushes
    ▼  artifact: pmvl-candidate-<run_id>-<sha>
 publish   (contents: write)  → revalidates, commits gzip+manifest together, pushes
+   ├─ verify CI (contents: read)          → checks out the exact published SHA
+   └─ verify production (contents: read)  → waits for that SHA on API and Web
 ```
 
 The publish job runs only when **all** of these hold: manual dispatch, the
 `publish` input, `PMVL_SCHEDULE_PUBLISH_ENABLED`, `refs/heads/main`, a successful
 research job, and `publication_eligible`. There is no `||` in that condition, so
 there is no alternative branch a scheduled or preview run could satisfy.
+
+The two verification calls are explicit because GitHub does not start another
+Actions run for a push made by the workflow's own `GITHUB_TOKEN`. They reuse the
+normal CI and post-deploy workflows with the commit SHA emitted by the publish
+step; neither verifier has write permission, and neither can start a publication.
 
 `PMVL_SCHEDULE_ENABLED` gates scheduled **computation** at the job level, so a
 disabled schedule produces a *skipped* job. It was previously a shell `exit 78`,

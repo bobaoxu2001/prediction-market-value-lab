@@ -18,6 +18,8 @@ import os
 import sqlite3
 import subprocess
 import sys
+from collections.abc import Mapping
+from datetime import datetime
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -29,6 +31,209 @@ FINALIZE_CANDIDATE = False
 
 #: GitHub warns above 50MB and Vercel function bundles are capped well below that.
 MAX_BYTES = 40 * 1024 * 1024
+
+
+def has_recorded_job(system_data: object, job_name: str) -> bool:
+    """Return whether /system records a run, independent of output row count."""
+    if not isinstance(system_data, Mapping):
+        return False
+    jobs = system_data.get("jobs")
+    if not isinstance(jobs, list):
+        return False
+    return any(
+        isinstance(job, Mapping) and job.get("job_name") == job_name
+        for job in jobs
+    )
+
+
+def demotion_code_kinds() -> dict[str, str]:
+    """Return the producer's stable reason-code to reason-kind contract."""
+    from pmvl_markets.matching.verify import DemotionCode
+
+    return {
+        code.value: (
+            "missing_information" if code.is_missing_information else "contradiction"
+        )
+        for code in DemotionCode
+    }
+
+
+def matching_diagnostics_problems(
+    has_scan: bool, diagnostics: object
+) -> list[str]:
+    """Validate the persisted matching histogram, including a valid empty scan.
+
+    Zero candidate pairs is an explicit research result, not a missing histogram.
+    It is valid only when every derived count is also zero and the diagnostic says
+    why nothing reached verification. This keeps the persistence check fail-closed
+    without rejecting a small or unlucky smoke sample.
+    """
+    if diagnostics is None:
+        return (
+            [
+                "an arbitrage scan is recorded but matching_diagnostics is null; "
+                "the demotion histogram did not survive into the snapshot"
+            ]
+            if has_scan
+            else []
+        )
+    if not isinstance(diagnostics, Mapping):
+        return ["matching_diagnostics is not an object"]
+
+    count_fields = (
+        "pairs_examined",
+        "verified_equivalent",
+        "blocked_only_by_missing_info",
+        "missing_information_count",
+        "contradiction_count",
+    )
+    counts: dict[str, int] = {}
+    problems: list[str] = []
+    for field in count_fields:
+        value = diagnostics.get(field)
+        if isinstance(value, bool) or not isinstance(value, int) or value < 0:
+            problems.append(
+                f"matching_diagnostics {field} must be a non-negative integer"
+            )
+        else:
+            counts[field] = value
+    if problems:
+        return problems
+
+    pairs = counts["pairs_examined"]
+    promoted_or_parser_blocked = (
+        counts["verified_equivalent"] + counts["blocked_only_by_missing_info"]
+    )
+    if promoted_or_parser_blocked > pairs:
+        problems.append(
+            "matching_diagnostics verified_equivalent plus "
+            "blocked_only_by_missing_info exceeds pairs_examined"
+        )
+
+    diagnosis = diagnostics.get("diagnosis")
+    if not isinstance(diagnosis, str) or not diagnosis.strip():
+        problems.append("matching_diagnostics diagnosis is missing")
+    ran_at = diagnostics.get("ran_at")
+    if not isinstance(ran_at, str) or not ran_at.strip():
+        problems.append("matching_diagnostics ran_at is missing")
+    else:
+        try:
+            parsed_ran_at = datetime.fromisoformat(ran_at.replace("Z", "+00:00"))
+            if parsed_ran_at.tzinfo is None:
+                raise ValueError("timestamp has no timezone")
+        except ValueError:
+            problems.append("matching_diagnostics ran_at is not an ISO timestamp")
+
+    top_reasons = diagnostics.get("top_reasons")
+    if not isinstance(top_reasons, list):
+        problems.append("matching_diagnostics top_reasons must be a list")
+        top_reasons = []
+    elif len(top_reasons) > 8:
+        problems.append("matching_diagnostics top_reasons exceeds the API limit")
+
+    canonical_kinds = demotion_code_kinds()
+    reason_totals = {"missing_information": 0, "contradiction": 0}
+    seen_codes: set[str] = set()
+    for index, reason in enumerate(top_reasons):
+        if not isinstance(reason, Mapping):
+            problems.append(
+                f"matching_diagnostics top_reasons[{index}] is not an object"
+            )
+            continue
+        code = reason.get("code")
+        count = reason.get("count")
+        kind = reason.get("kind")
+        canonical_kind = canonical_kinds.get(code) if isinstance(code, str) else None
+        if not isinstance(code, str) or not code.strip():
+            problems.append(
+                f"matching_diagnostics top_reasons[{index}] code is missing"
+            )
+        elif canonical_kind is None:
+            problems.append(
+                f"matching_diagnostics top_reasons[{index}] code is invalid"
+            )
+        elif code in seen_codes:
+            problems.append(
+                f"matching_diagnostics top_reasons repeats code {code!r}"
+            )
+        else:
+            seen_codes.add(code)
+        if isinstance(count, bool) or not isinstance(count, int) or count <= 0:
+            problems.append(
+                f"matching_diagnostics top_reasons[{index}] count must be a positive integer"
+            )
+            continue
+        if kind not in reason_totals:
+            problems.append(
+                f"matching_diagnostics top_reasons[{index}] kind is invalid"
+            )
+            continue
+        if canonical_kind is not None and kind != canonical_kind:
+            problems.append(
+                f"matching_diagnostics top_reasons[{index}] kind does not match code"
+            )
+            continue
+        if canonical_kind is not None:
+            reason_totals[kind] += count
+
+    for kind, count_field, label in (
+        ("missing_information", "missing_information_count", "missing-information"),
+        ("contradiction", "contradiction_count", "contradiction"),
+    ):
+        reason_total = reason_totals[kind]
+        aggregate = counts[count_field]
+        if reason_total > aggregate:
+            problems.append(
+                f"matching_diagnostics {label} reasons exceed their aggregate"
+            )
+        elif len(top_reasons) < 8 and reason_total != aggregate:
+            problems.append(
+                f"matching_diagnostics {label} reasons do not equal their aggregate"
+            )
+    total_demotions = (
+        counts["missing_information_count"] + counts["contradiction_count"]
+    )
+    if total_demotions and not top_reasons:
+        problems.append(
+            "matching_diagnostics has demotion counts but no top_reasons"
+        )
+    if (
+        counts["blocked_only_by_missing_info"]
+        > counts["missing_information_count"]
+    ):
+        problems.append(
+            "matching_diagnostics parser-blocked pairs exceed missing-information demotions"
+        )
+
+    if pairs == 0:
+        derived = {field: counts[field] for field in count_fields[1:]}
+        if any(derived.values()):
+            problems.append(
+                "matching_diagnostics has zero pairs but non-zero derived counts"
+            )
+        if top_reasons != []:
+            problems.append(
+                "matching_diagnostics has zero pairs but non-empty top_reasons"
+            )
+
+    return problems
+
+
+def served_matching_diagnostics_problems(client) -> list[str]:  # noqa: ANN001
+    """Validate the served histogram using JobRun history as scan evidence."""
+    response = client.get("/arbitrage")
+    if response.status_code != 200:
+        return []
+    body = response.json()
+    # batch_id comes from an opportunity row, so a successful scan that found
+    # zero opportunities has no batch ID. /system's JobRun record is the
+    # authoritative evidence that the scan ran.
+    system_data = client.get("/system").json().get("data")
+    has_scan = has_recorded_job(system_data, "arbitrage")
+    return matching_diagnostics_problems(
+        has_scan,
+        body.get("matching_diagnostics"),
+    )
 
 
 def select_markets_with_books():  # noqa: ANN201
@@ -377,18 +582,7 @@ def main(argv: list[str] | None = None) -> int:
     # not list equivalent contracts" from "the matcher is broken", and it lived in a
     # table the snapshot builder was deleting wholesale.
     try:
-        response = client.get("/arbitrage")
-        if response.status_code == 200:
-            body = response.json()
-            has_scan = bool(body.get("batch_id"))
-            diagnostics = body.get("matching_diagnostics")
-            if has_scan and not diagnostics:
-                problems.append(
-                    "an arbitrage scan is recorded but matching_diagnostics is null; "
-                    "the demotion histogram did not survive into the snapshot"
-                )
-            elif diagnostics and not diagnostics.get("pairs_examined"):
-                problems.append("matching_diagnostics present but pairs_examined is 0")
+        problems.extend(served_matching_diagnostics_problems(client))
     except Exception as exc:  # noqa: BLE001
         problems.append(f"diagnostics check failed: {type(exc).__name__}: {exc}")
 

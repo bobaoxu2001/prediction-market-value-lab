@@ -231,6 +231,8 @@ jobs:
     needs: research
     runs-on: ubuntu-latest
     timeout-minutes: 15
+    outputs:
+      published_commit_sha: ${{ steps.commit.outputs.published_commit_sha }}
     # The only write token in this workflow, held by the only job that writes.
     permissions:
       contents: write
@@ -304,6 +306,7 @@ jobs:
           fi
 
       - name: Commit the compressed snapshot and manifest together
+        id: commit
         run: |
           git config user.name  "pmvl-pipeline[bot]"
           git config user.email "pmvl-pipeline@users.noreply.github.com"
@@ -434,14 +437,12 @@ jobs:
               )
           PY
 
-          # No [skip ci]. A publication changes the data the public site serves,
-          # which is exactly when snapshot integrity, both deployments and the
-          # post-deploy smoke need to run. Skipping them made the riskiest commit
-          # in the repository the only unverified one.
-          #
-          # This cannot recurse: the pipeline workflow triggers only on
-          # workflow_dispatch and schedule, never on push.
+          # No [skip ci]. GitHub suppresses push-triggered Actions when a
+          # workflow's GITHUB_TOKEN creates the commit, so explicit read-only
+          # reusable jobs below verify this exact SHA. The pipeline itself still
+          # has no push trigger, which prevents recursive publication.
           git commit -m "data: publish validated snapshot from ${GITHUB_SHA:0:12}"
+          echo "published_commit_sha=$(git rev-parse HEAD)" >> "$GITHUB_OUTPUT"
 
       - name: Verify the committed gzip contains the validated candidate
         # Working-tree validation is not enough: what the public serves is what
@@ -497,3 +498,27 @@ jobs:
             fi
             exit 1
           fi
+
+  verify-published-ci:
+    name: Verify published commit
+    needs: publish
+    if: >-
+      needs.publish.result == 'success' &&
+      needs.publish.outputs.published_commit_sha != ''
+    permissions:
+      contents: read
+    uses: ./.github/workflows/ci.yml
+    with:
+      commit_sha: ${{ needs.publish.outputs.published_commit_sha }}
+
+  verify-published-production:
+    name: Verify published production
+    needs: publish
+    if: >-
+      needs.publish.result == 'success' &&
+      needs.publish.outputs.published_commit_sha != ''
+    permissions:
+      contents: read
+    uses: ./.github/workflows/postdeploy-smoke.yml
+    with:
+      commit_sha: ${{ needs.publish.outputs.published_commit_sha }}
