@@ -1,6 +1,14 @@
 import Link from "next/link";
+import type { ReactNode } from "react";
 import { apiGet, qs, type DataMode, type MarketRow } from "@/lib/api";
-import { ageRelativeToSnapshot, cents, compactUsd, displayTitle, relativeToSnapshot } from "@/lib/format";
+import {
+  ageRelativeToSnapshot,
+  cents,
+  compactUsd,
+  displayTitle,
+  humanizeFlag,
+  relativeToSnapshot,
+} from "@/lib/format";
 import { ApiDown, DemoBanner, EmptyState, PageHeader, PlatformChip, VenueAvailability } from "@/components/ui";
 
 export const dynamic = "force-dynamic";
@@ -123,7 +131,87 @@ export default async function MarketsPage({
         />
       ) : (
         <>
-          <div className="panel table-wrap">
+          {/* A phone needs the decision-relevant fields, not a squeezed eleven-
+              column table. One divided list keeps the density of a research
+              terminal without turning every market into a giant SaaS card. */}
+          <ul
+            className="panel divide-y divide-line-subtle overflow-hidden md:hidden"
+            aria-label="Ingested markets with latest captured quotes"
+          >
+            {rows.map((m) => (
+              <li key={m.id} className="min-w-0 px-3 py-3">
+                <Link
+                  href={`/market/${m.id}`}
+                  className="block min-w-0 break-words text-sm font-medium leading-snug text-ink hover:underline"
+                >
+                  {displayTitle(m.title)}
+                </Link>
+
+                <div className="mt-2 flex min-w-0 flex-wrap items-center gap-2">
+                  <PlatformChip platform={m.platform} />
+                  <MarketStatus status={m.status} acceptingOrders={m.accepting_orders} />
+                </div>
+
+                <dl className="mt-3 grid grid-cols-[auto_minmax(0,1fr)] gap-x-5">
+                  <div>
+                    <dt className="metric-label">YES ask</dt>
+                    <dd className="num mt-0.5 text-base font-semibold text-ink">
+                      {cents(m.best_yes_ask)}
+                    </dd>
+                  </div>
+                  <div className="min-w-0 text-right">
+                    <dt className="metric-label">Resolution</dt>
+                    <dd className="mt-0.5 text-sm leading-snug text-ink-muted">
+                      {relativeToSnapshot(m.expected_resolution_time, snapshotAt)}
+                    </dd>
+                  </div>
+                </dl>
+
+                <details className="group mt-3 border-t border-line-subtle pt-2">
+                  <summary className="cursor-pointer text-xs font-medium text-ink-muted hover:text-ink">
+                    More market data
+                    <span className="sr-only"> for {displayTitle(m.title)}</span>
+                  </summary>
+                  <dl className="mt-3 grid grid-cols-2 gap-x-5 gap-y-3 text-sm">
+                    <MobileMetric label="Category" value={m.category || "—"} />
+                    <MobileMetric label="YES bid" value={cents(m.best_yes_bid)} numeric />
+                    <MobileMetric label="NO ask" value={cents(m.best_no_ask)} numeric />
+                    <MobileMetric label="Spread" value={cents(m.spread)} numeric />
+                    <MobileMetric
+                      label="Ask depth"
+                      value={compactUsd(m.yes_ask_depth_usd ?? m.orderbook_depth_usd)}
+                      numeric
+                    />
+                    <MobileMetric label="24h volume" value={compactUsd(m.volume_24h)} numeric />
+                    <MobileMetric
+                      label="Model coverage"
+                      value={
+                        <>
+                          Not exposed in index ·{" "}
+                          <Link href={`/market/${m.id}`} className="underline hover:text-ink">
+                            open analysis
+                          </Link>
+                        </>
+                      }
+                    />
+                    <MobileMetric
+                      label="Quote captured"
+                      value={ageRelativeToSnapshot(m.quote_observed_at, snapshotAt)}
+                    />
+                    <MobileMetric label="Quote status" value={quoteStatusLabel(m)} />
+                  </dl>
+                  {m.venue_availability ? (
+                    <div className="mt-3">
+                      <div className="metric-label mb-1">Venue coverage</div>
+                      <VenueAvailability venues={m.venue_availability} compact />
+                    </div>
+                  ) : null}
+                </details>
+              </li>
+            ))}
+          </ul>
+
+          <div className="panel table-wrap hidden max-w-full md:block">
             <table className="w-full">
               <caption className="sr-only">
                 Ingested markets with latest captured quotes
@@ -132,15 +220,33 @@ export default async function MarketsPage({
                 <tr>
                   {/* Sticky: scrolling right through nine measurement columns used
                       to lose the only thing identifying the row. */}
-                  <th scope="col" className="col-sticky col-title">Market</th>
+                  <th scope="col" className="col-sticky market-table-title">Market</th>
                   <th scope="col">Venue</th>
-                  <th scope="col">Category</th>
-                  <th scope="col" className="num">YES bid</th>
+                  <th scope="col" className="hidden lg:table-cell">Category</th>
+                  <th scope="col" className="num hidden xl:table-cell">YES bid</th>
                   <th scope="col" className="num">YES ask</th>
-                  <th scope="col" className="num">NO ask</th>
-                  <SortableTh label="Spread" sortKey="spread" current={sort} href={link} />
-                  <SortableTh label="Ask depth" sortKey="liquidity" current={sort} href={link} />
-                  <SortableTh label="24h vol" sortKey="volume" current={sort} href={link} />
+                  <th scope="col" className="num hidden xl:table-cell">NO ask</th>
+                  <SortableTh
+                    label="Spread"
+                    sortKey="spread"
+                    current={sort}
+                    href={link}
+                    className="hidden lg:table-cell"
+                  />
+                  <SortableTh
+                    label="Ask depth"
+                    sortKey="liquidity"
+                    current={sort}
+                    href={link}
+                    className="hidden xl:table-cell"
+                  />
+                  <SortableTh
+                    label="24h vol"
+                    sortKey="volume"
+                    current={sort}
+                    href={link}
+                    className="hidden lg:table-cell"
+                  />
                   <SortableTh
                     label="Resolves"
                     sortKey="resolution"
@@ -148,7 +254,7 @@ export default async function MarketsPage({
                     href={link}
                     numeric={false}
                   />
-                  <th scope="col">Quote</th>
+                  <th scope="col" className="hidden lg:table-cell">Quote</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-line-subtle">
@@ -156,7 +262,7 @@ export default async function MarketsPage({
                   <tr key={m.id} className="row-hover">
                     {/* Wraps rather than truncating. A clipped contract title with
                         no way to recover it is worse than a two-line one. */}
-                    <td className="col-sticky col-title">
+                    <td className="col-sticky market-table-title">
                       <Link href={`/market/${m.id}`} className="hover:underline">{displayTitle(m.title)}</Link>
                       {m.venue_availability ? (
                         <div className="mt-1">
@@ -165,15 +271,15 @@ export default async function MarketsPage({
                       ) : null}
                     </td>
                     <td><PlatformChip platform={m.platform} /></td>
-                    <td className="text-ink-faint">{m.category}</td>
-                    <td className="num text-ink-muted">{cents(m.best_yes_bid)}</td>
+                    <td className="hidden text-ink-faint lg:table-cell">{m.category}</td>
+                    <td className="num hidden text-ink-muted xl:table-cell">{cents(m.best_yes_bid)}</td>
                     <td className="num font-semibold text-ink">{cents(m.best_yes_ask)}</td>
-                    <td className="num text-ink-muted">{cents(m.best_no_ask)}</td>
-                    <td className="num text-ink-muted">{cents(m.spread)}</td>
-                    <td className="num text-ink-muted">{compactUsd(m.yes_ask_depth_usd ?? m.orderbook_depth_usd)}</td>
-                    <td className="num text-ink-muted">{compactUsd(m.volume_24h)}</td>
+                    <td className="num hidden text-ink-muted xl:table-cell">{cents(m.best_no_ask)}</td>
+                    <td className="num hidden text-ink-muted lg:table-cell">{cents(m.spread)}</td>
+                    <td className="num hidden text-ink-muted xl:table-cell">{compactUsd(m.yes_ask_depth_usd ?? m.orderbook_depth_usd)}</td>
+                    <td className="num hidden text-ink-muted lg:table-cell">{compactUsd(m.volume_24h)}</td>
                     <td className="text-ink-muted">{relativeToSnapshot(m.expected_resolution_time, snapshotAt)}</td>
-                    <td className="text-ink-faint">
+                    <td className="hidden text-ink-faint lg:table-cell">
                       {ageRelativeToSnapshot(m.quote_observed_at, snapshotAt)}
                       <div className="mt-0.5 text-[10px] uppercase tracking-wide">
                         {m.quote_source === "orderbook" ? (
@@ -198,7 +304,7 @@ export default async function MarketsPage({
               </tbody>
             </table>
           </div>
-          <div className="mt-3 flex items-center justify-between text-sm">
+          <div className="mt-3 flex flex-wrap items-center justify-between gap-3 text-sm">
             <span className="text-ink-muted">
               Showing {offset + 1}–{offset + rows.length} of{" "}
               {shownOf.toLocaleString()}
@@ -248,18 +354,20 @@ function SortableTh({
   current,
   href,
   numeric = true,
+  className = "",
 }: {
   label: string;
   sortKey: string;
   current: string;
   href: (patch: Record<string, string | number | undefined>) => string;
   numeric?: boolean;
+  className?: string;
 }) {
   const active = current === sortKey;
   return (
     <th
       scope="col"
-      className={numeric ? "num" : undefined}
+      className={`${numeric ? "num" : ""} ${className}`.trim() || undefined}
       aria-sort={active ? "descending" : "none"}
     >
       <Link
@@ -276,4 +384,61 @@ function SortableTh({
       </Link>
     </th>
   );
+}
+
+function MobileMetric({
+  label,
+  value,
+  numeric = false,
+}: {
+  label: string;
+  value: ReactNode;
+  numeric?: boolean;
+}) {
+  return (
+    <div className="min-w-0">
+      <dt className="metric-label">{label}</dt>
+      <dd className={`mt-0.5 break-words text-ink-muted ${numeric ? "num" : ""}`}>
+        {value}
+      </dd>
+    </div>
+  );
+}
+
+function MarketStatus({
+  status,
+  acceptingOrders,
+}: {
+  status: string;
+  acceptingOrders: boolean;
+}) {
+  const open = status === "open" && acceptingOrders;
+  const label = open
+    ? "Open"
+    : status === "open"
+      ? "Orders paused"
+      : humanizeFlag(status);
+  return (
+    <span
+      className={`chip ${
+        open
+          ? "bg-edge/15 text-edge"
+          : status === "settled"
+            ? "bg-info/15 text-info"
+            : "bg-sunken text-ink-muted"
+      }`}
+    >
+      {label}
+    </span>
+  );
+}
+
+function quoteStatusLabel(market: MarketRow): string {
+  if (market.quote_source === "orderbook") return "Order book captured";
+  if (market.quote_source === "venue_summary") {
+    return market.quote_is_stale_summary
+      ? "Venue summary fallback · summary stale"
+      : "Venue summary fallback";
+  }
+  return "No quote";
 }
