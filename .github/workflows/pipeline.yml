@@ -307,9 +307,29 @@ jobs:
 
       - name: Push
         run: |
-          # Never --force. A rejected push means main moved and the run must be
-          # redone from a fresh research job against the new parent.
-          if ! git push origin HEAD:main; then
-            echo "::error::push rejected (non-fast-forward). main moved during publication; re-run the pipeline. NOT force-pushing."
+          # Never --force, whatever the reason. But say which reason.
+          #
+          # This step previously reported EVERY rejection as "non-fast-forward,
+          # main moved". The first real publication was rejected by GitHub push
+          # protection instead, and the message sent the operator looking for a
+          # race that had not happened - main had not moved at all.
+          #
+          # Push protection is a standing hazard here, not a one-off: the
+          # published artefact is a 26MB binary SQLite file full of venue
+          # identifiers, and secret scanning matches those by shape. The run that
+          # exposed this tripped "Twilio Account String Identifier" on a market id
+          # sitting between two sibling ids of the same 32-hex form (AB…, AC…,
+          # AD…), which no Twilio credential ever does.
+          if git push origin HEAD:main 2>push.log; then
+            cat push.log
+          else
+            cat push.log
+            if grep -qiE "GH013|push protection|repository rule violations" push.log; then
+              echo "::error::push BLOCKED by GitHub push protection, not by a race. main did NOT move and nothing was published. The snapshot is a binary database of venue identifiers, so this is most likely a shape-match false positive - inspect the flagged offset before allowing anything. Resolving it is a human decision: review the finding in the repository's secret-scanning alerts. Do NOT disable push protection to get a snapshot out."
+            elif grep -qiE "non-fast-forward|fetch first|rejected.*behind" push.log; then
+              echo "::error::push rejected as non-fast-forward: main moved during publication. Re-run the pipeline so research recomputes against the new parent. NOT force-pushing."
+            else
+              echo "::error::push failed for a reason this step does not recognise; see the log above. NOT force-pushing."
+            fi
             exit 1
           fi
