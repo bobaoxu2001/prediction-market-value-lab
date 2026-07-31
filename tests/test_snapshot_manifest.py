@@ -152,12 +152,17 @@ class TestTheCommittedManifest:
         from pathlib import Path
 
         root = Path(__file__).resolve().parents[1]
-        artifact = root / "data" / "pmvl-snapshot.db"
         manifest = root / "data" / "pmvl-snapshot.manifest.json"
+        assert manifest.exists(), "the shipped artifact has no manifest"
+        data = json.loads(manifest.read_text())
+        artifact = root / (
+            "data/pmvl-snapshot.db.gz"
+            if data.get("artifact_encoding") == "gzip"
+            else "data/pmvl-snapshot.db"
+        )
         if not artifact.exists():
             pytest.skip("snapshot artifact not present in this checkout")
 
-        assert manifest.exists(), "the shipped artifact has no manifest"
         assert verify_artifact(artifact, manifest) == []
 
     def test_it_records_the_schema_it_was_built_against(self) -> None:

@@ -1,6 +1,9 @@
 # The database snapshot is committed and MUST reach the function bundle - the API
-# cannot start without it. Listed explicitly so no future ignore rule strips it.
+# cannot start without it. The manifest selects exactly one of these representations:
+# raw for legacy rollback commits, deterministic gzip for current publications.
+# Listed explicitly so no future ignore rule strips the declared one.
 !data/pmvl-snapshot.db
+!data/pmvl-snapshot.db.gz
 # The deploy checks the artefact against this; shipping one without the other
 # means the check silently degrades to "no manifest found".
 !data/pmvl-snapshot.manifest.json

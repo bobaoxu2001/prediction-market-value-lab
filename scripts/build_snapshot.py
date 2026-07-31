@@ -183,9 +183,22 @@ def _write_manifest(counts: dict[str, int], size: int) -> None:
         jobs = {}
         try:
             for name, status in con.execute(
-                "SELECT job_name, status FROM job_runs "
-                "WHERE (job_name, started_at) IN "
-                "(SELECT job_name, MAX(started_at) FROM job_runs GROUP BY job_name)"
+                """
+                WITH ranked AS (
+                    SELECT
+                        job_name,
+                        status,
+                        ROW_NUMBER() OVER (
+                            PARTITION BY job_name
+                            ORDER BY started_at DESC, id DESC
+                        ) AS position
+                    FROM job_runs
+                )
+                SELECT job_name, status
+                FROM ranked
+                WHERE position = 1
+                ORDER BY job_name
+                """
             ):
                 jobs[name] = status
         except _sqlite3.Error:
@@ -219,6 +232,12 @@ def _write_manifest(counts: dict[str, int], size: int) -> None:
         job_statuses=jobs,
         file_size_bytes=size,
         sha256=sha256_of(TARGET),
+        artifact_format="sqlite",
+        artifact_encoding="raw",
+        uncompressed_sha256=sha256_of(TARGET),
+        uncompressed_size_bytes=size,
+        schema_revision=str(schema_version),
+        source_commit_sha=commit,
     )
     manifest.write(MANIFEST)
 

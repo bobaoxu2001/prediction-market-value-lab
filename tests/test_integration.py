@@ -6,9 +6,9 @@ request - providers are exercised through recorded fixtures.
 
 from __future__ import annotations
 
+import json
 from datetime import timedelta
 from decimal import Decimal
-
 from pathlib import Path
 
 import pytest
@@ -586,18 +586,32 @@ class TestProductionSurfaceContract:
         import subprocess
 
         root = Path(__file__).resolve().parents[1]
+        manifest = json.loads(
+            (root / "data/pmvl-snapshot.manifest.json").read_text()
+        )
+        artifact = (
+            "data/pmvl-snapshot.db.gz"
+            if manifest.get("artifact_encoding") == "gzip"
+            else "data/pmvl-snapshot.db"
+        )
         tracked = subprocess.run(
-            ["git", "ls-files", "data/pmvl-snapshot.db"],
+            ["git", "ls-files", artifact],
             cwd=root, capture_output=True, text=True, check=False,
         ).stdout.strip()
-        assert tracked, "data/pmvl-snapshot.db must be tracked by git"
+        assert tracked, f"{artifact} must be tracked by git"
 
     def test_snapshot_is_not_in_wal_mode(self) -> None:
         """WAL needs a -shm sidecar, which a read-only serverless mount cannot create."""
         root = Path(__file__).resolve().parents[1]
-        snapshot = root / "data" / "pmvl-snapshot.db"
-        if not snapshot.exists():
+        manifest = root / "data/pmvl-snapshot.manifest.json"
+        if not manifest.exists():
             pytest.skip("snapshot not built in this checkout")
+        from pmvl_shared.snapshot_artifact import resolve_snapshot_path
+
+        snapshot = resolve_snapshot_path(
+            manifest,
+            root / "data/pmvl-snapshot.db",
+        )
         header = snapshot.open("rb").read(20)
         assert header[18] != 2 and header[19] != 2, "snapshot must use a rollback journal"
 
@@ -661,9 +675,15 @@ class TestCaseStudyEndpoint:
         from fastapi.testclient import TestClient
 
         root = Path(__file__).resolve().parents[1]
-        snapshot = root / "data" / "pmvl-snapshot.db"
-        if not snapshot.exists():
+        manifest = root / "data/pmvl-snapshot.manifest.json"
+        if not manifest.exists():
             pytest.skip("deployment snapshot not built in this checkout")
+        from pmvl_shared.snapshot_artifact import resolve_snapshot_path
+
+        snapshot = resolve_snapshot_path(
+            manifest,
+            root / "data/pmvl-snapshot.db",
+        )
         os.environ["DATABASE_URL"] = f"sqlite+pysqlite:///file:{snapshot}?mode=ro&uri=true"
 
         from pmvl_shared.db import reset_engine
@@ -803,21 +823,44 @@ class TestSnapshotDeploymentGuards:
     def _root(self) -> Path:
         return Path(__file__).resolve().parents[1]
 
+    @property
+    def _manifest(self) -> Path:
+        return self._root / "data" / "pmvl-snapshot.manifest.json"
+
+    def _declared_artifact(self) -> Path:
+        data = json.loads(self._manifest.read_text())
+        return self._root / (
+            "data/pmvl-snapshot.db.gz"
+            if data.get("artifact_encoding") == "gzip"
+            else "data/pmvl-snapshot.db"
+        )
+
+    def _resolved_snapshot(self) -> Path:
+        from pmvl_shared.snapshot_artifact import resolve_snapshot_path
+
+        return resolve_snapshot_path(
+            self._manifest,
+            self._root / "data/pmvl-snapshot.db",
+        )
+
     def test_snapshot_exists_and_is_small_enough(self) -> None:
-        snapshot = self._root / "data" / "pmvl-snapshot.db"
-        if not snapshot.exists():
+        if not self._manifest.exists():
             pytest.skip("snapshot not built in this checkout")
-        size_mb = snapshot.stat().st_size / 1e6
+        artifact = self._declared_artifact()
+        assert artifact.exists(), "the manifest's declared deployment artifact is missing"
+        size_mb = artifact.stat().st_size / 1e6
         # GitHub warns above 50MB and rejects above 100MB.
-        assert size_mb < 40, f"snapshot is {size_mb:.1f} MB; prune before committing"
+        assert size_mb < 40, (
+            f"committed snapshot artifact is {size_mb:.1f} MB; prune before committing"
+        )
 
     def test_snapshot_opens_read_only(self) -> None:
         """A read-only serverless mount cannot create journal sidecars."""
         import sqlite3
 
-        snapshot = self._root / "data" / "pmvl-snapshot.db"
-        if not snapshot.exists():
+        if not self._manifest.exists():
             pytest.skip("snapshot not built in this checkout")
+        snapshot = self._resolved_snapshot()
         con = sqlite3.connect(f"file:{snapshot}?mode=ro", uri=True)
         try:
             assert con.execute("SELECT COUNT(*) FROM recommendation_snapshots").fetchone()[0] > 0
@@ -827,21 +870,23 @@ class TestSnapshotDeploymentGuards:
     def test_gitignore_does_not_exclude_the_snapshot(self) -> None:
         import subprocess
 
+        artifact = self._declared_artifact().relative_to(self._root).as_posix()
         result = subprocess.run(
-            ["git", "check-ignore", "data/pmvl-snapshot.db"],
+            ["git", "check-ignore", artifact],
             cwd=self._root, capture_output=True, text=True, check=False,
         )
         assert result.returncode != 0, (
-            "data/pmvl-snapshot.db is gitignored; a git-triggered Vercel build would "
+            f"{artifact} is gitignored; a git-triggered Vercel build would "
             "ship without a database and the API would crash on import"
         )
 
     def test_vercelignore_does_not_exclude_the_snapshot(self) -> None:
         text = (self._root / ".vercelignore").read_text()
-        assert "!data/pmvl-snapshot.db" in text
+        artifact = self._declared_artifact().relative_to(self._root).as_posix()
+        assert f"!{artifact}" in text
         for line in text.splitlines():
             stripped = line.strip()
-            if stripped == "data/pmvl-snapshot.db":
+            if stripped == artifact:
                 raise AssertionError(".vercelignore excludes the deployment snapshot")
 
     def test_guided_demo_urls_declare_demo_mode(self) -> None:

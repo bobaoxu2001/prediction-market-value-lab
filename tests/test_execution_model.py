@@ -25,6 +25,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "packages/shared/sr
 
 import run_automated_snapshot_pipeline as pipeline  # noqa: E402
 from pmvl_shared.manifest import sha256_of  # noqa: E402
+from pmvl_shared.snapshot_artifact import compress_snapshot  # noqa: E402
 
 from run_automated_snapshot_pipeline import (  # noqa: E402
     EXECUTION_MODEL,
@@ -70,6 +71,63 @@ def _outcome(event: str = "workflow_dispatch") -> RunOutcome:
             event_name=event, input_scope=None, input_market_limit=None, input_publish=None
         ),
     )
+
+
+def _compressed_candidate(
+    path: Path, *, release_status: str
+) -> tuple[Path, Path]:
+    connection = sqlite3.connect(path)
+    connection.execute("CREATE TABLE candidate_data (value TEXT)")
+    connection.execute("INSERT INTO candidate_data VALUES ('candidate')")
+    connection.execute(
+        "CREATE TABLE alembic_version (version_num VARCHAR(32) PRIMARY KEY)"
+    )
+    connection.execute("INSERT INTO alembic_version VALUES ('c3d4e5f6a7b8')")
+    connection.execute(
+        "CREATE TABLE job_runs ("
+        "id INTEGER PRIMARY KEY, job_name TEXT, status TEXT, started_at TEXT"
+        ")"
+    )
+    connection.execute(
+        "INSERT INTO job_runs VALUES "
+        "(1, 'ingest', 'success', '2026-07-31T08:00:00Z')"
+    )
+    connection.commit()
+    connection.execute("PRAGMA journal_mode=DELETE")
+    connection.execute("VACUUM")
+    connection.close()
+
+    encoded = path.with_name(path.name + ".gz")
+    compress_snapshot(path, encoded)
+    manifest = path.with_suffix(".manifest.json")
+    manifest.write_text(
+        json.dumps(
+            {
+                "snapshot_id": "cand-1",
+                "schema_version": "c3d4e5f6a7b8",
+                "schema_revision": "c3d4e5f6a7b8",
+                "code_commit_sha": "1" * 12,
+                "source_commit_sha": "1" * 12,
+                "built_at": "2026-07-31T08:00:00Z",
+                "job_statuses": {"ingest": "success"},
+                "artifact_format": "sqlite",
+                "artifact_encoding": "gzip",
+                "compression_algorithm": "gzip",
+                "compression_level": 9,
+                "compression_deterministic": True,
+                "compressed_path": "data/pmvl-snapshot.db.gz",
+                "compressed_sha256": sha256_of(encoded),
+                "uncompressed_sha256": sha256_of(path),
+                "compressed_size_bytes": encoded.stat().st_size,
+                "uncompressed_size_bytes": path.stat().st_size,
+                "sha256": sha256_of(path),
+                "file_size_bytes": path.stat().st_size,
+                "validation_status": "passed",
+                "release_status": release_status,
+            }
+        )
+    )
+    return path, manifest
 
 
 class TestTheReportStatesTheExecutionModel:
@@ -202,18 +260,9 @@ class TestTheHandoverEmitsAHeldCandidate:
     def test_the_emitted_manifest_is_held_not_published(self, tmp_path) -> None:  # noqa: ANN001
         """Marking it published before the git commit would leave an artefact
         asserting a publication that had not happened."""
-        candidate = tmp_path / "candidate.db"
-        candidate.write_bytes(b"CANDIDATE BYTES")
-        candidate.with_suffix(".manifest.json").write_text(
-            json.dumps(
-                {
-                    "snapshot_id": "cand-1",
-                    "sha256": sha256_of(candidate),
-                    "file_size_bytes": candidate.stat().st_size,
-                    "validation_status": "passed",
-                    "release_status": "published",  # deliberately wrong on input
-                }
-            )
+        candidate, _ = _compressed_candidate(
+            tmp_path / "candidate.db",
+            release_status="published",  # deliberately wrong on input
         )
 
         outcome = _outcome()
@@ -226,12 +275,9 @@ class TestTheHandoverEmitsAHeldCandidate:
         assert outcome.candidate_disposition == CandidateDisposition.UPLOADED_FOR_PUBLISH
 
     def test_the_emitted_candidate_records_its_identity(self, tmp_path) -> None:  # noqa: ANN001
-        candidate = tmp_path / "candidate.db"
-        candidate.write_bytes(b"CANDIDATE BYTES")
-        candidate.with_suffix(".manifest.json").write_text(
-            json.dumps({"snapshot_id": "cand-1", "sha256": sha256_of(candidate),
-                        "file_size_bytes": candidate.stat().st_size,
-                        "validation_status": "passed", "release_status": "held"})
+        candidate, _ = _compressed_candidate(
+            tmp_path / "candidate.db",
+            release_status="held",
         )
 
         outcome = _outcome()
@@ -239,3 +285,7 @@ class TestTheHandoverEmitsAHeldCandidate:
 
         assert outcome.candidate_snapshot_id == "cand-1"
         assert outcome.candidate_sha256 == sha256_of(candidate)
+        assert outcome.candidate_uncompressed_sha256 == sha256_of(candidate)
+        assert outcome.candidate_compressed_sha256 == sha256_of(
+            candidate.with_name(candidate.name + ".gz")
+        )

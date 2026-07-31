@@ -14,7 +14,7 @@
 │                   make snapshot-build                       │
 │                            │                                │
 └────────────────────────────┼────────────────────────────────┘
-                             │  git commit (8.1 MB binary)
+                             │  git commit (legacy raw SQLite)
                              ▼
         ┌────────────────────────────────────────┐
         │  Vercel                                │
@@ -98,6 +98,12 @@ being read-only research, it does not.
                                     pmvl-api / pmvl-web
 ```
 
+The target architecture now commits a deterministic gzip transport rather than raw
+SQLite. The public database bytes themselves do not change: the manifest records
+both identities, and the API resolves the verified gzip into a read-only `/tmp`
+SQLite file. See
+[Deterministic compressed Snapshot publication](compressed-snapshot-publication.md).
+
 The publication gate is the point. A run that fails validation leaves the previous
 artifact in place, so the worst outcome of a broken pipeline is **stale data that is
 labelled stale**, never corrupt data that looks fresh.
@@ -109,10 +115,10 @@ cannot elevate a `contents: read` token by setting `GH_TOKEN`; a single job that
 computed and then pushed would have failed on its first real publication.
 
 ```
-research  (contents: read)   → computes, validates, uploads a HELD candidate
+research  (contents: read)   → computes, validates, uploads raw+gzip HELD candidate
    │                            never commits, never pushes
    ▼  artifact: pmvl-candidate-<run_id>-<sha>
-publish   (contents: write)  → revalidates, commits DB+manifest together, pushes
+publish   (contents: write)  → revalidates, commits gzip+manifest together, pushes
 ```
 
 The publish job runs only when **all** of these hold: manual dispatch, the

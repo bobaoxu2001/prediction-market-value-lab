@@ -22,27 +22,13 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
 SNAPSHOT = ROOT / "data" / "pmvl-snapshot.db"
+MANIFEST_PATH = ROOT / "data" / "pmvl-snapshot.manifest.json"
+COMPRESSED = ROOT / "data" / "pmvl-snapshot.db.gz"
+PUBLISHED_VALIDATION = True
+FINALIZE_CANDIDATE = False
 
 #: GitHub warns above 50MB and Vercel function bundles are capped well below that.
 MAX_BYTES = 40 * 1024 * 1024
-
-
-def _restore_rollback_journal() -> None:
-    """Put the file back into rollback-journal mode and drop any sidecars."""
-    try:
-        from pmvl_shared.db import get_engine
-
-        get_engine().dispose()
-    except Exception:  # noqa: BLE001
-        pass
-    con = sqlite3.connect(SNAPSHOT)
-    con.execute("PRAGMA journal_mode=DELETE")
-    con.commit()
-    con.close()
-    for suffix in ("-wal", "-shm"):
-        sidecar = SNAPSHOT.with_name(SNAPSHOT.name + suffix)
-        if sidecar.exists():
-            sidecar.unlink()
 
 
 def select_markets_with_books():  # noqa: ANN201
@@ -59,20 +45,75 @@ def select_markets_with_books():  # noqa: ANN201
     )
 
 
-def main() -> int:
+def main(argv: list[str] | None = None) -> int:
     # Overridable so a CANDIDATE artefact can be validated in place before it is
     # promoted. Validation that could only run against the published path would
     # have to publish first and check afterwards, which is the wrong order.
     import argparse
 
-    global SNAPSHOT
+    global SNAPSHOT, MANIFEST_PATH, COMPRESSED, PUBLISHED_VALIDATION
+    global FINALIZE_CANDIDATE
     parser = argparse.ArgumentParser(description="Validate a snapshot artifact")
     parser.add_argument("--snapshot", default=None)
-    args = parser.parse_args()
+    parser.add_argument("--manifest", default=None)
+    parser.add_argument("--compressed", default=None)
+    parser.add_argument(
+        "--finalize-candidate",
+        action="store_true",
+        help=(
+            "record a candidate verdict and create its deterministic gzip after "
+            "all read-only checks pass"
+        ),
+    )
+    args = parser.parse_args(argv)
+    PUBLISHED_VALIDATION = args.snapshot is None
+    FINALIZE_CANDIDATE = bool(args.finalize_candidate)
     if args.snapshot:
         SNAPSHOT = Path(args.snapshot)
+    MANIFEST_PATH = (
+        Path(args.manifest)
+        if args.manifest
+        else SNAPSHOT.with_suffix(".manifest.json")
+    )
+    COMPRESSED = (
+        Path(args.compressed)
+        if args.compressed
+        else SNAPSHOT.with_name(SNAPSHOT.name + ".gz")
+    )
 
     problems: list[str] = []
+
+    # Once the committed manifest declares gzip, it is authoritative and the raw
+    # database is intentionally absent from Git.  Resolve and verify it into /tmp
+    # before running the same API-level checks used for the legacy raw Snapshot.
+    if PUBLISHED_VALIDATION and MANIFEST_PATH.exists():
+        manifest = json.loads(MANIFEST_PATH.read_text())
+        if manifest.get("artifact_encoding") == "gzip":
+            published_raw = ROOT / "data" / "pmvl-snapshot.db"
+            if os.path.lexists(published_raw):
+                problems.append(
+                    "published gzip manifest coexists with data/pmvl-snapshot.db; "
+                    "the raw artefact must be absent after migration"
+                )
+            sys.path.insert(0, str(ROOT / "packages/shared/src"))
+            from pmvl_shared.snapshot_artifact import (  # noqa: PLC0415
+                SnapshotArtifactError,
+                resolve_snapshot_path,
+            )
+
+            try:
+                SNAPSHOT = resolve_snapshot_path(
+                    MANIFEST_PATH,
+                    published_raw,
+                )
+            except SnapshotArtifactError as exc:
+                print(f"FAIL: compressed Snapshot resolution failed: {exc}")
+                return 1
+        elif COMPRESSED.exists():
+            problems.append(
+                "legacy raw manifest coexists with data/pmvl-snapshot.db.gz; "
+                "the manifest and committed artefact set disagree"
+            )
 
     if not SNAPSHOT.exists():
         print(f"FAIL: {SNAPSHOT} is missing. The API cannot start without it.")
@@ -98,14 +139,62 @@ def main() -> int:
     # because it has not been promoted yet, and failing it here would make the
     # validation gate unusable for the thing it is supposed to gate.
     if _is_published_path():
-        tracked = subprocess.run(
-            ["git", "ls-files", "--error-unmatch", str(SNAPSHOT.relative_to(ROOT))],
-            cwd=ROOT, capture_output=True, text=True,
+        manifest = (
+            json.loads(MANIFEST_PATH.read_text())
+            if MANIFEST_PATH.exists()
+            else {}
         )
-        if tracked.returncode != 0:
+        declared = (
+            ROOT / "data" / "pmvl-snapshot.db.gz"
+            if manifest.get("artifact_encoding") == "gzip"
+            else ROOT / "data" / "pmvl-snapshot.db"
+        )
+        raw = ROOT / "data" / "pmvl-snapshot.db"
+        gzip_artifact = ROOT / "data" / "pmvl-snapshot.db.gz"
+        raw_tracked = subprocess.run(
+            ["git", "ls-files", "--error-unmatch", str(raw.relative_to(ROOT))],
+            cwd=ROOT,
+            capture_output=True,
+            text=True,
+        ).returncode == 0
+        gzip_tracked = subprocess.run(
+            [
+                "git",
+                "ls-files",
+                "--error-unmatch",
+                str(gzip_artifact.relative_to(ROOT)),
+            ],
+            cwd=ROOT,
+            capture_output=True,
+            text=True,
+        ).returncode == 0
+        if manifest.get("artifact_encoding") == "gzip" and raw_tracked:
             problems.append(
-                "snapshot is not tracked by git, so a deploy bundle will omit it"
+                "data/pmvl-snapshot.db remains tracked although the manifest "
+                "declares gzip"
             )
+        if manifest.get("artifact_encoding") != "gzip" and gzip_tracked:
+            problems.append(
+                "data/pmvl-snapshot.db.gz is tracked although the manifest "
+                "declares the legacy raw format"
+            )
+        for required in (declared, MANIFEST_PATH):
+            tracked = subprocess.run(
+                [
+                    "git",
+                    "ls-files",
+                    "--error-unmatch",
+                    str(required.relative_to(ROOT)),
+                ],
+                cwd=ROOT,
+                capture_output=True,
+                text=True,
+            )
+            if tracked.returncode != 0:
+                problems.append(
+                    f"{required.relative_to(ROOT)} is not tracked by git, so a "
+                    "deploy bundle will omit it"
+                )
 
     # It must open read-only exactly as the serverless function opens it.
     try:
@@ -303,23 +392,14 @@ def main() -> int:
     except Exception as exc:  # noqa: BLE001
         problems.append(f"diagnostics check failed: {type(exc).__name__}: {exc}")
 
-    # Opening the snapshot through SQLAlchemy sets journal_mode=WAL, so simply
-    # RUNNING this validator used to leave the artefact unopenable read-only - the
-    # check corrupting the thing it checks. Restore it, then re-assert from the file
-    # header so a genuine WAL commit is still caught above.
-    _restore_rollback_journal()
-    header = SNAPSHOT.open("rb").read(20)
-    if header[18] == 2 or header[19] == 2:
-        problems.append("snapshot is still in WAL mode after the restore attempt")
+    # Validation must not mutate the bytes it is proving.  Read-only SQLAlchemy
+    # connections now set query_only rather than switching the database to WAL;
+    # sidecars here are therefore a regression, not something to clean up.
+    for suffix in ("-wal", "-shm"):
+        sidecar = SNAPSHOT.with_name(SNAPSHOT.name + suffix)
+        if sidecar.exists():
+            problems.append(f"validation created unexpected sidecar {sidecar.name}")
 
-    # The manifest is promoted here and nowhere else. An artefact whose manifest
-    # still reads PENDING has not been checked, and `verify_artifact` refuses it -
-    # which is what turns "never deploy an unvalidated snapshot" from a convention
-    # into something a deploy step can enforce.
-    #
-    # The checksum is recomputed AFTER the journal-mode restore above, because that
-    # rewrites the file. Hashing before it would record a digest of bytes that no
-    # longer exist, and every later verification would fail for the wrong reason.
     _finalise_manifest(problems)
 
     if problems:
@@ -334,15 +414,17 @@ def main() -> int:
 
 def _is_published_path() -> bool:
     """Whether SNAPSHOT points at the committed artefact rather than a candidate."""
-    return SNAPSHOT == ROOT / "data" / "pmvl-snapshot.db"
+    return PUBLISHED_VALIDATION
 
 
 def _finalise_manifest(problems: list[str]) -> None:
-    """Record the verdict on the manifest, or say plainly that there is none."""
-    # Derived from the artefact under validation, not hardcoded: a candidate is
-    # named candidate.db and its manifest is candidate.manifest.json.
-    manifest_path = SNAPSHOT.with_suffix(".manifest.json")
-    if not manifest_path.exists():
+    """Verify a committed manifest or explicitly finalise a held candidate.
+
+    CI and publish-job revalidation are read-only.  Only the research builder
+    passes ``--finalize-candidate``; that boundary records PASSED/HELD and creates
+    deterministic gzip after the SQLite bytes have completed every check.
+    """
+    if not MANIFEST_PATH.exists():
         # Not a validation failure on its own: an artefact built before manifests
         # existed is still serviceable. But the absence is stated rather than
         # passed over, because a deploy that checks the manifest needs to know.
@@ -357,7 +439,7 @@ def _finalise_manifest(problems: list[str]) -> None:
         sha256_of,
     )
 
-    data = json.loads(manifest_path.read_text())
+    data = json.loads(MANIFEST_PATH.read_text())
 
     # A newly generated artefact must be attributable. The committed rollback
     # snapshot predates commit and parser recording, so it carries a documented
@@ -369,16 +451,110 @@ def _finalise_manifest(problems: list[str]) -> None:
     elif legacy:
         print("   note: legacy provenance exemption applies to this artifact")
 
-    passed = not problems
-    data["validation_status"] = (
-        ValidationStatus.PASSED if passed else ValidationStatus.FAILED
+    if FINALIZE_CANDIDATE:
+        if PUBLISHED_VALIDATION:
+            problems.append("refusing to finalise the committed production manifest")
+            return
+        passed = not problems
+        data["validation_status"] = (
+            ValidationStatus.PASSED if passed else ValidationStatus.FAILED
+        )
+        data["release_status"] = ReleaseStatus.HELD
+        data["validation_failures"] = problems[:20]
+        raw_sha = sha256_of(SNAPSHOT)
+        raw_size = SNAPSHOT.stat().st_size
+        data.update(
+            {
+                # Backward-compatible canonical identity: always the SQLite bytes.
+                "sha256": raw_sha,
+                "file_size_bytes": raw_size,
+                "uncompressed_sha256": raw_sha,
+                "uncompressed_size_bytes": raw_size,
+                "artifact_format": "sqlite",
+                "schema_revision": (
+                    data.get("schema_revision") or data.get("schema_version")
+                ),
+                "source_commit_sha": (
+                    data.get("source_commit_sha") or data.get("code_commit_sha")
+                ),
+                "built_at": data.get("built_at") or data.get("generated_at"),
+            }
+        )
+        if passed:
+            from pmvl_shared.snapshot_artifact import (  # noqa: PLC0415
+                compress_snapshot,
+                verify_compressed_snapshot,
+            )
+
+            compress_snapshot(SNAPSHOT, COMPRESSED)
+            data.update(
+                {
+                    "artifact_encoding": "gzip",
+                    "compression_algorithm": "gzip",
+                    "compression_level": 9,
+                    "compression_deterministic": True,
+                    # Contract path after publication, never a transient runner path.
+                    "compressed_path": "data/pmvl-snapshot.db.gz",
+                    "compressed_sha256": sha256_of(COMPRESSED),
+                    "compressed_size_bytes": COMPRESSED.stat().st_size,
+                }
+            )
+        else:
+            COMPRESSED.unlink(missing_ok=True)
+        MANIFEST_PATH.write_text(
+            json.dumps(data, indent=2, sort_keys=True) + "\n"
+        )
+        if passed:
+            compressed_problems = verify_compressed_snapshot(
+                SNAPSHOT, COMPRESSED, MANIFEST_PATH
+            )
+            if compressed_problems:
+                problems.extend(compressed_problems)
+                data["validation_status"] = ValidationStatus.FAILED
+                data["validation_failures"] = problems[:20]
+                MANIFEST_PATH.write_text(
+                    json.dumps(data, indent=2, sort_keys=True) + "\n"
+                )
+        print(f"   manifest: {data['validation_status']} / {data['release_status']}")
+        return
+
+    # Independent verification: never repair or rewrite the manifest here.
+    if data.get("validation_status") != ValidationStatus.PASSED:
+        problems.append(
+            f"manifest validation_status is {data.get('validation_status')!r}"
+        )
+    expected_release = (
+        ReleaseStatus.PUBLISHED if PUBLISHED_VALIDATION else ReleaseStatus.HELD
     )
-    data["release_status"] = ReleaseStatus.PUBLISHED if passed else ReleaseStatus.HELD
-    data["validation_failures"] = problems[:20]
-    data["sha256"] = sha256_of(SNAPSHOT)
-    data["file_size_bytes"] = SNAPSHOT.stat().st_size
-    manifest_path.write_text(json.dumps(data, indent=2, sort_keys=True) + "\n")
-    print(f"   manifest: {data['validation_status']} / {data['release_status']}")
+    if data.get("release_status") != expected_release:
+        problems.append(
+            f"manifest release_status is {data.get('release_status')!r}; "
+            f"expected {expected_release!r}"
+        )
+    raw_sha = sha256_of(SNAPSHOT)
+    expected_raw_sha = data.get("uncompressed_sha256") or data.get("sha256")
+    if expected_raw_sha != raw_sha:
+        problems.append(
+            f"uncompressed checksum mismatch: manifest "
+            f"{str(expected_raw_sha or '')[:16]}... vs actual {raw_sha[:16]}..."
+        )
+    expected_raw_size = (
+        data.get("uncompressed_size_bytes") or data.get("file_size_bytes")
+    )
+    if expected_raw_size != SNAPSHOT.stat().st_size:
+        problems.append(
+            f"uncompressed size mismatch: manifest {expected_raw_size} vs actual "
+            f"{SNAPSHOT.stat().st_size}"
+        )
+    if data.get("artifact_encoding") == "gzip":
+        from pmvl_shared.snapshot_artifact import (  # noqa: PLC0415
+            verify_compressed_snapshot,
+        )
+
+        problems.extend(
+            verify_compressed_snapshot(SNAPSHOT, COMPRESSED, MANIFEST_PATH)
+        )
+    print(f"   manifest: {data.get('validation_status')} / {data.get('release_status')}")
 
 
 if __name__ == "__main__":

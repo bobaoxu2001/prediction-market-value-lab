@@ -31,8 +31,8 @@ The problems SQLite *does* create here, and how each is handled:
 | **File durability** | The operational DB lives in the CI workspace and is destroyed with it. It is scratch space, not a store — the record is the published snapshot in git. |
 | **Deployment persistence** | Solved by not needing it: each run is a **stateless recomputation** seeded from the last published snapshot. See below. |
 | **Lock handling** | `busy_timeout` plus serial jobs. A lock contention here indicates a bug, not load. |
-| **Backups** | Every published snapshot is a full backup, checksummed and in git history. Recovery is `git checkout`. |
-| **Artifact handoff** | Publication copies, validates, checksums, then renames. The public bundle never sees a partial file. |
+| **Backups** | Every published snapshot is a full backup, with compressed and uncompressed identities recorded in git history. Recovery is a normal revert. |
+| **Artifact handoff** | Research hands raw+deterministic-gzip candidates to a separate publisher. One exact Git commit changes gzip+manifest together; the public bundle never sees a partial file. |
 
 ### The execution model: stateless recomputation
 
@@ -101,10 +101,12 @@ application knows which database it is talking to.
 
 Assumes ~2 min per run at $0.008/min for Linux runners over the free 2,000 minutes.
 
-**A caveat that matters at high frequency:** committing an 8 MB binary every 5
-minutes would add roughly 70 GB/month to the repository. The artifact must move to
-Actions artifact storage or a release asset before that cadence, not git. At the
-15-minute cadence with a daily commit this does not arise.
+**A caveat that matters at high frequency:** gzip reduces each committed object but
+does not make Git an object store. Frequent immutable binaries still grow repository
+history without bound. Before materially increasing publication frequency or
+Snapshot size, move blobs to content-addressed object storage or release assets
+under the integrity and rollback contract in
+[the compressed publication backlog](compressed-snapshot-publication.md#backlog-move-snapshot-blobs-out-of-git).
 
 ### B — small VM + managed Postgres
 

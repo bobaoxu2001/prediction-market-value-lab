@@ -113,6 +113,9 @@ prediction-market-value-lab/
 `DATABASE_URL` to a `postgresql+psycopg://` DSN for PostgreSQL (see
 `docker-compose.yml`). A custom `Money` column keeps `Decimal` exact on both — SQLite
 has no `NUMERIC` affinity and would otherwise hand back floats.
+Production bundles the same immutable SQLite bytes as a deterministic gzip artefact;
+the API verifies both identities and opens an atomic read-only `/tmp` copy. See
+[the Snapshot publication contract](docs/compressed-snapshot-publication.md).
 
 **Money is `Decimal` everywhere.** Binary contracts live on a $0.001–$0.01 lattice
 where float error changes arbitrage verdicts. `float` appears only inside statistical

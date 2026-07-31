@@ -74,6 +74,9 @@ _SessionLocal: sessionmaker[Session] | None = None
 def _build_engine(url: str | None = None) -> Engine:
     settings = get_settings()
     url = url or settings.database_url
+    read_only_sqlite = url.startswith("sqlite") and (
+        "mode=ro" in url or "immutable=1" in url
+    )
     kwargs: dict[str, Any] = {"future": True, "pool_pre_ping": True}
     if url.startswith("sqlite"):
         # check_same_thread=False lets the FastAPI threadpool share the connection.
@@ -87,10 +90,17 @@ def _build_engine(url: str | None = None) -> Engine:
         def _sqlite_pragmas(dbapi_conn, _record):  # noqa: ANN001
             cur = dbapi_conn.cursor()
             try:
-                # WAL lets the API read while the worker writes - required because
-                # both run against the same file in the default local setup.
-                cur.execute("PRAGMA journal_mode=WAL")
-                cur.execute("PRAGMA synchronous=NORMAL")
+                if read_only_sqlite:
+                    # A verified production Snapshot is immutable.  Attempting to
+                    # switch a decompressed /tmp copy to WAL would mutate the bytes
+                    # we just verified and create -wal/-shm sidecars.  query_only
+                    # makes an accidental write fail at SQLite's own boundary.
+                    cur.execute("PRAGMA query_only=ON")
+                else:
+                    # WAL lets the API read while the worker writes - required
+                    # because both run against the same file in local development.
+                    cur.execute("PRAGMA journal_mode=WAL")
+                    cur.execute("PRAGMA synchronous=NORMAL")
             except Exception:  # noqa: BLE001
                 # A read-only mount (serverless deployments ship the database inside
                 # the bundle) rejects journal changes. Reads still work, so this must
