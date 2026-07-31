@@ -761,8 +761,12 @@ class TestGatingEvaluatedNotJustInspected:
 
 
 class TestPublicationCommitsAreVerified:
-    """A publication changes what the public site serves. Skipping CI on it made
-    the riskiest commit in the repository the only unverified one."""
+    """A publication changes what the public site serves.
+
+    GitHub intentionally suppresses push-triggered Actions runs for commits made
+    with GITHUB_TOKEN. The pipeline must therefore call the read-only CI and
+    production-smoke workflows with the exact commit it created.
+    """
 
     @pytest.fixture()
     def publish_script(self, pipeline: dict) -> str:
@@ -781,8 +785,7 @@ class TestPublicationCommitsAreVerified:
                 assert marker not in line, f"publication commit skips CI: {line.strip()}"
 
     def test_the_pipeline_cannot_be_triggered_by_a_push(self, pipeline: dict) -> None:
-        """This is what makes removing [skip ci] safe: a publication commit
-        triggers verification, but cannot start another pipeline."""
+        """The explicit verification calls must not create a publication loop."""
         assert "push" not in pipeline["triggers"]
         assert set(pipeline["triggers"]) <= {"workflow_dispatch", "schedule"}
 
@@ -793,6 +796,57 @@ class TestPublicationCommitsAreVerified:
         assert not (triggers & {"push", "create", "repository_dispatch"}), (
             "a commit-driven trigger would let a publication start the next "
             "publication"
+        )
+
+    def test_publish_exposes_the_exact_commit_it_created(self, pipeline: dict) -> None:
+        publish = pipeline["jobs"]["publish"]
+        assert publish["outputs"]["published_commit_sha"] == (
+            "${{ steps.commit.outputs.published_commit_sha }}"
+        )
+        commit = next(step for step in publish["steps"] if step.get("id") == "commit")
+        assert "published_commit_sha=$(git rev-parse HEAD)" in commit["run"]
+        assert commit["run"].index("git commit -m") < commit["run"].index(
+            "published_commit_sha=$(git rev-parse HEAD)"
+        )
+
+    @pytest.mark.parametrize(
+        ("job_name", "workflow"),
+        [
+            ("verify-published-ci", "./.github/workflows/ci.yml"),
+            (
+                "verify-published-production",
+                "./.github/workflows/postdeploy-smoke.yml",
+            ),
+        ],
+    )
+    def test_read_only_verifiers_receive_the_exact_published_commit(
+        self, pipeline: dict, job_name: str, workflow: str
+    ) -> None:
+        job = pipeline["jobs"][job_name]
+        assert job["needs"] == "publish"
+        assert job["permissions"] == {"contents": "read"}
+        assert job["uses"] == workflow
+        assert job["with"]["commit_sha"] == (
+            "${{ needs.publish.outputs.published_commit_sha }}"
+        )
+        condition = " ".join(job["if"].split())
+        assert "needs.publish.result == 'success'" in condition
+        assert "needs.publish.outputs.published_commit_sha != ''" in condition
+
+    def test_ci_is_reusable_and_checks_out_the_requested_commit(self, ci: dict) -> None:
+        call = ci["triggers"]["workflow_call"]["inputs"]["commit_sha"]
+        assert call["required"] is True
+        assert call["type"] == "string"
+        checkouts = [
+            step
+            for job in ci["jobs"].values()
+            for step in job["steps"]
+            if step.get("uses") == "actions/checkout@v4"
+        ]
+        assert len(checkouts) == len(ci["jobs"])
+        assert all(
+            step["with"]["ref"] == "${{ inputs.commit_sha || github.sha }}"
+            for step in checkouts
         )
 
 
@@ -825,7 +879,23 @@ class TestPostDeploySmokeWorkflow:
         body = "\n".join(
             (s.get("run") or "") for j in smoke["jobs"].values() for s in j.get("steps", [])
         )
-        assert "--commit" in body and "GITHUB_SHA" in body
+        assert "--commit" in body
+        assert "inputs.commit_sha || github.sha" in body
+
+    def test_it_is_reusable_for_the_exact_publication_commit(
+        self, smoke: dict
+    ) -> None:
+        call = smoke["triggers"]["workflow_call"]["inputs"]["commit_sha"]
+        assert call["required"] is True
+        assert call["type"] == "string"
+        checkout = next(
+            step
+            for step in smoke["jobs"]["smoke"]["steps"]
+            if step.get("uses") == "actions/checkout@v4"
+        )
+        assert checkout["with"]["ref"] == (
+            "${{ inputs.commit_sha || github.sha }}"
+        )
 
     def test_it_uploads_a_report_even_on_failure(self, smoke: dict) -> None:
         steps = smoke["jobs"]["smoke"]["steps"]

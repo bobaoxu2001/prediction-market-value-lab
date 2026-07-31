@@ -18,6 +18,7 @@ import os
 import sqlite3
 import subprocess
 import sys
+from collections.abc import Mapping
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -29,6 +30,81 @@ FINALIZE_CANDIDATE = False
 
 #: GitHub warns above 50MB and Vercel function bundles are capped well below that.
 MAX_BYTES = 40 * 1024 * 1024
+
+
+def matching_diagnostics_problems(
+    has_scan: bool, diagnostics: object
+) -> list[str]:
+    """Validate the persisted matching histogram, including a valid empty scan.
+
+    Zero candidate pairs is an explicit research result, not a missing histogram.
+    It is valid only when every derived count is also zero and the diagnostic says
+    why nothing reached verification. This keeps the persistence check fail-closed
+    without rejecting a small or unlucky smoke sample.
+    """
+    if diagnostics is None:
+        return (
+            [
+                "an arbitrage scan is recorded but matching_diagnostics is null; "
+                "the demotion histogram did not survive into the snapshot"
+            ]
+            if has_scan
+            else []
+        )
+    if not isinstance(diagnostics, Mapping):
+        return ["matching_diagnostics is not an object"]
+
+    count_fields = (
+        "pairs_examined",
+        "verified_equivalent",
+        "blocked_only_by_missing_info",
+        "missing_information_count",
+        "contradiction_count",
+    )
+    counts: dict[str, int] = {}
+    problems: list[str] = []
+    for field in count_fields:
+        value = diagnostics.get(field)
+        if isinstance(value, bool) or not isinstance(value, int) or value < 0:
+            problems.append(
+                f"matching_diagnostics {field} must be a non-negative integer"
+            )
+        else:
+            counts[field] = value
+    if problems:
+        return problems
+
+    pairs = counts["pairs_examined"]
+    promoted_or_parser_blocked = (
+        counts["verified_equivalent"] + counts["blocked_only_by_missing_info"]
+    )
+    if promoted_or_parser_blocked > pairs:
+        problems.append(
+            "matching_diagnostics verified_equivalent plus "
+            "blocked_only_by_missing_info exceeds pairs_examined"
+        )
+
+    diagnosis = diagnostics.get("diagnosis")
+    if not isinstance(diagnosis, str) or not diagnosis.strip():
+        problems.append("matching_diagnostics diagnosis is missing")
+    ran_at = diagnostics.get("ran_at")
+    if not isinstance(ran_at, str) or not ran_at.strip():
+        problems.append("matching_diagnostics ran_at is missing")
+    if not isinstance(diagnostics.get("top_reasons"), list):
+        problems.append("matching_diagnostics top_reasons must be a list")
+
+    if pairs == 0:
+        derived = {field: counts[field] for field in count_fields[1:]}
+        if any(derived.values()):
+            problems.append(
+                "matching_diagnostics has zero pairs but non-zero derived counts"
+            )
+        if diagnostics.get("top_reasons") != []:
+            problems.append(
+                "matching_diagnostics has zero pairs but non-empty top_reasons"
+            )
+
+    return problems
 
 
 def select_markets_with_books():  # noqa: ANN201
@@ -382,13 +458,9 @@ def main(argv: list[str] | None = None) -> int:
             body = response.json()
             has_scan = bool(body.get("batch_id"))
             diagnostics = body.get("matching_diagnostics")
-            if has_scan and not diagnostics:
-                problems.append(
-                    "an arbitrage scan is recorded but matching_diagnostics is null; "
-                    "the demotion histogram did not survive into the snapshot"
-                )
-            elif diagnostics and not diagnostics.get("pairs_examined"):
-                problems.append("matching_diagnostics present but pairs_examined is 0")
+            problems.extend(
+                matching_diagnostics_problems(has_scan, diagnostics)
+            )
     except Exception as exc:  # noqa: BLE001
         problems.append(f"diagnostics check failed: {type(exc).__name__}: {exc}")
 

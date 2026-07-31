@@ -71,6 +71,13 @@ It reads the committed blobs back from Git and verifies them against the exact r
 candidate before a normal fast-forward push. Push Protection remains enabled; no
 force push or CI-skipping commit is used.
 
+GitHub deliberately suppresses new push-triggered Actions runs when a workflow's
+own `GITHUB_TOKEN` creates the commit. The publish job therefore exposes the exact
+commit SHA it created, and the pipeline calls the existing CI and production-smoke
+workflows as read-only reusable workflows against that SHA. The calls are
+independent, so production smoke still records evidence when a CI job fails. No
+PAT, self-dispatch permission, force push, or security bypass is involved.
+
 Automatic publication remains off. Scheduled computation and publication use
 separate repository variables:
 

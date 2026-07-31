@@ -11,9 +11,19 @@ on:
     branches: ["**"]
   pull_request:
     branches: [main]
+  # Publication commits are pushed by the workflow's GITHUB_TOKEN. GitHub
+  # deliberately suppresses new push-triggered Actions runs for those commits,
+  # so the publishing workflow calls this workflow explicitly with the exact
+  # commit it created.
+  workflow_call:
+    inputs:
+      commit_sha:
+        description: "Exact published commit to verify"
+        required: true
+        type: string
 
 concurrency:
-  group: ci-${{ github.ref }}
+  group: ci-${{ inputs.commit_sha || github.ref }}
   cancel-in-progress: true
 
 # Read-only by default. No CI job needs to write to the repository, and a fork PR
@@ -27,6 +37,8 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.commit_sha || github.sha }}
       - uses: actions/setup-python@v5
         with:
           python-version: "3.11"
@@ -55,6 +67,8 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.commit_sha || github.sha }}
       - uses: actions/setup-python@v5
         with:
           python-version: "3.11"
@@ -80,6 +94,8 @@ jobs:
       contents: read
     steps:
       - uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.commit_sha || github.sha }}
       - uses: actions/setup-python@v5
         with:
           python-version: "3.11"
@@ -167,6 +183,8 @@ jobs:
         working-directory: apps/web
     steps:
       - uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.commit_sha || github.sha }}
       - uses: actions/setup-node@v4
         with:
           node-version: "22"
@@ -189,6 +207,8 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.commit_sha || github.sha }}
       - name: Refuse committed credentials
         run: |
           set -e

@@ -12,6 +12,15 @@ on:
   push:
     branches: [main]
   workflow_dispatch:
+  # See ci.yml: a publication pushed by GITHUB_TOKEN does not emit another
+  # Actions push run. The publishing workflow calls this read-only workflow with
+  # the exact commit after the push succeeds.
+  workflow_call:
+    inputs:
+      commit_sha:
+        description: "Exact published commit production must serve"
+        required: true
+        type: string
 
 # Read-only. This workflow observes production; it must never change it.
 permissions:
@@ -32,6 +41,8 @@ jobs:
       contents: read
     steps:
       - uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.commit_sha || github.sha }}
 
       - uses: actions/setup-python@v5
         with:
@@ -40,7 +51,7 @@ jobs:
       - name: Wait for deployment and check production
         run: |
           python scripts/postdeploy_smoke.py \
-            --commit "${GITHUB_SHA}" \
+            --commit "${{ inputs.commit_sha || github.sha }}" \
             --wait-minutes 12 \
             --report smoke-report.json
 
