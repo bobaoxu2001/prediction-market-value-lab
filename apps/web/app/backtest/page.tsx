@@ -33,15 +33,25 @@ export default async function BacktestPage({
       />
       <DemoBanner notice={res.demo_notice} />
 
+      {/*
+       * This caveat used to render in a neutral grey box while the ROI figures
+       * beside it were coloured green - the most important warning on the page was
+       * its quietest element. It now carries the same weight as any other demo
+       * notice, because "these returns are not evidence of returns" is the single
+       * claim a reader must not miss here.
+       */}
       {mode === "demo" && runs.length > 0 ? (
-        <div className="mb-5 rounded-lg border border-neutral-200 bg-neutral-50 p-4 text-sm dark:border-neutral-800 dark:bg-neutral-900/50">
-          <p className="text-neutral-700 dark:text-neutral-300">
-            <span className="font-semibold">This demo forecaster is deliberately imperfect.</span>{" "}
+        <div className="mb-5 rounded-[3px] border-l-2 border border-demo/50 border-l-demo bg-demo/10 p-4 text-sm">
+          <div className="t-label text-demo">Demo forecaster — not a track record</div>
+          <p className="mt-1.5 text-ink">
+            <span className="font-semibold">
+              This demo forecaster is deliberately imperfect.
+            </span>{" "}
             It is overconfident in the tails and several strategies lose money. Use it
             to see how the platform exposes poor calibration, weak strategies and
             misleading profitability — not as evidence of expected returns.
           </p>
-          <div className="mt-2 flex flex-wrap gap-x-4 gap-y-1 text-xs text-neutral-600 dark:text-neutral-400">
+          <div className="mt-2 flex flex-wrap gap-x-4 gap-y-1 t-meta">
             <span>1. Compare strategies below</span>
             <span>2. Inspect the calibration curve</span>
             <span>
@@ -55,7 +65,7 @@ export default async function BacktestPage({
       ) : null}
 
       {focus && focus.n_settled > 0 ? (
-        <Verdict run={focus} />
+        <Verdict run={focus} mode={mode} />
       ) : null}
 
       {runs.length === 0 ? (
@@ -72,32 +82,71 @@ export default async function BacktestPage({
         />
       ) : (
         <>
-          <div className="card table-wrap mb-4">
+          <div className="panel table-wrap mb-4">
             <table className="w-full">
-              <thead className="border-b border-neutral-200 dark:border-neutral-800">
+              <thead className="border-b border-line">
                 <tr>
-                  <th>Strategy</th><th>Recs</th><th>Settled</th><th>Win rate</th>
-                  <th>ROI</th><th>Total P&amp;L</th><th>Max DD</th><th>Profit factor</th>
-                  <th>Brier</th><th>vs market</th><th>Data quality</th>
+                  <th scope="col" className="col-sticky col-title">Strategy</th>
+                  <th scope="col" className="num">Recs</th>
+                  <th scope="col" className="num">Settled</th>
+                  <th scope="col" className="num">Win rate</th>
+                  <th scope="col" className="num">ROI</th>
+                  <th scope="col" className="num">Total P&amp;L</th>
+                  <th scope="col" className="num">Max DD</th>
+                  <th scope="col" className="num">Profit factor</th>
+                  <th scope="col" className="num">Brier</th>
+                  <th scope="col" className="num">vs market</th>
+                  <th scope="col">Data quality</th>
                 </tr>
               </thead>
-              <tbody className="divide-y divide-neutral-100 dark:divide-neutral-800">
+              <tbody className="divide-y divide-line-subtle">
                 {runs.map((r) => {
                   const m = r.metrics ?? {};
                   const active = focus?.strategy === r.strategy;
                   return (
-                    <tr key={r.run_id}
-                      className={active ? "bg-neutral-50 dark:bg-neutral-900" : ""}>
-                      <td>
+                    <tr key={r.run_id} className={active ? "bg-sunken" : "row-hover"}>
+                      {/* Sticky, so the strategy name stays visible while the
+                          eleven measurement columns scroll. */}
+                      <td className={`col-sticky col-title ${active ? "bg-sunken" : ""}`}>
                         <Link href={`/backtest${qs({ mode, strategy: r.strategy })}`}
                           className="hover:underline" title={r.description}>
                           {strategyLabel(r.strategy)}
                         </Link>
                       </td>
                       <td className="num">{r.n_recommendations}</td>
-                      <td className="num">{r.n_settled}</td>
+                      {/*
+                       * Sample size is the qualifier on every other number in the
+                       * row, so a thin sample is labelled in the row itself rather
+                       * than left to a footnote nobody reads.
+                       */}
+                      <td className="num">
+                        {r.n_settled}
+                        {r.n_settled > 0 && r.n_settled < 100 ? (
+                          <span
+                            className="ml-1 text-[10px] uppercase tracking-wide text-warn"
+                            title="Fewer than 100 settled results — cannot separate skill from luck."
+                          >
+                            thin
+                          </span>
+                        ) : null}
+                      </td>
                       <td className="num">{m.win_rate != null ? pct(m.win_rate) : "—"}</td>
-                      <td className={`num ${(m.roi ?? 0) > 0 ? "text-edge dark:text-edge-dark" : (m.roi ?? 0) < 0 ? "text-risk dark:text-risk-dark" : ""}`}>
+                      {/*
+                       * In demo mode the ROI column is left uncoloured. Painting a
+                       * synthetic forecaster's return green is the page celebrating
+                       * a number it has just finished disclaiming.
+                       */}
+                      <td
+                        className={`num ${
+                          mode === "demo"
+                            ? "text-ink-muted"
+                            : (m.roi ?? 0) > 0
+                              ? "text-edge"
+                              : (m.roi ?? 0) < 0
+                                ? "text-risk"
+                                : ""
+                        }`}
+                      >
                         {m.roi != null ? pct(m.roi) : "—"}
                       </td>
                       <td className="num">{m.total_pnl != null ? usd(m.total_pnl) : "—"}</td>
@@ -108,7 +157,7 @@ export default async function BacktestPage({
                         {m.brier_improvement_vs_market?.toFixed(5) ?? "—"}
                       </td>
                       <td>
-                        <span className="chip bg-neutral-100 text-neutral-600 dark:bg-neutral-800 dark:text-neutral-400"
+                        <span className="chip bg-sunken text-ink-muted"
                           title={r.data_quality_meaning}>
                           {r.data_quality}
                         </span>
@@ -120,7 +169,7 @@ export default async function BacktestPage({
             </table>
           </div>
 
-          <p className="mb-4 text-xs text-neutral-500 dark:text-neutral-400">
+          <p className="mb-4 text-xs text-ink-faint">
             <strong>vs market</strong> is the Brier improvement over simply trusting the
             market&apos;s own implied probability. Positive means the model added
             information; zero or negative means it did not, regardless of P&amp;L.
@@ -128,14 +177,14 @@ export default async function BacktestPage({
 
           {focus && (
             <>
-              <section className="card mb-4 p-4">
+              <section className="panel mb-4 p-4">
                 <h2 className="text-sm font-semibold">
                   {strategyLabel(focus.strategy)}{" "}
-                  <span className="font-mono text-xs font-normal text-neutral-500">
+                  <span className="font-mono text-xs font-normal text-ink-faint">
                     {focus.strategy}
                   </span>
                 </h2>
-                <p className="mt-1 text-sm text-neutral-600 dark:text-neutral-400">
+                <p className="mt-1 text-sm text-ink-muted">
                   {focus.description}
                 </p>
                 <div className="mt-3 grid grid-cols-2 gap-4 sm:grid-cols-4 lg:grid-cols-6">
@@ -149,15 +198,15 @@ export default async function BacktestPage({
                   <Metric label="Avg market" value={focus.metrics.avg_market_probability != null ? pct(focus.metrics.avg_market_probability) : "—"} />
                 </div>
                 {focus.notes && (
-                  <p className="mt-3 rounded border border-warn/40 bg-warn/10 p-2 text-xs dark:border-warn-dark/40 dark:bg-warn-dark/10">
+                  <p className="mt-3 rounded border border-warn/40 bg-warn/10 p-2 text-xs">
                     {focus.notes}
                   </p>
                 )}
               </section>
 
-              <section className="card mb-4 p-4">
-                <h2 className="mb-1 text-sm font-semibold">Reliability diagram</h2>
-                <p className="mb-3 text-xs text-neutral-500">
+              <section className="panel mb-4 p-4">
+                <h2 className="t-section-title mb-1">Reliability diagram</h2>
+                <p className="mb-3 text-xs text-ink-faint">
                   Points below the diagonal mean the model was overconfident in that
                   band; above means underconfident. Hover a point for its sample size —
                   a bin with a handful of observations says nothing.
@@ -169,14 +218,14 @@ export default async function BacktestPage({
               </section>
 
               {Object.keys(focus.by_slice ?? {}).length > 0 && (
-                <section className="card p-4">
-                  <h2 className="mb-3 text-sm font-semibold">Breakdown</h2>
+                <section className="panel p-4">
+                  <h2 className="t-section-title mb-3">Breakdown</h2>
                   <div className="table-wrap">
                     <table className="w-full">
-                      <thead className="border-b border-neutral-200 dark:border-neutral-800">
+                      <thead className="border-b border-line">
                         <tr><th>Slice</th><th>Settled</th><th>Win rate</th><th>ROI</th><th>Brier</th><th>vs market</th></tr>
                       </thead>
-                      <tbody className="divide-y divide-neutral-100 dark:divide-neutral-800">
+                      <tbody className="divide-y divide-line-subtle">
                         {Object.entries(focus.by_slice).map(([name, m]) => (
                           <tr key={name}>
                             <td>{name}</td>
@@ -196,7 +245,7 @@ export default async function BacktestPage({
           )}
         </>
       )}
-      <p className="mt-6 text-xs text-neutral-500 dark:text-neutral-400">{res.disclaimer}</p>
+      <p className="mt-6 text-xs text-ink-faint">{res.disclaimer}</p>
     </div>
   );
 }
@@ -206,7 +255,7 @@ export default async function BacktestPage({
  * did it make money, was it more accurate than the market, and is the sample big
  * enough to mean anything.
  */
-function Verdict({ run }: { run: BacktestRun }) {
+function Verdict({ run, mode }: { run: BacktestRun; mode: DataMode }) {
   const m = run.metrics;
   const beat = m.brier_improvement_vs_market;
   const beatsMarket = beat != null && beat > 0;
@@ -221,21 +270,30 @@ function Verdict({ run }: { run: BacktestRun }) {
           label="More accurate than the market?"
           value={beat == null ? "Unknown" : beatsMarket ? "Yes" : "No"}
           sub={beat == null ? "no comparison available" : `Brier ${beat > 0 ? "+" : ""}${beat.toFixed(5)}`}
-          tone={beat == null ? "text-neutral-500" : toneFor(beat)}
+          tone={beat == null ? "text-ink-faint" : toneFor(beat)}
           help={METRIC_HELP.vs_market}
         />
+        {/*
+          * Uncoloured in demo mode, for the same reason the ROI column is: a
+          * green headline return from a forecaster the page has just called
+          * deliberately imperfect reads as a result rather than an illustration.
+          */}
         <VerdictCard
           label="Net ROI"
           value={roi == null ? "—" : `${roi > 0 ? "+" : ""}${(roi * 100).toFixed(1)}%`}
-          sub={m.total_pnl != null ? `${usd(m.total_pnl)} on ${m.total_stake != null ? usd(m.total_stake) : "—"} staked` : undefined}
-          tone={toneFor(roi)}
+          sub={
+            m.total_pnl != null
+              ? `${usd(m.total_pnl)} on ${m.total_stake != null ? usd(m.total_stake) : "—"} staked${mode === "demo" ? " (demo)" : ""}`
+              : undefined
+          }
+          tone={mode === "demo" ? "text-ink" : toneFor(roi)}
           help={METRIC_HELP.roi}
         />
         <VerdictCard
           label="Settled trades"
           value={String(settled)}
           sub={thinSample ? "too few to separate skill from luck" : "sample size"}
-          tone={thinSample ? "text-neutral-500" : ""}
+          tone={thinSample ? "text-ink-faint" : ""}
           help={METRIC_HELP.settled}
         />
         <VerdictCard
@@ -246,7 +304,7 @@ function Verdict({ run }: { run: BacktestRun }) {
           help={METRIC_HELP.max_drawdown}
         />
       </div>
-      <p className="mt-3 text-sm text-neutral-700 dark:text-neutral-300">
+      <p className="mt-3 text-sm text-ink">
         <span className="font-medium">{strategyLabel(run.strategy)}</span>{" "}
         {beat == null
           ? "has no market comparison available"

@@ -24,7 +24,20 @@ export function ModeNav({
     mode && mode !== "live" ? `${href}${href.includes("?") ? "&" : "?"}mode=${mode}` : href;
 
   return (
-    <nav className="table-wrap flex items-center gap-1 text-sm">
+    /*
+     * Not `table-wrap`, and `min-w-0` is load-bearing.
+     *
+     * `table-wrap` carries `w-full`, which on a flex item resolves against the
+     * whole header and pinned this nav to the container's full width - so the
+     * mode switch and theme toggle were pushed past the right edge. And a flex
+     * item defaults to `min-width: auto`, so `overflow-x-auto` never engaged:
+     * instead of scrolling internally, the nav forced the entire page to scroll
+     * sideways at every width below 1440.
+     *
+     * Long-standing rather than new - production shows the same 76px overflow at
+     * 1024 and 109px at 768.
+     */
+    <nav className="flex min-w-0 flex-1 items-center gap-1 overflow-x-auto text-sm">
       {items.map((item) => {
         const active =
           item.href === "/" ? pathname === "/" : pathname.startsWith(item.href);
@@ -35,8 +48,8 @@ export function ModeNav({
             aria-current={active ? "page" : undefined}
             className={
               active
-                ? "rounded bg-neutral-100 px-2 py-1 font-medium text-neutral-900 dark:bg-neutral-800 dark:text-neutral-100"
-                : "rounded px-2 py-1 text-neutral-600 hover:bg-neutral-100 hover:text-neutral-900 dark:text-neutral-400 dark:hover:bg-neutral-800 dark:hover:text-neutral-100"
+                ? "rounded-[2px] bg-sunken px-2 py-1 font-medium text-ink"
+                : "rounded-[2px] px-2 py-1 text-ink-muted hover:bg-sunken hover:text-ink"
             }
           >
             {item.label}
@@ -69,7 +82,7 @@ export function ModeSwitch({ snapshot = false }: { snapshot?: boolean }) {
   };
 
   return (
-    <div className="flex shrink-0 items-center rounded-lg border border-neutral-200 p-0.5 text-xs dark:border-neutral-800">
+    <div className="flex shrink-0 items-center rounded-[3px] border border-line bg-sunken p-0.5 text-xs">
       {(["live", "demo"] as const).map((target) => (
         <Link
           key={target}
@@ -77,8 +90,8 @@ export function ModeSwitch({ snapshot = false }: { snapshot?: boolean }) {
           aria-current={mode === target ? "true" : undefined}
           className={
             mode === target
-              ? "rounded-md bg-neutral-900 px-2.5 py-1 font-medium text-white dark:bg-neutral-100 dark:text-neutral-900"
-              : "rounded-md px-2.5 py-1 text-neutral-500 hover:text-neutral-900 dark:hover:text-neutral-100"
+              ? "rounded-[2px] bg-raised px-2.5 py-1 font-medium text-ink shadow-[0_1px_0_rgb(var(--line))]"
+              : "rounded-[2px] px-2.5 py-1 text-ink-faint hover:text-ink"
           }
         >
           {/* Full wording from sm up; abbreviated below, where the long labels

@@ -30,7 +30,7 @@ export default async function MethodologyPage() {
         <Formula label="Kalshi maker" value={m.fees.kalshi_maker} />
         <Formula label="Polymarket taker" value={m.fees.polymarket_taker} />
         <Formula label="Polymarket maker" value={m.fees.polymarket_maker} />
-        <p className="mt-2 text-sm text-neutral-600 dark:text-neutral-400">{m.fees.note}</p>
+        <p className="mt-2 text-sm text-ink-muted">{m.fees.note}</p>
       </Section>
 
       <Section title="Cost stack">
@@ -91,7 +91,7 @@ export default async function MethodologyPage() {
         </ul>
       </Section>
 
-      <p className="mt-6 text-xs text-neutral-500 dark:text-neutral-400">{res.disclaimer}</p>
+      <p className="mt-6 text-xs text-ink-faint">{res.disclaimer}</p>
     </div>
   );
 }
@@ -100,7 +100,7 @@ function Section({ title, children }: { title: string; children: React.ReactNode
   return (
     <section className="card mb-4 p-5">
       <h2 className="mb-3 text-base font-semibold">{title}</h2>
-      <div className="space-y-1 text-sm text-neutral-700 dark:text-neutral-300">{children}</div>
+      <div className="space-y-1 text-sm text-ink">{children}</div>
     </section>
   );
 }
