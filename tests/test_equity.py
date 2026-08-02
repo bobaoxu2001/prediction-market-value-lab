@@ -38,6 +38,18 @@ from pmvl_markets.probability.trading_calendar import (
 )
 
 ET = ZoneInfo("America/New_York")
+UTC = ZoneInfo("UTC")
+
+#: Monday 2026-07-27 10:00 ET, mid-session on a regular trading day.
+#:
+#: A guard that sits *behind* the trading-time check can only be reached from an
+#: instant that still has trading time in front of it. Reading the wall clock
+#: instead makes which guard fires depend on the day the suite happens to run:
+#: from a Saturday, ``now + 1 day`` lands on a Sunday, the model correctly
+#: declines for having no cash-hour-equivalents left, and the later guard under
+#: test is never evaluated. The instant is pinned so the test asserts on the
+#: branch it names, every day of the week.
+MID_SESSION = datetime(2026, 7, 27, 14, 0, tzinfo=UTC)
 
 
 def et(year: int, month: int, day: int, hour: int, minute: int = 0) -> datetime:
@@ -264,16 +276,34 @@ class TestEquityModelGuards:
         assert "bounds" in result.detail
 
     @pytest.mark.asyncio
-    async def test_barrier_wording_declines(self) -> None:
-        """No touch model is fitted for indices, so refuse rather than misprice."""
+    async def test_barrier_wording_declines(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """No touch model is fitted for indices, so refuse rather than misprice.
+
+        The barrier guard is the last one in ``estimate``: reaching it requires
+        both trading time remaining and a usable price history. Both are supplied
+        explicitly - a pinned mid-session clock and a stubbed spot/vol read -
+        so that a decline for either of those reasons cannot be mistaken for the
+        decline this test is about. The stub is also what keeps the suite off the
+        network, as ``conftest`` promises.
+        """
         model = EquityIndexThresholdModel()
+
+        # (spot, sigma_annual, n_returns, quote_age_seconds, sigma_uncertainty)
+        async def _stub_spot_and_vol(_symbol: str) -> tuple[float, float, int, float, float]:
+            return (7412.0, 0.18, 250, 60.0, 0.01)
+
+        monkeypatch.setattr(model, "_spot_and_vol", _stub_spot_and_vol)
+
         try:
             result = await model.estimate(
                 ModelContext(
                     market=_market(
                         title="Will the S&P 500 reach 7500 this week?",
-                        event_occurrence_time=utcnow() + timedelta(days=1),
-                    )
+                        event_occurrence_time=MID_SESSION + timedelta(days=1),
+                    ),
+                    now=MID_SESSION,
                 )
             )
         finally:
