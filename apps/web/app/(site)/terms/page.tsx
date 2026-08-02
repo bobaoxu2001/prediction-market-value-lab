@@ -2,7 +2,7 @@ import type { Metadata } from "next";
 import Link from "next/link";
 
 import { LegalPage, LegalSection, Placeholder } from "@/components/legal";
-import { absoluteUrl } from "@/lib/site";
+import { absoluteUrl, SUPPORT_EMAIL } from "@/lib/site";
 
 export const metadata: Metadata = {
   title: "Terms of service",
@@ -225,8 +225,20 @@ export default function TermsPage() {
 
       <LegalSection id="contact" title="13. Contact">
         <p>
-          Questions about these terms: <Placeholder>SUPPORT EMAIL</Placeholder>.
-          Legal notices: <Placeholder>LEGAL NOTICE ADDRESS</Placeholder>.
+          Questions about these terms:{" "}
+          <a
+            href={`mailto:${SUPPORT_EMAIL}`}
+            className="underline underline-offset-2"
+          >
+            {SUPPORT_EMAIL}
+          </a>
+          . Legal notices: <Placeholder>LEGAL NOTICE ADDRESS</Placeholder>.
+        </p>
+        <p>
+          The contact address above is confirmed and monitored. It is the only
+          value on this page that has been resolved; every bracketed marker is
+          still outstanding, and this document remains a draft that no lawyer has
+          read.
         </p>
       </LegalSection>
     </LegalPage>

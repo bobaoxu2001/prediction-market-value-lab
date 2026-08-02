@@ -16,6 +16,19 @@ obviously is not.
 legal pages still contain at least one, so a partially filled document cannot
 quietly look complete.
 
+## Resolved
+
+| Value | Where | Status |
+| --- | --- | --- |
+| Support email | Footer, Terms §13, Privacy, Risk disclosure | **`ax2183@nyu.edu`**, confirmed by the owner and approved for the public Beta |
+
+It lives in one place, `SUPPORT_EMAIL` in `apps/web/lib/site.ts`, rather than as
+three literals. A contact address that is wrong in one of three places is worse
+than one that is missing, because a reader cannot tell which copy is current.
+
+Approving a contact address is **not** approving the documents. Everything below
+is still outstanding and still renders as a visible marker.
+
 ## Outstanding decisions
 
 | Placeholder | Where | What is needed |
@@ -31,7 +44,6 @@ quietly look complete.
 | `LIABILITY CAP` | Terms §8 | Limitation of liability, where lawful |
 | `GOVERNING JURISDICTION` | Terms §11 | Governing law |
 | `DISPUTE VENUE` | Terms §11 | Courts for disputes |
-| `SUPPORT EMAIL` | Terms §13, Privacy, footer | A monitored address |
 | `LEGAL NOTICE ADDRESS` | Terms §13 | Address for formal notices |
 | `DATA RETENTION POLICY` | Privacy | How long account, billing and log data are kept |
 | `DATA CONTROLLER AND JURISDICTION` | Privacy | Controller identity and supervisory authority |

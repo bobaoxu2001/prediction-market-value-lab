@@ -114,6 +114,33 @@ describe("server/client boundary", () => {
   });
 });
 
+describe("security headers", () => {
+  it("sets the three provider-agnostic headers on every path", async () => {
+    const config = (await import("@/next.config.mjs")).default;
+    const rules = await config.headers();
+    expect(rules).toHaveLength(1);
+    expect(rules[0].source).toBe("/:path*");
+
+    const byKey = Object.fromEntries(rules[0].headers.map((h) => [h.key, h.value]));
+    expect(byKey["X-Content-Type-Options"]).toBe("nosniff");
+    expect(byKey["Referrer-Policy"]).toBe("strict-origin-when-cross-origin");
+    // Deliberately `frame-ancestors` alone: it constrains who may embed us and
+    // places no restriction on what we load, so it cannot break Clerk or Stripe.
+    expect(byKey["Content-Security-Policy"]).toBe("frame-ancestors 'self'");
+  });
+
+  it("does not guess a script or connect policy", () => {
+    // Those directives depend on the Clerk instance's own frontend-API domain,
+    // which does not exist until the owner creates the application. Guessing
+    // them breaks sign-in and checkout; Clerk's own generator is the right tool
+    // and needs a credentialed Preview to validate against.
+    const config = readFileSync(path.join(ROOT, "next.config.mjs"), "utf8");
+    for (const directive of ["script-src", "connect-src", "frame-src", "img-src", "style-src"]) {
+      expect(config.includes(`${directive} `), `${directive} must not be guessed`).toBe(false);
+    }
+  });
+});
+
 describe("route policy", () => {
   it("keeps every public research route public", () => {
     // The product decision this test defends: the research is free and is not

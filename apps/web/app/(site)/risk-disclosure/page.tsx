@@ -2,7 +2,7 @@ import type { Metadata } from "next";
 import Link from "next/link";
 
 import { LegalPage, LegalSection } from "@/components/legal";
-import { absoluteUrl } from "@/lib/site";
+import { absoluteUrl, SUPPORT_EMAIL } from "@/lib/site";
 
 export const metadata: Metadata = {
   title: "Risk disclosure",
@@ -172,8 +172,14 @@ export default function RiskDisclosurePage() {
           claiming, guaranteed returns, winning trades, risk-free positions,
           accurate profits, an ability to beat the market, sure opportunities or
           access to institutional secrets. Any material that appears to make such
-          a claim is wrong and should be reported to the contact address on the
-          homepage.
+          a claim is wrong and should be reported to{" "}
+          <a
+            href={`mailto:${SUPPORT_EMAIL}`}
+            className="underline underline-offset-2"
+          >
+            {SUPPORT_EMAIL}
+          </a>
+          .
         </p>
       </LegalSection>
     </LegalPage>

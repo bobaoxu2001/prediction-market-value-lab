@@ -277,6 +277,61 @@ describe("legal pages", () => {
     }
   });
 
+  it("shows the confirmed support address as a usable mailto link", async () => {
+    // The one legal-page value the owner has resolved. It is a single constant
+    // rather than three literals: a contact address that is wrong in one of
+    // three places is worse than one that is missing, because a reader cannot
+    // tell which copy is current.
+    const { SUPPORT_EMAIL } = await import("@/lib/site");
+    for (const specifier of [
+      "@/app/(site)/terms/page",
+      "@/app/(site)/privacy/page",
+      "@/app/(site)/risk-disclosure/page",
+    ]) {
+      const { default: Page } = await import(specifier);
+      const { container } = render(<Page />);
+      const link = container.querySelector(`a[href="mailto:${SUPPORT_EMAIL}"]`);
+      expect(link, `${specifier} must link the support address`).toBeTruthy();
+      expect(container.textContent).toContain(SUPPORT_EMAIL);
+      cleanup();
+    }
+  });
+
+  it("still marks every OTHER legal value as unresolved", async () => {
+    // Approving a support address is not approving the documents. These are the
+    // fourteen decisions that remain outstanding; if one of them quietly
+    // acquires a value, this fails.
+    const expected = [
+      "ANNUAL PRICE",
+      "BILLING CURRENCY",
+      "DATA CONTROLLER AND JURISDICTION",
+      "DATA RETENTION POLICY",
+      "DISPUTE VENUE",
+      "GOVERNING JURISDICTION",
+      "LEGAL ENTITY NAME",
+      "LEGAL NOTICE ADDRESS",
+      "LIABILITY CAP",
+      "MINIMUM AGE",
+      "MONTHLY PRICE",
+      "PRODUCT AND SERVICE NAME AS REGISTERED",
+      "REFUND POLICY",
+      "REGISTERED ADDRESS",
+    ];
+    const seen = new Set<string>();
+    for (const specifier of ["@/app/(site)/terms/page", "@/app/(site)/privacy/page"]) {
+      const { default: Page } = await import(specifier);
+      const { container } = render(<Page />);
+      for (const mark of container.querySelectorAll("mark")) {
+        const text = (mark.textContent ?? "").replace(/^\[|\s*—.*$/g, "").trim();
+        if (text) seen.add(text);
+      }
+      cleanup();
+    }
+    expect([...seen].sort()).toEqual(expected);
+    // And the support address is NOT among them any more.
+    expect(seen.has("SUPPORT EMAIL")).toBe(false);
+  });
+
   it("marks every unresolved owner decision visibly rather than inventing one", async () => {
     for (const specifier of ["@/app/(site)/terms/page", "@/app/(site)/privacy/page"]) {
       const { default: Page } = await import(specifier);

@@ -1,5 +1,7 @@
 import Link from "next/link";
 
+import { SUPPORT_EMAIL } from "@/lib/site";
+
 /**
  * Shared furniture for the legal pages.
  *
@@ -33,10 +35,13 @@ export function LegalPage({
       <div className="mt-10 space-y-8">{children}</div>
 
       <p className="mt-12 border-t border-line pt-6 t-meta">
-        Questions about this document go to the contact address on the{" "}
-        <Link href="/" className="underline underline-offset-2">
-          homepage
-        </Link>
+        Questions about this document go to{" "}
+        <a
+          href={`mailto:${SUPPORT_EMAIL}`}
+          className="underline underline-offset-2"
+        >
+          {SUPPORT_EMAIL}
+        </a>
         . See also the{" "}
         <Link href="/terms" className="underline underline-offset-2">
           terms

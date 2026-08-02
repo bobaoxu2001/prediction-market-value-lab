@@ -90,12 +90,18 @@ export function deploymentOrigin(): string {
   return SITE_URL;
 }
 
-/** Placeholder contact. Replaced once the owner confirms a monitored address. */
-export const SUPPORT_EMAIL_PLACEHOLDER = "[SUPPORT EMAIL — OWNER INPUT REQUIRED]";
-
-/** Placeholder legal entity. Never invented; see docs/legal-placeholders.md. */
-export const LEGAL_ENTITY_PLACEHOLDER = "[LEGAL ENTITY NAME — OWNER INPUT REQUIRED]";
-
-/** Placeholder jurisdiction. Never invented; see docs/legal-placeholders.md. */
-export const JURISDICTION_PLACEHOLDER =
-  "[GOVERNING JURISDICTION — OWNER INPUT REQUIRED]";
+/**
+ * The contact address, confirmed by the owner and approved for the public Beta.
+ *
+ * One constant rather than a literal repeated across the footer, the terms and
+ * the privacy notice: a contact address that is wrong in one of three places is
+ * worse than one that is missing, because a reader has no way to tell which
+ * copy is current.
+ *
+ * This is the *only* legal-page value that has been resolved. Everything else -
+ * legal entity, registered address, jurisdiction, dispute venue, refund policy,
+ * retention policy, liability cap, minimum age, prices, currency - is still an
+ * unresolved `<Placeholder>` and must stay visibly marked. Approving a support
+ * address is not approving the documents.
+ */
+export const SUPPORT_EMAIL = "ax2183@nyu.edu";

@@ -3,7 +3,7 @@ import { SignOutButton } from "@clerk/nextjs";
 
 import { ThemeToggle } from "@/components/ThemeToggle";
 import { isAuthUiConfigured } from "@/lib/auth";
-import { SITE_LONG_NAME, SITE_NAME } from "@/lib/site";
+import { SITE_LONG_NAME, SITE_NAME, SUPPORT_EMAIL } from "@/lib/site";
 import type { Entitlement } from "@/lib/billing/entitlement";
 
 /**
@@ -221,9 +221,12 @@ export function SiteFooter() {
           </p>
           <p>
             Contact:{" "}
-            <span className="font-mono">
-              [SUPPORT EMAIL — OWNER INPUT REQUIRED]
-            </span>
+            <a
+              href={`mailto:${SUPPORT_EMAIL}`}
+              className="font-mono underline underline-offset-2 hover:text-ink"
+            >
+              {SUPPORT_EMAIL}
+            </a>
           </p>
           {!isAuthUiConfigured() ? (
             <p className="text-ink-faint">

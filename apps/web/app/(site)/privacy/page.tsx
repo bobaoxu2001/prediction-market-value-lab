@@ -2,7 +2,7 @@ import type { Metadata } from "next";
 import Link from "next/link";
 
 import { LegalPage, LegalSection, Placeholder } from "@/components/legal";
-import { absoluteUrl } from "@/lib/site";
+import { absoluteUrl, SUPPORT_EMAIL } from "@/lib/site";
 
 export const metadata: Metadata = {
   title: "Privacy notice",
@@ -147,8 +147,14 @@ export default function PrivacyPage() {
           Depending on where you live you may have rights to access, correct,
           export or delete personal data held about you, and to object to certain
           processing. To exercise them, write to{" "}
-          <Placeholder>SUPPORT EMAIL</Placeholder>. Requests are handled manually;
-          there is no self-service export or deletion in this release.
+          <a
+            href={`mailto:${SUPPORT_EMAIL}`}
+            className="underline underline-offset-2"
+          >
+            {SUPPORT_EMAIL}
+          </a>
+          . Requests are handled manually; there is no self-service export or
+          deletion in this release.
         </p>
         <p>
           The identity of the data controller and the supervisory authority you

@@ -1,5 +1,10 @@
 # SaaS layer setup: accounts, entitlements and test billing
 
+> **Doing this for the first time?** Follow
+> [`owner-setup-checklist.md`](owner-setup-checklist.md) instead — it is the same
+> material as an ordered, 25-minute task list with the exact hostnames and event
+> names filled in. This document is the reference.
+
 Everything the owner has to do to turn the public site, authentication and
 test-mode billing on — and the checklist that must be complete before anyone is
 charged for real.
@@ -245,7 +250,8 @@ Do not set a live Stripe key until every line is true.
       — deliberately a code change, so it cannot happen by accident
 - [ ] Refund policy written and reflected in the terms
 - [ ] Data retention policy written and reflected in the privacy notice
-- [ ] Support email live and monitored, and substituted for the placeholder
+- [x] Support email live and monitored — `ax2183@nyu.edu`, approved for the
+      public Beta and already substituted throughout
 - [ ] Billing currency, monthly price and annual price decided
 - [ ] The Pro tier actually delivers something a subscriber would recognise as
       value — nothing on the pricing page currently promises a feature that
@@ -341,9 +347,29 @@ metadata and the source of truth lives in Stripe.
 
 ## 9. Content Security Policy
 
-No CSP is set by this application today, and none is added here: adding one
-blind to Clerk's and Stripe's requirements is the fastest way to break a
-checkout that was working. When one is introduced it must include at least:
+Three headers are set in `next.config.mjs` and verified, chosen because each is
+provider-agnostic and could be checked without credentials:
+
+```text
+X-Content-Type-Options: nosniff
+Referrer-Policy:        strict-origin-when-cross-origin
+Content-Security-Policy: frame-ancestors 'self'
+```
+
+`frame-ancestors` alone constrains who may embed *us* and places no restriction
+on what we load, so it cannot break a provider. `Referrer-Policy` matters
+concretely here: `/account/billing?checkout=complete&session_id=cs_test_…` is a
+real URL a visitor lands on, and the Checkout Session ID should not ride along in
+a `Referer`.
+
+The *fetching* directives are deliberately still absent, because guessing them is
+the fastest way to break a checkout that was working, and their correct values
+depend on the Clerk instance's own frontend-API domain — which does not exist
+until the application is created. Clerk ships a generator for this, reachable as
+`clerkMiddleware({ contentSecurityPolicy })`. Turn it on in **report-only** mode
+first, against a Preview that has real credentials, and promote it only after the
+report is clean through a full sign-in and a full checkout. A hand-written policy
+would need at least:
 
 ```text
 script-src   'self' https://*.clerk.accounts.dev https://*.clerk.com https://js.stripe.com
