@@ -202,7 +202,13 @@ jobs:
       - name: Typecheck
         run: npx tsc --noEmit
       - name: Production build
+        # Before the tests, deliberately: one of them scans `.next/static` for
+        # secret values, and with no build output it would skip rather than fail
+        # - a gate that quietly does nothing is the failure mode this workflow
+        # already learned once with `next lint`.
         run: npm run build
+      - name: Tests
+        run: npm run test
 
   secrets:
     name: Secret scan
@@ -219,8 +225,15 @@ jobs:
             exit 1
           fi
           # .env.example must stay a template.
-          if grep -qE '^(ANTHROPIC_API_KEY|KALSHI_API_KEY_ID)=.+' .env.example; then
+          if grep -qE '^(ANTHROPIC_API_KEY|KALSHI_API_KEY_ID|CLERK_SECRET_KEY|STRIPE_SECRET_KEY|STRIPE_WEBHOOK_SECRET)=.+' .env.example; then
             echo ".env.example contains a real-looking value."
+            exit 1
+          fi
+          # Any Clerk or Stripe credential shape, anywhere in the tree. A test
+          # key is still a credential; the setup docs name the variables and
+          # never their values.
+          if git grep -nIE '(sk_(live|test)_[A-Za-z0-9]{8}|rk_(live|test)_[A-Za-z0-9]{8}|whsec_[A-Za-z0-9]{16}|pk_live_[A-Za-z0-9]{8})' -- . ':(exclude).github/workflows/ci.yml'; then
+            echo "A Clerk or Stripe credential appears to be committed."
             exit 1
           fi
           echo "No tracked credentials."

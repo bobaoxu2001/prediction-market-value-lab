@@ -574,6 +574,13 @@ class TestProductionSurfaceContract:
     These encode the failures that actually reached production: a snapshot missing
     from the bundle, developer-only instructions shown to visitors, and demo mode
     silently dropping on navigation.
+
+    Paths below name the `(research)` route group. When the public marketing site
+    was added, the research terminal moved into its own Next.js route group so it
+    could keep its own header and footer, and the research briefing moved from `/`
+    to `/app`. The route group is a directory that contributes nothing to the URL,
+    so the pages these assertions cover are the same pages; only the paths to
+    their sources changed. Every assertion is unchanged.
     """
 
     def test_deployment_snapshot_is_committed(self) -> None:
@@ -634,14 +641,14 @@ class TestProductionSurfaceContract:
     def test_hero_ctas_carry_demo_mode(self) -> None:
         """Both CTAs must land in demo mode, or they show an empty live page."""
         root = Path(__file__).resolve().parents[1]
-        page = (root / "apps/web/app/page.tsx").read_text()
+        page = (root / "apps/web/app/(research)/app/page.tsx").read_text()
         assert 'mode: "demo"' in page
         assert "demoHref" in page and "backtestHref" in page
 
     def test_funnel_numbers_are_not_hardcoded(self) -> None:
         """The funnel must render API counts, never literals baked into the page."""
         root = Path(__file__).resolve().parents[1]
-        page = (root / "apps/web/app/page.tsx").read_text()
+        page = (root / "apps/web/app/(research)/app/page.tsx").read_text()
         assert "/opportunities/funnel" in page
         assert "stages.map" in page
 
@@ -653,14 +660,14 @@ class TestProductionSurfaceContract:
     def test_zero_is_not_rendered_as_a_dash(self) -> None:
         """Truthy checks turned a real 0 into an em dash, which looks like no data."""
         root = Path(__file__).resolve().parents[1]
-        page = (root / "apps/web/app/backtest/page.tsx").read_text()
+        page = (root / "apps/web/app/(research)/backtest/page.tsx").read_text()
         for field in ("total_pnl", "max_drawdown", "total_stake"):
             assert f"m.{field} != null" in page, f"{field} must be null-checked, not truthy"
 
     def test_roi_and_brier_are_reported_independently(self) -> None:
         """A profitable strategy that lost to the market must show both facts."""
         root = Path(__file__).resolve().parents[1]
-        page = (root / "apps/web/app/backtest/page.tsx").read_text()
+        page = (root / "apps/web/app/(research)/backtest/page.tsx").read_text()
         assert "did NOT beat market prices" in page
         assert "More accurate than the market?" in page
 
@@ -776,40 +783,40 @@ class TestGuidedDemoRoutes:
 
     def test_all_five_steps_are_defined(self) -> None:
         root = Path(__file__).resolve().parents[1]
-        page = (root / "apps/web/app/demo/page.tsx").read_text()
+        page = (root / "apps/web/app/(research)/demo/page.tsx").read_text()
         assert "const TOTAL_STEPS = 5" in page
         for n in range(1, 6):
             assert f"step === {n}" in page
 
     def test_invalid_step_falls_back_to_one(self) -> None:
         root = Path(__file__).resolve().parents[1]
-        page = (root / "apps/web/app/demo/page.tsx").read_text()
+        page = (root / "apps/web/app/(research)/demo/page.tsx").read_text()
         assert "Number.isInteger(parsed)" in page
         assert "<= TOTAL_STEPS ? parsed : 1" in page
 
     def test_mode_is_pinned_to_demo(self) -> None:
         """The tour must never silently drop to live and show empty pages."""
         root = Path(__file__).resolve().parents[1]
-        page = (root / "apps/web/app/demo/page.tsx").read_text()
+        page = (root / "apps/web/app/(research)/demo/page.tsx").read_text()
         assert 'const mode: DataMode = "demo"' in page
         assert 'mode: "demo"' in page
 
     def test_controls_are_present(self) -> None:
         root = Path(__file__).resolve().parents[1]
-        page = (root / "apps/web/app/demo/page.tsx").read_text()
+        page = (root / "apps/web/app/(research)/demo/page.tsx").read_text()
         for control in ("Previous", "Skip to case study", "Exit", "Step {step} of"):
             assert control in page
 
     def test_backtest_step_keeps_roi_and_brier_separate(self) -> None:
         root = Path(__file__).resolve().parents[1]
-        page = (root / "apps/web/app/demo/page.tsx").read_text()
+        page = (root / "apps/web/app/(research)/demo/page.tsx").read_text()
         assert "Positive ROI, but it did not beat the market." in page
         assert "does not automatically mean the model" in page
 
     def test_homepage_links_to_both_new_surfaces(self) -> None:
         root = Path(__file__).resolve().parents[1]
         hero = (root / "apps/web/components/hero.tsx").read_text()
-        page = (root / "apps/web/app/page.tsx").read_text()
+        page = (root / "apps/web/app/(research)/app/page.tsx").read_text()
         assert "Start guided demo" in hero
         assert "See a recommendation from price to settlement" in hero
         assert "guidedHref" in page and "caseStudyHref" in page
@@ -896,7 +903,7 @@ class TestSnapshotDeploymentGuards:
         said "Live data" - the control contradicted the page beneath it.
         """
         root = Path(__file__).resolve().parents[1]
-        page = (root / "apps/web/app/demo/page.tsx").read_text()
+        page = (root / "apps/web/app/(research)/demo/page.tsx").read_text()
         assert 'step: n, mode: "demo"' in page
         assert 'step: step - 1, mode: "demo"' in page
         assert 'step: step + 1, mode: "demo"' in page

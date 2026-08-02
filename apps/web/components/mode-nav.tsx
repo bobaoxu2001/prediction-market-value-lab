@@ -37,7 +37,10 @@ export function ModeNav({
      * Long-standing rather than new - production shows the same 76px overflow at
      * 1024 and 109px at 768.
      */
-    <nav className="flex min-w-0 flex-1 items-center gap-1 overflow-x-auto text-sm">
+    <nav
+      aria-label="Research"
+      className="flex min-w-0 flex-1 items-center gap-1 overflow-x-auto text-sm"
+    >
       {items.map((item) => {
         const active =
           item.href === "/" ? pathname === "/" : pathname.startsWith(item.href);
