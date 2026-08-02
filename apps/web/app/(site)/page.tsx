@@ -14,6 +14,7 @@ import { PricingPlans } from "@/components/pricing";
 import { utcTime } from "@/lib/format";
 import { getResearchProof, PROOF_HORIZON, type ResearchProof } from "@/lib/proof";
 import { getCurrentEntitlement } from "@/lib/billing/entitlement";
+import { isAuthConfigured } from "@/lib/auth-server";
 import { absoluteUrl } from "@/lib/site";
 
 export const dynamic = "force-dynamic";
@@ -60,10 +61,17 @@ export default async function HomePage({
     getResearchProof(),
     getCurrentEntitlement(),
   ]);
+  // Whether anyone can actually register. Both Clerk keys, not just the public
+  // one: a publishable key alone renders a form that cannot verify a session.
+  const accountsEnabled = isAuthConfigured();
 
   return (
     <>
-      <Hero proof={proof} signedIn={entitlement.signedIn} />
+      <Hero
+        proof={proof}
+        signedIn={entitlement.signedIn}
+        accountsEnabled={accountsEnabled}
+      />
       <ProofBand proof={proof} />
       <ProductSurfaces />
       <HowItWorks />
@@ -72,14 +80,22 @@ export default async function HomePage({
         <PricingPlans entitlement={entitlement} />
       </Section>
       <Questions />
-      <ClosingCta signedIn={entitlement.signedIn} />
+      <ClosingCta signedIn={entitlement.signedIn} accountsEnabled={accountsEnabled} />
     </>
   );
 }
 
 /* ------------------------------------------------------------------ hero -- */
 
-function Hero({ proof, signedIn }: { proof: ResearchProof; signedIn: boolean }) {
+function Hero({
+  proof,
+  signedIn,
+  accountsEnabled,
+}: {
+  proof: ResearchProof;
+  signedIn: boolean;
+  accountsEnabled: boolean;
+}) {
   return (
     <section className="mx-auto max-w-6xl px-4 pb-14 pt-16 sm:pt-24">
       <p className="t-label">Prediction Market Value Lab</p>
@@ -102,10 +118,19 @@ function Hero({ proof, signedIn }: { proof: ResearchProof; signedIn: boolean }) 
           <Link href="/account" className="btn-quiet">
             Account
           </Link>
-        ) : (
+        ) : accountsEnabled ? (
           <Link href="/sign-up" className="btn-quiet">
             Create free account
           </Link>
+        ) : (
+          // Accounts are not enabled on this deployment, so a "Create free
+          // account" button would be a primary call to action leading to a page
+          // that says it cannot be done. The research needs no account anyway -
+          // that is the whole free-Beta proposition - so the honest thing is to
+          // say accounts are coming rather than to invite a click that fails.
+          <span className="chip bg-sunken text-ink-muted">
+            Accounts coming soon
+          </span>
         )}
         <Link
           href="/methodology"
@@ -578,7 +603,13 @@ function Questions() {
 
 /* ------------------------------------------------------------------- cta -- */
 
-function ClosingCta({ signedIn }: { signedIn: boolean }) {
+function ClosingCta({
+  signedIn,
+  accountsEnabled,
+}: {
+  signedIn: boolean;
+  accountsEnabled: boolean;
+}) {
   return (
     <Section id="get-started">
       <div className="max-w-2xl">
@@ -596,11 +627,11 @@ function ClosingCta({ signedIn }: { signedIn: boolean }) {
             <Link href="/account" className="btn-quiet">
               Account
             </Link>
-          ) : (
+          ) : accountsEnabled ? (
             <Link href="/sign-up" className="btn-quiet">
               Create free account
             </Link>
-          )}
+          ) : null}
           <Link
             href="/pricing"
             className="text-sm underline decoration-line-strong underline-offset-4 hover:decoration-current"

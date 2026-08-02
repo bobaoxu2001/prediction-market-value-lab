@@ -2,7 +2,7 @@ import Link from "next/link";
 import { SignOutButton } from "@clerk/nextjs";
 
 import { ThemeToggle } from "@/components/ThemeToggle";
-import { isAuthUiConfigured } from "@/lib/auth";
+import { isAuthConfigured } from "@/lib/auth-server";
 import { SITE_LONG_NAME, SITE_NAME, SUPPORT_EMAIL } from "@/lib/site";
 import type { Entitlement } from "@/lib/billing/entitlement";
 
@@ -72,7 +72,7 @@ export function SiteHeader({ entitlement }: { entitlement: Entitlement }) {
                   Sign out
                 </button>
               </SignOutButton>
-            ) : (
+            ) : isAuthConfigured() ? (
               <>
                 <Link href="/sign-in" className="text-sm text-ink-muted hover:text-ink">
                   Sign in
@@ -81,6 +81,14 @@ export function SiteHeader({ entitlement }: { entitlement: Entitlement }) {
                   Create free account
                 </Link>
               </>
+            ) : (
+              // No auth provider is configured, so both of these would be
+              // prominent links to a page that says accounts cannot be created.
+              // A non-interactive note is the honest shape while the research
+              // itself - which needs no account - stays one click away.
+              <span className="chip bg-sunken text-ink-muted">
+                Accounts coming soon
+              </span>
             )}
           </div>
           <ThemeToggle />
@@ -139,7 +147,7 @@ function MobileMenu({
                   Sign out
                 </button>
               </SignOutButton>
-            ) : (
+            ) : isAuthConfigured() ? (
               <>
                 <Link
                   href="/sign-in"
@@ -154,6 +162,10 @@ function MobileMenu({
                   Create free account
                 </Link>
               </>
+            ) : (
+              <p className="px-2 py-2 text-sm text-ink-faint">
+                Accounts coming soon
+              </p>
             )}
           </div>
         </nav>
@@ -228,7 +240,7 @@ export function SiteFooter() {
               {SUPPORT_EMAIL}
             </a>
           </p>
-          {!isAuthUiConfigured() ? (
+          {!isAuthConfigured() ? (
             <p className="text-ink-faint">
               Accounts are not enabled on this deployment.
             </p>

@@ -26,8 +26,16 @@ vi.mock("next/image", () => ({
     <img src={src} alt={alt} {...rest} />,
 }));
 
+/**
+ * Whether an auth provider is configured, switchable per test.
+ *
+ * `vi.hoisted` because `vi.mock` factories are lifted above the imports: a plain
+ * outer binding would not exist yet when the factory is evaluated.
+ */
+const authState = vi.hoisted(() => ({ configured: false }));
+
 vi.mock("@/lib/auth-server", () => ({
-  isAuthConfigured: () => false,
+  isAuthConfigured: () => authState.configured,
   getCurrentUser: vi.fn(async () => null),
   getCurrentUserId: vi.fn(async () => null),
   getPrivateMetadata: vi.fn(async () => ({})),
@@ -66,6 +74,8 @@ function mockApi(handler: (path: string) => unknown | null) {
 
 beforeEach(() => {
   redirectCalls.length = 0;
+  // The free-Beta default: no Clerk credentials, so no account can be created.
+  authState.configured = false;
 });
 
 afterEach(() => {
@@ -142,6 +152,27 @@ describe("marketing homepage", () => {
     expect(redirectCalls).toEqual([]);
   });
 
+  it("offers no account call-to-action while accounts are unavailable", async () => {
+    // The free-Beta shape. Every "Create free account" / "Join Pro early access"
+    // routed to /sign-up, which renders "Accounts are not enabled here" — a
+    // primary call to action leading to a page that says it cannot be done.
+    // A visitor must not be led to believe registration currently works.
+    mockApi((path) => (path.startsWith("/system") ? SYSTEM : { data: [] }));
+    const { container } = await renderHome();
+
+    expect(container.querySelector('a[href="/sign-up"]')).toBeNull();
+    expect(container.querySelector('a[href="/sign-in"]')).toBeNull();
+    expect((container.textContent ?? "").toLowerCase()).not.toContain(
+      "create free account",
+    );
+
+    // The research is still one click away — that is the whole proposition.
+    expect(
+      screen.getAllByRole("link", { name: /explore research/i }).length,
+    ).toBeGreaterThanOrEqual(2);
+    expect(screen.getAllByText(/accounts coming soon/i).length).toBeGreaterThan(0);
+  });
+
   it("makes no forbidden performance claim", async () => {
     mockApi((path) => (path.startsWith("/system") ? SYSTEM : { data: [] }));
     const { container } = await renderHome();
@@ -180,8 +211,43 @@ describe("pricing", () => {
     return render(await PricingPage());
   }
 
-  it("offers early access rather than checkout while billing is disabled", async () => {
-    await renderPricing();
+  it("offers nothing to click on Pro while accounts and billing are both off", async () => {
+    // With neither Clerk nor Stripe configured — the free-Beta state — there is
+    // no account to register and no tier to pay for. Deliberately not a
+    // disabled-looking button either: a control that looks pressable still
+    // implies the thing nearly works.
+    const { container } = await renderPricing();
+    expect(screen.getAllByText(/coming soon/i).length).toBeGreaterThan(0);
+    expect(container.querySelector('a[href="/sign-up"]')).toBeNull();
+    expect(screen.queryByRole("button", { name: /test checkout/i })).toBeNull();
+    // The free tier is the public research, and it needs no account.
+    expect(screen.getAllByRole("link", { name: /explore research/i }).length)
+      .toBeGreaterThan(0);
+    expect(screen.getAllByText(/no account needed/i).length).toBeGreaterThan(0);
+  });
+
+  it("still offers early access once accounts exist but billing does not", async () => {
+    // The intended next state: Clerk configured, Stripe not. The early-access
+    // path must come back on its own rather than needing another edit.
+    authState.configured = true;
+    const { PricingPlans } = await import("@/components/pricing");
+    render(
+      <PricingPlans
+        entitlement={{
+          state: "free",
+          signedIn: false,
+          user: null,
+          isPro: false,
+          plan: null,
+          stripeCustomerId: null,
+          stripeSubscriptionId: null,
+          currentPeriodEnd: null,
+          cancelAtPeriodEnd: false,
+          billingDisabled: true,
+          hasLiveSubscription: false,
+        }}
+      />,
+    );
     expect(screen.getByRole("link", { name: /join pro early access/i })).toBeTruthy();
     expect(screen.getAllByText(/billing not yet live/i).length).toBeGreaterThan(0);
     expect(screen.queryByRole("button", { name: /test checkout/i })).toBeNull();

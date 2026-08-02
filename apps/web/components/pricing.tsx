@@ -1,6 +1,7 @@
 import Link from "next/link";
 
 import { shouldShowCheckoutUi } from "@/lib/billing/config";
+import { isAuthConfigured } from "@/lib/auth-server";
 import type { Entitlement } from "@/lib/billing/entitlement";
 
 /**
@@ -87,6 +88,7 @@ export function PricingPlans({
   // told a level had been missed.
   const cardHeading = headingLevel === "h1" ? "h2" : "h3";
   const checkoutAvailable = shouldShowCheckoutUi();
+  const accountsEnabled = isAuthConfigured();
 
   return (
     <div>
@@ -110,7 +112,7 @@ export function PricingPlans({
             <Link href="/app" className="btn-primary">
               Open research
             </Link>
-          ) : (
+          ) : accountsEnabled ? (
             <>
               <Link href="/sign-up" className="btn-primary">
                 Create free account
@@ -118,6 +120,18 @@ export function PricingPlans({
               <Link href="/app" className="btn-quiet">
                 Explore research
               </Link>
+            </>
+          ) : (
+            // The free tier IS the public research, and it has never needed an
+            // account. With registration unavailable, offering it as the primary
+            // action on the free plan would be both broken and beside the point.
+            <>
+              <Link href="/app" className="btn-primary">
+                Explore research
+              </Link>
+              <span className="chip bg-sunken text-ink-muted">
+                No account needed
+              </span>
             </>
           )}
         </PlanCard>
@@ -138,7 +152,7 @@ export function PricingPlans({
             </>
           ) : checkoutAvailable ? (
             <CheckoutForms />
-          ) : (
+          ) : accountsEnabled ? (
             <>
               <Link href="/sign-up" className="btn-primary">
                 Join Pro early access
@@ -147,6 +161,13 @@ export function PricingPlans({
                 Billing not yet live
               </span>
             </>
+          ) : (
+            // Nothing to join yet: there is no account to register and no tier
+            // to pay for. Deliberately not a button - a disabled-looking control
+            // still invites a click and still implies the thing nearly works.
+            <span className="chip bg-sunken text-ink-muted">
+              Coming soon — accounts and billing are not yet enabled
+            </span>
           )}
         </PlanCard>
       </div>
