@@ -2,6 +2,8 @@ import { clerkMiddleware } from "@clerk/nextjs/server";
 import { NextResponse, type NextRequest } from "next/server";
 import type { NextFetchEvent } from "next/server";
 
+import { isAlwaysOpenPath, isProtectedPath } from "@/lib/route-policy";
+
 /**
  * Request proxy. (Next 16's replacement for `middleware.ts`.)
  *
@@ -23,27 +25,6 @@ import type { NextFetchEvent } from "next/server";
  *      account pages are unreachable, not unprotected.
  */
 
-/**
- * Path-prefix test rather than Clerk's `createRouteMatcher`, which is deprecated
- * in favour of exactly the per-resource checks the account pages already do.
- */
-function isProtectedPath(pathname: string): boolean {
-  return pathname === "/account" || pathname.startsWith("/account/");
-}
-
-/**
- * Never gated, whatever the matcher above grows into. `/api/stripe/webhook` is
- * the one that matters: Stripe is not a signed-in user, and an auth redirect in
- * front of it would silently swallow every event.
- */
-function isAlwaysOpen(pathname: string): boolean {
-  return (
-    pathname.startsWith("/api/stripe/") ||
-    pathname.startsWith("/sign-in") ||
-    pathname.startsWith("/sign-up")
-  );
-}
-
 function authConfigured(): boolean {
   return Boolean(
     process.env.NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY && process.env.CLERK_SECRET_KEY,
@@ -52,7 +33,7 @@ function authConfigured(): boolean {
 
 const withClerk = clerkMiddleware(async (auth, request) => {
   const { pathname } = request.nextUrl;
-  if (isAlwaysOpen(pathname) || !isProtectedPath(pathname)) {
+  if (isAlwaysOpenPath(pathname) || !isProtectedPath(pathname)) {
     return NextResponse.next();
   }
 
