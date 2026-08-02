@@ -50,7 +50,7 @@ export default async function GuidedDemoPage({
         <div className="flex flex-wrap items-center justify-between gap-3">
           <h1 className="text-xl font-semibold tracking-tight">Guided demo</h1>
           <Link
-            href={`/${qs({ mode })}`}
+            href={`/app${qs({ mode })}`}
             className="text-sm text-ink-faint underline hover:text-neutral-900 dark:hover:text-neutral-100"
           >
             Exit guided demo
@@ -112,7 +112,7 @@ function Controls({ step }: { step: number }) {
       <Link href={`/case-study${qs({ mode: "demo" })}`} className="text-sm underline">
         Skip to case study
       </Link>
-      <Link href={`/${qs({ mode: "demo" })}`} className="text-sm text-ink-faint underline">
+      <Link href={`/app${qs({ mode: "demo" })}`} className="text-sm text-ink-faint underline">
         Exit
       </Link>
     </nav>
@@ -305,7 +305,7 @@ function StepTrackRecord({ rows, total }: { rows: TrackRecordRow[]; total?: numb
         because they lost.
       </p>
       <div className="mt-5 flex flex-wrap gap-3">
-        <Link href={`/${qs({ mode: "demo" })}`} className="rounded-lg bg-neutral-900 px-4 py-2 text-sm font-medium text-white dark:bg-neutral-100 dark:text-neutral-900">
+        <Link href={`/app${qs({ mode: "demo" })}`} className="rounded-lg bg-neutral-900 px-4 py-2 text-sm font-medium text-white dark:bg-neutral-100 dark:text-neutral-900">
           Explore demo opportunities
         </Link>
         <Link href={`/track-record${qs({ mode: "demo" })}`} className="rounded-lg border border-neutral-300 px-4 py-2 text-sm dark:border-neutral-700">

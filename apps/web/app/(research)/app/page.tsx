@@ -139,7 +139,7 @@ export default async function TodayPage({
           return (
             <Link
               key={h.key}
-              href={`/${qs({ horizon: h.key, mode })}`}
+              href={`/app${qs({ horizon: h.key, mode })}`}
               aria-current={active ? "page" : undefined}
               className={`rounded-[2px] border px-3 py-2 text-sm transition-colors ${
                 active
@@ -292,7 +292,7 @@ export default async function TodayPage({
       ) : null}
 
       <Hero
-        demoHref={`/${qs({ horizon, mode: "demo" })}`}
+        demoHref={`/app${qs({ horizon, mode: "demo" })}`}
         backtestHref={`/backtest${qs({ mode: "demo" })}`}
         guidedHref={`/demo${qs({ step: 1, mode: "demo" })}`}
         caseStudyHref={`/case-study${qs({ mode: "demo" })}`}
@@ -432,7 +432,7 @@ function ResearchSnapshot({
         </Link>
         {mode === "live" ? (
           <Link
-            href={`/${qs({ horizon, mode: "demo" })}`}
+            href={`/app${qs({ horizon, mode: "demo" })}`}
             className="underline underline-offset-2"
           >
             Switch to the demo dataset
@@ -659,7 +659,7 @@ function FilterFunnel({
       </p>
       {mode === "live" ? (
         <Link
-          href={`/${qs({ horizon, mode: "demo" })}`}
+          href={`/app${qs({ horizon, mode: "demo" })}`}
           className="mt-3 inline-block text-sm underline"
         >
           See the demo dataset for how a populated list looks

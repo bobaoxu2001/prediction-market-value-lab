@@ -274,7 +274,7 @@ export default async function CaseStudyPage({
             <Link href={`/track-record${qs({ mode })}`} className="text-sm underline">
               View in full track record
             </Link>
-            <Link href={`/${qs({ mode })}`} className="text-sm underline">
+            <Link href={`/app${qs({ mode })}`} className="text-sm underline">
               Back to demo opportunities
             </Link>
           </div>

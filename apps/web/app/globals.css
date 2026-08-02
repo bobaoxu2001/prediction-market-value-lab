@@ -180,6 +180,21 @@
     @apply text-sm leading-relaxed text-ink-muted;
     max-width: 68ch;
   }
+  /*
+   * The one step up from `.t-prose`, for a hero or a section lead.
+   *
+   * It exists because `text-base` cannot be used here. `base` is a colour token
+   * in this design system (`--surface-base`), so Tailwind emits BOTH a
+   * `.text-base { font-size }` and a `.text-base { color: rgb(var(--surface-base)) }`
+   * utility. Utilities outrank the components layer, so `class="t-prose text-base"`
+   * silently repaints the paragraph in the page background colour - white on
+   * white in light mode. Setting the size here, inside the same component rule
+   * that sets the colour, keeps the collision unreachable.
+   */
+  .t-lead {
+    @apply text-[1rem] leading-relaxed text-ink-muted;
+    max-width: 68ch;
+  }
   .t-meta {
     @apply text-xs leading-normal text-ink-faint;
   }
