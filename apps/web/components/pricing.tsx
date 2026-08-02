@@ -81,6 +81,11 @@ export function PricingPlans({
   headingLevel?: "h1" | "h2";
 }) {
   const Heading = headingLevel;
+  // The plan titles sit one level under the block's own heading. Pinning them to
+  // h3 while the block became an h1 skipped h2 entirely, which is its own
+  // structural defect - a screen-reader user stepping through headings would be
+  // told a level had been missed.
+  const cardHeading = headingLevel === "h1" ? "h2" : "h3";
   const checkoutAvailable = shouldShowCheckoutUi();
 
   return (
@@ -100,7 +105,7 @@ export function PricingPlans({
       ) : null}
 
       <div className="mt-8 grid gap-px overflow-hidden rounded-[3px] border border-line bg-line lg:grid-cols-2">
-        <PlanCard plan={FREE} entitlement={entitlement}>
+        <PlanCard plan={FREE} entitlement={entitlement} headingLevel={cardHeading}>
           {entitlement.signedIn ? (
             <Link href="/app" className="btn-primary">
               Open research
@@ -117,7 +122,7 @@ export function PricingPlans({
           )}
         </PlanCard>
 
-        <PlanCard plan={PRO} entitlement={entitlement}>
+        <PlanCard plan={PRO} entitlement={entitlement} headingLevel={cardHeading}>
           {entitlement.hasLiveSubscription ? (
             // Already subscribed - including past-due, where a second checkout
             // would add an invoice rather than fix the failed one. The server
@@ -183,12 +188,15 @@ export function PricingPlans({
 function PlanCard({
   plan,
   entitlement,
+  headingLevel,
   children,
 }: {
   plan: Plan;
   entitlement: Entitlement;
+  headingLevel: "h2" | "h3";
   children: React.ReactNode;
 }) {
+  const CardHeading = headingLevel;
   const current =
     (plan.id === "free" && entitlement.signedIn && !entitlement.isPro) ||
     (plan.id === "pro" && entitlement.isPro);
@@ -196,7 +204,9 @@ function PlanCard({
   return (
     <div className="flex flex-col bg-base p-6 sm:p-8">
       <div className="flex flex-wrap items-baseline justify-between gap-2">
-        <h3 className="t-section-title text-[1.25rem]">{plan.name}</h3>
+        <CardHeading className="t-section-title text-[1.25rem]">
+          {plan.name}
+        </CardHeading>
         {current ? (
           <span className="chip bg-edge/15 text-edge">Current plan</span>
         ) : null}
