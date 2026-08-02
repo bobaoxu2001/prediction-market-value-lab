@@ -205,6 +205,33 @@ describe("mobile layout regressions", () => {
     expect(offenders).toEqual([]);
   });
 
+  it("keeps every table inside a horizontal scroll container", () => {
+    // The regression this catches, measured on both this branch and main:
+    // /arbitrage?view=diagnostics rendered a bare <table> whose cells do not
+    // wrap. Its min-content width was 413px, so on a 375px viewport the
+    // overflow escaped to the document root and scrolled the whole page
+    // sideways instead of scrolling inside the table.
+    //
+    // Every other table on the site is wrapped in `.table-wrap`
+    // (min-w-0 max-w-full w-full overflow-x-auto). This asserts the one that
+    // was not stays wrapped, and that a new one cannot quietly skip it.
+    const offenders: string[] = [];
+    for (const { relative, text } of SOURCE_FILES) {
+      let index = text.indexOf("<table");
+      while (index !== -1) {
+        // Look back far enough to catch the wrapper element and any comment
+        // between it and the table.
+        const preceding = text.slice(Math.max(0, index - 400), index);
+        if (!/table-wrap/.test(preceding)) {
+          const line = text.slice(0, index).split("\n").length;
+          offenders.push(`${relative}:${line}`);
+        }
+        index = text.indexOf("<table", index + 1);
+      }
+    }
+    expect(offenders).toEqual([]);
+  });
+
   it("gives every scrolling flex item a min-width of zero", () => {
     // The exact regression this repository shipped twice: a flex item defaults
     // to `min-width: auto`, so `overflow-x-auto` on one never engages - instead

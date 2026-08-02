@@ -126,6 +126,21 @@ describe("preconditions", () => {
     expect(sessionsCreate).not.toHaveBeenCalled();
   });
 
+  it("does not echo an unrecognised plan into the sign-up redirect", async () => {
+    // Unvalidated request data must not reach a redirect an auth provider will
+    // consume, whether or not this particular spelling is exploitable today.
+    enableBilling();
+    currentUser = null;
+    const response = await POST(
+      post({ plan: "https://evil.example/#" }),
+    );
+    const redirectUrl = new URL(
+      response.headers.get("location") ?? "",
+    ).searchParams.get("redirect_url");
+    expect(redirectUrl).toBe("/pricing");
+    expect(redirectUrl).not.toContain("evil.example");
+  });
+
   it("rate-limits repeated requests from one user", async () => {
     enableBilling();
     const responses = [];

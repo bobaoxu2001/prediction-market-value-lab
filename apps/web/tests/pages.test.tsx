@@ -194,6 +194,50 @@ describe("pricing", () => {
     expect(links.length).toBeGreaterThan(0);
   });
 
+  it.each([
+    ["active", true],
+    ["trialing", true],
+    ["past_due", false],
+  ])(
+    "offers management rather than a second checkout to a %s subscriber",
+    async (status, isPro) => {
+      // The page must not offer what the handler will reject with a 409. The
+      // past-due row is the one the earlier `!isPro` check got wrong: not Pro,
+      // but a second checkout would bill them twice instead of repairing the
+      // failed payment.
+      process.env.BILLING_MODE = "test";
+      process.env.NEXT_PUBLIC_BILLING_ENABLED = "true";
+      process.env.STRIPE_SECRET_KEY = "sk_test_not_a_real_key";
+      process.env.STRIPE_WEBHOOK_SECRET = "whsec_not_a_real_secret";
+      process.env.STRIPE_PRO_MONTHLY_PRICE_ID = "price_monthly_test";
+      process.env.STRIPE_PRO_ANNUAL_PRICE_ID = "price_annual_test";
+
+      const { PricingPlans } = await import("@/components/pricing");
+      const { isLiveSubscriptionStatus } = await import("@/lib/billing/entitlement");
+
+      render(
+        <PricingPlans
+          entitlement={{
+            state: isPro ? "pro_active" : "pro_past_due",
+            signedIn: true,
+            user: { id: "u", email: "a@example.com", name: null, createdAt: 1 },
+            isPro,
+            plan: "pro_monthly",
+            stripeCustomerId: "cus_1",
+            stripeSubscriptionId: "sub_1",
+            currentPeriodEnd: null,
+            cancelAtPeriodEnd: false,
+            billingDisabled: false,
+            hasLiveSubscription: isLiveSubscriptionStatus(status),
+          }}
+        />,
+      );
+
+      expect(screen.getByRole("link", { name: /manage billing/i })).toBeTruthy();
+      expect(screen.queryByRole("button", { name: /test checkout/i })).toBeNull();
+    },
+  );
+
   it("promises no feature that does not exist", async () => {
     const { container } = await renderPricing();
     const text = (container.textContent ?? "").toLowerCase();

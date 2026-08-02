@@ -68,9 +68,19 @@ export async function POST(request: NextRequest) {
   if (!user) {
     // Not an error - a signed-out visitor pressing a plan button is the ordinary
     // path. Carry the plan through so the funnel resumes where it stopped.
+    //
+    // The plan is validated BEFORE it is echoed, even though `searchParams.set`
+    // encodes it and the target always begins `/pricing?`. Putting unvalidated
+    // request data into a redirect that an auth provider will later consume is
+    // the shape of a bug worth not having, independent of whether this
+    // particular spelling of it is currently exploitable.
     const target = new URL("/sign-up", request.url);
-    target.searchParams.set("redirect_url", `/pricing?plan=${fields.plan ?? ""}`);
-    logBilling("checkout.redirect_signup", { plan: fields.plan ?? null });
+    const requested = isPlanId(fields.plan) ? fields.plan : null;
+    target.searchParams.set(
+      "redirect_url",
+      requested ? `/pricing?plan=${requested}` : "/pricing",
+    );
+    logBilling("checkout.redirect_signup", { plan: requested });
     return NextResponse.redirect(target, 303);
   }
 

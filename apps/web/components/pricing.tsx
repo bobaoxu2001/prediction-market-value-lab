@@ -68,10 +68,19 @@ const PRO: Plan = {
 export function PricingPlans({
   entitlement,
   heading = true,
+  headingLevel = "h2",
 }: {
   entitlement: Entitlement;
   heading?: boolean;
+  /**
+   * `h1` when this block IS the page (/pricing), `h2` when it is a section of
+   * one (the homepage). /pricing previously had no `h1` at all, which leaves a
+   * screen-reader user navigating by heading with no page title on a primary
+   * conversion page.
+   */
+  headingLevel?: "h1" | "h2";
 }) {
+  const Heading = headingLevel;
   const checkoutAvailable = shouldShowCheckoutUi();
 
   return (
@@ -79,7 +88,9 @@ export function PricingPlans({
       {heading ? (
         <div className="max-w-2xl">
           <p className="t-label">Pricing</p>
-          <h2 className="t-page-title mt-2">Two plans, one of them not for sale yet</h2>
+          <Heading className="t-page-title mt-2">
+            Two plans, one of them not for sale yet
+          </Heading>
           <p className="t-prose mt-3">
             The public research product is free and stays free. The paid tier is
             in preparation; until it is finished and reviewed, this deployment

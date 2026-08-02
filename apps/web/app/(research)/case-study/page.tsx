@@ -156,25 +156,28 @@ export default async function CaseStudyPage({
           </Step>
 
           <Step n={4} title="Real cost stack">
-            <table className="w-full text-sm">
-              <tbody className="divide-y divide-line-subtle">
-                {cs.costs.components.map((c) => (
-                  <tr key={c.key}>
-                    <td className="py-1.5">{c.label}</td>
-                    <td className="num py-1.5 text-right font-mono">
-                      {/* A component that genuinely costs nothing is $0.00, not a dash. */}
-                      {c.amount != null ? usd(c.amount) : "Not applicable"}
+            {/* table-wrap: cost labels are data-driven, so this width is not fixed. */}
+            <div className="table-wrap">
+              <table className="w-full text-sm">
+                <tbody className="divide-y divide-line-subtle">
+                  {cs.costs.components.map((c) => (
+                    <tr key={c.key}>
+                      <td className="py-1.5">{c.label}</td>
+                      <td className="num py-1.5 text-right font-mono">
+                        {/* A component that genuinely costs nothing is $0.00, not a dash. */}
+                        {c.amount != null ? usd(c.amount) : "Not applicable"}
+                      </td>
+                    </tr>
+                  ))}
+                  <tr className="border-t-2 border-neutral-300 font-semibold dark:border-neutral-700">
+                    <td className="py-2">All-in cost per contract</td>
+                    <td className="num py-2 text-right font-mono">
+                      {cents(cs.costs.total_cost_per_contract)}
                     </td>
                   </tr>
-                ))}
-                <tr className="border-t-2 border-neutral-300 font-semibold dark:border-neutral-700">
-                  <td className="py-2">All-in cost per contract</td>
-                  <td className="num py-2 text-right font-mono">
-                    {cents(cs.costs.total_cost_per_contract)}
-                  </td>
-                </tr>
-              </tbody>
-            </table>
+                </tbody>
+              </table>
+            </div>
             <p className="mt-2 text-xs text-ink-faint">
               Costs added {cents(cs.costs.cost_above_entry)} on top of the entry price.
             </p>

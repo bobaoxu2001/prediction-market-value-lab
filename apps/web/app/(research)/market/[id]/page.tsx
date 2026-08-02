@@ -479,21 +479,24 @@ function BookSide({ title, levels }: { title: string; levels: Array<{ price: str
   return (
     <div>
       <div className="metric-label mb-1">{title}</div>
-      <table className="w-full text-xs">
-        <tbody>
-          {(levels ?? []).slice(0, 8).map((l, i) => (
-            <tr key={i}>
-              <td className="num py-0.5">{cents(l.price)}</td>
-              <td className="num py-0.5 text-right text-ink-faint">
-                {Number(l.size).toFixed(0)}
-              </td>
-            </tr>
-          ))}
-          {!levels?.length && (
-            <tr><td className="py-0.5 text-ink-faint">no offers</td></tr>
-          )}
-        </tbody>
-      </table>
+      {/* table-wrap: narrow today, but the guard holds without exceptions. */}
+      <div className="table-wrap">
+        <table className="w-full text-xs">
+          <tbody>
+            {(levels ?? []).slice(0, 8).map((l, i) => (
+              <tr key={i}>
+                <td className="num py-0.5">{cents(l.price)}</td>
+                <td className="num py-0.5 text-right text-ink-faint">
+                  {Number(l.size).toFixed(0)}
+                </td>
+              </tr>
+            ))}
+            {!levels?.length && (
+              <tr><td className="py-0.5 text-ink-faint">no offers</td></tr>
+            )}
+          </tbody>
+        </table>
+      </div>
     </div>
   );
 }

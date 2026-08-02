@@ -331,29 +331,36 @@ function DiagnosticsView({
             />
           </div>
           {diagnostics.top_reasons?.length ? (
-            <table className="mt-4 w-full">
-              <caption className="sr-only">
-                Most frequent reasons a pair was rejected
-              </caption>
-              <thead>
-                <tr>
-                  <th scope="col">Reason</th>
-                  <th scope="col">Kind</th>
-                  <th scope="col" className="num">
-                    Count
-                  </th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-line-subtle">
-                {diagnostics.top_reasons.slice(0, 6).map((r) => (
-                  <tr key={r.code}>
-                    <td className="text-ink-muted">{r.code.replace(/_/g, " ")}</td>
-                    <td className="t-meta">{r.kind.replace(/_/g, " ")}</td>
-                    <td className="num">{r.count}</td>
+            // `table-wrap`, like every other table on the site. Without it this
+            // one scrolled the whole document sideways below 380px: its cells
+            // do not wrap, so its min-content width exceeded a phone viewport
+            // and the overflow escaped to the root instead of staying inside a
+            // scroller. Measured at 413px against a 375px viewport.
+            <div className="table-wrap mt-4">
+              <table className="w-full">
+                <caption className="sr-only">
+                  Most frequent reasons a pair was rejected
+                </caption>
+                <thead>
+                  <tr>
+                    <th scope="col">Reason</th>
+                    <th scope="col">Kind</th>
+                    <th scope="col" className="num">
+                      Count
+                    </th>
                   </tr>
-                ))}
-              </tbody>
-            </table>
+                </thead>
+                <tbody className="divide-y divide-line-subtle">
+                  {diagnostics.top_reasons.slice(0, 6).map((r) => (
+                    <tr key={r.code}>
+                      <td className="text-ink-muted">{r.code.replace(/_/g, " ")}</td>
+                      <td className="t-meta">{r.kind.replace(/_/g, " ")}</td>
+                      <td className="num">{r.count}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
           ) : null}
           {diagnostics.diagnosis ? (
             <p className="mt-4 border-t border-line-subtle pt-3 text-sm text-ink">

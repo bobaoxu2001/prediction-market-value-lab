@@ -21,7 +21,7 @@ export default async function PricingPage() {
   return (
     <>
       <div className="mx-auto max-w-6xl px-4 pb-14 pt-16">
-        <PricingPlans entitlement={entitlement} />
+        <PricingPlans entitlement={entitlement} headingLevel="h1" />
       </div>
 
       <Section className="bg-sunken">
