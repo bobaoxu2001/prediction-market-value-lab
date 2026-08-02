@@ -265,8 +265,8 @@ function ProductSurfaces() {
             <ProductShot
               src="/product/briefing.webp"
               alt="The PMVL research briefing: a measurement band showing actionable, watchlist and disagreement counts, followed by ranked opportunity cards and a stage-by-stage filtering funnel."
-              width={997}
-              height={1600}
+              width={1600}
+              height={1075}
               priority
             />
           }
@@ -289,7 +289,7 @@ function ProductSurfaces() {
               src="/product/probability.webp"
               alt="A PMVL market detail page showing market-implied probability, the independent model estimate, its uncertainty interval and the conservative bound, alongside the order-book ladder."
               width={1600}
-              height={1111}
+              height={1075}
             />
           }
         />
@@ -310,7 +310,7 @@ function ProductSurfaces() {
               src="/product/actionable-diagnostics.webp"
               alt="The PMVL arbitrage page with its Actionable and Diagnostics views side by side, each row labelled with its arbitrage kind and risk flags."
               width={1600}
-              height={1143}
+              height={1075}
             />
           }
         />
@@ -332,7 +332,7 @@ function ProductSurfaces() {
               src="/product/markets.webp"
               alt="The PMVL markets table listing contracts from both venues with best bid and ask, spread, order-book depth in dollars, volume and resolution time."
               width={1600}
-              height={1111}
+              height={1075}
             />
           }
         />
@@ -353,7 +353,7 @@ function ProductSurfaces() {
               src="/product/backtest.webp"
               alt="A PMVL backtest page showing settled-bet counts, return, drawdown, Brier score against the market benchmark and a calibration curve."
               width={1600}
-              height={1111}
+              height={1075}
             />
           }
         />
@@ -375,7 +375,7 @@ function ProductSurfaces() {
               src="/product/system.webp"
               alt="The PMVL system page showing runtime mode, deployed commit, snapshot timing, per-job pipeline status and the list of upstream data sources."
               width={1600}
-              height={1111}
+              height={1075}
             />
           }
         />
