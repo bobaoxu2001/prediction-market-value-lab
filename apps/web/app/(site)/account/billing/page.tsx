@@ -97,7 +97,11 @@ export default async function BillingPage({
                 </button>
               </form>
             ) : null}
-            {checkoutUi && !entitlement.isPro ? (
+            {/* `hasLiveSubscription`, not `!isPro`: a past-due subscriber is
+                not "Pro", but starting a second checkout would bill them twice
+                rather than repair the failed payment. The portal above is the
+                route for that. Same predicate the checkout handler enforces. */}
+            {checkoutUi && !entitlement.hasLiveSubscription ? (
               <>
                 <form action="/api/billing/checkout" method="post">
                   <input type="hidden" name="plan" value="pro_monthly" />

@@ -170,6 +170,20 @@ deployment is configured.
 | `STRIPE_PRO_MONTHLY_PRICE_ID`       |   no   | **unset**                 | test price ID  | test price ID|
 | `STRIPE_PRO_ANNUAL_PRICE_ID`        |   no   | **unset**                 | test price ID  | test price ID|
 
+### 3.1.1 Where Stripe sends the browser back
+
+You do not configure this, but it is worth knowing before you test.
+
+Canonical URLs and the sitemap deliberately use the **production** host even on a
+Preview, so a Preview cannot publish its own hostname into a search index.
+Stripe's `success_url`, `cancel_url` and portal `return_url` deliberately use the
+**deployment you are actually on**, so completing a test checkout on a Preview
+returns you to that Preview rather than to production — where billing is
+disabled and the subscription you just created does not exist.
+
+On Preview the return origin is the branch alias (`VERCEL_BRANCH_URL`). Setting
+`NEXT_PUBLIC_SITE_URL` overrides both.
+
 ### 3.2 The safe production state
 
 ```text
@@ -267,6 +281,16 @@ With Clerk and Stripe test credentials set on Preview:
    **Pro — cancelled**.
 9. `stripe trigger invoice.payment_failed` → `/account` shows
    **Pro — payment failed** and Pro access is withheld.
+
+Two things worth checking explicitly while a subscription is live:
+
+- `/pricing` offers **Manage billing**, not a checkout button, and posting a
+  checkout request anyway returns **409**. Stripe will create a second
+  subscription on the same customer without complaint, so this is enforced on
+  the server rather than only in the interface.
+- The same 409 applies while a subscription is **past due**. Someone whose
+  payment failed pressing "subscribe" to fix it would otherwise end up with two
+  subscriptions and two invoices; the portal is the route for that.
 
 Throughout, the research pages must stay reachable and unchanged.
 

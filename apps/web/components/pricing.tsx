@@ -107,7 +107,20 @@ export function PricingPlans({
         </PlanCard>
 
         <PlanCard plan={PRO} entitlement={entitlement}>
-          {checkoutAvailable ? (
+          {entitlement.hasLiveSubscription ? (
+            // Already subscribed - including past-due, where a second checkout
+            // would add an invoice rather than fix the failed one. The server
+            // refuses this case too; showing the same answer here keeps the
+            // page from offering something the handler will reject.
+            <>
+              <Link href="/account/billing" className="btn-primary">
+                Manage billing
+              </Link>
+              <span className="chip bg-sunken text-ink-muted">
+                Subscription already active
+              </span>
+            </>
+          ) : checkoutAvailable ? (
             <CheckoutForms />
           ) : (
             <>

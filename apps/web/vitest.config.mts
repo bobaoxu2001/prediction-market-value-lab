@@ -1,3 +1,5 @@
+
+
 import path from "node:path";
 
 import react from "@vitejs/plugin-react";
@@ -19,8 +21,8 @@ export default defineConfig({
   plugins: [react()],
   resolve: {
     alias: {
-      "@": path.resolve(__dirname, "."),
-      "server-only": path.resolve(__dirname, "tests/stubs/server-only.ts"),
+      "@": path.resolve(import.meta.dirname, "."),
+      "server-only": path.resolve(import.meta.dirname, "tests/stubs/server-only.ts"),
     },
   },
   test: {

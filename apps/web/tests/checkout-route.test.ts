@@ -18,11 +18,20 @@ vi.mock("@/lib/auth-server", () => ({
   isAuthConfigured: () => true,
 }));
 
-const billingCache: { stripeCustomerId?: string } = {};
-vi.mock("@/lib/billing/entitlement", () => ({
-  getBillingCache: vi.fn(async () => billingCache),
-  rememberStripeCustomerId: vi.fn(async () => true),
-}));
+const billingCache: { stripeCustomerId?: string; subscriptionStatus?: string } = {};
+vi.mock("@/lib/billing/entitlement", async () => {
+  // The live-status predicate is the real one: the point of these tests is that
+  // the route and the pricing page agree, and a stubbed predicate could not
+  // catch them drifting apart.
+  const actual = await vi.importActual<typeof import("@/lib/billing/entitlement")>(
+    "@/lib/billing/entitlement",
+  );
+  return {
+    isLiveSubscriptionStatus: actual.isLiveSubscriptionStatus,
+    getBillingCache: vi.fn(async () => billingCache),
+    rememberStripeCustomerId: vi.fn(async () => true),
+  };
+});
 
 const sessionsCreate = vi.fn();
 const customersCreate = vi.fn();
@@ -66,6 +75,7 @@ function post(
 beforeEach(() => {
   currentUser = user;
   delete billingCache.stripeCustomerId;
+  delete billingCache.subscriptionStatus;
   __resetRateLimitForTests();
   sessionsCreate.mockReset().mockResolvedValue({
     id: "cs_test_1",
@@ -167,6 +177,47 @@ describe("plan allowlisting", () => {
     expect(response.status).toBe(303);
     expect(sessionsCreate.mock.calls[0][0].line_items[0].price).toBe("price_annual_test");
   });
+});
+
+describe("duplicate subscriptions", () => {
+  it.each(["active", "trialing", "past_due", "unpaid"])(
+    "refuses a second checkout while a %s subscription exists",
+    async (status) => {
+      // Stripe would create a second subscription on the same customer without
+      // complaint: two subscriptions, two invoices, one person. The interface
+      // hides the button, but a form post reaches the handler regardless.
+      enableBilling();
+      billingCache.subscriptionStatus = status;
+      const response = await POST(post({ plan: "pro_monthly" }));
+      expect(response.status).toBe(409);
+      expect(sessionsCreate).not.toHaveBeenCalled();
+      // The response points at the remedy rather than just refusing.
+      expect(JSON.stringify(await response.json())).toMatch(/billing portal/i);
+    },
+  );
+
+  it("blocks a past-due subscriber even though they are not Pro", async () => {
+    // The case the narrower `!isPro` check missed. Someone whose payment failed
+    // pressing "subscribe" to fix it is an ordinary way to arrive here, and it
+    // would have added an invoice rather than repaired the failed one.
+    enableBilling();
+    billingCache.subscriptionStatus = "past_due";
+    expect((await POST(post({ plan: "pro_monthly" }))).status).toBe(409);
+    expect(sessionsCreate).not.toHaveBeenCalled();
+  });
+
+  it.each(["canceled", "paused", "incomplete", "incomplete_expired", undefined])(
+    "allows a fresh checkout when the previous subscription is %s",
+    async (status) => {
+      // A cancelled subscriber resubscribing is the point of the product, and
+      // `incomplete` never took a payment, so a retry is correct.
+      enableBilling();
+      if (status) billingCache.subscriptionStatus = status;
+      const response = await POST(post({ plan: "pro_monthly" }));
+      expect(response.status).toBe(303);
+      expect(sessionsCreate).toHaveBeenCalledOnce();
+    },
+  );
 });
 
 describe("binding the session to the caller", () => {

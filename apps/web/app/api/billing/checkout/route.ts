@@ -4,6 +4,7 @@ import { getCurrentUser } from "@/lib/auth-server";
 import { isPlanId, isBillingEnabled, priceIdForPlan } from "@/lib/billing/config";
 import {
   getBillingCache,
+  isLiveSubscriptionStatus,
   rememberStripeCustomerId,
 } from "@/lib/billing/entitlement";
 import { getStripe } from "@/lib/billing/stripe";
@@ -86,6 +87,33 @@ export async function POST(request: NextRequest) {
   if (!isPlanId(plan)) {
     logBilling("checkout.rejected", { reason: "unknown_plan", userId: user.id });
     return NextResponse.json({ error: "Unknown plan." }, { status: 400 });
+  }
+
+  // Refuse a second subscription for a customer who already has one.
+  //
+  // Stripe Checkout will happily create a second subscription on the same
+  // customer, and the result is two concurrent subscriptions and two invoices
+  // for one person. The interface hides the buttons, but the interface is not a
+  // control: a form post reaches this handler regardless of what was rendered,
+  // and a past-due subscriber pressing "subscribe" to fix a failed payment is
+  // an ordinary, sympathetic way to arrive here by accident.
+  //
+  // The answer for an existing subscriber - changing plan, retrying a payment,
+  // cancelling - is the Customer Portal, which is what the response points at.
+  const existing = await getBillingCache(user.id);
+  if (isLiveSubscriptionStatus(existing.subscriptionStatus)) {
+    logBilling("checkout.rejected", {
+      reason: "subscription_already_exists",
+      userId: user.id,
+      plan,
+    });
+    return NextResponse.json(
+      {
+        error:
+          "This account already has a subscription. Manage it from the billing portal.",
+      },
+      { status: 409 },
+    );
   }
 
   const priceId = priceIdForPlan(plan);

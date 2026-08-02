@@ -1,4 +1,4 @@
-import { describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 
 import {
   checkoutCancelUrl,
@@ -8,6 +8,12 @@ import {
   RETURN_PATHS,
   safeReturnPath,
 } from "@/lib/billing/urls";
+
+afterEach(() => {
+  // These tests reload the module graph to re-resolve the origin; restore it so
+  // the statically imported helpers above stay the ones under test.
+  vi.resetModules();
+});
 
 /**
  * Redirect safety.
@@ -52,6 +58,65 @@ describe("safeReturnPath", () => {
     for (const value of hostile) {
       expect(safeReturnPath(value)).toBe(DEFAULT_RETURN_PATH);
     }
+  });
+});
+
+describe("which origin a Stripe redirect returns to", () => {
+  // The canonical origin and the return-trip origin want opposite things, and
+  // using one for both sent a completed Preview checkout to production - a
+  // different deployment, with billing disabled, that knows nothing about the
+  // subscription just created. The flow appeared broken exactly when someone
+  // was verifying that it worked.
+  async function urlsWithEnv(env: Record<string, string | undefined>) {
+    for (const [key, value] of Object.entries(env)) {
+      if (value === undefined) delete process.env[key];
+      else process.env[key] = value;
+    }
+    vi.resetModules();
+    return import("@/lib/billing/urls");
+  }
+
+  it("returns to the Preview deployment when running on a Preview", async () => {
+    const urls = await urlsWithEnv({
+      VERCEL_ENV: "preview",
+      VERCEL_BRANCH_URL: "pmvl-web-git-some-branch.vercel.app",
+      VERCEL_PROJECT_PRODUCTION_URL: "pmvl-web.vercel.app",
+    });
+    const success = urls.checkoutSuccessUrl("/account/billing");
+    expect(new URL(success).host).toBe("pmvl-web-git-some-branch.vercel.app");
+    expect(success).not.toContain("pmvl-web.vercel.app/");
+  });
+
+  it("still uses the production host off Preview", async () => {
+    const urls = await urlsWithEnv({
+      VERCEL_ENV: "production",
+      VERCEL_BRANCH_URL: "pmvl-web-git-some-branch.vercel.app",
+      VERCEL_PROJECT_PRODUCTION_URL: "pmvl-web.vercel.app",
+    });
+    expect(new URL(urls.checkoutSuccessUrl("/account/billing")).host).toBe(
+      "pmvl-web.vercel.app",
+    );
+  });
+
+  it("lets an explicit NEXT_PUBLIC_SITE_URL win everywhere", async () => {
+    const urls = await urlsWithEnv({
+      NEXT_PUBLIC_SITE_URL: "https://pmvl.example",
+      VERCEL_ENV: "preview",
+      VERCEL_BRANCH_URL: "pmvl-web-git-some-branch.vercel.app",
+    });
+    expect(new URL(urls.portalReturnUrl("/account")).host).toBe("pmvl.example");
+  });
+
+  it("never produces an off-site origin from a hostile branch host", async () => {
+    const urls = await urlsWithEnv({
+      VERCEL_ENV: "preview",
+      VERCEL_BRANCH_URL: "evil.example/path?x=1#frag",
+    });
+    // `normaliseOrigin` strips everything but the origin, so a path smuggled
+    // into the variable cannot prefix the redirect target.
+    const success = urls.checkoutSuccessUrl("/account/billing");
+    expect(success.startsWith("https://evil.example/account/billing")).toBe(true);
+    expect(success).not.toContain("/path");
   });
 });
 

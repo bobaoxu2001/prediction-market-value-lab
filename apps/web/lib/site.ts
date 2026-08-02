@@ -45,9 +45,49 @@ export const SITE_URL: string =
   normaliseOrigin(process.env.VERCEL_PROJECT_PRODUCTION_URL) ??
   "http://localhost:3000";
 
-/** Absolute URL for a site-relative path. */
+/** Absolute URL for a site-relative path. Canonical/metadata origin. */
 export function absoluteUrl(path: string): string {
   return `${SITE_URL}${path.startsWith("/") ? path : `/${path}`}`;
+}
+
+/**
+ * The origin a browser should be sent back to after leaving this deployment.
+ *
+ * Deliberately NOT `SITE_URL`. Those two want opposite things:
+ *
+ *   - `SITE_URL` is the site's *published identity*. It must be the production
+ *     host even when a Preview renders the page, or every Preview would publish
+ *     canonical tags and a sitemap pointing at its own ephemeral hostname.
+ *   - A Stripe `success_url` is a *round trip back to the deployment the visitor
+ *     is actually using*. Building it from the production host means completing
+ *     a test checkout on a Preview lands the visitor on production - a different
+ *     deployment, with billing disabled and no knowledge of the subscription
+ *     they just created. The flow looks broken precisely when someone is trying
+ *     to verify that it works.
+ *
+ * Resolution order:
+ *
+ *   1. `NEXT_PUBLIC_SITE_URL` - an explicit origin always wins.
+ *   2. On Preview, the branch alias (`VERCEL_BRANCH_URL`), which is stable
+ *      across builds of the same branch, then the per-deployment `VERCEL_URL`.
+ *   3. Otherwise `SITE_URL`.
+ *
+ * Every branch goes through `normaliseOrigin`, so the result is always a bare
+ * http(s) origin. That property is what `lib/billing/urls.ts` relies on to
+ * guarantee its redirects cannot leave this site.
+ */
+export function deploymentOrigin(): string {
+  const explicit = normaliseOrigin(process.env.NEXT_PUBLIC_SITE_URL);
+  if (explicit) return explicit;
+
+  if (process.env.VERCEL_ENV === "preview") {
+    const preview =
+      normaliseOrigin(process.env.VERCEL_BRANCH_URL) ??
+      normaliseOrigin(process.env.VERCEL_URL);
+    if (preview) return preview;
+  }
+
+  return SITE_URL;
 }
 
 /** Placeholder contact. Replaced once the owner confirms a monitored address. */

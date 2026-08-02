@@ -74,6 +74,15 @@ export interface Entitlement {
   readonly cancelAtPeriodEnd: boolean;
   /** True when this deployment cannot charge anyone. */
   readonly billingDisabled: boolean;
+  /**
+   * Whether a subscription already exists that Stripe is still billing.
+   *
+   * Wider than `isPro`: a past-due subscription grants no access but must still
+   * block a second checkout. The pricing page and the checkout route both read
+   * this, so the button a visitor sees and the answer the server gives cannot
+   * disagree.
+   */
+  readonly hasLiveSubscription: boolean;
 }
 
 const ANONYMOUS: Entitlement = {
@@ -87,6 +96,7 @@ const ANONYMOUS: Entitlement = {
   currentPeriodEnd: null,
   cancelAtPeriodEnd: false,
   billingDisabled: true,
+  hasLiveSubscription: false,
 };
 
 /**
@@ -126,6 +136,34 @@ export function stateFromStripeStatus(
 /** The states that grant Pro access. Past-due and unknown deliberately do not. */
 export function stateGrantsPro(state: EntitlementState): boolean {
   return state === "pro_active" || state === "pro_trialing" || state === "pro_canceling";
+}
+
+/**
+ * Stripe statuses for a subscription that still exists and still bills.
+ *
+ * Deliberately WIDER than `stateGrantsPro`. Those two questions are different
+ * and conflating them is how a customer ends up paying twice:
+ *
+ *   - "may this user see Pro surfaces?" excludes `past_due`, because a failed
+ *     payment should suspend access.
+ *   - "does this user already have a subscription?" includes `past_due`,
+ *     because the subscription is still there and Stripe is still trying to
+ *     collect on it. Letting someone start a second checkout to fix a failed
+ *     payment gives them two subscriptions and two invoices; the fix for a
+ *     failed payment is the Customer Portal.
+ *
+ * `incomplete` is excluded on purpose: its first payment never succeeded, Stripe
+ * expires it within a day, and a retry is the reasonable thing to allow.
+ */
+const LIVE_SUBSCRIPTION_STATUSES = new Set([
+  "trialing",
+  "active",
+  "past_due",
+  "unpaid",
+]);
+
+export function isLiveSubscriptionStatus(status: string | undefined): boolean {
+  return status !== undefined && LIVE_SUBSCRIPTION_STATUSES.has(status);
 }
 
 function readCache(metadata: Record<string, unknown>): BillingCache {
@@ -190,6 +228,7 @@ export async function getCurrentEntitlement(): Promise<Entitlement> {
       stripeSubscriptionId: null,
       currentPeriodEnd: null,
       cancelAtPeriodEnd: false,
+      hasLiveSubscription: false,
     };
   }
 
@@ -206,6 +245,7 @@ export async function getCurrentEntitlement(): Promise<Entitlement> {
     stripeSubscriptionId: cache.stripeSubscriptionId ?? null,
     currentPeriodEnd: cache.currentPeriodEnd ?? null,
     cancelAtPeriodEnd,
+    hasLiveSubscription: isLiveSubscriptionStatus(cache.subscriptionStatus),
   };
 }
 

@@ -1,6 +1,6 @@
 import "server-only";
 
-import { SITE_URL } from "@/lib/site";
+import { deploymentOrigin } from "@/lib/site";
 
 /**
  * Redirect construction for Stripe.
@@ -44,9 +44,11 @@ export function safeReturnPath(raw: unknown): ReturnPath {
 }
 
 function absolute(path: string): string {
-  // `SITE_URL` is already normalised to a bare origin in lib/site.ts, so this
-  // cannot produce a cross-origin URL however the environment is configured.
-  return `${SITE_URL}${path}`;
+  // `deploymentOrigin()` is normalised to a bare origin in lib/site.ts, so this
+  // cannot produce a cross-origin URL however the environment is configured -
+  // and it returns the deployment the visitor is actually on, so a Preview
+  // checkout returns to that Preview rather than to production.
+  return `${deploymentOrigin()}${path}`;
 }
 
 /**

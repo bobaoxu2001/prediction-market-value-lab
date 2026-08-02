@@ -21,6 +21,8 @@ const MANAGED = [
   "NEXT_PUBLIC_SITE_URL",
   "VERCEL_PROJECT_PRODUCTION_URL",
   "VERCEL_ENV",
+  "VERCEL_BRANCH_URL",
+  "VERCEL_URL",
 ];
 
 beforeEach(() => {
