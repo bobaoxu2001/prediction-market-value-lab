@@ -44,9 +44,34 @@ from pmvl_markets.pilot.render import (
 ROOT = Path(__file__).resolve().parents[1]
 REAL_MANIFEST = ROOT / "data" / "pmvl-snapshot.manifest.json"
 
-#: The committed Snapshot's cutoff, and a date after it. Both fixed: the whole
-#: point of the freshness gate is that these two instants are far apart.
-SNAPSHOT_CUTOFF = datetime(2026, 7, 31, 8, 56, 7, tzinfo=timezone.utc)
+def _committed_cutoff() -> datetime:
+    """The committed Snapshot's own cutoff, read from the artefact.
+
+    Previously a literal 2026-07-31, paired with a literal 2026-08-03 chosen to
+    sit three days after it. That encoded the *identity* of one published
+    artefact into a test whose subject is the freshness gate, so the first
+    successful publication after it - 45835c8, which replaced the July artefact
+    with one minutes old - turned a passing suite red without anything being
+    wrong. The gate was correct and the artefact was correct; only the literal
+    was stale.
+
+    Reading the cutoff from the manifest keeps the assertion the module docstring
+    promises: the committed Snapshot must be refused as *current* research once
+    it is old enough, whichever Snapshot happens to be committed.
+    """
+    payload = json.loads(REAL_MANIFEST.read_text())
+    return datetime.fromisoformat(
+        str(payload["freshest_quote_observed_at"]).replace("Z", "+00:00")
+    )
+
+
+#: The committed Snapshot's cutoff, and an instant far enough after it to be
+#: stale under every SLA. The whole point of the gate is that these are far
+#: apart, so the distance is asserted rather than assumed.
+SNAPSHOT_CUTOFF = _committed_cutoff()
+WELL_AFTER_CUTOFF = SNAPSHOT_CUTOFF + timedelta(days=3)
+
+#: A fixed instant, used only where no committed artefact is involved.
 AUGUST_3 = datetime(2026, 8, 3, 12, 0, tzinfo=timezone.utc)
 
 ALL_JOBS = {
@@ -727,8 +752,8 @@ class TestCli:
 class TestCommittedSnapshot:
     """The real artefact. These are the assertions that protect subscribers."""
 
-    def test_july_31_data_cannot_generate_current_research_on_august_3(self):
-        gate = evaluate(REAL_MANIFEST, as_of=AUGUST_3)
+    def test_the_committed_snapshot_cannot_generate_current_research_once_stale(self):
+        gate = evaluate(REAL_MANIFEST, as_of=WELL_AFTER_CUTOFF)
         assert gate.publication_allowed is False
         assert {GateFailure.STALE_SNAPSHOT, GateFailure.STALE_QUOTE} <= set(gate.codes)
 
