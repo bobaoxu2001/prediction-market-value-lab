@@ -121,11 +121,23 @@ def main(argv: list[str] | None = None) -> int:
                 "kind": report.kind,
                 "subject": subject_line(report),
                 "headline": report.headline,
+                # Both names for the same decision. `report_publication_allowed`
+                # is the unambiguous one: it says which of the two gates this is,
+                # so a consumer cannot read it as "these candidates are
+                # publishable". `publication_allowed` is retained because
+                # existing readers and archived reports use it.
+                "report_publication_allowed": gate.publication_allowed,
                 "publication_allowed": gate.publication_allowed,
                 "historical_sample": gate.historical_mode,
                 "blocked_reason": gate.blocked_reason,
+                "actionable_candidate_count": len(
+                    getattr(report, "candidates", []) or []
+                ),
                 "actionable_candidates": len(getattr(report, "candidates", []) or []),
                 "watchlist_count": len(getattr(report, "watchlist", []) or []),
+                # Candidate-level freshness failures, kept distinct from
+                # `blocked_reason`, which is report-level and empty here.
+                "actionable_inputs_blocked": gate.actionable_inputs_blocked,
                 "gate": gate.as_dict(),
             },
             indent=2,

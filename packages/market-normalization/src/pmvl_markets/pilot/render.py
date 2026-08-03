@@ -114,6 +114,28 @@ def subject_line(report: Report) -> str:
     return _subject(report)
 
 
+def _candidate_freshness_sentence(report: Report) -> str:
+    """Why the actionable list may be short, when the report itself is sound.
+
+    Every format prints this, because the distinction it draws is the one a
+    subscriber is most likely to get wrong: an input too old to support a
+    *candidate* is not a reason the *report* is unreliable. Without the sentence,
+    a reader who notices a 2-hour-old order book in the provenance table can only
+    conclude that the empty actionable list is a malfunction.
+    """
+    blocked = report.gate.actionable_inputs_blocked
+    if not blocked:
+        return ""
+    names = ", ".join(name.replace("_", " ") for name in blocked)
+    return (
+        f"Candidate-level note: {names} data is currently too old to support an "
+        "actionable candidate, so any market resting on it appears on the "
+        "watchlist rather than in the actionable list. This does not affect "
+        "whether this report may be published - the Snapshot and the freshest "
+        "quote are both inside their limits, which is what that decision rests on."
+    )
+
+
 # ---------------------------------------------------------------- markdown --
 
 
@@ -131,12 +153,18 @@ def _md_gate(report: Report) -> list[str]:
         "",
     ]
     if g.freshness:
-        out.append("| Input | State | Age |")
-        out.append("| --- | --- | --- |")
+        out.append("| Input | State | Age | Can support a candidate |")
+        out.append("| --- | --- | --- | --- |")
         for f in g.freshness:
             age = "unknown" if f.age_hours is None else f"{f.age_hours:.1f} h"
-            out.append(f"| {f.data_type.replace('_', ' ')} | {f.state} | {age} |")
+            supports = "no" if f.blocks else "yes"
+            out.append(
+                f"| {f.data_type.replace('_', ' ')} | {f.state} | {age} | {supports} |"
+            )
         out.append("")
+    note = _candidate_freshness_sentence(report)
+    if note:
+        out += [note, ""]
     return out
 
 
@@ -533,6 +561,17 @@ def to_text(report: Report) -> str:
     out.append(f"  Data cutoff     : {_when(g.source_data_cutoff)}")
     out.append(f"  Freshest quote  : {_when(g.freshest_quote_observed_at)}")
     out.append(f"  Generated for   : {_when(g.as_of)}")
+    for f in g.freshness:
+        age = "unknown" if f.age_hours is None else f"{f.age_hours:.1f} h"
+        supports = "no" if f.blocks else "yes"
+        label = f.data_type.replace("_", " ")
+        out.append(
+            f"  {label:<16}: {f.state}, {age}, can support a candidate: {supports}"
+        )
+    note = _candidate_freshness_sentence(report)
+    if note:
+        out += [""]
+        out += _bullet(note)
     out += ["", "TERMS OF THIS REPORT", _rule("-"), ""]
     for line in DISCLAIMER_LINES:
         out += _bullet(line)
@@ -798,9 +837,25 @@ def to_html_email(report: Report) -> str:
                 ("Data cutoff", _when(g.source_data_cutoff)),
                 ("Freshest observed quote", _when(g.freshest_quote_observed_at)),
                 ("Report generated for", _when(g.as_of)),
+                *[
+                    (
+                        f.data_type.replace("_", " ").capitalize(),
+                        f"{f.state}, "
+                        f"{'unknown' if f.age_hours is None else f'{f.age_hours:.1f} h'}"
+                        f", can support a candidate: {'no' if f.blocks else 'yes'}",
+                    )
+                    for f in g.freshness
+                ],
             ]
         )
     )
+
+    _note = _candidate_freshness_sentence(report)
+    if _note:
+        body.append(
+            '<p style="margin:12px 0 0 0;font-size:12px;line-height:1.55;'
+            f'color:#848c98;">{_h(_note)}</p>'
+        )
 
     body.append(
         '<div style="margin-top:28px;padding-top:16px;border-top:1px solid #d9dce2;">'

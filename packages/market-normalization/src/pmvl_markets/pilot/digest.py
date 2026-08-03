@@ -106,6 +106,12 @@ class Candidate:
     invalidation_conditions: list[str]
     risk_flags: list[str]
 
+    #: Age of the order book this candidate's ask came from, at the moment the
+    #: report was written. Always within the candidate SLA - a market past it is
+    #: demoted to the watchlist - but stated rather than implied, so the reader
+    #: can see how fresh the price they are being shown actually is.
+    quote_age_seconds: float | None = None
+
 
 @dataclass
 class WatchlistEntry:
@@ -461,6 +467,11 @@ def select_candidates(
     rejections: dict[str, int] = {}
     admitted: list[tuple[ValueCandidate, sqlite3.Row, NormalizedMarket]] = []
     watch: dict[int, WatchlistEntry] = {}
+    #: Age of the book behind each market, so a published candidate can state how
+    #: old the ask it is quoting was. A watchlist entry already carried this and a
+    #: candidate did not, which left the actionable list - the only part anyone
+    #: acts on - as the one place the reader could not check the age themselves.
+    quote_age_by_market: dict[int, float] = {}
     stale_quote_markets = 0
     incomplete_markets = 0
 
@@ -504,6 +515,7 @@ def select_candidates(
         # SLA can never be actionable however good its economics look, because the
         # ask the edge is measured against is no longer a price anyone can take.
         quote_age = (as_of - book.observed_at).total_seconds()
+        quote_age_by_market[row["id"]] = quote_age
         quote_is_stale = quote_age > candidate_quote_max_age_seconds or quote_age < 0
         if quote_is_stale:
             stale_quote_markets += 1
@@ -623,7 +635,13 @@ def select_candidates(
     )[:limit]
 
     candidates = [
-        _to_candidate(conn, candidate, prediction, market)
+        _to_candidate(
+            conn,
+            candidate,
+            prediction,
+            market,
+            quote_age_seconds=quote_age_by_market.get(candidate.market_id or -1),
+        )
         for candidate, prediction, market in ranked
     ]
 
@@ -710,6 +728,8 @@ def _to_candidate(
     candidate: ValueCandidate,
     prediction: sqlite3.Row,
     market: NormalizedMarket,
+    *,
+    quote_age_seconds: float | None = None,
 ) -> Candidate:
     source, rules_risk = _rules_risk(conn, candidate.market_id or -1, market)
     cost = candidate.cost
@@ -758,6 +778,7 @@ def _to_candidate(
         rules_risk=rules_risk,
         invalidation_conditions=_invalidation_conditions(candidate, market),
         risk_flags=list(candidate.risk_flags),
+        quote_age_seconds=quote_age_seconds,
     )
 
 
@@ -799,11 +820,31 @@ def build_daily_digest(
 
     conn = open_snapshot(manifest_path)
     try:
-        # Candidates are evaluated at the Snapshot's cutoff, which is when its
-        # quotes were true. The gate has already decided whether that cutoff is
-        # recent enough for the report to be published at all; using `as_of` here
-        # instead would age every book by the same amount twice.
-        reference = gate_result.source_data_cutoff or gate_result.as_of
+        # Candidates are aged against the moment the report is being written, not
+        # against the Snapshot's cutoff.
+        #
+        # This previously used the cutoff, on the reasoning that using `as_of`
+        # would "age every book by the same amount twice". It does not: the gate
+        # measures the SNAPSHOT (is this artefact recent enough to publish from?)
+        # while this measures ONE BOOK (is the ask behind this candidate still a
+        # price someone could take?). Different quantities, not the same one
+        # applied twice.
+        #
+        # The consequence was that every book looked zero minutes old, because it
+        # was compared with the cutoff it was captured at. The 30-minute candidate
+        # rule could therefore never fire in a real report - it only measured how
+        # far a book lagged *within* the Snapshot. The rule appeared to work only
+        # because the gate happened to refuse the whole report once the Snapshot's
+        # freshest quote passed 30 minutes, which is the report-level block that
+        # made the pilot unusable after half an hour.
+        #
+        # Removing that block without fixing this would have published a
+        # two-hour-old ask as actionable while reporting its age as zero: the
+        # exact failure the candidate rule exists to prevent.
+        #
+        # Historical samples are unaffected - the CLI sets `as_of` to the
+        # Snapshot's own cutoff, so the two agree by construction.
+        reference = gate_result.as_of or gate_result.source_data_cutoff
         candidates, watchlist, funnel, rejections, examined = select_candidates(
             conn,
             as_of=reference,

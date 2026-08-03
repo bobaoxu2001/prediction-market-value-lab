@@ -835,3 +835,199 @@ class TestCommittedSamples:
         weekly = (ROOT / "docs" / "samples" / "pilot" / "historical-weekly-review.md").read_text()
         settled = re.search(r"(\d+) scored markets settled", weekly)
         assert settled and settled.group(1) in page, "settled-market count is out of date"
+
+
+# ---------------------------------------- report level vs candidate level --
+
+
+class TestReportGateIsSeparateFromCandidateGate:
+    """The two freshness levels, and the boundary between them.
+
+    The pilot was publishable for only about thirty minutes after each
+    publication. `TOP_OF_BOOK` hard-stales at 30 minutes in the shared policy,
+    the gate measured it against the Snapshot's single freshest quote, and a
+    refusal there withheld the whole digest - including a zero-actionable report,
+    which contains no recommendation for a stale book to invalidate. A
+    subscriber's honest "nothing cleared the bar today" was replaced by silence,
+    and the advertised 2-hour quote SLA was silently overridden by a 30-minute
+    one.
+
+    A stale book invalidates the candidate resting on it. It does not invalidate
+    the report saying so.
+    """
+
+    # -- the report level keeps publishing ---------------------------------
+
+    def test_the_report_still_publishes_after_31_minutes(self, snapshot):
+        """The exact regression. 31 minutes is one minute past the candidate
+        rule and nowhere near either report-level limit."""
+        gate = evaluate(snapshot.manifest, as_of=snapshot.cutoff + timedelta(minutes=31))
+        assert gate.publication_allowed, gate.reasons
+
+    @pytest.mark.parametrize("minutes", [20, 31, 45, 90, 119])
+    def test_the_report_publishes_anywhere_inside_the_report_sla(
+        self, snapshot, minutes
+    ):
+        """Publication must track the published SLA, not a candidate threshold."""
+        gate = evaluate(
+            snapshot.manifest, as_of=snapshot.cutoff + timedelta(minutes=minutes)
+        )
+        assert gate.publication_allowed, f"blocked at {minutes} min: {gate.reasons}"
+
+    def test_ageing_books_are_reported_without_blocking(self, snapshot):
+        """The finding must survive; only its consequence changes."""
+        gate = evaluate(snapshot.manifest, as_of=snapshot.cutoff + timedelta(minutes=45))
+        assert gate.publication_allowed, gate.reasons
+        assert "top_of_book" in gate.actionable_inputs_blocked
+        assert gate.codes == []
+
+    # -- the report level still blocks hard --------------------------------
+
+    def test_a_snapshot_older_than_four_hours_blocks_the_report(self, snapshot):
+        gate = evaluate(snapshot.manifest, as_of=snapshot.cutoff + timedelta(hours=4, minutes=1))
+        assert gate.publication_allowed is False
+        assert GateFailure.STALE_SNAPSHOT in gate.codes
+
+    def test_a_quote_older_than_two_hours_blocks_the_report(self, snapshot):
+        """Aged quote, fresh cutoff: isolates the quote SLA from the snapshot one."""
+        as_of = snapshot.cutoff + timedelta(hours=2, minutes=1)
+        snapshot.write_manifest(source_data_cutoff=(as_of - timedelta(minutes=5)).isoformat())
+        gate = evaluate(snapshot.manifest, as_of=as_of)
+        assert gate.publication_allowed is False
+        assert GateFailure.STALE_QUOTE in gate.codes
+        assert GateFailure.STALE_SNAPSHOT not in gate.codes
+
+    def test_a_held_snapshot_still_blocks_the_report(self, snapshot):
+        snapshot.write_manifest(release_status="held")
+        gate = evaluate(snapshot.manifest, as_of=snapshot.cutoff + timedelta(minutes=31))
+        assert gate.publication_allowed is False
+        assert GateFailure.NOT_PUBLISHED in gate.codes
+
+    def test_a_failed_pipeline_job_still_blocks_the_report(self, snapshot):
+        snapshot.write_manifest(job_statuses={**ALL_JOBS, "settle": "failed"})
+        gate = evaluate(snapshot.manifest, as_of=snapshot.cutoff + timedelta(minutes=31))
+        assert gate.publication_allowed is False
+        assert GateFailure.JOB_FAILED in gate.codes
+
+    def test_a_broken_hash_still_blocks_the_report(self, snapshot):
+        snapshot.write_manifest(sha256="0" * 64, uncompressed_sha256="0" * 64)
+        gate = evaluate(snapshot.manifest, as_of=snapshot.cutoff + timedelta(minutes=31))
+        assert gate.publication_allowed is False
+
+    # -- the candidate level still refuses ---------------------------------
+
+    def test_a_31_minute_old_book_is_not_actionable(self, snapshot):
+        candidates, _watch, _f, _rej, _n = _select(
+            snapshot, as_of=snapshot.cutoff + timedelta(minutes=31)
+        )
+        assert candidates == []
+
+    def test_that_candidate_is_demoted_to_the_watchlist_with_the_reason(self, snapshot):
+        _c, watch, _f, _rej, _n = _select(
+            snapshot, as_of=snapshot.cutoff + timedelta(minutes=31)
+        )
+        assert len(watch) == 1
+        reason = " ".join(watch[0].blocking_reasons).lower()
+        assert "order book" in reason
+        assert "31 minutes ago" in reason
+        assert "30-minute limit" in reason
+
+    def test_the_same_market_is_actionable_while_its_book_is_fresh(self, snapshot):
+        """Proves the demotion above is caused by age and nothing else."""
+        candidates, _w, _f, _rej, _n = _select(
+            snapshot, as_of=snapshot.cutoff + timedelta(minutes=29)
+        )
+        assert len(candidates) == 1
+
+    def test_no_stale_candidate_ever_reaches_the_actionable_list(self, snapshot):
+        """Swept across the boundary: nothing past the limit may be actionable."""
+        for minutes in (29, 30, 31, 45, 90, 119):
+            as_of = snapshot.cutoff + timedelta(minutes=minutes)
+            candidates, _w, _f, _rej, _n = _select(snapshot, as_of=as_of)
+            for candidate in candidates:
+                age = candidate.quote_age_seconds
+                assert age is not None and age <= DEFAULT_SLA.candidate_quote_max_age_seconds, (
+                    f"a {age / 60:.0f}-minute-old quote was presented as actionable "
+                    f"at {minutes} minutes"
+                )
+
+    # -- the two levels together -------------------------------------------
+
+    def test_a_zero_actionable_report_is_still_publishable(self, snapshot):
+        """The case the old behaviour destroyed: a truthful no-trade report."""
+        as_of = snapshot.cutoff + timedelta(minutes=45)
+        gate = evaluate(snapshot.manifest, as_of=as_of)
+        report = build_daily_digest(snapshot.manifest, gate)
+        assert gate.publication_allowed, gate.reasons
+        assert report.actionable_allowed is True
+        assert report.candidates == []
+        assert report.watchlist, "the demoted market must still be visible"
+
+    def test_the_watchlist_entry_is_not_presented_as_a_recommendation(self, snapshot):
+        as_of = snapshot.cutoff + timedelta(minutes=45)
+        report = build_daily_digest(snapshot.manifest, evaluate(snapshot.manifest, as_of=as_of))
+        assert report.candidates == []
+        for entry in report.watchlist:
+            assert entry.blocking_reasons, "a watchlist entry must say why it is not actionable"
+
+
+class TestRenderersSeparateTheTwoLevels:
+    """Every format must let a reader tell the two apart.
+
+    A reader who sees an empty actionable list next to a 45-minute-old order book
+    has to be able to conclude "the books aged out today", not "the report is
+    broken" and not "these watchlist entries are the recommendations".
+    """
+
+    @staticmethod
+    def _report(snapshot, minutes: int) -> DigestReport:
+        as_of = snapshot.cutoff + timedelta(minutes=minutes)
+        return build_daily_digest(snapshot.manifest, evaluate(snapshot.manifest, as_of=as_of))
+
+    def test_every_format_says_the_report_is_publishable_and_names_the_cause(
+        self, snapshot
+    ):
+        report = self._report(snapshot, 45)
+        assert report.actionable_allowed is True
+        for text in (to_markdown(report), to_text(report), to_html_email(report)):
+            lowered = text.lower()
+            assert "top of book" in lowered
+            assert "candidate-level note" in lowered
+            assert "watchlist" in lowered
+
+    def test_every_format_marks_which_inputs_cannot_support_a_candidate(
+        self, snapshot
+    ):
+        report = self._report(snapshot, 45)
+        for text in (to_markdown(report), to_text(report), to_html_email(report)):
+            assert "can support a candidate" in text.lower()
+
+    def test_no_format_presents_the_watchlist_as_actionable(self, snapshot):
+        report = self._report(snapshot, 45)
+        assert report.candidates == []
+        for text in (to_markdown(report), to_text(report), to_html_email(report)):
+            assert "not actionable" in text.lower()
+
+    def test_the_json_distinguishes_the_two_gates(self, snapshot, tmp_path):
+        """The four keys the consumer needs, with report-level and
+        candidate-level failures kept in separate fields."""
+        as_of = snapshot.cutoff + timedelta(minutes=45)
+        gate = evaluate(snapshot.manifest, as_of=as_of)
+        report = build_daily_digest(snapshot.manifest, gate)
+        payload = {
+            "report_publication_allowed": gate.publication_allowed,
+            "actionable_candidate_count": len(report.candidates),
+            "watchlist_count": len(report.watchlist),
+            "actionable_inputs_blocked": gate.actionable_inputs_blocked,
+            "gate": gate.as_dict(),
+        }
+        assert payload["report_publication_allowed"] is True
+        assert payload["actionable_candidate_count"] == 0
+        assert payload["watchlist_count"] >= 1
+        assert "top_of_book" in payload["actionable_inputs_blocked"]
+        # Report-level failures stay empty; the candidate-level fact lives
+        # somewhere a reader cannot mistake for a publication blocker.
+        assert payload["gate"]["failures"] == []
+        assert payload["gate"]["blocked_reason"] == ""
+        blocked = {f["data_type"] for f in payload["gate"]["freshness"] if f["blocks_actionable"]}
+        assert "top_of_book" in blocked

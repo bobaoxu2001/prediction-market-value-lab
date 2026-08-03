@@ -10,9 +10,28 @@ ask presented as a candidate is not a stale page, it is a false claim someone
 paid for. So the pilot applies its own SLA on top of the shared freshness
 policies and takes whichever is tighter:
 
-    Snapshot age                <=  4 hours
-    freshest market quote       <=  2 hours
-    quote behind a candidate    <= 30 minutes   (enforced in digest.py, per market)
+    Snapshot age                <=  4 hours     (report level - blocks publication)
+    freshest market quote       <=  2 hours     (report level - blocks publication)
+    quote behind a candidate    <= 30 minutes   (candidate level - demotes to watchlist)
+
+**The two levels are separate, and only the first can refuse a report.**
+
+A stale book invalidates the candidate resting on it. It does not invalidate the
+report saying so. Conflating the two made the pilot publishable for roughly
+thirty minutes after each publication: the shared `TOP_OF_BOOK` policy hard-stales
+at 30 minutes, this module measured it against the Snapshot's freshest quote, and
+a refusal there withheld the entire digest - including a zero-actionable no-trade
+report, which carries no recommendation for a stale book to invalidate. The
+subscriber's honest "nothing cleared the bar today" was replaced by silence.
+
+It also quietly overrode the published SLA. A 2-hour quote limit that the sales
+page and the runbook both quote does not mean 2 hours if a 30-minute threshold
+refuses the report first.
+
+So per-instrument freshness is now *recorded* by this module and *enforced* by
+`digest.py`, per market, against each candidate's own observation time rather
+than the newest quote in the file - which is strictly tighter than what happened
+here. Markets failing it are demoted to the watchlist carrying the reason.
 
 Those numbers are not the shared `pmvl_shared.freshness` thresholds and must not
 be pushed into them: relaxing the shared policy to make a paid product pass would
@@ -46,7 +65,7 @@ from dataclasses import dataclass, field
 from datetime import datetime
 from pathlib import Path
 
-from pmvl_shared.freshness import DataType, FreshnessState, assess
+from pmvl_shared.freshness import DataType, assess
 from pmvl_shared.manifest import (
     ReleaseStatus,
     SnapshotManifest,
@@ -124,12 +143,29 @@ class GateFailure:
     JOB_MISSING = "job_missing"
     STALE_SNAPSHOT = "stale_snapshot"
     STALE_QUOTE = "stale_quote"
-    STALE_INPUT = "stale_input"
     NO_REFERENCE_TIME = "no_reference_time"
+
+    #: Retired. This once refused a whole report because a per-instrument policy
+    #: said no *recommendation* could rest on the data - which is a candidate
+    #: judgement, and is now made per market in `digest.py`. Kept as a name so
+    #: that a reader meeting it in an archived report can find this explanation,
+    #: and deliberately never emitted: nothing may reintroduce a report-level
+    #: refusal on candidate-level grounds without changing this comment.
+    STALE_INPUT = "stale_input"
 
 
 @dataclass(frozen=True)
 class FreshnessFinding:
+    """How one class of input is ageing, measured against the shared policy.
+
+    Advisory at the report level. ``blocks`` means "a RECOMMENDATION cannot rest
+    on this input", which is a candidate-level judgement: it is why a market gets
+    demoted to the watchlist, not a reason to refuse the whole report. A
+    zero-actionable report contains no recommendation for a stale book to
+    invalidate, and refusing to publish one because the books aged is how the
+    pilot ended up usable for only half an hour after each publication.
+    """
+
     data_type: str
     state: str
     age_seconds: float | None
@@ -191,6 +227,16 @@ class GateResult:
     def codes(self) -> list[str]:
         return [code for code, _sentence in self.failures]
 
+    @property
+    def actionable_inputs_blocked(self) -> list[str]:
+        """Input classes too old to support a recommendation right now.
+
+        Reported, never a publication blocker. A non-empty list means the report
+        should be expected to carry few or no actionable candidates - which is a
+        finding worth printing, not a reason to withhold the finding.
+        """
+        return [f.data_type for f in self.freshness if f.blocks]
+
     def as_dict(self) -> dict[str, object]:
         return {
             "publication_allowed": self.publication_allowed,
@@ -215,11 +261,17 @@ class GateResult:
             "integrity_ok": self.integrity_ok,
             "hashes_verified": self.hashes_verified,
             "failures": [{"code": c, "detail": d} for c, d in self.failures],
+            # Named so a reader cannot mistake it for a publication blocker: these
+            # are the inputs too old to support an ACTIONABLE candidate.
+            "actionable_inputs_blocked": self.actionable_inputs_blocked,
             "freshness": [
                 {
                     "data_type": f.data_type,
                     "state": f.state,
                     "age_seconds": f.age_seconds,
+                    # Blocks a recommendation resting on this input, not the report.
+                    "blocks_actionable": f.blocks,
+                    # Retained under the old key so existing consumers keep working.
                     "blocks": f.blocks,
                 }
                 for f in self.freshness
@@ -508,8 +560,32 @@ def evaluate(
             )
         )
 
-    # The shared policies are consulted as well, and are allowed to refuse
-    # something the SLA above would have accepted.
+    # The shared per-instrument policies are consulted too, but they answer a
+    # DIFFERENT question and are recorded rather than added to `failures`.
+    #
+    # `blocks_eligibility` means "no RECOMMENDATION can rest on this input". That
+    # is a statement about a candidate, not about a report. Promoting it to a
+    # report-level failure is what made the pilot publishable for only about
+    # thirty minutes after each publication: TOP_OF_BOOK hard-stales at 30
+    # minutes and FULL_ORDERBOOK at an hour, both measured here against the
+    # Snapshot's single freshest quote, so a report whose Snapshot and freshest
+    # quote were comfortably inside the 4-hour and 2-hour SLA was refused
+    # anyway - including a zero-actionable no-trade report, which contains no
+    # recommendation for a stale book to invalidate.
+    #
+    # It also silently overrode the published SLA: a 2-hour quote limit the
+    # sales page and runbook both quote cannot mean 2 hours if a 30-minute
+    # threshold refuses the report first.
+    #
+    # The 30-minute rule is not being relaxed - it is enforced per market in
+    # `digest.py`, where the book behind a specific candidate is compared with
+    # that candidate's own timestamp rather than with the Snapshot's newest one.
+    # A market failing it is demoted to the watchlist carrying the reason. That
+    # is strictly tighter than what this loop did, because it uses each market's
+    # real observation time instead of the freshest quote in the file.
+    #
+    # Nothing is lost by not failing here: an absent timestamp is already a
+    # report-level NO_REFERENCE_TIME failure above.
     reference = {
         DataType.TOP_OF_BOOK: quote_at,
         DataType.FULL_ORDERBOOK: quote_at,
@@ -527,23 +603,6 @@ def evaluate(
                 blocks=finding.blocks_eligibility,
             )
         )
-        if finding.blocks_eligibility:
-            if finding.state == FreshnessState.UNAVAILABLE:
-                failures.append(
-                    (
-                        GateFailure.STALE_INPUT,
-                        f"No usable observation time for {data_type.value.replace('_', ' ')}.",
-                    )
-                )
-            else:
-                failures.append(
-                    (
-                        GateFailure.STALE_INPUT,
-                        f"The {data_type.value.replace('_', ' ')} data is "
-                        f"{(age or 0) / 3600:.1f} hours old, past the point where it can "
-                        "support a recommendation.",
-                    )
-                )
 
     return GateResult(
         # `not failures` is whether the artefact is sound; publication needs
