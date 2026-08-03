@@ -2,6 +2,8 @@
 import { cleanup, render, screen } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 
+import { PILOT_MEMBER_CAP } from "@/lib/pilot";
+
 /**
  * The Founding Pilot sales page.
  *
@@ -163,13 +165,33 @@ describe("founding pilot sales page", () => {
       expect(urls.some((url) => url.endsWith("/founding-pilot"))).toBe(true);
     });
 
-    it("states the terms consistently: 49 dollars, 30 days, 20 members", async () => {
+    it("states the terms consistently: 49 dollars, 30 days, the cohort cap", async () => {
       await renderPage();
       const text = document.body.textContent ?? "";
       expect(text).toMatch(/\$49|USD 49/);
       expect(text).toMatch(/30 days/);
-      expect(text).toMatch(/20 (max|members)/);
+      // Read from the constant rather than repeating the number. The cap has to
+      // match what the Stripe Payment Link accepts, so it is the value most
+      // likely to change, and a literal here would assert the old cohort size
+      // while the page correctly advertised the new one.
+      expect(text).toMatch(new RegExp(`${PILOT_MEMBER_CAP} (max|members)`));
       expect(text).toMatch(/one time, not a subscription/i);
+    });
+
+    it("quotes no member cap other than the constant", async () => {
+      // The cap lived in a constant and the page still shipped "capped at 20
+      // members" twice - once in the FAQ and once in the page metadata - because
+      // prose interpolates a number only if somebody remembers to. Changing the
+      // cohort from 20 to 5 left both literals behind, so the page advertised
+      // two different caps at once and the FAQ contradicted the pricing panel.
+      //
+      // Asserting the constant appears is not enough; this asserts no OTHER
+      // number is presented as the cap.
+      await renderPage();
+      const text = document.body.textContent ?? "";
+      const quoted = [...text.matchAll(/(\d+)\s+(?:max|members)/g)].map((m) => m[1]);
+      const wrong = quoted.filter((n) => n !== String(PILOT_MEMBER_CAP));
+      expect(wrong, `the page quotes member caps it should not: ${wrong}`).toEqual([]);
     });
   });
 });

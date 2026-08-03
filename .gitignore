@@ -33,6 +33,16 @@ data/raw/**
 data/processed/**
 !data/processed/.gitkeep
 
+# --- customer records (never commit) ---
+#
+# Founding Pilot fulfilment is manual, so the member ledger is a file rather than
+# a database. It holds email addresses, Stripe payment identifiers and delivery
+# history - personal data belonging to paying customers, which must never enter
+# git history, where it cannot be deleted on request.
+#
+# The committed template is docs/founding-pilot-customers.template.md.
+private/
+
 # --- os / editor ---
 .DS_Store
 .idea/

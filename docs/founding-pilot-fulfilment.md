@@ -2,7 +2,7 @@
 
 **This process is manual. Nothing here is automated, and nothing should be
 described to a member as automated.** A scheduled job produces a candidate
-report; a person decides whether it is sent. For the first 20 members that is the
+report; a person decides whether it is sent. For the first five members that is the
 correct trade — it is slower, and it is the only way a human sees every report
 before somebody who paid does.
 
@@ -19,7 +19,7 @@ The rule that governs the whole document:
 | --- | --- |
 | Price | USD 49, one time, not a subscription |
 | Duration | 30 delivery days from first delivery |
-| Cap | 20 members |
+| Cap | 5 members (first cohort) |
 | Delivery | Email, by hand |
 | Account required | None |
 | Automatic trading | None. PMVL places no orders. |
@@ -231,8 +231,9 @@ days_extended, extension_reason, status, refunded_at
 ```
 
 - `end_date` = `start_date` + 30 days + `days_extended`.
-- Stop at **20 active members**. The cap is what makes manual review possible; a
-  21st member makes the process worse for the first 20.
+- Stop at **5 active members**. The cap is what makes manual review possible; a
+  sixth member makes the process worse for the first five. The Stripe Payment
+  Link is capped at five completed payments, so this is enforced at checkout too.
 
 ---
 

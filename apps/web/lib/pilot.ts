@@ -29,8 +29,19 @@ export const PILOT_PRICE_USD = 49;
 /** Days of daily digests, counted from first delivery rather than from payment. */
 export const PILOT_DURATION_DAYS = 30;
 
-/** Hard cap. Fulfilment is manual, and twenty is what one person can serve well. */
-export const PILOT_MEMBER_CAP = 20;
+/**
+ * Hard cap for the first cohort.
+ *
+ * Five, not twenty. The Stripe Payment Link that will sell this is capped at
+ * five completed payments, and a page advertising more spots than the checkout
+ * will accept is a contradiction the buyer discovers at the moment they try to
+ * pay. The cap the site states and the cap the payment processor enforces have
+ * to be the same number.
+ *
+ * Five is also what one person can genuinely review by hand for thirty
+ * consecutive days without the review becoming a rubber stamp.
+ */
+export const PILOT_MEMBER_CAP = 5;
 
 /**
  * A Stripe Payment Link URL, supplied by the owner.
