@@ -24,6 +24,24 @@ export default async function PricingPage() {
         <PricingPlans entitlement={entitlement} headingLevel="h1" />
       </div>
 
+      <Section>
+        <SectionHeading
+          eyebrow="Available now"
+          title="The Founding Research Pilot"
+          lead="Subscriptions are not open, but a small, finite pilot is: 30 days of the daily written research digest, delivered by email, capped at 20 members."
+        />
+        <p className="t-body mt-6 max-w-2xl">
+          One-time USD 49, no account, no renewal and nothing to cancel. Three
+          real sample reports — generated from the published Snapshot, and
+          labelled as historical rather than current research — are readable
+          before paying anything.{" "}
+          <Link href="/founding-pilot" className="underline underline-offset-2">
+            Read what the pilot is, and what it is not
+          </Link>
+          .
+        </p>
+      </Section>
+
       <Section className="bg-sunken">
         <SectionHeading
           eyebrow="Before you subscribe"

@@ -1,0 +1,63 @@
+{
+  "kind": "daily",
+  "subject": "PMVL Pilot \u2014 HISTORICAL SAMPLE, Snapshot 2026-07-31",
+  "headline": "No actionable opportunity today",
+  "publication_allowed": false,
+  "historical_sample": true,
+  "blocked_reason": "",
+  "actionable_candidates": 0,
+  "watchlist_count": 10,
+  "gate": {
+    "publication_allowed": false,
+    "checks_passed": true,
+    "historical_mode": true,
+    "blocked_reason": "",
+    "as_of": "2026-07-31T08:56:07.827120+00:00",
+    "sla": {
+      "snapshot_max_age_seconds": 14400,
+      "quote_max_age_seconds": 7200,
+      "candidate_quote_max_age_seconds": 1800
+    },
+    "snapshot_id": "a3487a6fa577-2026-07-31T08:56:07.827120",
+    "code_commit_sha": "a3487a6fa577",
+    "model_version": "ensemble-v1.0.0",
+    "source_data_cutoff": "2026-07-31T08:56:07.827120+00:00",
+    "freshest_quote_observed_at": "2026-07-31T08:56:07.827120+00:00",
+    "snapshot_age_seconds": 0.0,
+    "quote_age_seconds": 0.0,
+    "integrity_ok": true,
+    "hashes_verified": true,
+    "failures": [],
+    "freshness": [
+      {
+        "data_type": "top_of_book",
+        "state": "fresh",
+        "age_seconds": 0.0,
+        "blocks": false
+      },
+      {
+        "data_type": "full_orderbook",
+        "state": "fresh",
+        "age_seconds": 0.0,
+        "blocks": false
+      },
+      {
+        "data_type": "model_prediction",
+        "state": "fresh",
+        "age_seconds": 0.0,
+        "blocks": false
+      }
+    ],
+    "job_statuses": {
+      "arbitrage": "success",
+      "backtest": "success",
+      "ingest": "success",
+      "orderbooks": "success",
+      "prune": "success",
+      "rank": "success",
+      "score": "success",
+      "settle": "success",
+      "snapshot": "success"
+    }
+  }
+}
