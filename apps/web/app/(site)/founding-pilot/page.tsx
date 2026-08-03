@@ -16,8 +16,7 @@ export const dynamic = "force-dynamic";
 
 export const metadata: Metadata = {
   title: "Founding Research Pilot",
-  description:
-    "A 30-day paid pilot of PMVL's daily prediction-market research digest. One-time USD 49, capped at 20 members. Research only — not advice, and no return is promised.",
+  description: `A ${PILOT_DURATION_DAYS}-day paid pilot of PMVL's daily prediction-market research digest. One-time USD ${PILOT_PRICE_USD}, capped at ${PILOT_MEMBER_CAP} members. Research only — not advice, and no return is promised.`,
   alternates: { canonical: absoluteUrl("/founding-pilot") },
 };
 
@@ -304,7 +303,7 @@ export default function FoundingPilotPage() {
             },
             {
               q: "Do I need an account?",
-              a: "No. There is no login, no dashboard and no subscription. Fulfilment is a person sending you an email, which is why the pilot is capped at 20 members.",
+              a: `No. There is no login, no dashboard and no subscription. Fulfilment is a person sending you an email, which is why the pilot is capped at ${PILOT_MEMBER_CAP} members.`,
             },
             {
               q: "Will you tell me what to buy?",

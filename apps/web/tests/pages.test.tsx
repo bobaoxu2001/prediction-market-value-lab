@@ -365,11 +365,16 @@ describe("legal pages", () => {
 
   it("still marks every OTHER legal value as unresolved", async () => {
     // Approving a support address is not approving the documents. These are the
-    // fourteen decisions that remain outstanding; if one of them quietly
-    // acquires a value, this fails.
+    // eleven decisions that remain outstanding; if one of them quietly acquires
+    // a value, this fails.
+    //
+    // BILLING CURRENCY, MONTHLY PRICE and ANNUAL PRICE were removed rather than
+    // filled in. They described a subscription, and the only product sold is a
+    // one-time USD 49 pilot, so the sections holding them were rewritten to
+    // state the real offer. Deleting a placeholder because the thing it
+    // described does not exist is the opposite of quietly inventing a value for
+    // it - the remaining eleven are still unresolved and still visible.
     const expected = [
-      "ANNUAL PRICE",
-      "BILLING CURRENCY",
       "DATA CONTROLLER AND JURISDICTION",
       "DATA RETENTION POLICY",
       "DISPUTE VENUE",
@@ -378,7 +383,6 @@ describe("legal pages", () => {
       "LEGAL NOTICE ADDRESS",
       "LIABILITY CAP",
       "MINIMUM AGE",
-      "MONTHLY PRICE",
       "PRODUCT AND SERVICE NAME AS REGISTERED",
       "REFUND POLICY",
       "REGISTERED ADDRESS",

@@ -2,12 +2,19 @@ import type { Metadata } from "next";
 import Link from "next/link";
 
 import { LegalPage, LegalSection, Placeholder } from "@/components/legal";
+// The commercial terms come from the same constants the sales page renders, so
+// the agreement and the offer cannot state different prices, durations or caps.
+import {
+  PILOT_DURATION_DAYS,
+  PILOT_MEMBER_CAP,
+  PILOT_PRICE_USD,
+} from "@/lib/pilot";
 import { absoluteUrl, SUPPORT_EMAIL } from "@/lib/site";
 
 export const metadata: Metadata = {
   title: "Terms of service",
   description:
-    "Draft terms for the PMVL research service: eligibility, acceptable use, subscription billing, cancellation, intellectual property, research limitations, availability and termination.",
+    "Draft terms for the PMVL research service: eligibility, acceptable use, one-time pilot billing, refunds, intellectual property, research limitations, availability and termination.",
   alternates: { canonical: absoluteUrl("/terms") },
 };
 
@@ -97,36 +104,38 @@ export default function TermsPage() {
         </ul>
       </LegalSection>
 
-      <LegalSection id="billing" title="5. Subscription billing">
+      <LegalSection id="billing" title="5. What is sold, and how it is paid for">
         <p>
-          Paid subscriptions are not currently available. When they are, they
-          will be sold in <Placeholder>BILLING CURRENCY</Placeholder> at{" "}
-          <Placeholder>MONTHLY PRICE</Placeholder> per month or{" "}
-          <Placeholder>ANNUAL PRICE</Placeholder> per year, plus any tax that
-          applies where you are.
+          The only paid product is the Founding Research Pilot:{" "}
+          <strong>USD {PILOT_PRICE_USD}, charged once</strong>, for{" "}
+          {PILOT_DURATION_DAYS} days of emailed research digests counted from
+          your first delivery, plus any tax that applies where you are. The first
+          cohort is limited to {PILOT_MEMBER_CAP} members.
         </p>
         <p>
-          Payments are processed by Stripe on Stripe&apos;s own hosted checkout
-          and customer portal. We do not receive or store your card details. Your
-          use of Stripe&apos;s payment pages is additionally subject to
-          Stripe&apos;s terms.
+          <strong>This is not a subscription.</strong> There is no recurring
+          charge, no automatic renewal and nothing to cancel. When the{" "}
+          {PILOT_DURATION_DAYS} days end, deliveries stop and you are not billed
+          again. Continuing afterwards would require a new, separate purchase.
         </p>
         <p>
-          Subscriptions renew automatically at the end of each billing period
-          until cancelled. Your entitlement is determined by the subscription
-          status Stripe reports to us; a payment that fails suspends paid
-          features until a payment succeeds. Public research is never gated on
-          billing and is unaffected by a payment problem.
+          Payment is taken on a Stripe-hosted payment page. We do not receive or
+          store your card details. Your use of Stripe&apos;s payment pages is
+          additionally subject to Stripe&apos;s terms.
+        </p>
+        <p>
+          Paying does not by itself start the service. Each payment is confirmed
+          by a person against Stripe&apos;s record before delivery begins, and we
+          contact you at the email address used at checkout. Public research on
+          this site is never gated on payment.
         </p>
       </LegalSection>
 
-      <LegalSection id="cancellation" title="6. Cancellation and refunds">
+      <LegalSection id="cancellation" title="6. Ending the service, and refunds">
         <p>
-          You may cancel at any time from your billing page, which opens
-          Stripe&apos;s customer portal. Cancellation stops the next renewal;
-          access to paid features continues until the end of the period you have
-          already paid for. We do not cancel on your behalf and do not require
-          you to contact support to do it.
+          There is nothing to cancel: the Founding Research Pilot is a one-time
+          purchase that ends by itself after {PILOT_DURATION_DAYS} days. No
+          further payment is taken, so no cancellation step is required of you.
         </p>
         <p>
           Refund policy: <Placeholder>REFUND POLICY</Placeholder>. Statutory
