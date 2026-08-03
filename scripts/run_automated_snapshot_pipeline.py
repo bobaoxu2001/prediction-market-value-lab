@@ -225,6 +225,13 @@ class RunOutcome:
     candidate_disposition: str = CandidateDisposition.NOT_BUILT
     published: bool = False
     publication_blockers: list[str] = field(default_factory=list)
+    #: Why the candidate could not be built or validated, when every job
+    #: nonetheless succeeded. Without this the report simply did not exist, and
+    #: the workflow reported "the pipeline produced no report; it did not run to
+    #: completion" for a run that had in fact completed all nine jobs and been
+    #: stopped by the size ceiling. That message sent diagnosis in the wrong
+    #: direction for two days.
+    candidate_failure: str | None = None
 
     def as_dict(self) -> dict[str, Any]:
         return {
@@ -266,6 +273,7 @@ class RunOutcome:
                 and self.parent_row_counts == self.candidate_row_counts
             ),
             "candidate_disposition": self.candidate_disposition,
+            "candidate_failure": self.candidate_failure,
             "published": self.published,
             "publication_eligible": self.publication_eligible,
             "publication_blockers": self.publication_blockers,
@@ -805,7 +813,27 @@ def main(argv: list[str] | None = None) -> int:
             for blocker in outcome.publication_blockers:
                 print(f"   {blocker}")
         else:
-            candidate = build_and_validate_candidate(work_dir, operational, outcome)
+            # A candidate that fails to build or validate is a BLOCKED run, not an
+            # absent one. Letting PipelineError escape here skipped the report
+            # write below, so the one artefact that says which validator rejected
+            # the candidate - and that all nine jobs had succeeded - was destroyed
+            # by the failure it was meant to explain.
+            #
+            # This does not soften the outcome: the disposition stays NOT_BUILT,
+            # publication_eligible stays false, and main still returns non-zero.
+            # It only makes the reason survive.
+            try:
+                candidate = build_and_validate_candidate(work_dir, operational, outcome)
+            except PipelineError as exc:
+                outcome.candidate_disposition = CandidateDisposition.NOT_BUILT
+                outcome.candidate_failure = str(exc)
+                outcome.publication_blockers.append(f"candidate not built: {exc}")
+                print(f"\ncandidate blocked: {exc}")
+                if args.report:
+                    Path(args.report).write_text(
+                        json.dumps(outcome.as_dict(), indent=2) + "\n"
+                    )
+                return 1
             print(f"candidate validated: {candidate.name}")
 
             if args.candidate_out:

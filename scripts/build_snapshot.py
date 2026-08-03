@@ -130,6 +130,16 @@ def main(argv: list[str] | None = None) -> int:
     cur.execute("DELETE FROM market_rules WHERE market_id NOT IN (SELECT id FROM markets)")
     cur.execute("DELETE FROM trades WHERE market_id NOT IN (SELECT id FROM markets)")
     cur.execute("DELETE FROM price_snapshots WHERE market_id NOT IN (SELECT id FROM markets)")
+    # Rule versions are recorded for the ENTIRE ingested universe - one row per
+    # market ever seen - while the prune above keeps roughly a quarter of it. This
+    # cascade was missing, so every run left another ~6,000 rule versions pointing
+    # at markets that are not in the artefact. They are the widest rows in the
+    # schema and nothing can read them: no endpoint can query a market the
+    # snapshot does not contain. By 2026-07-31 they were 9.75 MB of a 10.15 MB
+    # table, and the artefact crossed the size ceiling and stopped validating.
+    cur.execute(
+        "DELETE FROM market_rule_versions WHERE market_id NOT IN (SELECT id FROM markets)"
+    )
 
     con.commit()
     cur.execute("VACUUM")
