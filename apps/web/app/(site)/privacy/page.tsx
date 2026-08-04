@@ -1,13 +1,18 @@
 import type { Metadata } from "next";
 import Link from "next/link";
 
-import { LegalPage, LegalSection, Placeholder } from "@/components/legal";
+import { LegalPage, LegalSection } from "@/components/legal";
+import {
+  BUSINESS_MAILING_ADDRESS,
+  DATA_CONTROLLER,
+  DATA_RETENTION_POLICY,
+} from "@/lib/seller";
 import { absoluteUrl, SUPPORT_EMAIL } from "@/lib/site";
 
 export const metadata: Metadata = {
   title: "Privacy notice",
   description:
-    "What PMVL collects: account identity from Clerk, session cookies, Stripe customer and subscription references, and operational logs. Nothing else, and no analytics.",
+    "What PMVL collects: account identity from Clerk, session cookies, the email and payment reference for a one-time Founding Pilot purchase, and operational logs. Nothing else, and no analytics.",
   alternates: { canonical: absoluteUrl("/privacy") },
 };
 
@@ -49,12 +54,19 @@ export default function PrivacyPage() {
           experience without them.
         </p>
         <p>
-          <strong>Billing references, if you subscribe.</strong> Payments are
-          processed by Stripe. PMVL stores, against your account: a Stripe
-          customer ID, a subscription ID, the subscription status, the price ID,
-          the current period end, whether a cancellation is scheduled, and the ID
-          and timestamp of the last Stripe event applied — the last two solely so
-          a repeated or out-of-order event cannot corrupt your entitlement.
+          <strong>Purchase records, if you buy the Founding Pilot.</strong>{" "}
+          Payment is taken on a Stripe-hosted payment page. There is no
+          subscription and no automatic entitlement system: PMVL reads the
+          completed payment in Stripe&apos;s dashboard and records, by hand, the
+          Stripe payment identifier, the email address you gave at checkout, the
+          payment timestamp and amount, your service start and end dates, and a
+          log of which reports were sent to you.
+        </p>
+        <p>
+          That record is what fulfilment runs on — it is how a person knows to
+          email you a report, and how a refund or extension can be worked out
+          later. It is kept privately and is never committed to the public code
+          repository.
         </p>
         <p>
           <strong>PMVL never receives or stores card numbers</strong>, bank
@@ -92,11 +104,11 @@ export default function PrivacyPage() {
       <LegalSection id="why" title="Why it is collected">
         <p>
           Account identity and session cookies exist to sign you in and to keep
-          the account pages private to you. Billing references exist to determine
-          what your subscription entitles you to and to let you manage it in
-          Stripe&apos;s portal. Operational logs exist to keep the service running
-          and to investigate faults. There is no other purpose, and none of it is
-          used for advertising or sold to anyone.
+          the account pages private to you. Purchase records exist so a person
+          can confirm you paid, send you the reports you bought, and resolve a
+          refund or extension if delivery falls short. Operational logs exist to
+          keep the service running and to investigate faults. There is no other
+          purpose, and none of it is used for advertising or sold to anyone.
         </p>
       </LegalSection>
 
@@ -107,9 +119,9 @@ export default function PrivacyPage() {
             identity data and session activity.
           </li>
           <li>
-            <strong>Stripe</strong> — payment processing and subscription
-            management. Sees your payment details and billing address, which PMVL
-            does not.
+            <strong>Stripe</strong> — payment processing for the one-time
+            purchase. Sees your payment details and billing address, which PMVL
+            does not, and retains payment information under its own policies.
           </li>
           <li>
             <strong>Vercel</strong> — application hosting. Sees request metadata
@@ -128,17 +140,12 @@ export default function PrivacyPage() {
       </LegalSection>
 
       <LegalSection id="retention" title="Retention">
+        <p>{DATA_RETENTION_POLICY}</p>
         <p>
-          Account and billing records persist for as long as the account exists.
-          Retention periods after account closure, and the retention period for
-          server logs, are set by the hosting and authentication providers and by
-          a policy the owner has not yet fixed:{" "}
-          <Placeholder>DATA RETENTION POLICY</Placeholder>.
-        </p>
-        <p>
-          This section deliberately does not promise a specific deletion schedule.
-          No automated deletion or data-export process has been implemented in
-          this release, and claiming one would be false.
+          Retention periods for server logs are additionally set by the hosting
+          provider. Deletion and anonymisation are carried out by hand: no
+          automated deletion or data-export process has been implemented in this
+          release, and claiming one would be false.
         </p>
       </LegalSection>
 
@@ -157,9 +164,12 @@ export default function PrivacyPage() {
           deletion in this release.
         </p>
         <p>
-          The identity of the data controller and the supervisory authority you
-          may complain to depend on the legal entity and jurisdiction, which are
-          not yet fixed: <Placeholder>DATA CONTROLLER AND JURISDICTION</Placeholder>.
+          The data controller is {DATA_CONTROLLER} Written notices may be sent to{" "}
+          {BUSINESS_MAILING_ADDRESS}. Because the controller is an individual
+          based in the United States rather than a company established in the
+          EU or UK, there is no lead EU or UK supervisory authority for this
+          service; where local law gives you a right to complain to a data
+          protection authority, that right is unaffected.
         </p>
       </LegalSection>
 
