@@ -1,7 +1,7 @@
 import type { Metadata } from "next";
 import Link from "next/link";
 
-import { LegalPage, LegalSection, Placeholder } from "@/components/legal";
+import { LegalPage, LegalSection } from "@/components/legal";
 // The commercial terms come from the same constants the sales page renders, so
 // the agreement and the offer cannot state different prices, durations or caps.
 import {
@@ -9,6 +9,17 @@ import {
   PILOT_MEMBER_CAP,
   PILOT_PRICE_USD,
 } from "@/lib/pilot";
+import {
+  BUSINESS_MAILING_ADDRESS,
+  DISPUTE_VENUE,
+  GOVERNING_JURISDICTION,
+  LIABILITY_CAP,
+  MINIMUM_AGE,
+  REFUND_POLICY,
+  SELLER_DESCRIPTION,
+  SELLER_LEGAL_NAME,
+  SERVICE_NAME,
+} from "@/lib/seller";
 import { absoluteUrl, SUPPORT_EMAIL } from "@/lib/site";
 
 export const metadata: Metadata = {
@@ -23,15 +34,20 @@ export default function TermsPage() {
     <LegalPage
       title="Terms of service"
       updated="2 August 2026"
-      summary="The agreement that will govern use of PMVL. It is a foundation: the commercial and jurisdictional terms are marked as placeholders because inventing them would be worse than leaving them open."
+      summary="The agreement governing use of PMVL and the Founding Research Pilot. The commercial and jurisdictional terms are now settled; the document still has not been reviewed by a lawyer, and the notice above says so."
     >
       <LegalSection id="parties" title="1. Who these terms are between">
         <p>
-          These terms are between you and <Placeholder>LEGAL ENTITY NAME</Placeholder>,
-          the operator of the Prediction Market Value Lab service at{" "}
-          <Placeholder>PRODUCT AND SERVICE NAME AS REGISTERED</Placeholder>{" "}
+          These terms are between you and {SELLER_LEGAL_NAME}, {SELLER_DESCRIPTION}{" "}
+          offering the Prediction Market Value Lab service and the {SERVICE_NAME}{" "}
           (&ldquo;PMVL&rdquo;, &ldquo;we&rdquo;, &ldquo;the service&rdquo;).
-          Registered address: <Placeholder>REGISTERED ADDRESS</Placeholder>.
+          Business mailing address: {BUSINESS_MAILING_ADDRESS}.
+        </p>
+        <p>
+          PMVL is operated by an individual, not by a company. There is no
+          corporation, limited liability company or partnership behind it, and
+          &ldquo;PMVL&rdquo; is the name of a service rather than a registered
+          trademark or a fictitious business name.
         </p>
         <p>
           By using the service you agree to these terms, to the{" "}
@@ -48,7 +64,7 @@ export default function TermsPage() {
 
       <LegalSection id="eligibility" title="2. Account eligibility">
         <p>
-          You must be at least <Placeholder>MINIMUM AGE</Placeholder> years old
+          You must be at least {MINIMUM_AGE} years old
           and legally able to enter into a contract to hold an account. You must
           provide accurate registration information and keep it current. You are
           responsible for activity under your account and for the security of the
@@ -137,21 +153,22 @@ export default function TermsPage() {
           purchase that ends by itself after {PILOT_DURATION_DAYS} days. No
           further payment is taken, so no cancellation step is required of you.
         </p>
+        <p>{REFUND_POLICY.beforeDelivery}</p>
+        <p>{REFUND_POLICY.afterDelivery}</p>
+        <p>{REFUND_POLICY.notCovered}</p>
         <p>
-          Refund policy: <Placeholder>REFUND POLICY</Placeholder>. Statutory
-          cancellation and refund rights that apply where you live are not
-          affected by anything in this section.
+          Statutory cancellation and refund rights that apply where you live are
+          not affected by anything in this section.
         </p>
       </LegalSection>
 
       <LegalSection id="ip" title="7. Intellectual property">
         <p>
           The software, models, methodology documentation, page designs and
-          written analysis on this site belong to{" "}
-          <Placeholder>LEGAL ENTITY NAME</Placeholder> or its licensors. Your
-          subscription grants a personal, non-exclusive, non-transferable right to
-          use the service for your own research. It does not transfer ownership
-          of anything.
+          written analysis on this site belong to {SELLER_LEGAL_NAME} or its
+          licensors. Your purchase grants a personal, non-exclusive,
+          non-transferable right to use the service for your own research. It
+          does not transfer ownership of anything.
         </p>
         <p>
           Underlying market data originates from the public Kalshi and Polymarket
@@ -181,10 +198,12 @@ export default function TermsPage() {
         <p>
           To the maximum extent permitted by law, we are not liable for trading
           losses, lost profits, or indirect or consequential loss arising from use
-          of the service. Where liability cannot lawfully be excluded, it is
-          limited to <Placeholder>LIABILITY CAP</Placeholder>. Nothing here
-          excludes liability for fraud or for anything else that cannot be
-          excluded by law.
+          of the service.
+        </p>
+        <p>{LIABILITY_CAP}</p>
+        <p>
+          Nothing here excludes liability for fraud or for anything else that
+          cannot be excluded by law.
         </p>
       </LegalSection>
 
@@ -214,10 +233,8 @@ export default function TermsPage() {
 
       <LegalSection id="law" title="11. Governing law and disputes">
         <p>
-          These terms are governed by the law of{" "}
-          <Placeholder>GOVERNING JURISDICTION</Placeholder>, and disputes will be
-          resolved in the courts of{" "}
-          <Placeholder>DISPUTE VENUE</Placeholder>, without prejudice to any
+          These terms are governed by the law of {GOVERNING_JURISDICTION}, and
+          disputes will be resolved in {DISPUTE_VENUE}, without prejudice to any
           mandatory consumer-protection rights available to you where you live.
         </p>
       </LegalSection>
@@ -241,7 +258,7 @@ export default function TermsPage() {
           >
             {SUPPORT_EMAIL}
           </a>
-          . Legal notices: <Placeholder>LEGAL NOTICE ADDRESS</Placeholder>.
+          . Legal notices: {SELLER_LEGAL_NAME}, {BUSINESS_MAILING_ADDRESS}.
         </p>
         <p>
           The contact address above is confirmed and monitored. It is the only

@@ -12,6 +12,65 @@ import { cleanup } from "@testing-library/react";
  * appears when something is already broken.
  */
 
+import {
+  PILOT_DURATION_DAYS,
+  PILOT_MEMBER_CAP,
+  PILOT_PRICE_USD,
+} from "@/lib/pilot";
+import {
+  BUSINESS_MAILING_ADDRESS,
+  DATA_CONTROLLER,
+  DATA_RETENTION_POLICY,
+  DISPUTE_VENUE,
+  GOVERNING_JURISDICTION,
+  LIABILITY_CAP,
+  MINIMUM_AGE,
+  REFUND_POLICY_SENTENCES,
+  SELLER_LEGAL_NAME,
+} from "@/lib/seller";
+
+/** The three documents a buyer is asked to accept. */
+const LEGAL_PAGES = [
+  "@/app/(site)/terms/page",
+  "@/app/(site)/privacy/page",
+  "@/app/(site)/risk-disclosure/page",
+] as const;
+
+/** Render a page (sync or async server component) and return its visible text. */
+async function renderText(specifier: string): Promise<string> {
+  const { default: Page } = await import(specifier);
+  const element = specifier.includes("founding-pilot") ? await Page() : <Page />;
+  const text = render(element).container.textContent ?? "";
+  cleanup();
+  return text;
+}
+
+/**
+ * Occurrences of `pattern` that are asserted rather than denied.
+ *
+ * A word-presence check cannot tell "this is a subscription" from "this is not a
+ * subscription", and the second is a sentence these pages *must* contain.
+ *
+ * The negation has to be checked next to the match, not anywhere in the
+ * sentence. Dropping every sentence containing "not" would skip
+ * "Your subscription renews monthly and cannot be cancelled" - a real violation
+ * hidden by an unrelated "cannot" later in the same sentence. So only the words
+ * immediately before each match are inspected.
+ */
+function unnegatedMatches(text: string, pattern: RegExp): string[] {
+  const global = new RegExp(pattern.source, `${pattern.flags.replace("g", "")}g`);
+  const found: string[] = [];
+  for (const match of text.matchAll(global)) {
+    const before = text.slice(Math.max(0, match.index - 44), match.index);
+    // "no automatic renewal", "not a subscription", "never renews", and the
+    // contrastive form - "a service rather than a registered trademark".
+    const negation = /(\b(no|not|never|nothing|neither|nor|without)\b|\b(rather|other) than\b)[^.!?]*$/i;
+    if (negation.test(before)) continue;
+    found.push(text.slice(Math.max(0, match.index - 70), match.index + 40).trim());
+  }
+  return found;
+}
+
 const redirectCalls: string[] = [];
 vi.mock("next/navigation", () => ({
   redirect: (url: string) => {
@@ -363,52 +422,150 @@ describe("legal pages", () => {
     }
   });
 
-  it("still marks every OTHER legal value as unresolved", async () => {
-    // Approving a support address is not approving the documents. These are the
-    // eleven decisions that remain outstanding; if one of them quietly acquires
-    // a value, this fails.
-    //
-    // BILLING CURRENCY, MONTHLY PRICE and ANNUAL PRICE were removed rather than
-    // filled in. They described a subscription, and the only product sold is a
-    // one-time USD 49 pilot, so the sections holding them were rewritten to
-    // state the real offer. Deleting a placeholder because the thing it
-    // described does not exist is the opposite of quietly inventing a value for
-    // it - the remaining eleven are still unresolved and still visible.
-    const expected = [
-      "DATA CONTROLLER AND JURISDICTION",
-      "DATA RETENTION POLICY",
-      "DISPUTE VENUE",
-      "GOVERNING JURISDICTION",
-      "LEGAL ENTITY NAME",
-      "LEGAL NOTICE ADDRESS",
-      "LIABILITY CAP",
-      "MINIMUM AGE",
-      "PRODUCT AND SERVICE NAME AS REGISTERED",
-      "REFUND POLICY",
-      "REGISTERED ADDRESS",
-    ];
-    const seen = new Set<string>();
-    for (const specifier of ["@/app/(site)/terms/page", "@/app/(site)/privacy/page"]) {
-      const { default: Page } = await import(specifier);
-      const { container } = render(<Page />);
-      for (const mark of container.querySelectorAll("mark")) {
-        const text = (mark.textContent ?? "").replace(/^\[|\s*—.*$/g, "").trim();
-        if (text) seen.add(text);
-      }
-      cleanup();
-    }
-    expect([...seen].sort()).toEqual(expected);
-    // And the support address is NOT among them any more.
-    expect(seen.has("SUPPORT EMAIL")).toBe(false);
+  it("the claim detector catches assertions and ignores denials", () => {
+    // The two checks below are only worth anything if this helper actually
+    // fires. A negation rule loose enough to excuse everything would let the
+    // suite pass while the pages said whatever they liked.
+    const pattern = /\bsubscription\b/i;
+    expect(unnegatedMatches("This is not a subscription.", pattern)).toEqual([]);
+    expect(unnegatedMatches("One time, never a subscription.", pattern)).toEqual([]);
+    expect(
+      unnegatedMatches("A service rather than a subscription.", pattern),
+    ).toEqual([]);
+    expect(unnegatedMatches("Your subscription renews.", pattern)).toHaveLength(1);
+    // The case a whole-sentence filter would have missed: a real claim sharing a
+    // sentence with an unrelated negation.
+    expect(
+      unnegatedMatches("Your subscription renews and cannot be cancelled.", pattern),
+    ).toHaveLength(1);
+    // A negation belonging to the previous sentence must not excuse this one.
+    expect(
+      unnegatedMatches("Nothing renews. Your subscription is billed again.", pattern),
+    ).toHaveLength(1);
   });
 
-  it("marks every unresolved owner decision visibly rather than inventing one", async () => {
-    for (const specifier of ["@/app/(site)/terms/page", "@/app/(site)/privacy/page"]) {
+  it("has no unresolved owner placeholder left anywhere", async () => {
+    // The owner supplied every outstanding value, so the inverse of the old
+    // assertion now holds. This is the check that has to survive: a document
+    // going to a paying customer must not contain a bracketed blank, and the
+    // previous version of this test would have passed happily while one did.
+    for (const specifier of LEGAL_PAGES) {
       const { default: Page } = await import(specifier);
       const { container } = render(<Page />);
-      expect(container.querySelectorAll("mark").length).toBeGreaterThan(0);
-      expect(container.textContent).toContain("OWNER INPUT REQUIRED");
+      expect(container.querySelectorAll("mark").length, specifier).toBe(0);
+      expect(container.textContent, specifier).not.toContain("OWNER INPUT REQUIRED");
       cleanup();
+    }
+  });
+
+  it("keeps the counsel-review warning", async () => {
+    // Resolving the values is not legal review, and nothing in this change made
+    // it so. The banner is the only thing telling a reader that, so it outranks
+    // every value that was just filled in.
+    for (const specifier of LEGAL_PAGES) {
+      const { default: Page } = await import(specifier);
+      const { container } = render(<Page />);
+      expect(container.textContent, specifier).toMatch(/not been reviewed .{0,40}by a lawyer/i);
+      cleanup();
+    }
+  });
+
+  it("names an individual seller and claims no company", async () => {
+    // The seller is a person. A stray "LLC", "Inc" or registered-trademark claim
+    // would misrepresent who the buyer is contracting with, and is the sort of
+    // thing a template edit reintroduces silently.
+    //
+    // Denials are not claims. "There is no corporation, limited liability
+    // company or partnership behind it" contains the words and is precisely the
+    // sentence that should be there, so negated sentences are excluded before
+    // the check rather than the words being allowed everywhere.
+    const forbidden =
+      /\b(LLC|L\.L\.C\.|Inc\.?|Incorporated|Corporation|Corp\.?|GmbH|Ltd\.?|limited liability|registered trademark)\b|®/i;
+    for (const specifier of [...LEGAL_PAGES, "@/app/(site)/founding-pilot/page"]) {
+      const claims = unnegatedMatches(await renderText(specifier), forbidden);
+      expect(claims, `${specifier} claims a company exists`).toEqual([]);
+    }
+  });
+
+  it("renders the resolved seller facts on the pages that need them", async () => {
+    const { default: Terms } = await import("@/app/(site)/terms/page");
+    const terms = render(<Terms />).container.textContent ?? "";
+    expect(terms).toContain(SELLER_LEGAL_NAME);
+    expect(terms).toContain(BUSINESS_MAILING_ADDRESS);
+    expect(terms).toContain(GOVERNING_JURISDICTION);
+    expect(terms).toContain(DISPUTE_VENUE);
+    expect(terms).toContain(LIABILITY_CAP);
+    expect(terms).toContain(String(MINIMUM_AGE));
+    for (const sentence of REFUND_POLICY_SENTENCES) {
+      expect(terms, "the refund policy must appear in full").toContain(sentence);
+    }
+    cleanup();
+
+    const { default: Privacy } = await import("@/app/(site)/privacy/page");
+    const privacy = render(<Privacy />).container.textContent ?? "";
+    expect(privacy).toContain(DATA_RETENTION_POLICY);
+    expect(privacy).toContain(DATA_CONTROLLER);
+    cleanup();
+  });
+
+  it("shows the refund policy on the sales page before the payment CTA", async () => {
+    // Order matters, not just presence. A refund policy a buyer only meets after
+    // paying is a policy written for the seller.
+    const { default: Page } = await import("@/app/(site)/founding-pilot/page");
+    const { container } = render(await Page());
+    const text = container.textContent ?? "";
+    for (const sentence of REFUND_POLICY_SENTENCES) {
+      expect(text).toContain(sentence);
+    }
+    const cta = container.querySelector("a.btn-primary");
+    expect(cta).toBeTruthy();
+    const policyNode = [...container.querySelectorAll("li")].find((li) =>
+      (li.textContent ?? "").includes(REFUND_POLICY_SENTENCES[0]),
+    );
+    expect(policyNode).toBeTruthy();
+    // DOCUMENT_POSITION_FOLLOWING means the CTA comes after the policy.
+    expect(
+      policyNode!.compareDocumentPosition(cta!) & Node.DOCUMENT_POSITION_FOLLOWING,
+    ).toBeTruthy();
+    cleanup();
+  });
+
+  it("states the commercial terms identically on the sales page and the terms", async () => {
+    const { default: Pilot } = await import("@/app/(site)/founding-pilot/page");
+    const pilot = (render(await Pilot()).container.textContent ?? "");
+    cleanup();
+    const { default: Terms } = await import("@/app/(site)/terms/page");
+    const terms = render(<Terms />).container.textContent ?? "";
+    cleanup();
+    for (const page of [pilot, terms]) {
+      expect(page).toMatch(new RegExp(`\\$?${PILOT_PRICE_USD}`));
+      expect(page).toContain(`${PILOT_DURATION_DAYS} days`);
+      expect(page).toContain(String(PILOT_MEMBER_CAP));
+    }
+  });
+
+  it("has no subscription or recurring-billing language on any of them", async () => {
+    // Same rule as above: "no automatic renewal" and "one time, not a
+    // subscription" are denials and must survive. What must not survive is a
+    // sentence describing a recurring charge as something that happens.
+    const forbidden = [
+      /\brenews?\b/i,
+      /\brenewal\b/i,
+      /\brecurring\b/i,
+      /\bper month\b/i,
+      /\bper year\b/i,
+      /\bmonthly\b/i,
+      /\bannual(ly)?\b/i,
+      /\bbilling period\b/i,
+      /\bcustomer portal\b/i,
+      /\byour subscription\b/i,
+    ];
+    for (const specifier of [...LEGAL_PAGES, "@/app/(site)/founding-pilot/page"]) {
+      const text = await renderText(specifier);
+      for (const pattern of forbidden) {
+        const claims = unnegatedMatches(text, pattern);
+        expect(claims, `${specifier} asserts ${pattern}`).toEqual([]);
+      }
     }
   });
 });

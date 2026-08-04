@@ -10,6 +10,11 @@ import {
   pilotPaymentLink,
   pilotSeatsRemaining,
 } from "@/lib/pilot";
+import {
+  REFUND_POLICY,
+  SELLER_DESCRIPTION,
+  SELLER_LEGAL_NAME,
+} from "@/lib/seller";
 import { absoluteUrl, SUPPORT_EMAIL } from "@/lib/site";
 
 export const dynamic = "force-dynamic";
@@ -67,6 +72,68 @@ export default function FoundingPilotPage() {
             </dd>
           </div>
         </dl>
+
+        {/*
+          Before the button, not after it. A refund policy a buyer has to go
+          looking for once they have already paid is a policy written for the
+          seller. These are the terms of the purchase, so they belong between the
+          price and the thing that takes the money.
+        */}
+        <div className="mt-8 max-w-2xl rounded-[3px] border border-line px-4 py-4">
+          <p className="t-label">Before you buy</p>
+          <ul className="mt-3 space-y-2 t-meta">
+            <li>
+              <strong className="text-ink-muted">
+                USD {PILOT_PRICE_USD}, charged once.
+              </strong>{" "}
+              Not a subscription. Nothing renews, and there is nothing to cancel.
+            </li>
+            <li>
+              <strong className="text-ink-muted">
+                {PILOT_DURATION_DAYS} days
+              </strong>{" "}
+              of reports, counted from your first delivery — not from the day you
+              pay.
+            </li>
+            <li>
+              <strong className="text-ink-muted">
+                {PILOT_MEMBER_CAP} places in this first cohort.
+              </strong>{" "}
+              Delivery is a person sending you an email, which is why the number
+              is small.
+            </li>
+            <li>
+              <strong className="text-ink-muted">
+                A report with zero actionable candidates is a valid delivery.
+              </strong>{" "}
+              Most days are that day. You are buying the scan and its reasoning,
+              not a promise that it finds something.
+            </li>
+            <li>{REFUND_POLICY.beforeDelivery}</li>
+            <li>{REFUND_POLICY.afterDelivery}</li>
+            <li>{REFUND_POLICY.notCovered}</li>
+            <li>
+              Sold by {SELLER_LEGAL_NAME}, {SELLER_DESCRIPTION} — not a company.
+              PMVL holds no customer funds, places no trades and has no execution
+              access to any venue. Full{" "}
+              <Link href="/terms" className="underline underline-offset-2">
+                terms
+              </Link>
+              ,{" "}
+              <Link href="/privacy" className="underline underline-offset-2">
+                privacy notice
+              </Link>{" "}
+              and{" "}
+              <Link
+                href="/risk-disclosure"
+                className="underline underline-offset-2"
+              >
+                risk disclosure
+              </Link>
+              .
+            </li>
+          </ul>
+        </div>
 
         <div className="mt-8 flex flex-wrap items-center gap-3">
           {paymentLink ? (
