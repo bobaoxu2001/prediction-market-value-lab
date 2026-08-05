@@ -15,7 +15,7 @@ from __future__ import annotations
 
 import pytest
 
-from pmvl_shared.money import D, ZERO
+from pmvl_shared.money import D, ONE, ZERO
 
 from pmvl_markets.probability.independence import (
     COMPONENT_INDEPENDENCE,
@@ -379,3 +379,169 @@ class TestCryptoPriceBands:
         from pmvl_markets.probability.categories.crypto import _text_price_band
 
         assert _text_price_band("Bitcoin $62,000 to $60,000") == (D("60000"), D("62000"))
+
+
+class TestTheGateDecidesOnTheFigureItDocuments:
+    """`conservative_decision_probability` is named as the eligibility figure.
+
+    For as long as it existed the gate read `fair_probability_low` instead - the
+    market-informed ensemble's bound, which the target market's own price helps
+    produce. Measuring that against the same market's ask is close to circular,
+    and it is the mechanism behind this platform never publishing a single live
+    recommendation: on the snapshot that exposed it, 98 of 498 decision-ready
+    predictions had a higher independent bound than the one being gated on, by as
+    much as 28 cents.
+    """
+
+    @staticmethod
+    def _fair(**overrides):  # noqa: ANN205
+        from pmvl_shared.schemas import FairProbability
+
+        base = dict(
+            fair_probability_mean=D("0.30"),
+            fair_probability_low=D("0.05"),
+            fair_probability_high=D("0.60"),
+            model_confidence=D("0.5"),
+            evidence_quality=ZERO,
+            model_version="test",
+            has_independent_prior=True,
+            independent_probability=D("0.40"),
+            independent_probability_low=D("0.25"),
+            independent_probability_high=D("0.70"),
+            conservative_decision_probability=D("0.22"),
+            independence={"conservative_decision_probability_no": "0.18"},
+        )
+        base.update(overrides)
+        return FairProbability(**base)
+
+    def test_yes_uses_the_independent_decision_figure(self) -> None:
+        from pmvl_shared.enums import Side
+        from pmvl_markets.value.ranking import win_probability_for_side
+
+        _mean, bound = win_probability_for_side(self._fair(), Side.YES)
+        assert bound == D("0.22")
+
+    def test_no_uses_its_own_stored_figure_not_one_minus_the_yes_one(self) -> None:
+        """`1 - conservative_decision_probability` would be the OPTIMISTIC bound.
+
+        The NO buyer's pessimistic case is YES being more likely than estimated,
+        so the figure has to come from `1 - independent_high` put through the same
+        shrink. Deriving it from the YES number would hand every NO candidate
+        1 - 0.22 = 0.78 and overstate the side's edge enormously.
+        """
+        from pmvl_shared.enums import Side
+        from pmvl_markets.value.ranking import win_probability_for_side
+
+        _mean, bound = win_probability_for_side(self._fair(), Side.NO)
+        assert bound == D("0.18")
+        assert bound != ONE - D("0.22")
+
+    def test_the_mean_stays_market_informed(self) -> None:
+        # The mean drives display and sizing, not admission, and the
+        # market-informed figure is the better calibrated of the two.
+        from pmvl_shared.enums import Side
+        from pmvl_markets.value.ranking import win_probability_for_side
+
+        mean, _bound = win_probability_for_side(self._fair(), Side.YES)
+        assert mean == D("0.30")
+
+    def test_it_falls_back_when_there_is_no_independent_estimate(self) -> None:
+        from pmvl_shared.enums import Side
+        from pmvl_markets.value.ranking import win_probability_for_side
+
+        fair = self._fair(
+            has_independent_prior=False,
+            conservative_decision_probability=None,
+            independence=None,
+        )
+        _mean, bound = win_probability_for_side(fair, Side.YES)
+        assert bound == D("0.05")  # the old market-informed bound
+
+    def test_a_malformed_stored_figure_does_not_crash_the_gate(self) -> None:
+        from pmvl_shared.enums import Side
+        from pmvl_markets.value.ranking import win_probability_for_side
+
+        fair = self._fair(independence={"conservative_decision_probability_no": "n/a"})
+        _mean, bound = win_probability_for_side(fair, Side.NO)
+        assert bound == ONE - D("0.60")  # falls back to 1 - high
+
+
+class TestTheEnsembleOutputSurvivesPersistence:
+    """Whatever the ensemble puts in `independence` must reach a JSON column.
+
+    The NO-side decision figure was first stored as a `Decimal`, which
+    `json.dumps` cannot encode. Every `score` run then died with "Object of type
+    Decimal is not JSON serializable" and the pipeline refused to publish.
+
+    The unit test alongside it passed throughout, because its fixture was written
+    by hand with a string in that slot instead of round-tripping the real
+    ensemble output. A test that builds its own input cannot catch a defect in
+    how the input is produced.
+    """
+
+    @pytest.mark.asyncio
+    async def test_the_independence_report_is_json_serialisable(self) -> None:
+        import json
+        from datetime import timedelta
+
+        from pmvl_shared.enums import Category, MarketStatus, Platform
+        from pmvl_shared.schemas import NormalizedMarket
+        from pmvl_shared.timeutil import utcnow
+
+        from pmvl_markets.probability.base import (
+            ModelContext,
+            ModelEstimate,
+            ProbabilityModel,
+        )
+        from pmvl_markets.probability.ensemble import ProbabilityEnsemble
+
+        class StubIndependentModel(ProbabilityModel):
+            """Borrows a registered independent name so `classify` treats it as one.
+
+            Independence is decided by the component's registered NAME, not by the
+            estimate's own flag, so an invented name would be classified
+            market-informed and the field under test would stay None - which is
+            exactly how the first version of this test passed against the bug.
+            """
+
+            name = "crypto_gbm_threshold"
+            independent = True
+
+            async def estimate(self, ctx: ModelContext) -> ModelEstimate:
+                return ModelEstimate(
+                    probability=D("0.40"),
+                    confidence=D("0.5"),
+                    stdev=D("0.10"),
+                    independent=True,
+                    detail="stub",
+                )
+
+        market = NormalizedMarket(
+            platform=Platform.KALSHI,
+            platform_market_id="KXTEST-JSON",
+            title="Will the test market settle above 100?",
+            category=Category.OTHER,
+            status=MarketStatus.OPEN,
+            accepting_orders=True,
+            tick_size=D("0.01"),
+            min_order_size=D("1"),
+            fee_rate=D("0.07"),
+            fee_type="quadratic",
+            expected_resolution_time=utcnow() + timedelta(hours=6),
+            volume_24h=D("50000"),
+        )
+
+        ensemble = ProbabilityEnsemble(models=[StubIndependentModel()])
+        try:
+            output = await ensemble.estimate(ModelContext(market=market))
+        finally:
+            await ensemble.aclose()
+
+        report = output.fair.independence
+        assert report is not None
+        # The field must actually be populated, or this test proves nothing.
+        assert report["conservative_decision_probability_no"] is not None
+
+        # The exact operation SQLAlchemy performs on the way into the column.
+        json.dumps(report)
+        json.dumps(output.fair.component_independence)

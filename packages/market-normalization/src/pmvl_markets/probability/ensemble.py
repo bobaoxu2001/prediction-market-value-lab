@@ -358,7 +358,7 @@ class ProbabilityEnsemble:
         # an estimate resting on one correlation group is a single point of failure
         # however confident that one source claims to be.
         independent_low = independent_high = None
-        conservative = None
+        conservative = conservative_no = None
         if independent_mean is not None:
             ind_sigma = sigma * model_risk_multiplier(independence)
             ind_half = D("1.2816") * ind_sigma
@@ -369,11 +369,30 @@ class ProbabilityEnsemble:
                 (metadata_for(m.name).reliability_weight for m, _ in independent_opinions),
                 default=ZERO,
             )
+            freshness_penalty = D("0.02") if max_age > 3600 else ZERO
             conservative = conservative_decision_probability(
                 independent_low=independent_low,
                 report=independence,
                 reliability=reliability,
-                freshness_penalty=D("0.02") if max_age > 3600 else ZERO,
+                freshness_penalty=freshness_penalty,
+            )
+            # The same figure for a NO buyer, whose pessimistic case is the one
+            # where YES is MORE likely than estimated.
+            #
+            # It has to be computed here rather than derived downstream: it is
+            # `1 - independent_high` put through the same reliability shrink and
+            # freshness penalty, and neither of those inputs survives into the
+            # stored prediction. Deriving it from the YES figure instead would
+            # need `1 - low`, which is the optimistic bound and would overstate
+            # every NO-side edge - the exact error `win_probability_for_side`
+            # already warns about for the market-informed bounds.
+            conservative_no = conservative_decision_probability(
+                independent_low=(
+                    ONE - independent_high if independent_high is not None else None
+                ),
+                report=independence,
+                reliability=reliability,
+                freshness_penalty=freshness_penalty,
             )
 
         research_result = self._research_model.last_result
@@ -415,7 +434,29 @@ class ProbabilityEnsemble:
             conservative_decision_probability=(
                 quantize_prob(conservative) if conservative is not None else None
             ),
-            independence=independence.as_dict(),
+            # The NO-side decision figure rides in the independence report rather
+            # than in its own column: it belongs to that report, and a JSON field
+            # already exists for it. `conservative_decision_probability` remains
+            # the YES-side column it has always been.
+            independence={
+                **independence.as_dict(),
+                # A string, not a Decimal: this dict is persisted to a JSON
+                # column and `json.dumps` cannot encode Decimal. Storing the
+                # Decimal made the whole `score` job fail with "Object of type
+                # Decimal is not JSON serializable", which took the pipeline down
+                # rather than corrupting a snapshot - the DAG failing closed is
+                # working as designed, but the value has to be encodable.
+                #
+                # String rather than float, for the same reason every other money
+                # and probability figure crossing a boundary here is a string:
+                # float() would reintroduce the representation error the Decimal
+                # core exists to avoid.
+                "conservative_decision_probability_no": (
+                    str(quantize_prob(conservative_no))
+                    if conservative_no is not None
+                    else None
+                ),
+            },
             component_independence={
                 model.name: metadata_for(model.name).as_dict() for model, _ in opinions
             },

@@ -25,7 +25,7 @@ from __future__ import annotations
 import math
 from dataclasses import dataclass
 from datetime import datetime
-from decimal import Decimal
+from decimal import Decimal, InvalidOperation
 from typing import Sequence
 
 from pmvl_shared.config import get_settings
@@ -91,10 +91,55 @@ def win_probability_for_side(fair: FairProbability, side: Side) -> tuple[Decimal
     a NO buyer is the case where YES is more likely than estimated, i.e.
     ``1 - fair_probability_high``. Using ``1 - low`` would be the optimistic bound and
     would systematically overstate NO-side edge.
+
+    The **bound** is the independent decision figure wherever one exists.
+
+    It used to be ``fair_probability_low``, the market-informed ensemble's lower
+    bound - a figure the target market's own price helps produce. Comparing it
+    against that same market's ask is close to circular: the bound is dragged
+    toward the price it is being measured against, so it can essentially never
+    clear it. That is the mechanism behind this platform never having published a
+    single live recommendation. On the snapshot that exposed it, 98 of 498
+    decision-ready predictions had a *higher* independent bound than the
+    market-informed one the gate was reading, by as much as 28 cents.
+
+    ``conservative_decision_probability`` is documented in two places as "the
+    figure eligibility is decided on"; it simply was never wired to the gate. The
+    split-probability migration introduced it and stopped there.
+
+    The mean is deliberately left market-informed: it is the better-calibrated
+    number and it drives display and sizing, not admission.
     """
     if side == Side.YES:
-        return fair.fair_probability_mean, fair.fair_probability_low
-    return ONE - fair.fair_probability_mean, ONE - fair.fair_probability_high
+        mean, fallback = fair.fair_probability_mean, fair.fair_probability_low
+        decision = fair.conservative_decision_probability
+    else:
+        mean, fallback = ONE - fair.fair_probability_mean, ONE - fair.fair_probability_high
+        decision = _no_side_decision_probability(fair)
+
+    # Falls back to the old bound when no independent estimate exists. Such a
+    # candidate cannot be recommended anyway - `require_independent_prior` rejects
+    # it - so this only affects what a rejected candidate reports.
+    return mean, decision if decision is not None else fallback
+
+
+def _no_side_decision_probability(fair: FairProbability) -> Decimal | None:
+    """The NO-side decision figure the ensemble stored alongside its report.
+
+    Carried in the independence report rather than its own column. Deriving it
+    here from the YES figure is not possible: that would need ``1 - low``, the
+    *optimistic* bound, which is the error this function's docstring warns about.
+    """
+    report = fair.independence
+    if not isinstance(report, dict):
+        return None
+    raw = report.get("conservative_decision_probability_no")
+    if raw is None:
+        return None
+    try:
+        return Decimal(str(raw))
+    except (InvalidOperation, ValueError):
+        return None
 
 
 def build_candidate(
