@@ -114,8 +114,63 @@ def main(argv: list[str] | None = None) -> int:
         """
     )
 
-    # Markets with neither a book nor a prediction cannot render anything useful,
-    # and the browser paginates over what remains.
+    # A prediction on a market that has already settled is never recomputed:
+    # scoring only visits open markets, so the row survives every later run
+    # unchanged, still carrying whatever the model said the last time the market
+    # was live. After the touch-formula and band-parsing fixes, the only estimates
+    # left in the artefact that disagreed wildly with their market were exactly
+    # these - "reach $67,500" at 0.94 against a market at 0.0045, computed by a
+    # formula that no longer exists in the tree the manifest names.
+    #
+    # They cannot be acted on and they are not evidence of anything: the model
+    # that produced them is gone. Predictions a recommendation points at are kept
+    # regardless, because the track record and case study resolve through
+    # `recommendations.prediction_id` and that audit trail must not lose its
+    # subject.
+    #
+    # `settled`/`closed` are named rather than `status != 'open'`: the vocabulary
+    # also contains `paused` and `unknown`, and a market whose status could not be
+    # read is not one whose estimate should be silently discarded.
+    cur.execute(
+        """
+        DELETE FROM model_predictions
+        WHERE market_id IN (
+                SELECT id FROM markets WHERE status IN ('settled', 'closed')
+            )
+          AND id NOT IN (
+              SELECT prediction_id FROM recommendations WHERE prediction_id IS NOT NULL
+          )
+        """
+    )
+
+    # What a market needs to earn a place in the artefact.
+    #
+    # This used to be "has a book, a prediction, a recommendation or a
+    # settlement". Books are capped at a few hundred per cycle, and predictions
+    # only exist where a book does, so the rule reduced ~8,000 ingested markets to
+    # ~340 and the public browser showed 4% of either venue. Someone looking up a
+    # contract they hold almost never found it, which is a poor reason to lose a
+    # reader.
+    #
+    # An open market carrying a quote can now render something useful without a
+    # book: execution cost needs no probability, and fees, tick rounding, transfer
+    # and capital cost are exact from the market row alone. Depth impact is the
+    # only component that needs a ladder, and its absence is already reported
+    # rather than assumed to be zero. So the quote itself is the admission test.
+    #
+    # Bounded three ways: open only, quoted only, and traded in the last 24 hours.
+    #
+    # The volume floor is what makes this fit. Of 11,849 open quoted markets on the
+    # run that sized this, 9,450 - eighty per cent - had no 24h volume at all, and
+    # carrying them cost about 21 MB against a 40 MB ceiling. A quoted contract
+    # nobody has traded today is not one a reader is looking up; it is a venue
+    # leaving a board open. Keeping the 2,386 that did trade takes the browsable
+    # universe from ~340 to ~2,400 for roughly 5 MB.
+    #
+    # `volume_24h` is a Money column, stored as TEXT. Comparing it to a number
+    # without the cast is not a tighter filter, it is no filter: SQLite orders
+    # every TEXT value above every INTEGER, so `volume_24h >= 5000` selected all
+    # 11,849 rows including the zero-volume ones.
     cur.execute(
         """
         DELETE FROM markets WHERE id NOT IN (
@@ -123,6 +178,11 @@ def main(argv: list[str] | None = None) -> int:
             UNION SELECT market_id FROM model_predictions
             UNION SELECT market_id FROM recommendations
             UNION SELECT market_id FROM settlements WHERE market_id IS NOT NULL
+            UNION SELECT id FROM markets
+                WHERE status = 'open'
+                  AND accepting_orders = 1
+                  AND (best_yes_ask IS NOT NULL OR best_no_ask IS NOT NULL)
+                  AND CAST(COALESCE(volume_24h, '0') AS REAL) > 0
         )
         """
     )
@@ -180,10 +240,15 @@ def _write_manifest(counts: dict[str, int], size: int) -> None:
     con = _sqlite3.connect(TARGET)
     try:
         def scalar(sql: str):  # noqa: ANN202
+            # `fetchone()` returns None for an empty result, and subscripting that
+            # raises TypeError - which the sqlite3.Error guard below never caught.
+            # A run whose scoring produced nothing therefore crashed the builder
+            # here rather than writing a manifest saying so.
             try:
-                return con.execute(sql).fetchone()[0]
+                row = con.execute(sql).fetchone()
             except _sqlite3.Error:
                 return None
+            return row[0] if row else None
 
         schema_version = scalar("SELECT version_num FROM alembic_version") or "unknown"
         model_version = scalar(
