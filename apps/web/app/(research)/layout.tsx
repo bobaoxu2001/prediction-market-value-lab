@@ -21,8 +21,13 @@ import { ThemeToggle } from "@/components/ThemeToggle";
 
 const NAV = [
   { href: "/app", label: "Briefing" },
+  // Placed second, ahead of the opportunity surfaces. It is the one page that has
+  // an answer on every visit: cost needs no probability estimate, so it is not
+  // gated on the independence rule that keeps the others empty most days.
+  { href: "/cost", label: "Cost" },
   { href: "/arbitrage", label: "Arbitrage" },
   { href: "/markets", label: "Markets" },
+  { href: "/watchlist", label: "Watchlist" },
   { href: "/backtest", label: "Backtest" },
   { href: "/track-record", label: "Track record" },
   { href: "/methodology", label: "Methodology" },

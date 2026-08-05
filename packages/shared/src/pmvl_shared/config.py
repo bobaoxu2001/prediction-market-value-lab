@@ -82,6 +82,18 @@ class Settings(BaseSettings):
     # ---------------------------------------------------------------- ingest scope
     ingest_market_limit: int = Field(default=1200)
     ingest_orderbook_limit: int = Field(default=250)
+    #: Share of each cycle's orderbook budget reserved for markets picked by
+    #: liquidity alone, ignoring whether any model can score them.
+    #:
+    #: Execution cost needs no probability estimate, so a book bought here still
+    #: buys a complete answer for the politics, sports and macro contracts the
+    #: models decline - which are also the contracts people look up most. Without
+    #: a reserve those markets sort behind every crypto and weather market and the
+    #: budget is exhausted before reaching them, so their coverage is decided by
+    #: arithmetic rather than by judgement.
+    #:
+    #: Set to 0 to restore the previous scoring-only allocation.
+    orderbook_coverage_share: float = Field(default=0.4, ge=0.0, le=1.0)
     orderbook_depth: int = Field(default=25)
     #: Markets below this 24h dollar volume are ingested but never ranked, because a
     #: quote nobody trades against is not an executable price.

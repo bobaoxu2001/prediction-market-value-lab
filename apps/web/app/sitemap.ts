@@ -9,12 +9,17 @@ import { absoluteUrl } from "@/lib/site";
  * private or worthless as search results; `/market/[id]`, because the snapshot's
  * two thousand market pages change identity between publications and would fill
  * an index with URLs that later resolve to a different contract; and every
- * `?mode=demo` variant, which would put synthetic data in search results.
+ * `?mode=demo` variant, which would put synthetic data in search results; and
+ * `/watchlist`, which renders one browser's local storage and is therefore
+ * empty for every visitor who did not create it.
  */
 export default function sitemap(): MetadataRoute.Sitemap {
   const entries: Array<{ path: string; priority: number; changeFrequency: "daily" | "weekly" | "monthly" }> = [
     { path: "/", priority: 1, changeFrequency: "weekly" },
     { path: "/app", priority: 0.9, changeFrequency: "daily" },
+    // High priority: it is the surface that answers on every visit, and the one
+    // whose subject ("what does this contract really cost") people search for.
+    { path: "/cost", priority: 0.9, changeFrequency: "daily" },
     { path: "/pricing", priority: 0.8, changeFrequency: "monthly" },
     { path: "/founding-pilot", priority: 0.8, changeFrequency: "monthly" },
     { path: "/markets", priority: 0.7, changeFrequency: "daily" },

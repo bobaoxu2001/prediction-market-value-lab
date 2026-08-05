@@ -725,6 +725,21 @@ def promote(candidate: Path, outcome: RunOutcome) -> None:
         # only after the exact bundle has passed its final verification and
         # immediately before installing the pair.
         manifest["release_status"] = ReleaseStatus.PUBLISHED
+        # Lineage, stamped here for the same reason `_emit_candidate` stamps it.
+        #
+        # It used to be stamped ONLY there, on the path CI takes. A local
+        # promotion therefore published an artefact with `parent_snapshot_id` and
+        # `parent_snapshot_sha256` absent, silently breaking the chain back to the
+        # previous publication - the one property that lets a reader walk a
+        # published figure back through the artefacts that produced it. The run
+        # report carried the values the whole time; they simply never reached the
+        # manifest on this path.
+        manifest["parent_snapshot_id"] = outcome.parent_snapshot_id
+        manifest["parent_snapshot_sha256"] = outcome.parent_snapshot_sha256
+        manifest["pipeline_run_id"] = outcome.run_id
+        # Empty on a local run, and honestly so: there is no workflow behind it.
+        manifest["workflow_run_id"] = os.environ.get("GITHUB_RUN_ID", "")
+        manifest["workflow_run_attempt"] = os.environ.get("GITHUB_RUN_ATTEMPT", "")
         candidate_manifest.write_text(
             json.dumps(manifest, indent=2, sort_keys=True) + "\n"
         )

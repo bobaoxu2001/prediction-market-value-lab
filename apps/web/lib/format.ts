@@ -19,6 +19,24 @@ export function cents(value: string | number | null | undefined): string {
   return `${(parsed * 100).toFixed(1)}¢`;
 }
 
+/**
+ * Contract price in cents, keeping sub-tenth-of-a-cent detail.
+ *
+ * `cents` rounds to one decimal, which is right for a price column and wrong for
+ * a cost decomposition: a venue fee of $0.0001 is 0.01¢ and renders as "0.0¢",
+ * so the table breaking a premium into its parts showed several components as
+ * zero and did not sum to its own total. Trailing zeros are trimmed so the common
+ * case still reads as "1.0¢" rather than "1.00¢".
+ */
+export function centsFine(value: string | number | null | undefined): string {
+  const parsed = num(value);
+  if (parsed === null) return "—";
+  const scaled = parsed * 100;
+  if (scaled !== 0 && Math.abs(scaled) < 0.1) return `${scaled.toFixed(3)}¢`;
+  const fixed = scaled.toFixed(2);
+  return `${fixed.endsWith("0") ? scaled.toFixed(1) : fixed}¢`;
+}
+
 export function usd(
   value: string | number | null | undefined,
   digits = 2,

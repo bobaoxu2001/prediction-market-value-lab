@@ -89,6 +89,24 @@
   --unverified: 118 82 8;
 
   --focus: 31 92 139;
+
+  /*
+   * Sequential ramp for magnitude, light -> dark.
+   *
+   * One hue, because the quantity it encodes (execution-cost premium) is a
+   * magnitude, not an identity and not a polarity. A premium is always a cost:
+   * there is no "good" end to colour green, so a diverging or status palette
+   * would invent a meaning the data does not have.
+   *
+   * Steps are the accent hue re-stepped for monotone lightness with visible gaps,
+   * and the light end is darkened until it clears the surface at 2:1 - validated
+   * with the dataviz skill's checker in ordinal mode rather than by eye.
+   */
+  --ramp-1: 143 182 210;
+  --ramp-2: 108 155 192;
+  --ramp-3: 74 127 168;
+  --ramp-4: 42 96 137;
+  --ramp-5: 18 58 87;
 }
 
 .dark {
@@ -122,6 +140,20 @@
   --unverified: 214 158 64;
 
   --focus: 122 174 219;
+
+  /*
+   * The dark ramp is SELECTED, not an inversion of the light one.
+   *
+   * Flipping the light steps would put the ramp's light end nearly on top of the
+   * dark surface, where the lowest-magnitude circles disappear. These steps are
+   * re-derived against the dark surface and validated the same way: monotone
+   * lightness, visible gaps, single hue, light end clearing the surface at 2:1.
+   */
+  --ramp-1: 51 84 111;
+  --ramp-2: 67 118 155;
+  --ramp-3: 90 151 193;
+  --ramp-4: 121 181 218;
+  --ramp-5: 158 208 236;
 }
 
 @layer base {
@@ -281,6 +313,29 @@
   th.numeric,
   td.numeric {
     @apply text-right;
+  }
+
+  /*
+   * A row header that carries the row's identity, not a column label.
+   *
+   * The bare `th` rule above is written for `thead`: 10.5px, uppercase, faint.
+   * That is correct for "QUOTED" and wrong for a contract title, which is the
+   * primary content of its row and was rendering as shouted fine print.
+   *
+   * The element stays a `th scope="row"` because that is what lets a screen
+   * reader announce which contract each measurement belongs to; only the
+   * typography is returned to body text. Wrapping rather than truncating, for
+   * the same reason `.col-title` does: the title is the only thing identifying
+   * the row, and there is no recovery from a clipped one.
+   */
+  th.cell-title {
+    @apply whitespace-normal text-sm font-normal normal-case leading-snug tracking-normal text-ink;
+    min-width: 13rem;
+  }
+  @screen lg {
+    th.cell-title {
+      min-width: 20rem;
+    }
   }
 
   /*
