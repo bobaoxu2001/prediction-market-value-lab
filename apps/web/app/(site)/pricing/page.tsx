@@ -4,6 +4,11 @@ import Link from "next/link";
 import { Faq, Section, SectionHeading } from "@/components/marketing";
 import { PricingPlans } from "@/components/pricing";
 import { getCurrentEntitlement } from "@/lib/billing/entitlement";
+import {
+  PILOT_DURATION_DAYS,
+  PILOT_MEMBER_CAP,
+  PILOT_PRICE_USD,
+} from "@/lib/pilot";
 import { absoluteUrl } from "@/lib/site";
 
 export const dynamic = "force-dynamic";
@@ -28,10 +33,11 @@ export default async function PricingPage() {
         <SectionHeading
           eyebrow="Available now"
           title="The Founding Research Pilot"
-          lead="Subscriptions are not open, but a small, finite pilot is: 30 days of the daily written research digest, delivered by email, capped at 20 members."
+          lead={`Subscriptions are not open, but a small, finite pilot is: ${PILOT_DURATION_DAYS} days of the daily written research digest, delivered by email, capped at ${PILOT_MEMBER_CAP} members.`}
         />
         <p className="t-body mt-6 max-w-2xl">
-          One-time USD 49, no account, no renewal and nothing to cancel. Three
+          One-time USD {PILOT_PRICE_USD}, no account, no renewal and nothing to
+          cancel. Three
           real sample reports — generated from the published Snapshot, and
           labelled as historical rather than current research — are readable
           before paying anything.{" "}

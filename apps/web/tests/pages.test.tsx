@@ -273,6 +273,24 @@ describe("pricing", () => {
     return render(await PricingPage());
   }
 
+  it("states the same pilot terms the pilot page and Stripe enforce", async () => {
+    // `/pricing` restated the offer as prose literals and drifted: it advertised
+    // "capped at 20 members" for four commits after the cohort was cut to five,
+    // which is the number both `/founding-pilot` and the Stripe Payment Link
+    // enforce. A buyer read one figure here and a different one at checkout.
+    //
+    // Asserted against `lib/pilot.ts` rather than against a hardcoded 5, so this
+    // keeps holding when the cohort size changes.
+    const { PILOT_MEMBER_CAP, PILOT_PRICE_USD, PILOT_DURATION_DAYS } =
+      await import("@/lib/pilot");
+    const { container } = await renderPricing();
+    const text = container.textContent ?? "";
+
+    expect(text).toContain(`capped at ${PILOT_MEMBER_CAP} members`);
+    expect(text).toContain(`USD ${PILOT_PRICE_USD}`);
+    expect(text).toContain(`${PILOT_DURATION_DAYS} days`);
+  });
+
   it("offers nothing to click on Pro while accounts and billing are both off", async () => {
     // With neither Clerk nor Stripe configured — the free-Beta state — there is
     // no account to register and no tier to pay for. Deliberately not a
