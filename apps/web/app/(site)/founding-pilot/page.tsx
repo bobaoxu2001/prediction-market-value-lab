@@ -34,6 +34,26 @@ export default function FoundingPilotPage() {
       {/* ------------------------------------------------------------ hero -- */}
       <section className="mx-auto max-w-6xl px-4 pb-12 pt-16">
         <p className="t-label">Founding Research Pilot</p>
+        {/*
+          Left as it was, deliberately.
+          =============================
+          This hero leads with emptiness — "including the days it says there is
+          nothing to do", "most days the answer is zero" — and that is a genuinely
+          weak offer. The obvious rewrite is to lead with the execution-cost
+          measurement, which needs no forecast and therefore has content every
+          single day.
+
+          That rewrite is not made here because `pilot/digest.py` does not yet put
+          a cost section in the report. The digest carries actionable candidates,
+          the watchlist and the funnel; a sales page promising a daily cost
+          breakdown would be selling something the delivered email does not
+          contain, which is the one failure this product cannot afford and the
+          exact thing its own runbook forbids.
+
+          The order is: add the cost section to `DigestReport`, `build_daily_digest`
+          and all three renderers, extend the editorial checklist in
+          docs/founding-pilot-fulfilment.md, and only then rewrite this copy.
+        */}
         <h1 className="mt-3 max-w-4xl text-[2rem] leading-[1.12] sm:text-[2.5rem]">
           Thirty days of the research, including the days it says there is nothing
           to do.

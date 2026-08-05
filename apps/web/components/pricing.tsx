@@ -39,6 +39,10 @@ const FREE: Plan = {
   summary:
     "The research product as it stands today, in full. Everything the hosted deployment can currently show, it shows to everyone.",
   includes: [
+    // Listed first because it is the only surface that answers on every visit:
+    // execution cost needs no probability estimate, so the independence rule
+    // that empties the others cannot empty it.
+    "Execution cost for any contract, at any size, with the break-even it implies",
     "The research briefing: what is actionable, what is not, and why",
     "Market discovery across both venues with executable prices and depth",
     "Actionable and Diagnostics arbitrage views, labelled separately",

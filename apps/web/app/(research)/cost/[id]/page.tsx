@@ -25,9 +25,52 @@ import { WatchButton } from "@/components/watch-button";
 
 export const dynamic = "force-dynamic";
 
-export const metadata: Metadata = {
-  title: "Contract cost",
-};
+/**
+ * Title and description carry the actual finding.
+ *
+ * A shared link previously read "Contract cost — PMVL" whatever it pointed at,
+ * which wastes the one line a reader sees before deciding whether to click. The
+ * numbers come from the same request the page makes, so a preview can never
+ * state a premium the page does not.
+ */
+export async function generateMetadata({
+  params,
+  searchParams,
+}: {
+  params: Promise<{ id: string }>;
+  searchParams: Promise<Record<string, string | string[] | undefined>>;
+}): Promise<Metadata> {
+  const { id } = await params;
+  const query = await searchParams;
+  const raw = query.size;
+  const size = sanitiseSize(typeof raw === "string" ? raw : undefined);
+  const side = query.side === "no" ? "no" : "yes";
+
+  const res = await apiGet<CostDetail>(`/cost/${id}${qs({ size, side })}`);
+  const data = res?.data;
+  const entry = data?.priced ? data.requested : null;
+  if (!data || !entry) return { title: "Contract cost" };
+
+  const contract = displayTitle(data.market.title);
+  const quoted = cents(entry.nominal_price);
+  const real = cents(entry.measured_cost);
+  const title = `${contract} — quoted ${quoted}, actually costs ${real}`;
+  const description =
+    `Buying ${size} contract${size === "1" ? "" : "s"} costs ${real} each after the ` +
+    `venue's fee, its rounding rule, book depth, transfer and capital cost. ` +
+    `Break-even probability ${
+      entry.breakeven_probability === null
+        ? "is unreachable at this size"
+        : pct(entry.breakeven_probability)
+    }, not ${pct(entry.nominal_price)}. Research only.`;
+
+  return {
+    title,
+    description,
+    openGraph: { title, description },
+    twitter: { card: "summary_large_image", title, description },
+  };
+}
 
 /**
  * The cost calculator for one contract.
