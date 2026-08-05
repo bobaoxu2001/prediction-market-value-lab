@@ -384,6 +384,93 @@ class TestThresholdShapes:
             value = gbm_probability_touch(64000.0, barrier, 0.30, 20.0 / 8766)
             assert 0.0 <= value <= 1.0
 
+    # ------------------------------------------------------------------
+    # The three properties above are all true of a badly wrong formula.
+    #
+    # The upward branch carried a sign error in its reflected term for as long as
+    # it existed: it returned ~1 for any barrier meaningfully above spot. "Will
+    # Bitcoin reach $70,000" with spot at $64,254 and five days left scored 0.918
+    # against a true value near 0.010, and that estimate reached the ensemble as
+    # an *independent* prior — the one class of input allowed to create edge.
+    #
+    # It survived because it is still >= terminal, still monotone, still bounded,
+    # and still tends to 1 at the money. The two tests below pin the value
+    # instead: one against a simulation of the process itself, one on a symmetry
+    # that no drift term can explain away.
+    # ------------------------------------------------------------------
+
+    @staticmethod
+    def _simulate_touch(
+        spot: float, barrier: float, sigma: float, tau: float, *, seed: int = 7
+    ) -> float:
+        """P(touch) by direct simulation of the log process. An independent oracle.
+
+        Deliberately not the closed form under test: it simulates
+        ``d(ln S) = -sigma^2/2 dt + sigma dW`` and asks how often the path crosses.
+        """
+        import numpy as np
+
+        steps, paths = 400, 40_000
+        rng = np.random.default_rng(seed)
+        dt = tau / steps
+        increments = (-0.5 * sigma**2) * dt + sigma * np.sqrt(dt) * rng.standard_normal(
+            (paths, steps)
+        )
+        log_paths = np.cumsum(increments, axis=1)
+        level = np.log(barrier / spot)
+        crossed = (
+            (log_paths >= level).any(axis=1)
+            if barrier > spot
+            else (log_paths <= level).any(axis=1)
+        )
+        return float(crossed.mean())
+
+    @pytest.mark.parametrize(
+        "spot,barrier,sigma,tau",
+        [
+            # The contract that exposed the defect, at its real parameters.
+            (64253.80, 70000.0, 0.2876, 119.53 / 8766),
+            (100.0, 102.0, 0.30, 30 / 365),   # near, above
+            (100.0, 130.0, 0.30, 30 / 365),   # far, above
+            (100.0, 98.0, 0.30, 30 / 365),    # near, below
+            (100.0, 90.0, 0.30, 30 / 365),    # far, below
+        ],
+    )
+    def test_touch_matches_a_simulation_of_the_process(
+        self, spot: float, barrier: float, sigma: float, tau: float
+    ) -> None:
+        from pmvl_markets.probability.categories.crypto import gbm_probability_touch
+
+        closed_form = gbm_probability_touch(spot, barrier, sigma, tau)
+        simulated = self._simulate_touch(spot, barrier, sigma, tau)
+
+        # Absolute floor covers the near-zero cases, where a relative tolerance is
+        # meaningless; the relative term covers the rest. The defect this catches
+        # was off by ~90x, so the tolerance does not need to be tight to bite.
+        tolerance = max(0.02, 0.20 * simulated)
+        assert abs(closed_form - simulated) <= tolerance, (
+            f"closed form {closed_form:.4f} vs simulated {simulated:.4f} "
+            f"for barrier {barrier} from spot {spot}"
+        )
+
+    def test_touch_is_nearly_symmetric_in_log_space(self) -> None:
+        """Equidistant barriers in log space have near-equal touch probability.
+
+        Under a driftless GBM the only asymmetry is the ``-sigma^2/2`` log drift,
+        which at these parameters is worth well under a percentage point. The
+        broken upward branch returned 0.92 against the downward branch's 0.23 for
+        the same log distance — a four-fold gap no drift term can produce.
+        """
+        from pmvl_markets.probability.categories.crypto import gbm_probability_touch
+
+        spot, sigma, tau = 100.0, 0.30, 30 / 365
+        for factor in (1.02, 1.05, 1.10):
+            up = gbm_probability_touch(spot, spot * factor, sigma, tau)
+            down = gbm_probability_touch(spot, spot / factor, sigma, tau)
+            assert abs(up - down) < 0.05, (
+                f"up {up:.4f} vs down {down:.4f} at factor {factor}"
+            )
+
     def test_weather_between_buckets_are_disjoint(self) -> None:
         """Adjacent temperature buckets must not overlap or sum above 1."""
         from pmvl_markets.probability.categories.weather import normal_cdf

@@ -336,3 +336,46 @@ class TestTheEnsemblePublishesThreeDistinctNumbers:
         assert "target_market_reference" in declared
         assert declared["target_market_reference"]["uses_target_price"] is True
         assert declared["weather_nws_threshold"]["independence_class"] == "independent"
+
+
+class TestCryptoPriceBands:
+    """A band contract must never be priced as a one-sided threshold.
+
+    The model's own comment names this trap, but the guard only consulted the
+    venue's ``strike_type``. On the live board 96 of 344 crypto contracts are
+    bands and the venue left ``strike_type`` unset on 49 of them; each fell
+    through to the threshold branch, which took the FIRST number in the title and
+    discarded the second. "Between $60,000 and $62,000" with spot at $63,784 was
+    scored 0.999999 against a market price of 0.016 — and, being an *independent*
+    component, that estimate was allowed to create edge.
+    """
+
+    def test_a_band_is_detected_from_text_when_the_venue_is_silent(self) -> None:
+        from pmvl_markets.probability.categories.crypto import _text_price_band
+
+        for headline, expected in [
+            ("Will the price of Bitcoin be between $60,000 and $62,000 on July 31?",
+             (D("60000"), D("62000"))),
+            ("Bitcoin price on Jul 31? 60,000-62,000", (D("60000"), D("62000"))),
+            ("Bitcoin $60,000 to $62,000", (D("60000"), D("62000"))),
+        ]:
+            assert _text_price_band(headline) == expected, headline
+
+    def test_a_date_range_is_not_a_price_band(self) -> None:
+        """The regression this nearly introduced.
+
+        "August 3-9" matches a bare ``\\d+-\\d+``. Read as a band it yields bounds
+        of 3 and 70,000, and the model then declines a contract it prices
+        correctly — a quieter wrong answer than the one being fixed, but still
+        wrong. Both sides of a band must look like money.
+        """
+        from pmvl_markets.probability.categories.crypto import _text_price_band
+
+        assert _text_price_band("Will Bitcoin reach $70,000 August 3-9?") is None
+        assert _text_price_band("Will Bitcoin reach $72,000 August 3-9?") is None
+        assert _text_price_band("Will the high temp be 70-75?") is None
+
+    def test_bounds_are_ordered_regardless_of_how_they_are_written(self) -> None:
+        from pmvl_markets.probability.categories.crypto import _text_price_band
+
+        assert _text_price_band("Bitcoin $62,000 to $60,000") == (D("60000"), D("62000"))

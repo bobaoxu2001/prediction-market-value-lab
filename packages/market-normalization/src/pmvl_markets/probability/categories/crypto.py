@@ -25,7 +25,7 @@ from __future__ import annotations
 
 import math
 import re
-from decimal import Decimal
+from decimal import Decimal, InvalidOperation
 
 from pmvl_shared.config import get_settings
 from pmvl_shared.enums import Category
@@ -53,6 +53,45 @@ _ASSET_PRODUCTS: list[tuple[re.Pattern[str], str]] = [
 
 #: Below this many hours of history the volatility estimate is too noisy to use.
 _MIN_CANDLES = 48
+
+#: A *price* band written into the contract text: "60,000-62,000", "$60,000 to
+#: $62,000", "between $60,000 and $62,000".
+#:
+#: Needed because the venue does not always classify these. Kalshi's crypto range
+#: boards arrive with ``strike_type`` unset on roughly half the board, and a band
+#: read as a one-sided threshold is the single most overstated estimate this model
+#: can produce: "between $60,000 and $62,000" with spot at $63,784 scored 0.999999
+#: against a market price of 0.016, because the $62,000 cap was simply dropped.
+#:
+#: Both sides must look like money — a currency symbol or thousands separators.
+#: A bare ``\d+-\d+`` also matches the date range in "Will Bitcoin reach $70,000
+#: August 3-9?", and reading that as a band gives bounds of 3 and 70,000: the
+#: model then declines a contract it can price perfectly well, which is a quieter
+#: failure than the one being fixed but still a wrong answer.
+_MONEY = r"(?:\$\s*\d[\d,]*(?:\.\d+)?|\d{1,3}(?:,\d{3})+(?:\.\d+)?)"
+_TEXT_RANGE_RE = re.compile(
+    rf"({_MONEY})\s*(?:-|–|—|\bto\b|\band\b)\s*({_MONEY})",
+    re.I,
+)
+
+
+def _text_price_band(headline: str) -> tuple[Decimal, Decimal] | None:
+    """The two bounds of a price band stated in the contract text, if any.
+
+    Bounds come from the matched pair specifically, not from every number in the
+    title: "between $60,000 and $62,000 on July 31" also contains 31.
+    """
+    match = _TEXT_RANGE_RE.search(headline)
+    if match is None:
+        return None
+    try:
+        low = Decimal(match.group(1).replace("$", "").replace(",", "").strip())
+        high = Decimal(match.group(2).replace("$", "").replace(",", "").strip())
+    except (InvalidOperation, AttributeError):
+        return None
+    if low <= 0 or high <= 0:
+        return None
+    return (low, high) if low <= high else (high, low)
 
 #: Directional markets ("will BTC close higher than it opened") have no threshold at
 #: all - they compare against a reference price fixed at the open. A threshold model
@@ -144,8 +183,22 @@ def gbm_probability_touch(
         first = normal_cdf((b - drift) / vol_sqrt_t)
         second = normal_cdf((b + drift) / vol_sqrt_t)
     else:  # upward barrier: P(max >= b)
+        # The reflected term takes -b, not +b.
+        #
+        # This previously read `1 - normal_cdf((-b + drift) / vol_sqrt_t)`, which
+        # is `normal_cdf((b - drift) / vol_sqrt_t)` - the same argument as `first`
+        # but un-complemented, so for any barrier meaningfully above spot it was
+        # ~1 instead of ~0. "Will Bitcoin reach $70,000" with spot at $64,254 and
+        # five days to run returned 0.918 against a Monte Carlo value of 0.010,
+        # and the market's 0.021.
+        #
+        # The existing property tests did not catch it because a value that is far
+        # too high still satisfies every one of them: it is still >= the terminal
+        # probability, still monotone in the barrier, and still tends to 1 as the
+        # barrier approaches spot. Only a test that pins the NUMBER finds this,
+        # which is why the suite now checks both branches against a simulation.
         first = 1.0 - normal_cdf((b - drift) / vol_sqrt_t)
-        second = 1.0 - normal_cdf((-b + drift) / vol_sqrt_t)
+        second = normal_cdf((-b - drift) / vol_sqrt_t)
 
     if scale == float("inf"):
         return 1.0
@@ -236,22 +289,47 @@ class CryptoThresholdModel(ProbabilityModel):
                 "threshold, so a threshold model cannot price it"
             )
 
+        from ...normalize.text import extract_features
+
+        features = extract_features(market.title, subtitle=market.subtitle)
+        headline = f"{market.title} {market.subtitle or ''}"
+
         comparator = (market.strike_type or "").lower()
         floor_strike = market.floor_strike
         cap_strike = market.cap_strike
         #: True when the strike came from the venue rather than from a regex.
         strike_from_venue = floor_strike is not None or cap_strike is not None
 
+        # The venue does not always classify a band, so the text gets a vote.
+        #
+        # This guard used to depend entirely on `strike_type`. On the live board
+        # 96 of 344 crypto contracts are bands and the venue left `strike_type`
+        # unset on 49 of them; each of those fell through to the one-sided branch
+        # below, which took the FIRST number in the title as a threshold and threw
+        # the second away. That is how a contract the market priced at 1.6c was
+        # scored at 99.9999%.
+        text_band = _text_price_band(headline)
+        if comparator != "between" and (
+            features.comparator == "between" or text_band is not None
+        ):
+            comparator = "between"
+            if floor_strike is None or cap_strike is None:
+                if text_band is None:
+                    return no_opinion(
+                        "contract text describes a range but its two bounds could "
+                        "not be recovered; refusing to price it as a threshold"
+                    )
+                floor_strike, cap_strike = text_band
+
         if comparator == "between":
             if floor_strike is None or cap_strike is None:
                 return no_opinion("between-market missing one of its two bounds")
+            if cap_strike <= floor_strike:
+                return no_opinion("between-market bounds are not ordered")
             strike = floor_strike
         else:
             strike = floor_strike if floor_strike is not None else cap_strike
             if strike is None:
-                from ...normalize.text import extract_features
-
-                features = extract_features(market.title, subtitle=market.subtitle)
                 strike = features.primary_threshold
             if strike is None or strike <= 0:
                 return no_opinion("no numeric strike could be established")
@@ -271,12 +349,17 @@ class CryptoThresholdModel(ProbabilityModel):
         # of magnitude as spot. Without this check "Bitcoin Up or Down - July 26"
         # yielded strike=26 against spot=65,052 and was scored as a near-certainty.
         if not strike_from_venue:
-            ratio = float(strike) / spot
-            if not (_TEXT_STRIKE_MIN_RATIO <= ratio <= _TEXT_STRIKE_MAX_RATIO):
-                return no_opinion(
-                    f"strike {strike} scraped from title is implausible against spot "
-                    f"{spot:,.0f} (ratio {ratio:.4g}); refusing to guess"
-                )
+            # Every text-derived level is checked, not only the first. A band takes
+            # two numbers out of the title, and a plausible floor beside a nonsense
+            # cap still produces a nonsense width.
+            scraped = [strike] if comparator != "between" else [floor_strike, cap_strike]
+            for level in scraped:
+                ratio = float(level) / spot
+                if not (_TEXT_STRIKE_MIN_RATIO <= ratio <= _TEXT_STRIKE_MAX_RATIO):
+                    return no_opinion(
+                        f"strike {level} scraped from title is implausible against "
+                        f"spot {spot:,.0f} (ratio {ratio:.4g}); refusing to guess"
+                    )
 
         # Direction: a "below/less than" market pays YES when the threshold is NOT
         # exceeded. Getting this backwards would invert every crypto recommendation.
