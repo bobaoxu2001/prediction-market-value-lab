@@ -10,6 +10,45 @@ auditable track record of what it recommended and how those calls actually resol
 
 ---
 
+## The surface that always has an answer
+
+Every analytical page here except one is downstream of a probability estimate,
+and the independence rule below refuses to produce one for most markets. That is
+correct, and it is why the ranked list is usually empty — which leaves a reader
+with nothing on the majority of visits.
+
+`/cost` asks a question that needs no probability: **what does it cost to get
+in.** Every market with a quote has an answer.
+
+Because a binary contract pays exactly $1, the all-in cost per contract *is* the
+break-even probability. A contract quoted at 34¢ whose true cost is 37.2¢ does not
+need the event to happen 34% of the time — it needs 37.2%.
+
+Size is where this bites. Kalshi ceils its fee to the whole cent **on the whole
+order**, so on a 1¢ contract the fee alone is a full cent:
+
+| Order size | True cost each | Premium over quote |
+|---:|---:|---:|
+| 1 | 2.00¢ | **+100%** |
+| 10 | 1.10¢ | +10% |
+| 100 | 1.07¢ | +7% |
+
+Same contract, same instant, a fourteen-fold spread in premium. Neither venue
+displays this, and it does not depend on any forecast — which is why the cost
+surface covers the categories the models decline: politics, sports and macro all
+have a cost even when they have no opinion.
+
+**Measured and modelled costs are separate fields everywhere.** The headline
+figure contains only what can be checked against a public source: observed ask
+depth, the venues' published fee schedules and rounding rules, the Polygon
+transfer amortisation, and capital cost to resolution. The slippage pad
+(`tick_size × SLIPPAGE_TICKS`) is an assumption about market impact and is
+reported beside the headline, never inside it — at a 1¢ tick it exceeds every
+real cost combined on a cheap contract, so a blended number would make the
+product's central claim an artefact of a config default.
+
+---
+
 ## What makes this different from a scanner that prints numbers
 
 Three rules are enforced in code, not just documented:
@@ -96,7 +135,7 @@ shot.
 
 ```
 prediction-market-value-lab/
-  apps/web/                        Next.js 15 + TypeScript + Tailwind (8 pages)
+  apps/web/                        Next.js 15 + TypeScript + Tailwind (10 pages)
   services/
     api/                           FastAPI read-only research API
     worker/                        typer CLI + APScheduler scheduler
@@ -342,7 +381,9 @@ the suite depending on the venues being up.
 
 See `/methodology` for the live list. The significant ones:
 
-- Sports, macro and politics have no independent model in this release.
+- Sports, macro and politics have no independent model in this release. They
+  are covered by `/cost`, which needs none, but they are never ranked as
+  opportunities.
 - Genuinely rule-identical pairs across these two venues are rare, so cross-platform
   arbitrage rarely has anything to report.
 - Polymarket expected resolution adds a fixed oracle-latency estimate to `endDate`;

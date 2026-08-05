@@ -41,6 +41,9 @@ export function isAlwaysOpenPath(pathname: string): boolean {
 export const PUBLIC_RESEARCH_PATHS = [
   "/",
   "/app",
+  "/cost",
+  "/cost/3250",
+  "/watchlist",
   "/markets",
   "/market/630",
   "/arbitrage",

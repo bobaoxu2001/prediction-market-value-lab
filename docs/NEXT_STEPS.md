@@ -5,7 +5,7 @@
 | Area | Status | Why |
 |---|---|---|
 | WebSocket orderbook streaming | Not implemented | Polling at 1–3 min is sufficient for the current scan cadence. Specified in `.env.example` (`POLYMARKET_WS_BASE`) and the provider interface has room for it. |
-| Sports / macro / politics models | **No opinion**, by design | Every usable feed is credentialed. These categories return `no_opinion` and name the feed they would need, rather than guessing. |
+| Sports / macro / politics models | **No opinion**, by design | Every usable feed is credentialed. These categories return `no_opinion` and name the feed they would need, rather than guessing. They are covered by `/cost`, which needs no model. |
 | Isotonic / Platt / Beta calibration | Metrics computed, fitting not wired | Calibration *measurement* (reliability curve, Brier vs market) is live. Fitting a calibrator needs a walk-forward validation set of real settled recommendations, which does not exist until the platform has run for weeks. |
 | LLM-assisted market matching | Interface present, unused | `MarketMatch.llm_assisted` exists. Deterministic verification is the gate, so an LLM can only propose candidates — worth adding once there is a candidate backlog to triage. |
 | Live Top-10 with real recommendations | Structurally working, empty in practice | The independence gate is doing its job. See below. |
@@ -18,9 +18,11 @@ This is the binding constraint on the whole platform. Today a market can only be
 recommended if it has a verified cross-venue counterpart or falls into the crypto /
 weather models — which in practice is a small minority of the universe. Concretely:
 
-- **Add an equity/index threshold model.** Same driftless-GBM machinery as crypto,
-  pointed at a free delayed-quote source. Immediately unlocks Kalshi's large
-  `KXINX`/`KXNASDAQ` families and Polymarket's index markets.
+- ~~**Add an equity/index threshold model.**~~ **Done** — `probability/categories/
+  equity.py` plus `probability/trading_calendar.py`, covered by
+  `tests/test_equity.py`. `Category.FINANCE` is in `MODELLABLE_CATEGORIES`. This
+  item was left stale in this document after the model landed; the coverage
+  numbers quoted below were re-measured against the current code.
 - **Add an economics model** behind a FRED key: release calendar plus consensus and
   the Cleveland Fed nowcast covers CPI/NFP/GDP markets on both venues.
 - **Improve matching recall.** The proper-noun guard is correctly strict, but recall
@@ -38,14 +40,38 @@ synthetic history. Run `pmvl schedule` continuously for 4–6 weeks, then:
   plumbing to show that already exists.
 
 ### 3. Orderbook coverage and freshness
-Only ~250–400 of ~6,900 ingested markets currently get a book fetch per cycle, and
-arbitrage detection is bounded by that.
+
+**Partly addressed.** The binding constraint turned out not to be the request
+budget. Measured against the live universe at the published snapshot's cutoff:
+
+| Filter | Markets remaining |
+|---|---:|
+| open | 11,838 |
+| **+ resolves within the 30-day ranking horizon** | **339** |
+| + 24h volume ≥ $500 | 151 |
+
+The budget is 250. It was never the limit — the ranking horizon was, and it
+excluded the most heavily traded contracts on either venue (Fed rate decisions,
+millions in 24h volume) purely because they settle further out than the *scanner*
+cares about. Execution cost is computable for all of them.
+
+`select_for_orderbooks` now fills two reserves: a scoring reserve with the
+original priority and the original horizon requirement, and a coverage reserve
+ranked by volume alone with no horizon requirement
+(`ORDERBOOK_COVERAGE_SHARE`, default 0.4; set to 0 to restore the old
+allocation). On the live universe this took covered 24h volume from $6.9M to
+$37.8M while leaving the scoring pool essentially intact.
+
+Still open:
 
 - WebSocket subscriptions for the top few hundred markets, falling back to polling.
 - Event-complete fetching is implemented but budget-limited; raising the budget for
   negative-risk events directly increases multi-outcome arbitrage coverage.
 - Dynamic cadence: markets inside 6 hours of resolution should refresh far more often
   than 30-day markets.
+- The volume floor (`MIN_VOLUME_24H_USD=500`) is now the tightest remaining filter
+  on the coverage pool, cutting it from 1,608 to 1,420. Worth revisiting: a thin
+  book still has a *true* cost, and the figure is honest either way.
 
 ## Known risks
 

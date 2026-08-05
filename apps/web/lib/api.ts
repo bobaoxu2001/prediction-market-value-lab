@@ -149,6 +149,117 @@ export interface MarketRow {
   total_displayed_depth_usd?: string | null;
 }
 
+/* --------------------------------------------------------------- cost truth -- */
+
+/**
+ * Execution cost for one order size.
+ *
+ * Two totals, deliberately not merged. `measured_cost` contains only what can be
+ * derived from the observed book and the venues' published fee rules, and is what
+ * `breakeven_probability` is computed from. `all_in_cost` adds a flat slippage pad
+ * that stands in for market impact — an assumption, and on a cheap contract larger
+ * than every real cost combined, so a page that shows only the blended figure would
+ * be presenting a config default as a finding.
+ */
+export interface CostAtSize {
+  size: string;
+  filled_size: string;
+  fully_filled: boolean;
+  /** The venue would reject an order this small; the cost is arithmetic, not an option. */
+  below_min_order_size: boolean;
+  levels_consumed: number | null;
+  nominal_price: string;
+  entry_price: string;
+  measured_cost: string;
+  measured_premium: string;
+  measured_premium_ratio: string | null;
+  /** Break-even probability on measured cost. The headline figure. */
+  breakeven_probability: string | null;
+  modelled_slippage: string;
+  all_in_cost: string;
+  premium: string;
+  premium_ratio: string | null;
+  breakeven_probability_with_slippage: string | null;
+  total_outlay: string;
+  measured_components: {
+    /** null when no book was observed: unknown impact is never reported as zero. */
+    depth_impact: string | null;
+    platform_fee: string;
+    fee_rounding: string;
+    transfer_cost: string;
+    capital_cost: string;
+  };
+  modelled_components: { estimated_slippage: string };
+}
+
+export interface CostMarketIdentity {
+  id: number;
+  platform: string;
+  platform_market_id: string;
+  title: string;
+  subtitle: string | null;
+  category: string | null;
+  status: string;
+  accepting_orders: boolean;
+  tick_size: string;
+  fee_rate: string;
+  fee_type: string | null;
+  min_order_size: string | null;
+  expected_resolution_time: string | null;
+  horizon: string | null;
+  volume_24h: string | null;
+}
+
+export interface CostDetail {
+  market: CostMarketIdentity;
+  priced: boolean;
+  /** Present only when `priced` is false. */
+  reason?: string;
+  side: string;
+  quote_source: "orderbook" | "venue_summary";
+  quote_observed_at: string | null;
+  quote_age_seconds: number | null;
+  is_stale: boolean;
+  depth_known: boolean;
+  nominal_price: string;
+  available_depth_usd: string | null;
+  max_fillable_size: string | null;
+  requested: CostAtSize | null;
+  ladder: CostAtSize[];
+  caveats: string[];
+  basis?: { measured: string; modelled: string; headline: string };
+}
+
+export interface CostByCategory {
+  category: string;
+  n: number;
+  median_premium_ratio: string;
+  p25_premium_ratio: string;
+  p75_premium_ratio: string;
+  priced_from_orderbook: number;
+  /**
+   * Fraction of the sample priced from a real ask ladder. Where this is low the
+   * median excludes depth impact and is a floor — the category's true premium is
+   * higher than reported, not lower.
+   */
+  depth_coverage: string;
+}
+
+export interface CostIndexRow {
+  market: CostMarketIdentity;
+  quote_source: "orderbook" | "venue_summary";
+  depth_known: boolean;
+  is_stale: boolean;
+  quote_observed_at: string | null;
+  nominal_price: string;
+  measured_cost: string;
+  measured_premium: string;
+  measured_premium_ratio: string | null;
+  breakeven_probability: string | null;
+  filled_size: string;
+  fully_filled: boolean;
+}
+
 export interface TrackRecordRow {
   id: number;
   snapshot_date: string;

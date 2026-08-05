@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import asyncio
 from dataclasses import dataclass, field
+from datetime import datetime
 from decimal import Decimal
 from typing import Any, Sequence
 
@@ -67,8 +68,10 @@ MAX_SERIES_BUDGET_SHARE = 0.2
 MIN_PER_SERIES_BOOKS = 14
 
 
-def orderbook_priority(market: NormalizedMarket) -> tuple[int, int, Decimal]:
-    """Sort key deciding which markets get a book fetch.
+def orderbook_priority(
+    market: NormalizedMarket, *, now: datetime | None = None
+) -> tuple[int, int, Decimal]:
+    """Sort key deciding which markets get a book fetch, for the scoring reserve.
 
     Ordered by (modellable, horizon bucket, 24h volume).
 
@@ -76,35 +79,102 @@ def orderbook_priority(market: NormalizedMarket) -> tuple[int, int, Decimal]:
     book is only *useful* if the market can also be scored. Ranking purely by volume
     spent the entire budget on sports and politics - markets that are then rejected
     for having no independent prior, so the fetch bought nothing.
+
+    That reasoning still holds for the *scoring* half of the budget, and this key
+    still governs it. It stopped being the whole story once cost analysis existed:
+    see ``coverage_priority``.
     """
     modellable = 0 if market.category in MODELLABLE_CATEGORIES else 1
-    horizons = horizons_for(market.expected_resolution_time)
+    horizons = horizons_for(market.expected_resolution_time, now=now)
     bucket = {"24h": 0, "7d": 1, "30d": 2}.get(horizons[0] if horizons else "", 3)
     return (modellable, bucket, -(market.volume_24h or Decimal("0")))
 
 
+def coverage_priority(market: NormalizedMarket) -> Decimal:
+    """Sort key for the coverage reserve: traded volume, and nothing else.
+
+    What a book buys is no longer only a score. Execution cost - fees at size, the
+    fee-rounding rule, depth impact, transfer and capital cost - is computed without
+    any probability estimate, so it has an answer for every market with a book,
+    including the politics, sports and macro contracts the models decline.
+
+    Neither modellability nor time to resolution appears here, deliberately:
+
+    * Modellability decides whether a market can be *scored*, not whether knowing
+      its cost is worth a request. Under a modellability-led key the contracts
+      people most often look up sorted behind every crypto and weather market and
+      the budget ran out first, so their coverage was decided by arithmetic rather
+      than by judgement.
+    * Time to resolution is already priced, as capital cost. A contract resolving
+      in two years is not a worse cost question than one resolving tomorrow - if
+      anything it is a more interesting one, because the capital drag is the
+      dominant term.
+
+    Volume is the proxy for "somebody will look this up", which is the only thing
+    this reserve is trying to buy.
+    """
+    return -(market.volume_24h or Decimal("0"))
+
+
 def select_for_orderbooks(
-    markets: Sequence[NormalizedMarket], limit: int
+    markets: Sequence[NormalizedMarket],
+    limit: int,
+    *,
+    now: datetime | None = None,
 ) -> list[NormalizedMarket]:
     """Pick the markets worth spending an orderbook request on.
 
-    Selection is **event-aware**. Once a market is chosen, its event siblings are
-    pulled in with it, because multi-outcome arbitrage can only be assessed on a
-    complete basket: pricing four buckets of an eleven-bucket temperature event is
-    not a partial answer, it is no answer at all, and the scanner will (correctly)
-    refuse to evaluate it. Volume-ranked selection alone almost never lands every
-    outcome of an event, so without this the multi-outcome scanner never runs.
+    The budget is split into **two reserves**, filled in order.
+
+    *Scoring reserve* (the majority) keeps the original behaviour exactly: ordered
+    by ``orderbook_priority``, so a market that can be scored outranks one that
+    cannot. Everything downstream of a probability estimate depends on this.
+
+    *Coverage reserve* is then filled by ``coverage_priority`` - liquidity alone,
+    modellability ignored. A book now buys execution-cost analysis as well as a
+    score, and cost needs no probability, so it answers for exactly the contracts
+    the models decline. Under a single modellability-led key those contracts were
+    starved by construction rather than by judgement: they sorted behind every
+    crypto and weather market and the budget ran out first.
+
+    Splitting rather than reweighting is deliberate. A blended sort key would make
+    the two products compete on one scale, and the losing side would be whichever
+    happened to have thinner volume that day. A reserve is a floor: the scanner
+    cannot be starved by liquid sports markets, and the cost surface cannot be
+    starved by the scanner.
+
+    Selection stays **event-aware** within each reserve. Once a market is chosen,
+    its event siblings are pulled in with it, because multi-outcome arbitrage can
+    only be assessed on a complete basket: pricing four buckets of an eleven-bucket
+    temperature event is not a partial answer, it is no answer at all, and the
+    scanner will (correctly) refuse to evaluate it.
     """
     settings = get_settings()
-    eligible = [
+
+    # Tradeable at all, and liquid enough that its book means something. Common to
+    # both reserves.
+    tradeable = [
         m
         for m in markets
         if m.status == MarketStatus.OPEN
         and m.accepting_orders
-        and horizons_for(m.expected_resolution_time)
         and (m.volume_24h or Decimal("0")) >= settings.min_volume_24h_usd
     ]
-    eligible.sort(key=orderbook_priority)
+
+    # The scoring reserve additionally requires the market to resolve inside the
+    # ranking horizon, because a recommendation it could produce would have to be
+    # held that long.
+    #
+    # The coverage reserve does NOT, and that is the single largest effect of this
+    # function. On the live universe the 30-day window is by far the tightest
+    # filter here: of 11,838 open markets only 339 resolve inside it. Everything
+    # else was ingested and never had a book fetched, including the most heavily
+    # traded contracts on either venue - Fed rate decisions carrying millions in
+    # 24h volume - purely because they settle further out than the scanner cares
+    # about. Cost is computable for all of them.
+    scoring_eligible = [
+        m for m in tradeable if horizons_for(m.expected_resolution_time, now=now)
+    ]
 
     by_event: dict[str, list[NormalizedMarket]] = {}
     for market in markets:
@@ -118,6 +188,10 @@ def select_for_orderbooks(
     # in the 24h bucket, so it consumed the entire allocation and every weather
     # market got zero coverage. Spending the whole budget on 125 near-identical BTC
     # strikes is also poor value in its own right - they are one bet, not 125.
+    #
+    # Measured against the whole budget, not each reserve: the cap is about how
+    # much of one cycle's fetching goes to near-identical contracts, and that
+    # concern does not change because the budget is now filled in two passes.
     per_series_cap = max(MIN_PER_SERIES_BOOKS, int(limit * MAX_SERIES_BUDGET_SHARE))
     series_used: dict[str, int] = {}
     chosen: dict[str, NormalizedMarket] = {}
@@ -132,27 +206,50 @@ def select_for_orderbooks(
         chosen[market.platform_market_id] = market
         series_used[key] = series_used.get(key, 0) + 1
 
-    for market in eligible:
-        if len(chosen) >= limit:
-            break
-        key = series_key(market)
-        if series_used.get(key, 0) >= per_series_cap:
-            continue
+    def fill(ordered: list[NormalizedMarket], budget: int) -> None:
+        """Fill up to ``budget`` total selections from ``ordered``."""
+        for market in ordered:
+            if len(chosen) >= budget:
+                break
+            if market.platform_market_id in chosen:
+                continue
+            key = series_key(market)
+            if series_used.get(key, 0) >= per_series_cap:
+                continue
 
-        # Event-aware: multi-outcome arbitrage can only be assessed on a complete
-        # basket, so an event is taken whole or not at all when the budget allows.
-        group = by_event.get(market.platform_event_id or "", [market])
-        if len(chosen) + len(group) <= limit and (
-            series_used.get(key, 0) + len(group) <= per_series_cap
-        ):
-            for sibling in group:
-                take(sibling)
-        else:
-            take(market)
+            # Event-aware: multi-outcome arbitrage can only be assessed on a
+            # complete basket, so an event is taken whole or not at all when the
+            # budget allows.
+            group = by_event.get(market.platform_event_id or "", [market])
+            if len(chosen) + len(group) <= budget and (
+                series_used.get(key, 0) + len(group) <= per_series_cap
+            ):
+                for sibling in group:
+                    take(sibling)
+            else:
+                take(market)
 
-    # Any leftover budget goes back to the priority order, cap ignored.
+    # The coverage reserve is expressed as the share of the budget it may not be
+    # squeezed below, so the scoring pass is capped at the remainder.
+    coverage_reserve = int(limit * settings.orderbook_coverage_share)
+    by_score = sorted(scoring_eligible, key=lambda m: orderbook_priority(m, now=now))
+
+    if coverage_reserve <= 0:
+        # A real off switch. Without this branch a share of 0 still ran the
+        # volume pass over the whole budget, so the setting documented as
+        # "restores the previous allocation" would have changed it instead - and
+        # an operator reaching for that switch is doing so precisely because
+        # something has gone wrong and they want the old behaviour back.
+        fill(by_score, limit)
+    else:
+        fill(by_score, max(0, limit - coverage_reserve))
+        fill(sorted(tradeable, key=coverage_priority), limit)
+
+    # Any leftover budget goes back to the scoring order, cap ignored. Reached when
+    # the per-series cap blocked both passes - a universe of few, deep series - and
+    # an unspent request is worth less than a duplicate-ish book.
     if len(chosen) < limit:
-        for market in eligible:
+        for market in by_score:
             if len(chosen) >= limit:
                 break
             take(market)

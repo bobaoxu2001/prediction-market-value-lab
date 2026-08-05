@@ -256,7 +256,10 @@ describe("marketing homepage", () => {
     mockApi((path) => (path.startsWith("/system") ? SYSTEM : { data: [] }));
     const { container } = await renderHome();
     const images = [...container.querySelectorAll("img")];
-    expect(images.length).toBe(6);
+    // One per product surface. Bumped from six when the cost surface was added
+    // as the first row; the count is pinned so a surface cannot be added without
+    // someone writing alt text for its screenshot.
+    expect(images.length).toBe(7);
     for (const image of images) {
       const alt = image.getAttribute("alt") ?? "";
       expect(alt.length).toBeGreaterThan(40);

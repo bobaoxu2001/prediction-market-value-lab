@@ -11,6 +11,8 @@ import {
   SectionHeading,
 } from "@/components/marketing";
 import { PricingPlans } from "@/components/pricing";
+import { SectorPremium } from "@/components/sector-premium";
+import { apiGet, qs, type CostByCategory } from "@/lib/api";
 import { utcTime } from "@/lib/format";
 import { getResearchProof, PROOF_HORIZON, type ResearchProof } from "@/lib/proof";
 import { getCurrentEntitlement } from "@/lib/billing/entitlement";
@@ -20,11 +22,21 @@ import { absoluteUrl } from "@/lib/site";
 export const dynamic = "force-dynamic";
 
 export const metadata: Metadata = {
-  title: "Prediction-market research that survives fees, liquidity and rule risk",
+  title: "What a prediction-market contract actually costs to buy",
   description:
-    "PMVL estimates probabilities independently where coverage exists, compares them with executable market prices, accounts for fees, liquidity, stale quotes and contract rules, and explains when no trade is justified.",
+    "PMVL measures the gap between a contract's quoted price and its true cost — venue fees, the fee-rounding rule, order-book depth, transfer and capital cost — for every market with a quote. It also estimates probabilities where it has independent coverage, and says so when it does not.",
   alternates: { canonical: absoluteUrl("/") },
 };
+
+/**
+ * Order size the sector comparison is priced at.
+ *
+ * A round, plausible retail order. The ranking between categories is stable
+ * across sizes, but the absolute figures are not - fee rounding punishes small
+ * orders hardest - so the size is stated everywhere the numbers appear rather
+ * than left for a reader to assume.
+ */
+const SECTOR_SIZE = "100";
 
 /** Query keys the research briefing used to accept when it lived at `/`. */
 const RESEARCH_QUERY_KEYS = [
@@ -57,9 +69,13 @@ export default async function HomePage({
   }
   if ([...search.keys()].length > 0) redirect(`/app?${search.toString()}`);
 
-  const [proof, entitlement] = await Promise.all([
+  // In parallel: three independent reads, none of which may block the others.
+  // The sector comparison prices a sample of the universe, so it is the slowest,
+  // and sequencing it after the proof band would add its latency to the page.
+  const [proof, entitlement, sectors] = await Promise.all([
     getResearchProof(),
     getCurrentEntitlement(),
+    apiGet<CostByCategory[]>(`/cost/by-category${qs({ size: SECTOR_SIZE })}`),
   ]);
   // Whether anyone can actually register. Both Clerk keys, not just the public
   // one: a publishable key alone renders a form that cannot verify a session.
@@ -73,6 +89,7 @@ export default async function HomePage({
         accountsEnabled={accountsEnabled}
       />
       <ProofBand proof={proof} />
+      <SectorBand rows={sectors?.data ?? null} />
       <ProductSurfaces />
       <HowItWorks />
       <Trust proof={proof} />
@@ -100,19 +117,38 @@ function Hero({
     <section className="mx-auto max-w-6xl px-4 pb-14 pt-16 sm:pt-24">
       <p className="t-label">Prediction Market Value Lab</p>
       <h1 className="mt-3 max-w-4xl text-[2rem] leading-[1.12] sm:text-[2.75rem]">
-        Prediction-market research that survives fees, liquidity and rule risk.
+        The price on the screen is not what the contract costs.
       </h1>
+      {/*
+       * The hero used to end on "most of the time the answer is that no trade is
+       * justified, and it says so." That sentence is true, it is the reason to
+       * trust the rest of the site — and it was the whole pitch, which left a
+       * first-time reader with a product whose headline promise is emptiness.
+       *
+       * Honesty now backs the claim instead of being the claim. The lead is the
+       * measurement that has an answer on every visit: cost needs no probability
+       * estimate, so it is not gated on the independence rule that keeps the
+       * opportunity surfaces empty.
+       */}
       <p className="t-lead mt-5 max-w-2xl">
-        PMVL estimates probabilities independently of the market&apos;s own price
-        wherever it has coverage, compares those estimates with the price you
-        could actually execute at, and subtracts fees, slippage, transfer and
-        capital costs before calling anything an opportunity. Most of the time
-        the answer is that no trade is justified, and it says so.
+        Buy a contract quoted at 1¢ on Kalshi and the fee alone doubles what you
+        pay, because the venue ceils it to the whole cent on the whole order. PMVL
+        measures that gap — fees, rounding, order-book depth, transfer and capital
+        cost — for every market with a quote, and converts it into the one number
+        that decides a trade: the probability you need just to break even.
+      </p>
+      <p className="t-lead mt-3 max-w-2xl">
+        It also estimates probabilities independently of the market&apos;s own
+        price where it has the coverage to do so. Where it does not, it says so
+        rather than reporting the market price back to you as a forecast.
       </p>
 
       <div className="mt-8 flex flex-wrap items-center gap-3">
-        <Link href="/app" className="btn-primary">
-          Explore research
+        <Link href="/cost" className="btn-primary">
+          See what contracts really cost
+        </Link>
+        <Link href="/app" className="btn-quiet">
+          Research briefing
         </Link>
         {signedIn ? (
           <Link href="/account" className="btn-quiet">
@@ -263,6 +299,26 @@ function ProofBand({ proof }: { proof: ResearchProof }) {
   );
 }
 
+/* -------------------------------------------------------- sector premium -- */
+
+function SectorBand({ rows }: { rows: CostByCategory[] | null }) {
+  // A failed read renders nothing at all. This band exists to make a claim about
+  // relative cost across sectors; a partial or stale version of that claim is
+  // worse than its absence, and the page reads fine without it.
+  if (!rows || rows.length < 2) return null;
+
+  return (
+    <Section id="sectors">
+      <SectionHeading
+        eyebrow="Measured across the snapshot"
+        title="The markets people want to trade are the expensive ones"
+        lead={`Median execution-cost premium over the quoted price, by category, priced at ${SECTOR_SIZE} contracts. Computed from observed depth and the venues' published fee schedules — no probability estimate is involved, which is why every category has a figure.`}
+      />
+      <SectorPremium rows={rows} size={SECTOR_SIZE} />
+    </Section>
+  );
+}
+
 /* ------------------------------------------------------ product surfaces -- */
 
 function ProductSurfaces() {
@@ -270,26 +326,33 @@ function ProductSurfaces() {
     <Section id="product">
       <SectionHeading
         eyebrow="The product"
-        title="Six surfaces, all of them public"
+        title="Seven surfaces, all of them public"
         lead="Screenshots of the deployed application, not renderings of a planned one. Every surface below is reachable right now without an account."
       />
 
       <div className="mt-6">
+        {/*
+         * Cost leads. It is the only surface that answers on every visit — it
+         * needs no probability estimate, so the independence rule that empties
+         * the others cannot empty it — and it covers the categories the models
+         * decline: politics, sports and macro all have a cost even when they
+         * have no forecast.
+         */}
         <FeatureRow
           index={1}
-          title="Research briefing"
-          body="The first thing a returning reader wants is not a pitch. It is what is actionable today, what is not, and how stale the data is. The briefing answers those above the fold and puts the filtering funnel underneath, so a list of ten has a denominator and a list of zero has a reason."
+          title="What a contract actually costs"
+          body="A quoted price is a top-of-book number for one contract. The cost of the trade you are actually placing includes the venue's fee at that size, its rounding rule, the depth you walk to fill, the transfer onto the venue and the capital locked up until resolution. Because a binary contract pays exactly $1, that total is the probability you need just to break even."
           points={[
-            "Actionable, watchlist and disagreement counts at the chosen horizon",
-            "The funnel that produced them, stage by stage, with counts",
-            "Freshest observed quote and pipeline state, stated in text",
+            "Priced from observed depth and published fee schedules — every component checkable",
+            "The same contract at 1, 10, 100 and 1000 contracts, where the premium can swing tenfold",
+            "The modelled slippage pad reported separately, never folded into the headline",
           ]}
-          href="/app"
-          linkLabel="Open the briefing"
+          href="/cost"
+          linkLabel="Open the cost surface"
           shot={
             <ProductShot
               src="/product/briefing.webp"
-              alt="The PMVL research briefing: a measurement band showing actionable, watchlist and disagreement counts, followed by ranked opportunity cards and a stage-by-stage filtering funnel."
+              alt="The PMVL cost surface: contracts ranked by how far their true cost sits above the quoted price, with the break-even probability for each."
               width={1600}
               height={1075}
               priority
@@ -299,6 +362,28 @@ function ProductSurfaces() {
 
         <FeatureRow
           index={2}
+          title="Research briefing"
+          body="The first thing a returning reader wants is not a pitch. It is what is actionable today, what is not, and how stale the data is. The briefing answers those above the fold and puts the filtering funnel underneath, so a list of ten has a denominator and a list of zero has a reason."
+          points={[
+            "Actionable, watchlist and disagreement counts at the chosen horizon",
+            "The funnel that produced them, stage by stage, with counts",
+            "Freshest observed quote and pipeline state, stated in text",
+          ]}
+          reverse
+          href="/app"
+          linkLabel="Open the briefing"
+          shot={
+            <ProductShot
+              src="/product/briefing.webp"
+              alt="The PMVL research briefing: a measurement band showing actionable, watchlist and disagreement counts, followed by ranked opportunity cards and a stage-by-stage filtering funnel."
+              width={1600}
+              height={1075}
+            />
+          }
+        />
+
+        <FeatureRow
+          index={3}
           title="The probability triad"
           body="A market detail page shows three probabilities side by side: what the market implies, what the model estimates independently, and the conservative lower bound the ranking actually uses. When there is no independent estimate, the page says so instead of quietly reporting the market price back as a forecast."
           points={[
@@ -308,7 +393,6 @@ function ProductSurfaces() {
           ]}
           href="/market/630"
           linkLabel="See a market detail page"
-          reverse
           shot={
             <ProductShot
               src="/product/probability.webp"
@@ -320,7 +404,7 @@ function ProductSurfaces() {
         />
 
         <FeatureRow
-          index={3}
+          index={4}
           title="Actionable, kept apart from Diagnostics"
           body="Arbitrage results are split into two views that are never mixed. Actionable means every condition for execution held at scan time. Diagnostics collects the rest — logical mispricings, stale quotes, structures that cannot be executed — because they are informative about the venues and misleading as trade ideas."
           points={[
@@ -341,7 +425,7 @@ function ProductSurfaces() {
         />
 
         <FeatureRow
-          index={4}
+          index={5}
           title="Rule and liquidity filtering"
           body="Market discovery shows the things that decide whether a quoted price is reachable: the ask ladder's depth in dollars, the spread, the tick size, the fee rate, and whether the quote is stale. A contract with an attractive price and no size behind it is not an opportunity, and the table is built so that is visible rather than inferred."
           points={[
@@ -349,9 +433,9 @@ function ProductSurfaces() {
             "Spread, tick size, fee rate and quote age on every row",
             "Venue availability shown separately from exchange listing",
           ]}
+          reverse
           href="/markets"
           linkLabel="Browse markets"
-          reverse
           shot={
             <ProductShot
               src="/product/markets.webp"
@@ -363,7 +447,7 @@ function ProductSurfaces() {
         />
 
         <FeatureRow
-          index={5}
+          index={6}
           title="Track record and backtest transparency"
           body="Recommendations are frozen at publication and kept whether they win or lose. The backtest reports return and accuracy independently, because a strategy can make money while forecasting worse than the market — and reporting only the profitable half of that is how backtests mislead."
           points={[
@@ -384,7 +468,7 @@ function ProductSurfaces() {
         />
 
         <FeatureRow
-          index={6}
+          index={7}
           title="System and snapshot transparency"
           body="The system page states what this deployment is: which commit it runs, whether it serves a frozen snapshot, when each part of that snapshot was observed, which pipeline jobs last succeeded, and whether trading execution is enabled. It is the page that lets a reader check the claims on this one."
           points={[
@@ -392,9 +476,9 @@ function ProductSurfaces() {
             "Per-job pipeline state with last success and last failure",
             "Data sources listed with what each is used for",
           ]}
+          reverse
           href="/system"
           linkLabel="Inspect system status"
-          reverse
           shot={
             <ProductShot
               src="/product/system.webp"
@@ -565,7 +649,25 @@ function Questions() {
           },
           {
             q: "Why can Actionable be zero?",
-            a: "Because these venues are usually priced efficiently enough that nothing clears the bar. Zero is the ordinary, correct result, and the filtering funnel shows how many candidates were examined and on what grounds each stage declined them. A scanner that always finds something has set its bar to guarantee that.",
+            a: (
+              <>
+                Because these venues are usually priced efficiently enough that
+                nothing clears the bar. Zero is the ordinary, correct result, and
+                the filtering funnel shows how many candidates were examined and on
+                what grounds each stage declined them. A scanner that always finds
+                something has set its bar to guarantee that. The{" "}
+                <Link href="/cost" className="underline underline-offset-2">
+                  cost surface
+                </Link>{" "}
+                is not gated that way — it needs no probability estimate, so it has
+                an answer for every market with a quote whether or not anything is
+                actionable.
+              </>
+            ),
+          },
+          {
+            q: "What does the cost surface measure that the venues do not show?",
+            a: "The difference between a contract's quoted price and what buying it actually costs at the size you want: the venue's fee at that size, its rounding rule, the depth you walk to fill, the transfer onto the venue and the capital locked up until resolution. Because a binary contract pays exactly $1, the total is also the probability you need just to break even. Kalshi ceils its fee to the whole cent on the whole order, so a 1¢ contract bought one at a time costs 2¢ — a fact neither venue displays and one that does not depend on any forecast.",
           },
           {
             q: "Which markets are modelled independently?",
