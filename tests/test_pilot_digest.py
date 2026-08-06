@@ -1039,9 +1039,10 @@ class TestTheCostSectionIsAlwaysThere:
     Everything else in the digest is downstream of a probability estimate, and
     the independence rule declines to produce one for most markets — so a report
     built only from candidates says "no actionable opportunity today" on most
-    days, which is what the pilot was selling. Execution cost needs no estimate:
-    fees at size, the venue's rounding rule, depth where a book exists, transfer
-    and capital cost are all derived from the contract and published schedules.
+    days, which is what the pilot was selling. The entry-cost surface needs no
+    outcome-probability estimate: fees at size, the venue's rounding rule and depth
+    where a book exists are source-derived, while transfer and capital cost remain
+    disclosed scenario assumptions.
     """
 
     @staticmethod
@@ -1061,7 +1062,7 @@ class TestTheCostSectionIsAlwaysThere:
         report = self._report(snapshot)
         for text in (to_markdown(report), to_text(report), to_html_email(report)):
             lowered = text.lower()
-            assert "what it costs to trade today" in lowered
+            assert "estimated entry cost today" in lowered
             # The size the figures are priced at is stated wherever they appear:
             # fee rounding makes the premium size-dependent, so a premium without
             # its size is not a number a reader can use.
@@ -1069,7 +1070,8 @@ class TestTheCostSectionIsAlwaysThere:
 
     def test_every_format_states_the_break_even_reading(self, snapshot):
         # The reason the figure matters: a binary contract pays exactly $1, so
-        # cost per contract IS the probability needed to break even.
+        # the cost estimate per contract maps to the break-even probability under
+        # the same assumptions.
         report = self._report(snapshot)
         for text in (to_markdown(report), to_text(report), to_html_email(report)):
             assert "break even" in text.lower() or "break-even" in text.lower()

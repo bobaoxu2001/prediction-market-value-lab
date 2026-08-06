@@ -59,3 +59,9 @@ private/
 #
 # Committing it makes git and CLI deploys produce identical, working bundles.
 # Rebuild with `make snapshot-build` (deterministic, fixed RNG seed).
+
+# Personal job-search material. This repository is public: an interview brief
+# committed here is published, indexed, and stays in history after deletion.
+docs/TENCENT_*.md
+docs/*INTERVIEW*.md
+docs/*_BRIEF_*.md

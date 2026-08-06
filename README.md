@@ -296,8 +296,9 @@ An empty live Top-10 is the expected first-run result, for stackable reasons:
 1. **No independent prior.** Most markets have no matched counterpart on the other
    venue and fall outside the crypto/weather models, so nothing independent of their
    own price is available. They are listed under "Scored but not recommendable".
-2. **No edge after real costs.** Both venues are efficiently priced. Once fees,
-   spread, slippage and capital cost are deducted, apparent edges usually vanish.
+2. **No conservative edge after the configured cost stack.** Both venues are
+   efficiently priced. Once fees, spread, slippage and the disclosed capital-cost
+   assumption are deducted, apparent edges usually vanish.
 3. **The conservative bound is used, not the mean.** A wide uncertainty band cannot
    produce a recommendation even if the mean looks attractive.
 

@@ -154,12 +154,13 @@ export interface MarketRow {
 /**
  * Execution cost for one order size.
  *
- * Two totals, deliberately not merged. `measured_cost` contains only what can be
- * derived from the observed book and the venues' published fee rules, and is what
- * `breakeven_probability` is computed from. `all_in_cost` adds a flat slippage pad
- * that stands in for market impact — an assumption, and on a cheap contract larger
- * than every real cost combined, so a page that shows only the blended figure would
- * be presenting a config default as a finding.
+ * Two totals, deliberately not merged. The compatibility field `measured_cost`
+ * combines observed book/rule-derived inputs with disclosed transfer and capital
+ * assumptions, and is what `breakeven_probability` is computed from. `all_in_cost`
+ * adds a separate flat slippage pad that stands in for market impact — another
+ * assumption, and on a cheap contract larger than every observed or rule-derived
+ * component combined. A page that showed only the blend would present a config
+ * default as a finding.
  */
 export interface CostAtSize {
   size: string;
@@ -239,8 +240,8 @@ export interface CostByCategory {
   priced_from_orderbook: number;
   /**
    * Fraction of the sample priced from a real ask ladder. Where this is low the
-   * median excludes depth impact and is a floor — the category's true premium is
-   * higher than reported, not lower.
+   * median excludes depth impact and is an incomplete floor with respect to that
+   * component. Adding depth can only raise the estimate under the same assumptions.
    */
   depth_coverage: string;
 }

@@ -348,9 +348,10 @@ function Method() {
             and this platform lists it as a known limitation rather than a result.
           </p>
           <p className="t-body mt-2">
-            At a 1¢ tick the pad is a whole cent, which on a cheap contract is larger
-            than every real cost combined. Folding it into one number would make the
-            headline mostly an artefact of a configuration default, so it is shown
+            At a 1¢ tick the pad is a whole cent, which on a cheap contract can exceed
+            every observed or rule-derived component combined. Folding it into one
+            number would make the headline mostly an artefact of a configuration
+            default, so it is shown
             beside the headline estimate on each contract&apos;s own page and excluded
             from the break-even probability.
           </p>
@@ -363,8 +364,8 @@ function Method() {
         </div>
       </div>
       <p className="t-meta mt-6">
-        Research and information only. Measuring what a trade costs is not a
-        recommendation to make it.
+        Research and information only. Estimating entry cost is not a recommendation
+        to trade.
       </p>
     </section>
   );

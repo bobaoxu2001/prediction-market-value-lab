@@ -260,7 +260,7 @@ def _pick(
 ) -> RecommendationSnapshot | None:
     """Choose the most illustrative settled snapshot for ``result``.
 
-    Prefers rows that exercise the whole walkthrough: a real cost breakdown, a
+    Prefers rows that exercise the whole walkthrough: an itemised cost breakdown, a
     recorded market-implied probability, and a decisive outcome.
     """
     stmt = (

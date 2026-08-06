@@ -181,7 +181,7 @@ class CostSector:
 
 @dataclass
 class CostSummary:
-    """What it costs to trade, across the Snapshot.
+    """An entry-cost estimate across the Snapshot.
 
     The section that always has content. Every other part of this report is
     downstream of a probability estimate, and the independence rule declines to

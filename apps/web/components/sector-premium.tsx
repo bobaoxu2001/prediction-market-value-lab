@@ -162,8 +162,8 @@ export function SectorPremium({
           Circle area is the median premium; the figure above each circle is that
           same number exactly. Sorted most expensive first.{" "}
           <strong className="text-ink">
-            In this snapshot, the categories this model does not forecast —
-            politics, economics and sports — have the highest sample medians.
+            In this snapshot, politics, sports and culture have the top three
+            sample medians.
           </strong>{" "}
           This is a descriptive association, not a causal finding; quote basis,
           depth coverage and market mix differ across categories.
@@ -233,9 +233,9 @@ export function SectorPremium({
  *
  * Stated prominently rather than in a footnote, because it cuts the *other* way
  * from the usual caveat: a category priced only from venue summaries has its
- * depth impact excluded, so its true premium is higher than plotted, not lower.
- * A reader who assumed the missing data flattered the expensive sectors would
- * have it backwards.
+ * depth impact excluded. Under the same stated assumptions, adding non-negative
+ * depth impact can only raise the displayed premium. This does not turn the
+ * estimate into a measured all-in cost.
  */
 function DepthCaveat({ rows }: { rows: CostByCategory[] }) {
   const thin = rows.filter((row) => (num(row.depth_coverage) ?? 0) < 0.25);
@@ -244,9 +244,10 @@ function DepthCaveat({ rows }: { rows: CostByCategory[] }) {
     <p className="t-meta mt-3 max-w-3xl">
       Order books have been captured for only part of this snapshot, so{" "}
       {thin.length} of these {rows.length} categories are priced mainly from venue
-      summary quotes. That excludes order-book depth impact entirely — meaning
-      their true premium is <strong className="text-ink">higher</strong> than
-      shown here, not lower. Fees, transfer and capital cost are exact regardless.
+      summary quotes. That excludes order-book depth impact entirely. Under the
+      same stated assumptions, adding depth can only make the displayed premium{" "}
+      <strong className="text-ink">higher</strong>, not lower. Transfer and capital
+      remain configured scenario inputs, not observations.
     </p>
   );
 }

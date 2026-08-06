@@ -631,8 +631,8 @@ function Caveats({ caveats }: { caveats: string[] }) {
         ))}
       </ul>
       <p className="t-meta mt-5">
-        Research and information only. Measuring what a trade costs is not a
-        recommendation to make it, and this platform places no orders.
+        Research and information only. Estimating entry cost is not a recommendation
+        to trade, and this platform places no orders.
       </p>
     </section>
   );

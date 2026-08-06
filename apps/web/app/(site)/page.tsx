@@ -185,7 +185,7 @@ function Hero({
     <section className="mx-auto max-w-6xl px-4 pb-14 pt-16 sm:pt-24">
       <p className="t-label">Prediction Market Value Lab</p>
       <h1 className="mt-3 max-w-4xl text-[2rem] leading-[1.12] sm:text-[2.75rem]">
-        The price on the screen is not what the contract costs.
+        The quoted price is only the first input.
       </h1>
       {/*
        * The hero used to end on "most of the time the answer is that no trade is
@@ -199,11 +199,11 @@ function Hero({
        * opportunity surfaces empty.
        */}
       <p className="t-lead mt-5 max-w-2xl">
-        Buy a contract quoted at 1¢ on Kalshi and the fee alone doubles what you
-        pay, because the venue ceils it to the whole cent on the whole order. PMVL
-        measures that gap — fees, rounding, order-book depth, transfer and capital
-        cost — for every market with a quote, and converts it into the one number
-        that decides a trade: the probability you need just to break even.
+        On a one-lot Kalshi order quoted at 1¢, the published rounding rule adds a
+        1¢ venue fee. PMVL builds an auditable entry-cost estimate from observed
+        book depth and published venue rules, plus separately disclosed transfer
+        and capital assumptions. For a binary contract, that estimate maps to the
+        break-even probability under the same assumptions.
       </p>
       <p className="t-lead mt-3 max-w-2xl">
         It also estimates probabilities independently of the market&apos;s own
@@ -213,7 +213,7 @@ function Hero({
 
       <div className="mt-8 flex flex-wrap items-center gap-3">
         <Link href="/cost" className="btn-primary">
-          See what contracts really cost
+          Inspect entry-cost estimates
         </Link>
         <Link href="/app" className="btn-quiet">
           Research briefing
@@ -379,7 +379,7 @@ function SectorBand({ rows }: { rows: CostByCategory[] | null }) {
     <Section id="sectors">
       <SectionHeading
         eyebrow="Measured across the snapshot"
-        title="Policy-heavy categories have the highest median premiums in this snapshot"
+        title="Politics has the highest median entry premium in this snapshot"
         lead={`Descriptive snapshot comparison at ${SECTOR_SIZE} contracts. The stack uses observed depth and published venue fee rules plus disclosed transfer and capital-cost assumptions; it does not require a probability forecast.`}
       />
       <SectorPremium rows={rows} size={SECTOR_SIZE} />

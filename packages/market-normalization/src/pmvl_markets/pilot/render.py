@@ -235,7 +235,7 @@ def _md_banner(report: Report) -> list[str]:
 
 
 def _md_cost(cost) -> list[str]:  # noqa: ANN001
-    """What it costs to trade. The section that is never empty.
+    """An entry-cost estimate. The section that is never empty.
 
     Every other part of this report is downstream of a probability estimate, and
     the independence rule declines to produce one for most markets - so a report
@@ -247,15 +247,16 @@ def _md_cost(cost) -> list[str]:  # noqa: ANN001
 
     size = int(cost.priced_at_size)
     out = [
-        f"## What it costs to trade today — {cost.markets_priced:,} contracts priced",
+        f"## Estimated entry cost today — {cost.markets_priced:,} contracts priced",
         "",
-        f"Every figure below is the cost of buying **{size} contracts**, above the "
-        "price on the venue's screen. It is computed from observed depth and the "
-        "venues' published fee schedules — no probability estimate is involved, "
+        f"Every figure below is the estimated premium for buying **{size} contracts** "
+        "above the price on the venue's screen. It combines observed depth and "
+        "published venue rules with disclosed transfer and capital assumptions — "
+        "no outcome-probability estimate is involved, "
         "which is why this section has content on a day when nothing is actionable.",
         "",
-        "Because a binary contract pays exactly $1, cost per contract is also the "
-        "probability you need just to break even.",
+        "Because a binary contract pays exactly $1, the cost estimate per contract "
+        "maps to a break-even probability under the same assumptions.",
         "",
     ]
 
@@ -274,21 +275,21 @@ def _md_cost(cost) -> list[str]:  # noqa: ANN001
         out += [
             "",
             "Where *priced from a book* is low the premium excludes order-book "
-            "depth entirely, which makes it a **floor** on the true cost rather "
-            "than an estimate of it — those categories are understated here, not "
-            "flattered.",
+            "depth entirely. The result is an incomplete **floor** with respect to "
+            "depth impact, not a measured all-in cost; adding depth can only raise "
+            "the displayed estimate under the same assumptions.",
             "",
         ]
 
     if cost.costliest:
         out += [
-            "### Widest gap between the quoted price and the real one",
+            "### Widest estimated gap above the quoted price",
             "",
             "Ranked by premium as a share of the quoted price, not by dollars: a "
             "1c contract carrying a 1c fee is the finding, and it would never "
             "surface in a ranking led by absolute cost.",
             "",
-            "| Contract | Quoted | True cost | Premium | Break-even |",
+            "| Contract | Quoted | Cost estimate | Premium | Est. break-even |",
             "| --- | ---: | ---: | ---: | ---: |",
         ]
         for row in cost.costliest:
@@ -607,17 +608,18 @@ def to_text(report: Report) -> str:
         if cost is not None and cost.has_content:
             size = int(cost.priced_at_size)
             out += [
-                f"WHAT IT COSTS TO TRADE TODAY - {cost.markets_priced:,} CONTRACTS PRICED",
+                f"ESTIMATED ENTRY COST TODAY - {cost.markets_priced:,} CONTRACTS PRICED",
                 _rule("-"),
                 "",
             ]
             out += _wrap(
-                f"Every figure below is the cost of buying {size} contracts, above the "
-                "price on the venue's screen, computed from observed depth and the "
-                "venues' published fee schedules. No probability estimate is involved, "
+                f"Every figure below is the estimated premium for buying {size} contracts "
+                "above the price on the venue's screen. It combines observed depth and "
+                "published venue rules with disclosed transfer and capital assumptions. "
+                "No outcome-probability estimate is involved, "
                 "which is why this section has content on a day when nothing is "
-                "actionable. A binary contract pays exactly $1, so cost per contract is "
-                "also the probability needed just to break even."
+                "actionable. A binary contract pays exactly $1, so the cost estimate "
+                "maps to a break-even probability under the same assumptions."
             )
             out.append("")
             if cost.sectors:
@@ -632,13 +634,14 @@ def to_text(report: Report) -> str:
                 out.append("")
                 out += _wrap(
                     "Where 'from a book' is low the premium excludes order-book depth "
-                    "entirely, which makes it a floor on the true cost rather than an "
-                    "estimate of it: those categories are understated here.",
+                    "entirely. The result is an incomplete floor with respect to depth "
+                    "impact, not a measured all-in cost; adding depth can only raise "
+                    "the estimate under the same assumptions.",
                     indent="  ",
                 )
                 out.append("")
             if cost.costliest:
-                out.append("  Widest gap between the quoted price and the real one:")
+                out.append("  Widest estimated gap above the quoted price:")
                 out.append("")
                 for row in cost.costliest:
                     breakeven = (
@@ -648,7 +651,7 @@ def to_text(report: Report) -> str:
                     )
                     out.append(f"    {row.title[:60]}")
                     out.append(
-                        f"      quoted {_cents(row.nominal_price)} -> true "
+                        f"      quoted {_cents(row.nominal_price)} -> estimate "
                         f"{_cents(row.measured_cost)}  "
                         f"(+{_pct(row.measured_premium_ratio)})  "
                         f"break-even {breakeven}"
@@ -929,18 +932,20 @@ def to_html_email(report: Report) -> str:
             size = int(cost.priced_at_size)
             body.append(
                 _html_h2(
-                    f"What it costs to trade today — {cost.markets_priced:,} "
+                    f"Estimated entry cost today — {cost.markets_priced:,} "
                     "contracts priced"
                 )
             )
             body.append(
                 _html_p(
-                    f"Every figure below is the cost of buying {size} contracts, above "
-                    "the price on the venue's screen, computed from observed depth and "
-                    "the venues' published fee schedules. No probability estimate is "
+                    f"Every figure below is the estimated premium for buying {size} "
+                    "contracts above the price on the venue's screen. It combines "
+                    "observed depth and published venue rules with disclosed transfer "
+                    "and capital assumptions. No outcome-probability estimate is "
                     "involved, which is why this section has content on a day when "
-                    "nothing is actionable. A binary contract pays exactly $1, so cost "
-                    "per contract is also the probability needed just to break even."
+                    "nothing is actionable. A binary contract pays exactly $1, so the "
+                    "cost estimate maps to a break-even probability under the same "
+                    "assumptions."
                 )
             )
             if cost.sectors:
@@ -960,20 +965,21 @@ def to_html_email(report: Report) -> str:
                 body.append(
                     _html_p(
                         "Where the book share is low the premium excludes order-book "
-                        "depth entirely, which makes it a floor on the true cost rather "
-                        "than an estimate of it: those categories are understated here."
+                        "depth entirely. The result is an incomplete floor with respect "
+                        "to depth impact, not a measured all-in cost; adding depth can "
+                        "only raise the estimate under the same assumptions."
                     )
                 )
             if cost.costliest:
                 body.append(
-                    _html_h2("Widest gap between the quoted price and the real one")
+                    _html_h2("Widest estimated gap above the quoted price")
                 )
                 body.append(
                     _html_kv(
                         [
                             (
                                 _h(row.title),
-                                f"quoted {_cents(row.nominal_price)} &rarr; true "
+                                f"quoted {_cents(row.nominal_price)} &rarr; estimate "
                                 f"{_cents(row.measured_cost)} "
                                 f"(+{_pct(row.measured_premium_ratio)}), break-even "
                                 + (

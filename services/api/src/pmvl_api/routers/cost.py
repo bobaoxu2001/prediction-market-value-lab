@@ -1,4 +1,4 @@
-"""What a contract costs to buy, for any market that has a price.
+"""An entry-cost estimate for any market that has a price.
 
 Every other analytical endpoint here is gated on a probability estimate, and the
 independence rule refuses to supply one for most markets -- correctly, and that is
@@ -220,8 +220,9 @@ def cost_by_category(
                 "p25_premium_ratio": ordered[len(ordered) // 4],
                 "p75_premium_ratio": ordered[(3 * len(ordered)) // 4],
                 # How much of this median rests on a real ladder. Where it is zero
-                # the premium excludes depth impact entirely and is a floor, which
-                # makes the category's true cost *higher* than plotted, not lower.
+                # the estimate excludes depth impact entirely and is an incomplete
+                # floor with respect to that component. Adding non-negative depth
+                # impact can only raise the estimate under the same assumptions.
                 "priced_from_orderbook": books,
                 "depth_coverage": _ratio(books, len(ordered)),
             }
@@ -253,11 +254,12 @@ def _sector_envelope(
         side=side.value,
         basis={"measured": MEASURED_BASIS, "modelled": MODELLED_BASIS},
         note=(
-            "Median measured premium over the quoted price, per category, at the "
+            "Median estimated premium over the quoted price, per category, at the "
             "stated size. Categories with fewer than "
             f"{SECTOR_MIN_SAMPLE} priceable contracts are omitted rather than "
             "given a median. Where depth_coverage is low the figure excludes "
-            "order-book impact and is a floor on the true premium."
+            "order-book impact and is an incomplete floor with respect to that "
+            "component, not a measured all-in premium."
         ),
     )
 
@@ -380,7 +382,7 @@ def cost_index(
     db: Session = DbDep,
     mode: DataMode = ModeDep,
 ) -> dict[str, Any]:
-    """Markets ranked by how far their true cost sits above the quoted price.
+    """Markets ranked by estimated premium over the quoted price.
 
     The ranking a reader cannot get from either venue: not which contract is
     cheapest, but which one costs the most *more* than it appears to. Sorted by

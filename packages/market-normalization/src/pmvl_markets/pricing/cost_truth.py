@@ -27,7 +27,8 @@ Three quantities, kept distinct because conflating them is the entire problem:
     itemised even though the compatibility field retains its historical name.
 
 That last quantity is the one worth printing in large type, because for a binary
-contract paying exactly $1 it *is* the break-even probability. A contract quoted at
+contract paying exactly $1 it maps to the break-even probability under the same
+assumptions. A contract quoted at
 34c whose measured cost is 37.2c does not need the event to happen 34% of the time
 to break even. It needs 37.2%. That gap is not a rounding detail; on small Kalshi
 orders it routinely exceeds the entire edge a model would need to find.
@@ -43,7 +44,7 @@ Slippage is kept **out** of that headline and reported beside it. The pad this
 codebase applies is ``tick_size x SLIPPAGE_TICKS``, a flat assumption standing in
 for market impact, and the README already lists it as a known limitation rather
 than a measurement. At a 1-cent tick it is a whole cent, which on a cheap contract
-exceeds every real cost combined -- so a single blended number would make the
+exceeds every observed or rule-derived component combined -- so a single blended number would make the
 product's central claim mostly an artefact of a config default. Measured and
 modelled costs are therefore separate fields everywhere, and the measured one
 leads.
@@ -121,7 +122,8 @@ class CostAtSize:
     # SLIPPAGE_TICKS`, a flat assumption standing in for the market impact between
     # observing a book and reaching it, and this codebase already names it as a
     # known limitation rather than a measurement. At a 1-cent tick it is a whole
-    # cent, which on a 2-cent contract is larger than every real cost combined --
+    # cent, which on a 2-cent contract is larger than every observed or rule-derived
+    # component combined --
     # so folding it into one headline number would mean the product's central
     # claim was mostly a constant from a config file.
     #
@@ -488,7 +490,7 @@ def analyse_cost(
         requested=requested_entry,
         # Unplaceable sizes are dropped from the comparison ladder but kept
         # available as an explicit `requested` answer. Showing Polymarket's 1-lot
-        # beside its 5-lot invites a reader to compare a real cost against the
+        # beside its 5-lot invites a reader to compare a source-backed estimate against the
         # cost of an order the venue would reject, and the unplaceable one always
         # looks worse -- so the ladder would appear to teach a lesson about fees
         # that is really a lesson about a minimum. Asking for that size directly

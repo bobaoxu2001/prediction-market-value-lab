@@ -18,7 +18,7 @@ export default function sitemap(): MetadataRoute.Sitemap {
     { path: "/", priority: 1, changeFrequency: "weekly" },
     { path: "/app", priority: 0.9, changeFrequency: "daily" },
     // High priority: it is the surface that answers on every visit, and the one
-    // whose subject ("what does this contract really cost") people search for.
+    // whose subject ("what can entry cost at this size") people search for.
     { path: "/cost", priority: 0.9, changeFrequency: "daily" },
     { path: "/pricing", priority: 0.8, changeFrequency: "monthly" },
     { path: "/founding-pilot", priority: 0.8, changeFrequency: "monthly" },

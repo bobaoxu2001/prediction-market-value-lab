@@ -105,7 +105,7 @@ def fee_per_contract(
 
     Explicitly size-dependent. Kalshi's cent-ceiling means a 1-contract order can pay
     several times the per-contract fee of a 100-contract order, and quoting the
-    large-order rate on a small recommendation would understate true cost.
+    large-order rate on a small recommendation would understate the venue-fee burden.
     """
     if contracts <= 0:
         return ZERO

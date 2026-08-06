@@ -14,7 +14,7 @@ import { ImageResponse } from "next/og";
  */
 
 export const alt =
-  "PMVL — the price on the screen is not what a prediction-market contract costs";
+  "PMVL — the quoted price is only the first input to an entry-cost estimate";
 export const size = { width: 1200, height: 630 };
 export const contentType = "image/png";
 
@@ -60,7 +60,7 @@ export default function Image() {
               maxWidth: 1020,
             }}
           >
-            The price on the screen is not what the contract costs.
+            The quoted price is only the first input.
           </div>
           <div
             style={{
@@ -72,15 +72,15 @@ export default function Image() {
               maxWidth: 980,
             }}
           >
-            Buy a contract quoted at{" "}
-            <span style={{ color: ACCENT, margin: "0 10px" }}>1¢</span> on Kalshi
-            and the fee alone doubles what you pay.
+            On a one-lot Kalshi order quoted at{" "}
+            <span style={{ color: ACCENT, margin: "0 10px" }}>1¢</span>, the
+            published rounding rule adds a 1¢ venue fee.
           </div>
         </div>
 
         <div style={{ display: "flex", fontSize: 22, color: MUTED }}>
-          Fees, rounding, book depth, transfer and capital cost — measured, for every
-          market with a quote. Research only.
+          Observed depth and venue rules, with transfer and capital assumptions
+          disclosed separately. Research only.
         </div>
       </div>
     ),
