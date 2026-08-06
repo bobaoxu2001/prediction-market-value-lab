@@ -1,5 +1,6 @@
 import type { Metadata } from "next";
 import Link from "next/link";
+import { unstable_cache } from "next/cache";
 import { redirect } from "next/navigation";
 
 import {
@@ -22,9 +23,9 @@ import { absoluteUrl } from "@/lib/site";
 export const dynamic = "force-dynamic";
 
 export const metadata: Metadata = {
-  title: "What a prediction-market contract actually costs to buy",
+  title: "What prediction-market entry can cost",
   description:
-    "PMVL measures the gap between a contract's quoted price and its true cost — venue fees, the fee-rounding rule, order-book depth, transfer and capital cost — for every market with a quote. It also estimates probabilities where it has independent coverage, and says so when it does not.",
+    "PMVL estimates the gap between a contract's quoted price and its entry-cost stack — observed depth, venue fees and rounding, plus disclosed transfer and capital-cost assumptions — for every market with a quote. It also estimates probabilities where it has independent coverage, and says so when it does not.",
   alternates: { canonical: absoluteUrl("/") },
 };
 
@@ -37,6 +38,74 @@ export const metadata: Metadata = {
  * than left for a reader to assume.
  */
 const SECTOR_SIZE = "100";
+
+/**
+ * How long the shared, snapshot-derived half of this page is cached.
+ *
+ * Generous on purpose. Every figure here comes from the published artefact,
+ * which is **committed to this repository** — so new data means a new commit and
+ * a new deployment, and a deployment invalidates this cache wholesale. The
+ * values are therefore constant for a deployment's entire lifetime, and the
+ * window is a backstop rather than the thing keeping them correct.
+ */
+const SNAPSHOT_CACHE_SECONDS = 3600;
+
+interface HomeSnapshotData {
+  proof: ResearchProof;
+  sectors: CostByCategory[] | null;
+}
+
+/**
+ * Everything on this page that is identical for every visitor.
+ *
+ * Four API calls, all reading the frozen artefact: the proof band's three and
+ * the sector comparison. On production they measured 5–16s each, and the page
+ * waited on the slowest, so a first-time reader met a blank tab for that long.
+ *
+ * Deliberately not the whole route. `getCurrentEntitlement` reads the visitor's
+ * session, so this page must stay dynamic — caching the route would serve one
+ * visitor's signed-in state to everyone the moment accounts are switched on.
+ * Only the shared half is cached.
+ */
+const readHomeSnapshotData = unstable_cache(
+  readHomeSnapshotDataUncached,
+  ["home-snapshot-data", SECTOR_SIZE],
+  { revalidate: SNAPSHOT_CACHE_SECONDS, tags: ["home-snapshot-data"] },
+);
+
+/** The same reads, going straight to the API. */
+async function readHomeSnapshotDataUncached(): Promise<HomeSnapshotData> {
+  const [proof, sectors] = await Promise.all([
+    getResearchProof(),
+    apiGet<CostByCategory[]>(`/cost/by-category${qs({ size: SECTOR_SIZE })}`),
+  ]);
+  return { proof, sectors: sectors?.data ?? null };
+}
+
+/**
+ * The cached read, which falls back to an uncached one in two cases.
+ *
+ * **A failure is never cached.** `getResearchProof` answers `available: false`
+ * when the API cannot be reached, and the page renders a plain "figures
+ * unavailable" state for it. Caching that would pin the outage in place for an
+ * hour after the API came back — turning a thirty-second blip into a long one,
+ * on the page most likely to be a reader's first impression.
+ *
+ * **A missing cache runtime is not an error.** `unstable_cache` throws
+ * "incrementalCache missing" when called outside Next's request context, which
+ * is exactly what happens when this page is rendered directly in a test. The
+ * cache is an optimisation and never a correctness requirement, so anything that
+ * stops it working means doing the work instead — not failing the page.
+ */
+async function getHomeSnapshotData(): Promise<HomeSnapshotData> {
+  try {
+    const cached = await readHomeSnapshotData();
+    if (cached.proof.available) return cached;
+  } catch {
+    // Fall through and read directly.
+  }
+  return readHomeSnapshotDataUncached();
+}
 
 /** Query keys the research briefing used to accept when it lived at `/`. */
 const RESEARCH_QUERY_KEYS = [
@@ -69,14 +138,13 @@ export default async function HomePage({
   }
   if ([...search.keys()].length > 0) redirect(`/app?${search.toString()}`);
 
-  // In parallel: three independent reads, none of which may block the others.
-  // The sector comparison prices a sample of the universe, so it is the slowest,
-  // and sequencing it after the proof band would add its latency to the page.
-  const [proof, entitlement, sectors] = await Promise.all([
-    getResearchProof(),
+  // The snapshot-derived half is shared across visitors and cached; the
+  // entitlement is this visitor's and is not. Both still run in parallel.
+  const [snapshot, entitlement] = await Promise.all([
+    getHomeSnapshotData(),
     getCurrentEntitlement(),
-    apiGet<CostByCategory[]>(`/cost/by-category${qs({ size: SECTOR_SIZE })}`),
   ]);
+  const { proof, sectors } = snapshot;
   // Whether anyone can actually register. Both Clerk keys, not just the public
   // one: a publishable key alone renders a form that cannot verify a session.
   const accountsEnabled = isAuthConfigured();
@@ -89,7 +157,7 @@ export default async function HomePage({
         accountsEnabled={accountsEnabled}
       />
       <ProofBand proof={proof} />
-      <SectorBand rows={sectors?.data ?? null} />
+      <SectorBand rows={sectors} />
       <ProductSurfaces />
       <HowItWorks />
       <Trust proof={proof} />
@@ -311,8 +379,8 @@ function SectorBand({ rows }: { rows: CostByCategory[] | null }) {
     <Section id="sectors">
       <SectionHeading
         eyebrow="Measured across the snapshot"
-        title="The markets people want to trade are the expensive ones"
-        lead={`Median execution-cost premium over the quoted price, by category, priced at ${SECTOR_SIZE} contracts. Computed from observed depth and the venues' published fee schedules — no probability estimate is involved, which is why every category has a figure.`}
+        title="Policy-heavy categories have the highest median premiums in this snapshot"
+        lead={`Descriptive snapshot comparison at ${SECTOR_SIZE} contracts. The stack uses observed depth and published venue fee rules plus disclosed transfer and capital-cost assumptions; it does not require a probability forecast.`}
       />
       <SectorPremium rows={rows} size={SECTOR_SIZE} />
     </Section>
@@ -340,10 +408,10 @@ function ProductSurfaces() {
          */}
         <FeatureRow
           index={1}
-          title="What a contract actually costs"
-          body="A quoted price is a top-of-book number for one contract. The cost of the trade you are actually placing includes the venue's fee at that size, its rounding rule, the depth you walk to fill, the transfer onto the venue and the capital locked up until resolution. Because a binary contract pays exactly $1, that total is the probability you need just to break even."
+          title="What entry can cost"
+          body="A quoted price is a top-of-book number for one contract. PMVL builds an auditable entry-cost estimate from the venue fee at that size, its rounding rule, observed depth, and explicitly disclosed transfer and capital-cost assumptions. Because a binary contract pays exactly $1, that total is the estimated probability needed to break even under those assumptions."
           points={[
-            "Priced from observed depth and published fee schedules — every component checkable",
+            "Observed depth and published fee rules kept separate from configured assumptions",
             "The same contract at 1, 10, 100 and 1000 contracts, where the premium can swing tenfold",
             "The modelled slippage pad reported separately, never folded into the headline",
           ]}
@@ -351,10 +419,10 @@ function ProductSurfaces() {
           linkLabel="Open the cost surface"
           shot={
             <ProductShot
-              src="/product/briefing.webp"
-              alt="The PMVL cost surface: contracts ranked by how far their true cost sits above the quoted price, with the break-even probability for each."
-              width={1600}
-              height={1075}
+              src="/product/cost.png"
+              alt="The PMVL cost surface showing a frozen-snapshot disclosure, order-size and venue controls, and contracts ranked by estimated premium over the quoted price."
+              width={1280}
+              height={720}
               priority
             />
           }
@@ -363,7 +431,7 @@ function ProductSurfaces() {
         <FeatureRow
           index={2}
           title="Research briefing"
-          body="The first thing a returning reader wants is not a pitch. It is what is actionable today, what is not, and how stale the data is. The briefing answers those above the fold and puts the filtering funnel underneath, so a list of ten has a denominator and a list of zero has a reason."
+          body="The first thing a returning reader wants is not a pitch. It is what was actionable at the displayed snapshot, what was not, and how stale the data is. The briefing answers those above the fold and puts the filtering funnel underneath, so a list of ten has a denominator and a list of zero has a reason."
           points={[
             "Actionable, watchlist and disagreement counts at the chosen horizon",
             "The funnel that produced them, stage by stage, with counts",
@@ -667,7 +735,7 @@ function Questions() {
           },
           {
             q: "What does the cost surface measure that the venues do not show?",
-            a: "The difference between a contract's quoted price and what buying it actually costs at the size you want: the venue's fee at that size, its rounding rule, the depth you walk to fill, the transfer onto the venue and the capital locked up until resolution. Because a binary contract pays exactly $1, the total is also the probability you need just to break even. Kalshi ceils its fee to the whole cent on the whole order, so a 1¢ contract bought one at a time costs 2¢ — a fact neither venue displays and one that does not depend on any forecast.",
+            a: "An estimated entry-cost stack at the size you choose: observed depth and published venue fee and rounding rules, plus separately disclosed transfer and capital-cost assumptions. Because a binary contract pays exactly $1, that estimate maps to a break-even probability under the same assumptions. Kalshi ceils its fee to the whole cent on the whole order, so a 1¢ contract bought one at a time carries a 1¢ venue fee — a rule-derived fact that does not depend on any forecast.",
           },
           {
             q: "Which markets are modelled independently?",
