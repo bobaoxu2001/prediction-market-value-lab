@@ -129,13 +129,13 @@ export default function WatchlistPage() {
                     Quoted
                   </th>
                   <th scope="col" className="num">
-                    True cost
+                    Cost estimate
                   </th>
                   <th scope="col" className="num">
-                    Premium
+                    Est. premium
                   </th>
                   <th scope="col" className="num">
-                    Break-even
+                    Est. break-even
                   </th>
                   <th scope="col">
                     <span className="sr-only">Remove</span>
