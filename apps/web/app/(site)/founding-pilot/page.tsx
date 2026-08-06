@@ -53,16 +53,15 @@ export default function FoundingPilotPage() {
           opportunities, because the report still does not promise one.
         */}
         <h1 className="mt-3 max-w-4xl text-[2rem] leading-[1.12] sm:text-[2.5rem]">
-          Thirty days of what it actually costs to trade these markets.
+          Thirty days of estimated entry costs across these markets.
         </h1>
         <p className="t-lead mt-5 max-w-2xl">
           Each morning, one report. It prices every quoted contract in that
-          day&apos;s snapshot against the venues&apos; published fee schedules and
-          the depth actually on the book, and tells you the gap between the price
-          on the screen and the money that leaves your account — by category, and
-          for the contracts where the gap is widest. Because a binary contract
-          pays exactly $1, that cost is also the probability you need just to
-          break even.
+          day&apos;s snapshot using published venue fee rules and observed book depth,
+          with transfer and capital assumptions disclosed separately. It shows the
+          estimated gap above the quoted price — by category, and for the contracts
+          where the gap is widest. Because a binary contract pays exactly $1, that
+          estimate maps to a break-even probability under the same assumptions.
         </p>
         <p className="t-lead mt-3 max-w-2xl">
           The same report carries the opportunity scan: what cleared the bar, what

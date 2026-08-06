@@ -122,7 +122,7 @@ export default async function TodayPage({
       />
 
       <PageHeader
-        title="Today's opportunities"
+        title={snapshotAt ? "Opportunities at this snapshot" : "Current opportunities"}
         subtitle="Ranked by conservative net expected value against the executable ask, after fees, slippage, transfer and capital costs. Only markets with a probability estimate independent of their own price can appear here."
         right={
           <div className="text-right t-meta">
@@ -621,7 +621,9 @@ function FilterFunnel({
       <h2 className="t-section-title">
         {hasRows
           ? "What the ranking above was selected from"
-          : "How today\u2019s markets were filtered"}
+          : mode === "demo"
+            ? "How the demo markets were filtered"
+            : "How this snapshot was filtered"}
       </h2>
       <ol className="mt-4 space-y-2">
         {stages.map((stage, i) => {

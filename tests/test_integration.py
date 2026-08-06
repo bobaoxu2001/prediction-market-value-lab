@@ -416,6 +416,140 @@ class TestApi:
         assert all(row["provenance"] == "demo" for row in body["data"])
         assert "SYNTHETIC DEMO DATA" in body["demo_notice"]
 
+    def test_market_detail_requires_the_requested_data_mode(
+        self, client, clean_db
+    ) -> None:  # noqa: ANN001
+        from sqlalchemy import select
+
+        from pmvl_markets.db_models import Market
+
+        market_id = clean_db.scalar(
+            select(Market.id).where(Market.provenance == DataProvenance.DEMO.value)
+        )
+        assert market_id is not None
+
+        # Omitting mode must never expose a synthetic market by numeric ID.
+        assert client.get(f"/markets/{market_id}").status_code == 404
+
+        response = client.get(f"/markets/{market_id}?mode=demo")
+        assert response.status_code == 200
+        body = response.json()
+        assert body["data"]["market"]["provenance"] == "demo"
+        assert all(row["provenance"] == "demo" for row in body["data"]["predictions"])
+        assert all(
+            row["provenance"] == "demo" for row in body["data"]["recommendations"]
+        )
+        assert body["data"]["settlement"]["provenance"] == "demo"
+        assert "SYNTHETIC DEMO DATA" in body["demo_notice"]
+
+    def test_market_detail_filters_child_rows_by_mode(
+        self, client, clean_db, kalshi_market
+    ) -> None:  # noqa: ANN001
+        from pmvl_markets.db_models import (
+            EvidenceItem,
+            OrderbookLevel,
+            OrderbookSnapshot,
+            PriceSnapshot,
+        )
+        from pmvl_markets.ingest.store import upsert_markets
+
+        ids = upsert_markets(clean_db, [kalshi_market])
+        market_id = next(iter(ids.values()))
+        snapshot = OrderbookSnapshot(
+            market_id=market_id,
+            observed_at=utcnow(),
+            provenance=DataProvenance.DEMO.value,
+        )
+        clean_db.add(snapshot)
+        clean_db.flush()
+        clean_db.add_all(
+            [
+                OrderbookLevel(
+                    snapshot_id=snapshot.id,
+                    side="yes",
+                    is_ask=True,
+                    price=D("0.91"),
+                    size=D("10"),
+                ),
+                PriceSnapshot(
+                    market_id=market_id,
+                    observed_at=utcnow(),
+                    mid=D("0.91"),
+                    provenance=DataProvenance.DEMO.value,
+                ),
+                EvidenceItem(
+                    market_id=market_id,
+                    source_name="synthetic source",
+                    title="synthetic child row",
+                    published_at=utcnow(),
+                    provenance=DataProvenance.DEMO.value,
+                    created_at=utcnow(),
+                    updated_at=utcnow(),
+                ),
+            ]
+        )
+        clean_db.commit()
+
+        live = client.get(f"/markets/{market_id}").json()["data"]
+        assert live["quote"]["source"] != "orderbook"
+        assert live["orderbook"] == {}
+        assert live["price_history"] == []
+        assert live["evidence"] == []
+
+        mixed = client.get(f"/markets/{market_id}?mode=all").json()["data"]
+        assert mixed["quote"]["source"] == "orderbook"
+        assert mixed["orderbook"]["provenance"] == "demo"
+        assert mixed["price_history"][0]["provenance"] == "demo"
+        assert mixed["evidence"][0]["provenance"] == "demo"
+
+    def test_market_list_total_uses_the_same_filters_as_rows(
+        self, client, clean_db
+    ) -> None:  # noqa: ANN001
+        from sqlalchemy import func, or_, select
+
+        from pmvl_markets.db_models import Market
+
+        target = clean_db.scalar(
+            select(Market)
+            .where(Market.provenance == DataProvenance.DEMO.value)
+            .order_by(Market.id)
+        )
+        assert target is not None
+        pattern = f"%{target.normalized_title.lower()}%"
+        expected = clean_db.scalar(
+            select(func.count())
+            .select_from(Market)
+            .where(
+                Market.provenance == DataProvenance.DEMO.value,
+                Market.platform == target.platform,
+                Market.category == target.category,
+                or_(
+                    func.lower(Market.title).like(pattern),
+                    func.lower(Market.normalized_title).like(pattern),
+                ),
+            )
+        )
+        unfiltered = clean_db.scalar(
+            select(func.count())
+            .select_from(Market)
+            .where(Market.provenance == DataProvenance.DEMO.value)
+        )
+        assert expected is not None and unfiltered is not None
+        assert 0 < expected < unfiltered
+
+        body = client.get(
+            "/markets",
+            params={
+                "mode": "demo",
+                "q": target.normalized_title,
+                "platform": target.platform,
+                "category": target.category,
+                "limit": 200,
+            },
+        ).json()
+        assert body["total"] == expected
+        assert body["count"] == expected
+
     def test_money_is_serialised_as_strings(self, client) -> None:  # noqa: ANN001
         """Numbers would be parsed as floats by the browser and lose precision."""
         rows = client.get("/track-record?mode=demo&limit=1").json()["data"]
@@ -435,6 +569,32 @@ class TestApi:
         assert body["data"]
         assert body["data"][0]["walk_forward"] is True
         assert body["data"][0]["data_quality_meaning"]
+
+    def test_backtest_trades_require_the_parent_run_mode(
+        self, client, clean_db
+    ) -> None:  # noqa: ANN001
+        from sqlalchemy import select
+
+        from pmvl_markets.backtest import run_backtest
+        from pmvl_markets.db_models import BacktestRun, BacktestTrade
+
+        run_backtest(clean_db)
+        clean_db.commit()
+        run_id = clean_db.scalar(
+            select(BacktestRun.run_id)
+            .join(BacktestTrade, BacktestTrade.run_id == BacktestRun.run_id)
+            .where(BacktestRun.provenance == DataProvenance.DEMO.value)
+            .limit(1)
+        )
+        assert run_id is not None
+
+        assert client.get(f"/backtest/{run_id}/trades").status_code == 404
+
+        response = client.get(f"/backtest/{run_id}/trades?mode=demo&limit=2")
+        assert response.status_code == 200
+        body = response.json()
+        assert body["data"]
+        assert "SYNTHETIC DEMO DATA" in body["demo_notice"]
 
     def test_arbitrage_labels_are_explained(self, client) -> None:  # noqa: ANN001
         body = client.get("/arbitrage").json()

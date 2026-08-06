@@ -17,17 +17,18 @@ and the independence rule below refuses to produce one for most markets. That is
 correct, and it is why the ranked list is usually empty — which leaves a reader
 with nothing on the majority of visits.
 
-`/cost` asks a question that needs no probability: **what does it cost to get
-in.** Every market with a quote has an answer.
+`/cost` asks a question that needs no probability: **what can entry cost under
+stated assumptions.** Every market with a quote has an answer.
 
-Because a binary contract pays exactly $1, the all-in cost per contract *is* the
-break-even probability. A contract quoted at 34¢ whose true cost is 37.2¢ does not
-need the event to happen 34% of the time — it needs 37.2%.
+Because a binary contract pays exactly $1, the cost estimate per contract maps to
+the break-even probability under those assumptions. A contract quoted at 34¢ with
+an estimated entry cost of 37.2¢ needs the event to happen 37.2% of the time, not
+34%, to break even on that basis.
 
 Size is where this bites. Kalshi ceils its fee to the whole cent **on the whole
 order**, so on a 1¢ contract the fee alone is a full cent:
 
-| Order size | True cost each | Premium over quote |
+| Order size | Estimated cost each | Premium over quote |
 |---:|---:|---:|
 | 1 | 2.00¢ | **+100%** |
 | 10 | 1.10¢ | +10% |
@@ -38,13 +39,13 @@ displays this, and it does not depend on any forecast — which is why the cost
 surface covers the categories the models decline: politics, sports and macro all
 have a cost even when they have no opinion.
 
-**Measured and modelled costs are separate fields everywhere.** The headline
-figure contains only what can be checked against a public source: observed ask
-depth, the venues' published fee schedules and rounding rules, the Polygon
-transfer amortisation, and capital cost to resolution. The slippage pad
+**Observed inputs and assumptions are itemised everywhere.** The headline figure
+combines observed ask depth and the venues' published fee schedules and rounding
+rules with disclosed configuration assumptions for Polygon transfer amortisation
+and capital cost to resolution. The slippage pad
 (`tick_size × SLIPPAGE_TICKS`) is an assumption about market impact and is
 reported beside the headline, never inside it — at a 1¢ tick it exceeds every
-real cost combined on a cheap contract, so a blended number would make the
+observed or rule-derived cost combined on a cheap contract, so a blended number would make the
 product's central claim an artefact of a config default.
 
 ---

@@ -226,7 +226,7 @@ class ExecutionQuote(StrictModel):
 
 
 class CostBreakdown(StrictModel):
-    """Every component between a quoted ask and true all-in cost per contract."""
+    """Observed, rule-derived and configured inputs to an entry-cost estimate."""
 
     entry_price: Decimal
     platform_fee: Decimal = Decimal("0")

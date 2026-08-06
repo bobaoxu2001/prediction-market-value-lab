@@ -34,7 +34,10 @@ export default async function MethodologyPage() {
       </Section>
 
       <Section title="Cost stack">
-        <p className="mb-2">Every component between a quoted ask and true all-in cost:</p>
+        <p className="mb-2">
+          Inputs to the entry-cost estimate; observed and rule-derived items are
+          separated from configured assumptions:
+        </p>
         <ol className="list-decimal space-y-1 pl-5">
           {m.cost_stack.map((c: string, i: number) => <li key={i}>{c}</li>)}
         </ol>
@@ -99,7 +102,7 @@ export default async function MethodologyPage() {
 function Section({ title, children }: { title: string; children: React.ReactNode }) {
   return (
     <section className="card mb-4 p-5">
-      <h2 className="mb-3 text-base font-semibold">{title}</h2>
+      <h2 className="mb-3 text-[1rem] font-semibold text-ink">{title}</h2>
       <div className="space-y-1 text-sm text-ink">{children}</div>
     </section>
   );

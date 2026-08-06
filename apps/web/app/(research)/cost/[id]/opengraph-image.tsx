@@ -16,7 +16,7 @@ import { apiGet, qs, type CostDetail } from "@/lib/api";
  * premium the page itself does not show.
  */
 
-export const alt = "What this prediction-market contract actually costs to buy";
+export const alt = "Estimated entry cost for this prediction-market contract";
 export const size = { width: 1200, height: 630 };
 export const contentType = "image/png";
 
@@ -48,7 +48,7 @@ export default async function Image({
   // timeline that no page backs up.
   const title = data?.market?.title ?? "Prediction-market execution cost";
   const quoted = entry ? cents(entry.nominal_price) : null;
-  const trueCost = entry ? cents(entry.measured_cost) : null;
+  const estimatedCost = entry ? cents(entry.measured_cost) : null;
   const breakEven = entry ? pct(entry.breakeven_probability) : null;
 
   const INK = "#E9ECF0";
@@ -96,7 +96,7 @@ export default async function Image({
           </div>
         </div>
 
-        {quoted && trueCost ? (
+        {quoted && estimatedCost ? (
           <div style={{ display: "flex", alignItems: "flex-end", gap: 56 }}>
             <Figure label="Quoted" value={quoted} color={MUTED} />
             <div
@@ -104,19 +104,19 @@ export default async function Image({
             >
               →
             </div>
-            <Figure label="Actually costs" value={trueCost} color={ACCENT} />
-            <Figure label="Break-even" value={breakEven ?? "—"} color={INK} />
+            <Figure label="Est. entry cost" value={estimatedCost} color={ACCENT} />
+            <Figure label="Est. break-even" value={breakEven ?? "—"} color={INK} />
           </div>
         ) : (
           <div style={{ display: "flex", fontSize: 32, color: MUTED, maxWidth: 1000 }}>
-            What a contract costs after venue fees, the fee-rounding rule, book
-            depth, transfer and capital cost.
+            An entry-cost estimate built from venue rules, observed book depth,
+            and disclosed transfer and capital assumptions.
           </div>
         )}
 
         <div style={{ display: "flex", fontSize: 22, color: MUTED }}>
           {quoted
-            ? "Buying one contract. Measured from observed depth and published fee schedules."
+            ? "Buying one contract. Observed inputs and published rules are separated from configured assumptions."
             : "Research only. Not investment advice."}
         </div>
       </div>

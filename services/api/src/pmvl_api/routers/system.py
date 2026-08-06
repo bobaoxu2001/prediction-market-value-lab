@@ -294,9 +294,10 @@ def methodology(mode: DataMode = ModeDep) -> dict[str, Any]:
                 "executable entry price (VWAP at size)",
                 "platform fee",
                 "fee rounding",
-                "estimated slippage (measured book impact + latency pad)",
-                "transfer cost (Polygon bridge/gas, amortised; zero on Kalshi)",
-                "capital cost until expected resolution",
+                "observed book-depth impact",
+                "configured transfer allowance (Polygon bridge/gas, amortised; zero on Kalshi)",
+                "configured annual capital-cost assumption until expected resolution",
+                "modelled latency/slippage pad (reported separately from the headline estimate)",
                 "execution risk penalty (cross-venue legs only)",
             ],
             "value": {

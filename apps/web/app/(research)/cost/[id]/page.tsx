@@ -53,12 +53,12 @@ export async function generateMetadata({
 
   const contract = displayTitle(data.market.title);
   const quoted = cents(entry.nominal_price);
-  const real = cents(entry.measured_cost);
-  const title = `${contract} — quoted ${quoted}, actually costs ${real}`;
+  const estimated = cents(entry.measured_cost);
+  const title = `${contract} — quoted ${quoted}, estimated entry cost ${estimated}`;
   const description =
-    `Buying ${size} contract${size === "1" ? "" : "s"} costs ${real} each after the ` +
-    `venue's fee, its rounding rule, book depth, transfer and capital cost. ` +
-    `Break-even probability ${
+    `Buying ${size} contract${size === "1" ? "" : "s"} has an estimated entry cost of ${estimated} each after ` +
+    `observed depth, published venue rules and disclosed transfer/capital assumptions. ` +
+    `Estimated break-even probability ${
       entry.breakeven_probability === null
         ? "is unreachable at this size"
         : pct(entry.breakeven_probability)
@@ -254,20 +254,20 @@ function Headline({
       <div className="mt-4 grid grid-cols-2 gap-x-6 gap-y-5 sm:grid-cols-4">
         <Metric label="Quoted price" value={cents(entry.nominal_price)} />
         <Metric
-          label="True cost each"
+          label="Est. cost each"
           value={cents(entry.measured_cost)}
           tone={tone as "neutral" | "warn" | "bad"}
-          hint="Observed depth plus the venue's published fee rules. Excludes the modelled slippage pad."
+          hint="Observed depth and published venue rules, plus disclosed transfer/capital assumptions. Excludes the modelled slippage pad."
         />
         <Metric
-          label="You pay extra"
+          label="Est. premium"
           value={`+${cents(entry.measured_premium)}${
             ratio !== null ? ` (${pct(ratio, 0)})` : ""
           }`}
           tone={tone as "neutral" | "warn" | "bad"}
         />
         <Metric
-          label="Break-even"
+          label="Est. break-even"
           value={
             entry.breakeven_probability === null
               ? "impossible"
@@ -280,8 +280,8 @@ function Headline({
       <p className="t-body mt-5 max-w-3xl">
         The screen says <strong>{cents(entry.nominal_price)}</strong>. Filling{" "}
         {compactNumber(entry.filled_size)} contract
-        {entry.filled_size === "1" ? "" : "s"} costs{" "}
-        <strong>{cents(entry.measured_cost)}</strong> each — a total outlay of{" "}
+        {entry.filled_size === "1" ? "" : "s"} has an estimated entry cost of{" "}
+        <strong>{cents(entry.measured_cost)}</strong> each — an estimated total outlay of{" "}
         <strong>{usd(entry.total_outlay)}</strong>. For this to break even the event
         must occur{" "}
         <strong>
@@ -313,9 +313,10 @@ function Headline({
       {!data.depth_known && (
         <p className="mt-3 rounded-[3px] border border-line bg-sunken px-3 py-2 text-sm text-ink-muted">
           No order book was captured for this contract, so depth impact is unknown
-          and excluded — not assumed to be zero. Fees, transfer and capital cost are
-          exact regardless, so the figure above is a{" "}
-          <strong>floor on the true cost</strong> rather than an estimate of it.
+          and excluded — not assumed to be zero. Published venue rules are applied
+          where available; transfer and capital cost remain configured scenario
+          inputs. Treat the figure above as an incomplete estimate, not a measured
+          all-in cost.
         </p>
       )}
     </section>
@@ -443,7 +444,7 @@ function Decomposition({
     <section className="mt-8">
       <h2 className="t-section-title">
         Where the money goes
-        <HelpDot text="Each line is per contract at the size selected above. The rows sum to the true cost." />
+        <HelpDot text="Each line is per contract at the size selected above. The rows sum to the entry-cost estimate." />
       </h2>
 
       <div className="table-wrap mt-3">
@@ -476,10 +477,10 @@ function Decomposition({
               </tr>
             ))}
             <tr className="border-t-2 border-line-strong">
-              <th scope="row" className="cell-title font-semibold">True cost per contract</th>
+              <th scope="row" className="cell-title font-semibold">Estimated cost per contract</th>
               <td className="num font-semibold">{centsFine(entry.measured_cost)}</td>
               <td className="text-ink-muted">
-                Everything above, and nothing that was assumed.
+                Observed or rule-derived inputs plus the disclosed transfer and capital assumptions above.
               </td>
             </tr>
           </tbody>
@@ -487,7 +488,7 @@ function Decomposition({
       </div>
 
       <div className="mt-4 rounded-[3px] border border-line bg-sunken px-4 py-3">
-        <p className="t-label">Modelled separately — not in the figure above</p>
+        <p className="t-label">Additional modelled slippage — not in the figure above</p>
         <p className="t-body mt-2 max-w-3xl">
           A slippage pad of <strong>{cents(entry.modelled_slippage)}</strong> stands
           in for market impact between observing this book and reaching it. It is a
@@ -549,7 +550,7 @@ function Ladder({
                 Entry
               </th>
               <th scope="col" className="num">
-                True cost
+                Est. cost
               </th>
               <th scope="col" className="num">
                 Premium

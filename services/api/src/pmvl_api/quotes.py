@@ -117,19 +117,28 @@ def _summary_quote(market: Market) -> CoherentQuote:
     )
 
 
-def coherent_quote(session: Session, market: Market) -> CoherentQuote:
+def coherent_quote(
+    session: Session,
+    market: Market,
+    provenances: tuple[str, ...] | None = None,
+) -> CoherentQuote:
     """The single quote a view should render for ``market``.
 
     Prefers the order book, because it is refreshed far more often and is the thing
     an order would actually execute against. Falls back to the venue summary only
     when no book was captured, and says so.
     """
-    snapshot = session.scalar(
+    snapshot_stmt = (
         select(OrderbookSnapshot)
         .where(OrderbookSnapshot.market_id == market.id)
         .order_by(OrderbookSnapshot.observed_at.desc())
         .limit(1)
     )
+    if provenances is not None:
+        snapshot_stmt = snapshot_stmt.where(
+            OrderbookSnapshot.provenance.in_(provenances)
+        )
+    snapshot = session.scalar(snapshot_stmt)
     if snapshot is None:
         return _summary_quote(market)
 

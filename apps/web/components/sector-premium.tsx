@@ -162,11 +162,11 @@ export function SectorPremium({
           Circle area is the median premium; the figure above each circle is that
           same number exactly. Sorted most expensive first.{" "}
           <strong className="text-ink">
-            The categories no model here will forecast — politics, economics,
-            sports — are the expensive ones to trade.
+            In this snapshot, the categories this model does not forecast —
+            politics, economics and sports — have the highest sample medians.
           </strong>{" "}
-          That is not a coincidence: attention and liquidity are not the same
-          thing, and the cost is where the difference shows up.
+          This is a descriptive association, not a causal finding; quote basis,
+          depth coverage and market mix differ across categories.
         </p>
         <DepthCaveat rows={usable.map((entry) => entry.row)} />
       </figcaption>

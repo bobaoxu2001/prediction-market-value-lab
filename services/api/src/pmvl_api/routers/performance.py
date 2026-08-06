@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from typing import Any
 
-from fastapi import APIRouter, Query
+from fastapi import APIRouter, HTTPException, Query
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
@@ -100,6 +100,18 @@ def backtest_trades(
     db: Session = DbDep,
     mode: DataMode = ModeDep,
 ) -> dict[str, Any]:
+    run = db.scalar(
+        apply_provenance(
+            select(BacktestRun).where(BacktestRun.run_id == run_id),
+            BacktestRun.provenance,
+            mode,
+        )
+    )
+    if run is None:
+        raise HTTPException(
+            status_code=404, detail="backtest run not available in this data mode"
+        )
+
     rows = [
         {
             "market_title": t.market_title,

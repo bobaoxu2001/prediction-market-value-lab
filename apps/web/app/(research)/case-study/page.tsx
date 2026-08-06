@@ -79,7 +79,7 @@ export default async function CaseStudyPage({
       ) : (
         <div className="space-y-4">
           <Step n={1} title="The market">
-            <h3 className="text-base font-semibold">{cs.market.title}</h3>
+            <h3 className="text-[1rem] font-semibold text-ink">{cs.market.title}</h3>
             <div className="mt-2 flex flex-wrap items-center gap-2 text-sm">
               <PlatformChip platform={cs.market.platform} />
               <SideChip side={cs.market.side} />

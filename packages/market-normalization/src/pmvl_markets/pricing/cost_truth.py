@@ -1,4 +1,4 @@
-"""What a contract actually costs to buy, independent of any opinion about it.
+"""An auditable entry-cost estimate, independent of any opinion about the outcome.
 
 Every other analytical surface in this codebase needs a probability before it can
 say anything. The independence gate then refuses to supply one for most markets,
@@ -21,10 +21,10 @@ Three quantities, kept distinct because conflating them is the entire problem:
     that a top-of-book quote hides completely.
 
 ``measured_cost``
-    ``entry_price`` plus the frictions that can be *derived*: the venue fee at that
-    size, the venue's documented fee-rounding rule, the cross-venue transfer
-    amortisation, and the capital locked up until resolution. Every one of these is
-    checkable against a published schedule or the observed book.
+    ``entry_price`` plus the venue fee and documented fee-rounding rule, followed by
+    two disclosed scenario inputs: transfer amortisation and the configured annual
+    capital rate. The observed/rule-derived inputs and configured assumptions stay
+    itemised even though the compatibility field retains its historical name.
 
 That last quantity is the one worth printing in large type, because for a binary
 contract paying exactly $1 it *is* the break-even probability. A contract quoted at
@@ -113,10 +113,9 @@ class CostAtSize:
     # Measured cost and modelled cost are kept apart, and the headline figure is
     # the measured one.
     #
-    # Every component below except slippage is either read from the observed book
-    # or computed from a published, checkable rule: the venue's fee schedule, its
-    # documented rounding behaviour, the bridge cost, the configured capital rate.
-    # A reader can verify any of them against the venue's own documentation.
+    # Depth and venue fees are read or rule-derived. Transfer and capital cost are
+    # disclosed configuration assumptions. Slippage is a third, separate modelling
+    # assumption and remains outside the headline for compatibility.
     #
     # The slippage pad cannot be verified that way. It is `tick_size x
     # SLIPPAGE_TICKS`, a flat assumption standing in for the market impact between
@@ -132,10 +131,11 @@ class CostAtSize:
 
     @property
     def measured_cost(self) -> Decimal:
-        """Cost per contract from observed depth and published fee rules only.
+        """Headline cost per contract under the disclosed configuration.
 
-        Contains no assumption about market impact, so this is a *floor* on true
-        cost rather than an estimate of it.
+        Excludes the slippage pad, but includes configured transfer and capital-cost
+        assumptions. When depth is unknown it is a floor with respect to book impact,
+        not a claim that every other component was directly observed.
         """
         return quantize_usd(
             self.entry_price
@@ -157,7 +157,7 @@ class CostAtSize:
 
     @property
     def measured_premium(self) -> Decimal:
-        """Verifiable cost above the price on the screen, per contract."""
+        """Headline premium above the screen price under disclosed assumptions."""
         return quantize_usd(self.measured_cost - self.nominal_price)
 
     @property
@@ -363,8 +363,10 @@ def _caveats(
         out.append(
             "No order book was captured for this contract, so only the venue's "
             "top-of-book summary price is known. Depth impact cannot be computed "
-            "and is omitted rather than assumed to be zero: the figures below are "
-            "a floor on the true cost, not an estimate of it."
+            "and is omitted rather than assumed to be zero. The published venue "
+            "rules still apply and configured transfer/capital assumptions remain "
+            "visible. The result is an incomplete floor with respect to depth "
+            "impact, not a measured all-in cost."
         )
     if stale and observed_age is not None:
         # `humanize_seconds`, not minutes: a 117-day-old snapshot rendered as

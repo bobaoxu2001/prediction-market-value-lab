@@ -138,24 +138,19 @@ def _market_row(market: Market, quote=None) -> dict[str, Any]:  # noqa: ANN001
     }
 
 
-@router.get("")
-def list_markets(
-    q: str | None = Query(None, description="Substring search on title"),
-    platform: str | None = Query(None),
-    category: str | None = Query(None),
-    horizon: str | None = Query(None, pattern="^(24h|7d|30d)$"),
-    status: str | None = Query(None),
-    min_volume: Decimal | None = Query(None),
-    has_orderbook: bool = Query(False),
-    sort: str = Query("volume", pattern="^(volume|spread|resolution|liquidity)$"),
-    limit: int = Query(50, ge=1, le=200),
-    offset: int = Query(0, ge=0),
-    db: Session = DbDep,
-    mode: DataMode = ModeDep,
-) -> dict[str, Any]:
-    stmt = select(Market)
+def _apply_market_filters(  # noqa: ANN001, ANN201
+    stmt,
+    *,
+    mode: DataMode,
+    q: str | None,
+    platform: str | None,
+    category: str | None,
+    status: str | None,
+    min_volume: Decimal | None,
+    has_orderbook: bool,
+):
+    """Apply every SQL-level market filter to data and count queries alike."""
     stmt = apply_provenance(stmt, Market.provenance, mode)
-
     if q:
         pattern = f"%{q.lower()}%"
         stmt = stmt.where(
@@ -174,6 +169,34 @@ def list_markets(
         stmt = stmt.where(Market.volume_24h >= min_volume)
     if has_orderbook:
         stmt = stmt.where(Market.orderbook_depth_usd.is_not(None))
+    return stmt
+
+
+@router.get("")
+def list_markets(
+    q: str | None = Query(None, description="Substring search on title"),
+    platform: str | None = Query(None),
+    category: str | None = Query(None),
+    horizon: str | None = Query(None, pattern="^(24h|7d|30d)$"),
+    status: str | None = Query(None),
+    min_volume: Decimal | None = Query(None),
+    has_orderbook: bool = Query(False),
+    sort: str = Query("volume", pattern="^(volume|spread|resolution|liquidity)$"),
+    limit: int = Query(50, ge=1, le=200),
+    offset: int = Query(0, ge=0),
+    db: Session = DbDep,
+    mode: DataMode = ModeDep,
+) -> dict[str, Any]:
+    filter_args = {
+        "mode": mode,
+        "q": q,
+        "platform": platform,
+        "category": category,
+        "status": status,
+        "min_volume": min_volume,
+        "has_orderbook": has_orderbook,
+    }
+    stmt = _apply_market_filters(select(Market), **filter_args)
 
     # Volume and resolution time are market attributes, so they can be ordered in
     # SQL. Spread and liquidity are QUOTE attributes, and the quote a row displays
@@ -195,8 +218,10 @@ def list_markets(
         stmt = stmt.order_by(Market.volume_24h.desc())
 
     total = db.scalar(
-        apply_provenance(select(func.count()).select_from(Market), Market.provenance, mode)
-    )
+        _apply_market_filters(
+            select(func.count()).select_from(Market), **filter_args
+        )
+    ) or 0
 
     # Horizon is derived from the current time rather than stored, so it is filtered
     # after the query. Over-fetching keeps the page full after that filter.
@@ -206,7 +231,7 @@ def list_markets(
     rows = list(db.scalars(stmt.offset(0 if quote_sorted else offset).limit(window)))
     out = []
     for market in rows:
-        row = _market_row(market, coherent_quote(db, market))
+        row = _market_row(market, coherent_quote(db, market, mode.provenances))
         if horizon and row["horizon"] != horizon:
             continue
         out.append(row)
@@ -258,7 +283,9 @@ def categories(db: Session = DbDep, mode: DataMode = ModeDep) -> dict[str, Any]:
     )
 
 
-def _counterpart_quote_fields(db: Session, other: Market | None) -> dict[str, Any]:
+def _counterpart_quote_fields(
+    db: Session, other: Market | None, mode: DataMode = DataMode.LIVE
+) -> dict[str, Any]:
     """Coherent quote fields for a cross-platform counterpart, flattened."""
     if other is None:
         return {
@@ -267,7 +294,7 @@ def _counterpart_quote_fields(db: Session, other: Market | None) -> dict[str, An
             "other_spread": None, "other_quote_observed_at": None,
             "other_quote_source": "none", "other_quote_is_stale_summary": False,
         }
-    quote = coherent_quote(db, other)
+    quote = coherent_quote(db, other, mode.provenances)
     return {
         "other_best_yes_bid": quote.best_yes_bid,
         "other_best_yes_ask": quote.best_yes_ask,
@@ -284,18 +311,26 @@ def _counterpart_quote_fields(db: Session, other: Market | None) -> dict[str, An
 def market_detail(
     market_id: int, db: Session = DbDep, mode: DataMode = ModeDep
 ) -> dict[str, Any]:
-    market = db.get(Market, market_id)
+    market = db.scalar(
+        apply_provenance(
+            select(Market).where(Market.id == market_id), Market.provenance, mode
+        )
+    )
     if market is None:
-        raise HTTPException(status_code=404, detail="market not found")
+        raise HTTPException(
+            status_code=404, detail="market not available in this data mode"
+        )
 
-    quote = coherent_quote(db, market)
+    quote = coherent_quote(db, market, mode.provenances)
     rule = db.scalar(select(MarketRule).where(MarketRule.market_id == market_id))
 
+    snapshot_stmt = apply_provenance(
+        select(OrderbookSnapshot).where(OrderbookSnapshot.market_id == market_id),
+        OrderbookSnapshot.provenance,
+        mode,
+    )
     snapshot = db.scalar(
-        select(OrderbookSnapshot)
-        .where(OrderbookSnapshot.market_id == market_id)
-        .order_by(OrderbookSnapshot.observed_at.desc())
-        .limit(1)
+        snapshot_stmt.order_by(OrderbookSnapshot.observed_at.desc()).limit(1)
     )
     book: dict[str, Any] = {}
     if snapshot is not None:
@@ -309,6 +344,7 @@ def market_detail(
         book = {
             "observed_at": snapshot.observed_at,
             "source_timestamp": snapshot.source_timestamp,
+            "provenance": snapshot.provenance,
             "yes_depth_usd": snapshot.yes_depth_usd,
             "no_depth_usd": snapshot.no_depth_usd,
             "yes_asks": [
@@ -336,12 +372,14 @@ def market_detail(
             "yes_ask": p.yes_ask,
             "mid": p.mid,
             "last_trade_price": p.last_trade_price,
+            "provenance": p.provenance,
         }
         for p in db.scalars(
-            select(PriceSnapshot)
-            .where(PriceSnapshot.market_id == market_id)
-            .order_by(PriceSnapshot.observed_at)
-            .limit(500)
+            apply_provenance(
+                select(PriceSnapshot).where(PriceSnapshot.market_id == market_id),
+                PriceSnapshot.provenance,
+                mode,
+            ).order_by(PriceSnapshot.observed_at).limit(500)
         )
     ]
 
@@ -368,12 +406,14 @@ def market_detail(
             "model_version": p.model_version,
             "evidence_quality": p.evidence_quality,
             "data_freshness_seconds": p.data_freshness_seconds,
+            "provenance": p.provenance,
         }
         for p in db.scalars(
-            select(ModelPrediction)
-            .where(ModelPrediction.market_id == market_id)
-            .order_by(ModelPrediction.created_at.desc())
-            .limit(100)
+            apply_provenance(
+                select(ModelPrediction).where(ModelPrediction.market_id == market_id),
+                ModelPrediction.provenance,
+                mode,
+            ).order_by(ModelPrediction.created_at.desc()).limit(100)
         )
     ]
 
@@ -388,12 +428,14 @@ def market_detail(
             "event_time": e.event_time,
             "is_novel": e.is_novel,
             "source_quality": e.source_quality,
+            "provenance": e.provenance,
         }
         for e in db.scalars(
-            select(EvidenceItem)
-            .where(EvidenceItem.market_id == market_id)
-            .order_by(EvidenceItem.published_at.desc())
-            .limit(50)
+            apply_provenance(
+                select(EvidenceItem).where(EvidenceItem.market_id == market_id),
+                EvidenceItem.provenance,
+                mode,
+            ).order_by(EvidenceItem.published_at.desc()).limit(50)
         )
     ]
 
@@ -406,7 +448,13 @@ def market_detail(
         other_id = (
             match.market_b_id if match.market_a_id == market_id else match.market_a_id
         )
-        other = db.get(Market, other_id)
+        other = db.scalar(
+            apply_provenance(
+                select(Market).where(Market.id == other_id), Market.provenance, mode
+            )
+        )
+        if other is None:
+            continue
         matches.append(
             {
                 "other_market_id": other_id,
@@ -416,7 +464,7 @@ def market_detail(
                 # Reading other.best_yes_ask here would put a stale venue summary
                 # next to an order-book price for the market it is compared against,
                 # which is the same incoherence one level down.
-                **_counterpart_quote_fields(db, other),
+                **_counterpart_quote_fields(db, other, mode),
                 "match_confidence": match.match_confidence,
                 "rule_compatibility": match.rule_compatibility,
                 "time_compatibility": match.time_compatibility,
@@ -440,16 +488,24 @@ def market_detail(
             "state": r.state,
             "settlement_result": r.settlement_result,
             "realized_profit_per_contract": r.realized_profit_per_contract,
+            "provenance": r.provenance,
         }
         for r in db.scalars(
-            select(Recommendation)
-            .where(Recommendation.market_id == market_id)
-            .order_by(Recommendation.created_at.desc())
-            .limit(50)
+            apply_provenance(
+                select(Recommendation).where(Recommendation.market_id == market_id),
+                Recommendation.provenance,
+                mode,
+            ).order_by(Recommendation.created_at.desc()).limit(50)
         )
     ]
 
-    settlement = db.scalar(select(Settlement).where(Settlement.market_id == market_id))
+    settlement = db.scalar(
+        apply_provenance(
+            select(Settlement).where(Settlement.market_id == market_id),
+            Settlement.provenance,
+            mode,
+        )
+    )
 
     return envelope(
         {
@@ -496,6 +552,7 @@ def market_detail(
                 "settled_at": settlement.settled_at,
                 "settlement_source": settlement.settlement_source,
                 "disputed": settlement.disputed,
+                "provenance": settlement.provenance,
             } if settlement else None,
         },
         mode,

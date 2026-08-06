@@ -45,8 +45,9 @@ MAX_SIZE = Decimal("100000")
 #: its own definition rather than relying on the reader having found the docs.
 MEASURED_BASIS = (
     "Observed ask depth, the venue's published fee schedule and its documented "
-    "fee-rounding rule, the cross-venue transfer amortisation, and the capital cost "
-    "of holding to resolution. Every component is checkable against a public source."
+    "fee-rounding rule, plus disclosed configuration assumptions for transfer "
+    "amortisation and the annual capital cost of holding to resolution. The first "
+    "group is source-derived; the latter two are scenario inputs, not observations."
 )
 
 MODELLED_BASIS = (

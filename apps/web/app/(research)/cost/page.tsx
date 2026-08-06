@@ -17,7 +17,7 @@ export const dynamic = "force-dynamic";
 export const metadata: Metadata = {
   title: "Execution cost",
   description:
-    "What a prediction-market contract actually costs to buy, after the venue's fee schedule, its rounding rule, order-book depth, transfer and capital cost — for every market with a quote, not only the ones a model has an opinion about.",
+    "An auditable prediction-market entry-cost estimate: observed order-book depth and venue fee rules, plus disclosed transfer and capital-cost assumptions.",
 };
 
 /**
@@ -64,8 +64,8 @@ export default async function CostPage({
     <>
       <DemoBanner notice={res.demo_notice} />
       <PageHeader
-        title="What it actually costs"
-        subtitle="A contract's quoted price is not its cost. Between the number on the screen and the money that leaves your account sit the venue's fee, its rounding rule, the depth you have to walk to fill your size, the cost of moving funds onto the venue, and the capital locked up until the market resolves. This page measures that gap for every market with a quote."
+        title="What entry can cost"
+        subtitle="A contract's quoted price is not the whole entry cost. This page combines observed ask depth and published venue fee rules with disclosed transfer and capital-cost assumptions, then shows the estimate and its basis for every market with a quote."
       />
 
       <Explainer size={size} />
@@ -101,12 +101,12 @@ export default async function CostPage({
 function Explainer({ size }: { size: string }) {
   return (
     <div className="panel mt-5 p-4">
-      <p className="t-label">The measurement</p>
+      <p className="t-label">The cost stack</p>
       <p className="t-body mt-2 max-w-3xl">
         Each row below is priced at <strong>{size} contract{size === "1" ? "" : "s"}</strong>.
-        The premium is what you pay above the quoted price, per contract, and it is
-        computed only from things that can be checked: the observed ask ladder, the
-        venues&apos; published fee schedules and their documented rounding rules.
+        The premium is the estimated amount above the quoted price, per contract.
+        Observed depth and published fee rules are checkable inputs; the transfer
+        allowance and annual capital rate are explicit configuration assumptions.
       </p>
       <p className="t-body mt-2 max-w-3xl">
         Size matters more than most readers expect. Kalshi ceils its fee to the whole
@@ -190,15 +190,15 @@ function CostTable({ rows, size }: { rows: CostIndexRow[]; size: string }) {
               Quoted
             </th>
             <th scope="col" className="num">
-              True cost
-              <HelpDot text="Per contract at this size, from observed depth and the venue's published fee rules. Excludes the modelled slippage pad, which is an assumption rather than a measurement." />
+              Cost estimate
+              <HelpDot text="Per contract at this size. Uses observed depth and published venue fee rules plus disclosed transfer and capital-cost assumptions. Excludes the separate slippage pad." />
             </th>
             <th scope="col" className="num">
-              Premium
+              Est. premium
             </th>
             <th scope="col" className="num">
-              Break-even
-              <HelpDot text="A binary contract pays exactly $1, so the cost per contract is the probability at which the purchase breaks even. Quoted price 34¢ with a true cost of 37.2¢ means the event must occur 37.2% of the time, not 34%." />
+              Est. break-even
+              <HelpDot text="A binary contract pays exactly $1, so the cost estimate per contract maps to a break-even probability under the stated assumptions." />
             </th>
             <th scope="col" className="hidden lg:table-cell">Basis</th>
           </tr>
@@ -273,14 +273,14 @@ function CostRow({ row, size }: { row: CostIndexRow; size: string }) {
  * Whether the row rests on a real ladder or only a top-of-book summary.
  *
  * Kept as a visible column rather than a footnote: a summary-derived premium
- * excludes depth impact entirely, so it is a floor on the true cost. Presenting it
- * beside a book-derived figure without saying which is which would make the two
+ * excludes depth impact entirely, so its cost estimate is incomplete. Presenting
+ * it beside a book-derived figure without saying which is which would make the two
  * look equally well founded.
  */
 function BasisChip({ row }: { row: CostIndexRow }) {
   if (!row.depth_known) {
     return (
-      <span className="chip bg-sunken text-ink-muted" title="No order book was captured for this contract, so depth impact is unknown and excluded. The premium shown is a floor.">
+      <span className="chip bg-sunken text-ink-muted" title="No order book was captured for this contract, so depth impact is unknown and excluded. The estimate is incomplete.">
         summary only
       </span>
     );
@@ -310,7 +310,7 @@ function Method() {
       <h2 className="t-section-title">What is and is not in these numbers</h2>
       <div className="mt-4 grid gap-6 lg:grid-cols-2">
         <div className="block">
-          <h3 className="t-sub-title">Measured — in the headline</h3>
+          <h3 className="t-sub-title">Observed or rule-derived — in the headline</h3>
           <ul className="t-body mt-2 space-y-1.5">
             <li>
               <strong>Depth impact.</strong> The volume-weighted price of the ask
@@ -326,15 +326,17 @@ function Method() {
               whole order. Reported separately because it is the reason small orders
               are disproportionately expensive.
             </li>
+          </ul>
+          <h3 className="t-sub-title mt-5">Configured assumptions — in the headline</h3>
+          <ul className="t-body mt-2 space-y-1.5">
             <li>
-              <strong>Transfer.</strong> Polymarket settles in USDC on Polygon; the
-              bridge allowance is amortised over the position, which is why a small
-              position there costs several times its notional.
+              <strong>Transfer allowance.</strong> A fixed Polygon bridge and gas
+              allowance is amortised over the position; it is zero on Kalshi.
             </li>
             <li>
-              <strong>Capital cost.</strong> The stake is locked until resolution. A
-              contract resolving in nine months costs more to hold than the same
-              price resolving tomorrow.
+              <strong>Capital rate.</strong> A configured annual opportunity-cost
+              rate is applied until expected resolution. It is a scenario input,
+              not an observed market charge.
             </li>
           </ul>
         </div>
@@ -349,7 +351,7 @@ function Method() {
             At a 1¢ tick the pad is a whole cent, which on a cheap contract is larger
             than every real cost combined. Folding it into one number would make the
             headline mostly an artefact of a configuration default, so it is shown
-            beside the measured figure on each contract&apos;s own page and excluded
+            beside the headline estimate on each contract&apos;s own page and excluded
             from the break-even probability.
           </p>
           <h3 className="t-sub-title mt-5">Not included at all</h3>

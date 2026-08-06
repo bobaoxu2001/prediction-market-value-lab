@@ -237,10 +237,15 @@ export function SnapshotBanner({
         Research snapshot.
       </span>{" "}
       <span className="text-ink">
-        This hosted demo serves frozen data, not a live scan. Orderbooks and model
-        estimates are stale. Run the pipeline locally (
-        <code className="font-mono text-xs">make ingest &amp;&amp; make rank</code>)
-        for current data.
+        This hosted deployment serves frozen data, not a live scan. Orderbooks and
+        model estimates are stale.
+        {process.env.NODE_ENV === "development" ? (
+          <>
+            {" "}Run the pipeline locally (
+            <code className="font-mono text-xs">make ingest &amp;&amp; make rank</code>)
+            for current data.
+          </>
+        ) : null}
       </span>
       {/* Previously one timestamp introduced as "quotes captured", which read as
           though every price was that fresh. On the deployed artefact that
