@@ -29,6 +29,24 @@ the design skills that *are* available in this environment:
   hierarchy, typography, spacing, responsive layout, design-system consistency).
 - **`dataviz`** — reserved for the chart work (`PriceChart`, `CalibrationChart`).
 
+**Update, 2026-08-06.** `frontend-design` now exists, in Anthropic's own
+marketplace (`claude-plugins-official`), and has been enabled. Its source was
+read before enabling: a single `SKILL.md`, no scripts, no network access.
+
+It is applied here with one deliberate departure. Its default direction is to
+"commit to a **BOLD** aesthetic direction" and reach for asymmetry, grain
+overlays, dramatic shadows and distinctive webfonts. This product's value
+proposition is epistemic restraint — most of its pages exist to say what is *not*
+established — and the audit below already lists glassmorphism, emoji markers and
+uniform rounded cards as AI-design tells to avoid. System fonts are a deliberate
+build-time choice, recorded in `globals.css`.
+
+The skill itself sanctions the branch taken: *"Bold maximalism and refined
+minimalism both work — the key is intentionality, not intensity"*, and
+*"Minimalist or refined designs need restraint, precision, and careful attention
+to spacing, typography, and subtle details."* That is the mode used, on the pages
+this audit had never covered.
+
 `artifact-design`'s own precedence rule is *"honor what's already there — look for
 an existing design system first; everything else fills gaps and never overrides."*
 That rule shaped this audit: the finding below is that the existing system's
@@ -217,3 +235,34 @@ Accepted screenshots:
 
 - [`markets-mobile-dark.png`](screenshots/pr-8/markets-mobile-dark.png) — 390 x 844
 - [`markets-768-light.png`](screenshots/pr-8/markets-768-light.png) — 768 x 1024
+
+---
+
+## Second pass — the surfaces added after the first audit
+
+`/cost`, `/cost/[id]`, `/watchlist` and the homepage sector band were built after
+this document was written and had never been through it. They reused the token
+layer correctly, and reproduced three of the defects the first pass had fixed.
+
+| # | Finding | Severity | Fixed |
+|---|---|---|---|
+| H1 | **Heading tier skipped.** Every `<h2>` used `t-sub-title`, the *third* tier, and one used `t-label` — 10.5px uppercase, the fine-print style — for a section heading. This is G2 again: section boundaries carrying on weight alone. The audited `/system` uses `t-section-title` for every `<h2>`. | high | yes |
+| H2 | **No progressive disclosure.** The 7-column cost table and 8-column watchlist rendered every column at every width. At 375px the wrapper showed 343px of an 817px table, so a reader scrolled for every number. `/markets` had solved this with `hidden lg:table-cell` ladders. | high | yes |
+| H3 | **No sticky identity column.** Scrolling right lost the contract, exactly as G12 described. | medium | yes |
+| H4 | **`colSpan` assumed a fixed column count.** The watchlist's loading and error rows spanned four cells while the Quoted column is hidden below `md`, so on a phone the row claimed one cell more than its header and pushed the last column out of alignment. HTML has no responsive `colSpan`; the placeholder is now one cell per column carrying the same breakpoints. | medium | yes |
+
+`.cell-title` also gained a mobile step (10rem, 13rem at `sm`, 20rem at `lg`),
+matching `.col-title`'s existing ladder — a 13rem identity column at 375px left
+too little beside it for even one measurement.
+
+Measured after the change, with the local API serving the published Snapshot:
+
+| Viewport | Page overflow | Cost columns shown | Identity column | Row alignment |
+|---|---:|---:|---|---|
+| 375 x 812 | 0px | 4 of 7 | scrolls (by design below `sm`) | 5 header / 5 row |
+| 768 x 1024 | 0px | 5 of 7, fits without scrolling | `position: sticky` | — |
+| 1440 x 900 | 0px | 7 of 7, fits without scrolling | `position: sticky` | 8 header / 8 row |
+
+Not changed, having been measured rather than assumed: the contract column is
+639px against a 554px widest title at 1440px, which is ordinary table space
+distribution and not the dead space it appears to be at a glance.

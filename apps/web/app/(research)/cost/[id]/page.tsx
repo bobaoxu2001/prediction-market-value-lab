@@ -441,7 +441,7 @@ function Decomposition({
 
   return (
     <section className="mt-8">
-      <h2 className="t-sub-title">
+      <h2 className="t-section-title">
         Where the money goes
         <HelpDot text="Each line is per contract at the size selected above. The rows sum to the true cost." />
       </h2>
@@ -528,7 +528,7 @@ function Ladder({
 
   return (
     <section className="mt-8">
-      <h2 className="t-sub-title">Cost by order size</h2>
+      <h2 className="t-section-title">Cost by order size</h2>
       <p className="t-body mt-2 max-w-3xl">
         The same contract, priced at every size. Two forces pull in opposite
         directions: fee rounding punishes small orders, and book depth punishes large
@@ -621,7 +621,7 @@ function Caveats({ caveats }: { caveats: string[] }) {
   if (caveats.length === 0) return null;
   return (
     <section className="mt-8 border-t border-line pt-5">
-      <h2 className="t-label">What this measurement does not settle</h2>
+      <h2 className="t-section-title">What this measurement does not settle</h2>
       <ul className="mt-3 space-y-2">
         {caveats.map((caveat) => (
           <li key={caveat} className="t-body max-w-3xl">

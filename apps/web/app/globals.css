@@ -330,7 +330,16 @@
    */
   th.cell-title {
     @apply whitespace-normal text-sm font-normal normal-case leading-snug tracking-normal text-ink;
-    min-width: 13rem;
+    /* Narrow on a phone. At 375px the wrapper is 343px wide, and a 13rem
+       identity column left too little for even one measurement beside it - the
+       reader had to scroll for every number. Same reasoning, and the same
+       ladder, as `.col-title`. */
+    min-width: 10rem;
+  }
+  @screen sm {
+    th.cell-title {
+      min-width: 13rem;
+    }
   }
   @screen lg {
     th.cell-title {

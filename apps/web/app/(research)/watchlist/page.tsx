@@ -121,11 +121,11 @@ export default function WatchlistPage() {
               <thead>
                 <tr>
                   <th scope="col">Contract</th>
-                  <th scope="col">Side</th>
-                  <th scope="col" className="num">
+                  <th scope="col" className="hidden lg:table-cell">Side</th>
+                  <th scope="col" className="num hidden lg:table-cell">
                     Size
                   </th>
-                  <th scope="col" className="num">
+                  <th scope="col" className="num hidden md:table-cell">
                     Quoted
                   </th>
                   <th scope="col" className="num">
@@ -188,7 +188,7 @@ function Row({
 
   return (
     <tr>
-      <th scope="row" className="cell-title">
+      <th scope="row" className="cell-title col-sticky">
         <Link
           href={`/cost/${entry.marketId}${qs({ size: entry.size, side: entry.side })}`}
           className="hover:underline"
@@ -196,19 +196,28 @@ function Row({
           {displayTitle(entry.title)}
         </Link>
       </th>
-      <td>{entry.side.toUpperCase()}</td>
-      <td className="num">{entry.size}</td>
-      {cost === undefined ? (
-        <td className="num text-ink-faint" colSpan={4}>
-          pricing…
-        </td>
-      ) : priced === null ? (
-        <td className="num text-ink-faint" colSpan={4}>
-          could not be priced
-        </td>
+      <td className="hidden lg:table-cell">{entry.side.toUpperCase()}</td>
+      <td className="num hidden lg:table-cell">{entry.size}</td>
+      {cost === undefined || priced === null ? (
+        // One cell per column rather than a colSpan.
+        //
+        // A `colSpan={4}` placeholder counts four cells at every width, but the
+        // Quoted column is hidden below `md` — so on a phone the row claimed one
+        // more cell than the header had and pushed Remove out of alignment.
+        // Matching the header's own breakpoints keeps the row aligned at every
+        // width without needing a responsive colSpan, which HTML has no way to
+        // express.
+        <>
+          <td className="num hidden md:table-cell text-ink-faint">
+            {cost === undefined ? "…" : "—"}
+          </td>
+          <td className="num text-ink-faint" colSpan={3}>
+            {cost === undefined ? "pricing…" : "could not be priced"}
+          </td>
+        </>
       ) : (
         <>
-          <td className="num">{cents(priced.nominal_price)}</td>
+          <td className="num hidden md:table-cell">{cents(priced.nominal_price)}</td>
           <td className="num">{cents(priced.measured_cost)}</td>
           <td className={`num ${tone}`}>
             +{cents(priced.measured_premium)}

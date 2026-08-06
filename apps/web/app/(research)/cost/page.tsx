@@ -185,8 +185,8 @@ function CostTable({ rows, size }: { rows: CostIndexRow[]; size: string }) {
         <thead>
           <tr>
             <th scope="col">Contract</th>
-            <th scope="col">Venue</th>
-            <th scope="col" className="num">
+            <th scope="col" className="hidden xl:table-cell">Venue</th>
+            <th scope="col" className="num hidden md:table-cell">
               Quoted
             </th>
             <th scope="col" className="num">
@@ -200,7 +200,7 @@ function CostTable({ rows, size }: { rows: CostIndexRow[]; size: string }) {
               Break-even
               <HelpDot text="A binary contract pays exactly $1, so the cost per contract is the probability at which the purchase breaks even. Quoted price 34¢ with a true cost of 37.2¢ means the event must occur 37.2% of the time, not 34%." />
             </th>
-            <th scope="col">Basis</th>
+            <th scope="col" className="hidden lg:table-cell">Basis</th>
           </tr>
         </thead>
         <tbody>
@@ -228,7 +228,7 @@ function CostRow({ row, size }: { row: CostIndexRow; size: string }) {
 
   return (
     <tr>
-      <th scope="row" className="cell-title">
+      <th scope="row" className="cell-title col-sticky">
         <Link
           href={`/cost/${row.market.id}${qs({ size })}`}
           className="hover:underline"
@@ -242,10 +242,10 @@ function CostRow({ row, size }: { row: CostIndexRow; size: string }) {
           </span>
         )}
       </th>
-      <td>
+      <td className="hidden xl:table-cell">
         <PlatformChip platform={row.market.platform} />
       </td>
-      <td className="num">{cents(row.nominal_price)}</td>
+      <td className="num hidden md:table-cell">{cents(row.nominal_price)}</td>
       <td className="num">{cents(row.measured_cost)}</td>
       <td className={`num ${tone}`}>
         +{cents(row.measured_premium)}
@@ -262,7 +262,7 @@ function CostRow({ row, size }: { row: CostIndexRow; size: string }) {
           pct(row.breakeven_probability)
         )}
       </td>
-      <td>
+      <td className="hidden lg:table-cell">
         <BasisChip row={row} />
       </td>
     </tr>
@@ -307,10 +307,10 @@ function BasisChip({ row }: { row: CostIndexRow }) {
 function Method() {
   return (
     <section className="mt-10 border-t border-line pt-6">
-      <h2 className="t-sub-title">What is and is not in these numbers</h2>
+      <h2 className="t-section-title">What is and is not in these numbers</h2>
       <div className="mt-4 grid gap-6 lg:grid-cols-2">
         <div className="block">
-          <h3 className="t-label">Measured — in the headline</h3>
+          <h3 className="t-sub-title">Measured — in the headline</h3>
           <ul className="t-body mt-2 space-y-1.5">
             <li>
               <strong>Depth impact.</strong> The volume-weighted price of the ask
@@ -339,7 +339,7 @@ function Method() {
           </ul>
         </div>
         <div className="block">
-          <h3 className="t-label">Modelled — reported, not in the headline</h3>
+          <h3 className="t-sub-title">Modelled — reported, not in the headline</h3>
           <p className="t-body mt-2">
             A flat slippage pad of one tick stands in for the market impact between
             observing a book and reaching it. It is an assumption, not a measurement,
@@ -352,7 +352,7 @@ function Method() {
             beside the measured figure on each contract&apos;s own page and excluded
             from the break-even probability.
           </p>
-          <h3 className="t-label mt-5">Not included at all</h3>
+          <h3 className="t-sub-title mt-5">Not included at all</h3>
           <p className="t-body mt-2">
             Taxes, withdrawal fees, and the bid-ask spread you would pay to exit
             early. Every figure here prices <em>entering</em> a position and holding
