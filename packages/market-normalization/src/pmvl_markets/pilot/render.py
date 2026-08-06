@@ -234,10 +234,6 @@ def _md_banner(report: Report) -> list[str]:
     return ["> ⚠️ **" + lines[0] + "**", ">", "> " + lines[1], ""]
 
 
-def _pct(value) -> str:  # noqa: ANN001
-    return "-" if value is None else f"{float(value) * 100:.1f}%"
-
-
 def _md_cost(cost) -> list[str]:  # noqa: ANN001
     """What it costs to trade. The section that is never empty.
 

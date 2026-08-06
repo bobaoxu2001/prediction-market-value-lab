@@ -1101,3 +1101,43 @@ class TestTheCostSectionIsAlwaysThere:
         )
         assert report.actionable_allowed is False
         assert report.cost is None
+
+
+class TestMissingFiguresSaySo:
+    """A figure that is absent must say it is absent, not render as a dash.
+
+    `render._pct` returns "not available" for None, and that wording is the
+    point: a report about what can and cannot be established should not use the
+    same glyph for "zero" and "we could not compute this".
+
+    This regressed silently. A second `_pct` was added lower in the module for
+    the cost section, returning "-" for None. Python resolves globals at call
+    time, so the later definition won for *every* call site including the
+    candidate probabilities defined above it — and ruff's F811 stays quiet
+    because the first definition is genuinely used in between, so the
+    redefinition is not "unused".
+    """
+
+    def test_a_none_probability_reads_as_not_available(self):
+        from pmvl_markets.pilot.render import _pct
+
+        assert _pct(None) == "not available"
+
+    def test_the_digits_argument_still_exists(self):
+        # The duplicate dropped it. Nothing passes it today, so losing it raises
+        # no TypeError - it just silently stops being available.
+        from pmvl_markets.pilot.render import _pct
+
+        assert _pct(Decimal("0.12345"), 3) == "12.345%"
+
+    def test_only_one_definition_of_the_helper_exists(self):
+        """The general form, so the next duplicate is caught rather than reasoned about."""
+        import inspect
+
+        from pmvl_markets.pilot import render
+
+        source = inspect.getsource(render)
+        assert source.count("\ndef _pct(") == 1, (
+            "render.py defines _pct more than once; the last definition silently "
+            "wins for every call site in the module"
+        )
