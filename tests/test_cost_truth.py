@@ -12,6 +12,7 @@ from decimal import Decimal
 
 import pytest
 
+from pmvl_shared.config import get_settings
 from pmvl_shared.enums import Platform, Side
 from pmvl_shared.money import D
 from pmvl_shared.timeutil import utcnow
@@ -389,3 +390,96 @@ class TestCostApiRouting:
 
     def test_a_negative_size_is_rejected(self, client) -> None:  # noqa: ANN001
         assert client.get("/cost/by-category", params={"size": "-5"}).status_code == 400
+
+
+class TestSectorComparisonCaching:
+    """`/cost/by-category` prices thousands of contracts and renders on the homepage.
+
+    It measured 5.8-13.6s in production, so the result is memoised. The cache is
+    only sound because snapshot mode opens the artefact `immutable=1`: the bytes
+    cannot change while the process lives, so one computation is correct for every
+    later request that instance serves.
+    """
+
+    @pytest.fixture()
+    def client(self, clean_db):  # noqa: ANN001, ANN201
+        from fastapi.testclient import TestClient
+
+        from pmvl_api.main import app
+        from pmvl_api.routers import cost as cost_router
+
+        cost_router._SECTOR_CACHE.clear()
+        yield TestClient(app)
+        cost_router._SECTOR_CACHE.clear()
+
+    def test_a_repeat_request_returns_an_identical_body(
+        self, client, monkeypatch
+    ) -> None:  # noqa: ANN001
+        monkeypatch.setenv("PMVL_SNAPSHOT_MODE", "1")
+        get_settings.cache_clear()
+
+        first = client.get("/cost/by-category")
+        second = client.get("/cost/by-category")
+
+        assert first.status_code == second.status_code == 200
+        # Byte-identical, not merely equivalent: a cache hit and a miss build the
+        # body through the same helper precisely so the two cannot drift.
+        assert first.json() == second.json()
+
+    def test_nothing_is_cached_outside_snapshot_mode(
+        self, client, monkeypatch
+    ) -> None:  # noqa: ANN001
+        """A live database is written to by the pipeline while the API serves it.
+
+        Caching there would hand a reader yesterday's sector table with today's
+        timestamp on it.
+        """
+        monkeypatch.delenv("PMVL_SNAPSHOT_MODE", raising=False)
+        get_settings.cache_clear()
+
+        from pmvl_api.routers import cost as cost_router
+
+        assert client.get("/cost/by-category").status_code == 200
+        assert cost_router._SECTOR_CACHE == {}
+
+    def test_different_sizes_do_not_share_an_entry(
+        self, client, monkeypatch
+    ) -> None:  # noqa: ANN001
+        # The premium is size-dependent - that is the product's central finding -
+        # so a cache that ignored size would be actively wrong.
+        monkeypatch.setenv("PMVL_SNAPSHOT_MODE", "1")
+        get_settings.cache_clear()
+
+        from pmvl_api.routers import cost as cost_router
+
+        client.get("/cost/by-category", params={"size": "1"})
+        client.get("/cost/by-category", params={"size": "100"})
+        sizes = {key[0] for key in cost_router._SECTOR_CACHE}
+        assert sizes == {"1", "100"}
+
+    def test_an_equivalent_size_reuses_one_entry(
+        self, client, monkeypatch
+    ) -> None:  # noqa: ANN001
+        # Keyed on the parsed Decimal, so "100" and "100.0" are one comparison.
+        monkeypatch.setenv("PMVL_SNAPSHOT_MODE", "1")
+        get_settings.cache_clear()
+
+        from pmvl_api.routers import cost as cost_router
+
+        client.get("/cost/by-category", params={"size": "100"})
+        before = len(cost_router._SECTOR_CACHE)
+        client.get("/cost/by-category", params={"size": "100.0"})
+        assert len(cost_router._SECTOR_CACHE) == before
+
+    def test_an_invalid_size_is_still_rejected_before_the_cache(
+        self, client, monkeypatch
+    ) -> None:  # noqa: ANN001
+        # Validation must not be skippable by priming the cache, and a bad size
+        # must never become a key.
+        monkeypatch.setenv("PMVL_SNAPSHOT_MODE", "1")
+        get_settings.cache_clear()
+
+        from pmvl_api.routers import cost as cost_router
+
+        assert client.get("/cost/by-category", params={"size": "-5"}).status_code == 400
+        assert cost_router._SECTOR_CACHE == {}

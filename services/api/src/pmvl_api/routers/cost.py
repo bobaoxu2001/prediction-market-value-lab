@@ -19,6 +19,7 @@ from fastapi import APIRouter, HTTPException, Query
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
+from pmvl_shared.config import get_settings
 from pmvl_shared.enums import Side
 from pmvl_shared.money import D
 from pmvl_shared.timeutil import horizons_for
@@ -98,6 +99,24 @@ SECTOR_SAMPLE_PER_CATEGORY = 120
 #: contracts.
 SECTOR_MIN_SAMPLE = 8
 
+#: Memoised sector comparisons, keyed by the parameters that determine one.
+#:
+#: This endpoint prices thousands of contracts per call and renders on the public
+#: homepage, where it measured 5.8-13.6s in production. The result cannot change
+#: between calls: in snapshot mode the artefact is opened `immutable=1`, so the
+#: bytes behind this process are fixed for the process's whole lifetime, and the
+#: answer computed once is the answer for every later request that instance sees.
+#:
+#: Deliberately not enabled outside snapshot mode. There the database is a live
+#: file the pipeline writes to, and a cached sector table would be a stale one.
+#: Correctness first: a slow dev server is a cost worth paying, serving yesterday's
+#: numbers is not.
+#:
+#: Bounded by construction rather than by an eviction policy - the key space is
+#: (size x side x mode), and `size` is validated before it is ever used as a key,
+#: so an unbounded parameter cannot grow this without bound.
+_SECTOR_CACHE: dict[tuple[str, str, str], list[dict[str, Any]]] = {}
+
 #: How far down the volume-ranked universe the sampler will walk.
 #:
 #: Comfortably more than ``categories x SECTOR_SAMPLE_PER_CATEGORY`` so no category
@@ -124,6 +143,20 @@ def cost_by_category(
     contract is near.
     """
     requested = _parse_size(size) or Decimal("100")
+
+    # Keyed on the size's canonical form, not the raw string and not `str()` of
+    # the Decimal: Decimal keeps trailing zeros, so `str(D("100.0"))` is "100.0"
+    # and would occupy a second entry for the identical comparison. `normalize`
+    # collapses them, and `format(..., "f")` renders the result as "100" rather
+    # than Decimal's exponent form "1E+2".
+    cache_key = (
+        format(requested.normalize(), "f"),
+        side.value,
+        mode.value,
+    )
+    cacheable = get_settings().snapshot_mode
+    if cacheable and cache_key in _SECTOR_CACHE:
+        return _sector_envelope(_SECTOR_CACHE[cache_key], mode, requested, side)
 
     stmt = select(Market).where(
         Market.status == "open",
@@ -194,6 +227,24 @@ def cost_by_category(
         )
 
     rows.sort(key=lambda r: r["median_premium_ratio"], reverse=True)
+    if cacheable:
+        _SECTOR_CACHE[cache_key] = rows
+    return _sector_envelope(rows, mode, requested, side)
+
+
+def _sector_envelope(
+    rows: list[dict[str, Any]],
+    mode: DataMode,
+    requested: Decimal,
+    side: Side,
+) -> dict[str, Any]:
+    """The response body, built in one place.
+
+    A cache hit and a cache miss must be byte-identical to a caller. Building the
+    envelope at both return sites is how the two quietly diverge - one of them
+    gains a field, and which body a reader gets depends on whether they were the
+    first request to that instance.
+    """
     return envelope(
         rows,
         mode,
