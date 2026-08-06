@@ -135,7 +135,8 @@ shot.
 
 ```
 prediction-market-value-lab/
-  apps/web/                        Next.js 15 + TypeScript + Tailwind (10 pages)
+  apps/web/                        Next.js 15 + TypeScript + Tailwind
+                                   13 research pages + 10 public-site pages
   services/
     api/                           FastAPI read-only research API
     worker/                        typer CLI + APScheduler scheduler
@@ -143,7 +144,7 @@ prediction-market-value-lab/
     shared/                        config, Decimal money core, ORM, schemas
     market-normalization/          providers, matching, pricing, probability,
                                    arbitrage, backtest, demo seeder
-  tests/                           182 tests + recorded venue fixtures
+  tests/                           1,100+ tests + recorded venue fixtures
   data/                            SQLite database and scratch data
   docs/
 ```
@@ -359,7 +360,7 @@ make test-unit         # no database
 make test-integration  # database, pipelines, API
 ```
 
-182 tests, no network access. Provider tests run against real responses captured from
+Over 1,100 tests, no network access. Provider tests run against real responses captured from
 both venues into `tests/fixtures/`, so payload-shape regressions are caught without
 the suite depending on the venues being up.
 
