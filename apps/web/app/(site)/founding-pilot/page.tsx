@@ -35,34 +35,40 @@ export default function FoundingPilotPage() {
       <section className="mx-auto max-w-6xl px-4 pb-12 pt-16">
         <p className="t-label">Founding Research Pilot</p>
         {/*
-          Left as it was, deliberately.
-          =============================
-          This hero leads with emptiness — "including the days it says there is
-          nothing to do", "most days the answer is zero" — and that is a genuinely
-          weak offer. The obvious rewrite is to lead with the execution-cost
-          measurement, which needs no forecast and therefore has content every
-          single day.
+          Rewritten once the report could back it, and not before.
+          =======================================================
+          This hero used to lead with emptiness — "including the days it says
+          there is nothing to do", "most days the answer is zero" — which is a
+          weak offer and an accurate description of what the email contained.
 
-          That rewrite is not made here because `pilot/digest.py` does not yet put
-          a cost section in the report. The digest carries actionable candidates,
-          the watchlist and the funnel; a sales page promising a daily cost
-          breakdown would be selling something the delivered email does not
-          contain, which is the one failure this product cannot afford and the
-          exact thing its own runbook forbids.
+          The previous note here set the order: put a cost section in
+          `DigestReport`, `build_daily_digest` and all three renderers, extend the
+          editorial checklist in docs/founding-pilot-fulfilment.md, and only then
+          change this copy. All three are done, so the lead is now the measurement
+          that has content on every unblocked report.
 
-          The order is: add the cost section to `DigestReport`, `build_daily_digest`
-          and all three renderers, extend the editorial checklist in
-          docs/founding-pilot-fulfilment.md, and only then rewrite this copy.
+          The claim below is bounded by what the digest actually renders: a
+          per-category premium table, a widest-gap list capped at two per
+          category, and the break-even reading. Nothing here promises a number of
+          opportunities, because the report still does not promise one.
         */}
         <h1 className="mt-3 max-w-4xl text-[2rem] leading-[1.12] sm:text-[2.5rem]">
-          Thirty days of the research, including the days it says there is nothing
-          to do.
+          Thirty days of what it actually costs to trade these markets.
         </h1>
         <p className="t-lead mt-5 max-w-2xl">
-          Each morning you get one report: what cleared the bar, what did not, and
-          how many candidates were examined to get there. Most days the answer is
-          zero. That is the finding, not a failure — and you will be able to see
-          exactly why.
+          Each morning, one report. It prices every quoted contract in that
+          day&apos;s snapshot against the venues&apos; published fee schedules and
+          the depth actually on the book, and tells you the gap between the price
+          on the screen and the money that leaves your account — by category, and
+          for the contracts where the gap is widest. Because a binary contract
+          pays exactly $1, that cost is also the probability you need just to
+          break even.
+        </p>
+        <p className="t-lead mt-3 max-w-2xl">
+          The same report carries the opportunity scan: what cleared the bar, what
+          did not, and how many candidates were examined. Most days that part is
+          zero, and it says so plainly. You are buying the measurement and its
+          reasoning, not a promise that it finds something.
         </p>
 
         <dl className="mt-8 grid max-w-xl grid-cols-3 gap-x-6 border-y border-line py-5">

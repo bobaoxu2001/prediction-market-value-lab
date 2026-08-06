@@ -46,6 +46,20 @@ MAX_CANDIDATES = 3
 #: watchlist cannot be mistaken for the recommendation list.
 MAX_WATCHLIST = 10
 
+#: Contracts listed in the cost section, and the size they are priced at.
+#:
+#: Small because the section is a finding, not a directory: a reader who wants
+#: the whole ranking has `/cost`. The size is stated wherever the figures are.
+MAX_COST_ROWS = 8
+#: At most this many rows from any one category, so the list is not eight
+#: near-identical strikes off the same board.
+MAX_COST_PER_CATEGORY = 2
+COST_REFERENCE_SIZE = Decimal("100")
+
+#: Below this many priced contracts a category is not given a median. A "sector
+#: premium" drawn from four contracts is a number about four contracts.
+MIN_COST_SAMPLE = 8
+
 #: Spelled out once so the funnel, the rejection tally and the tests agree.
 MISSING_RESOLUTION_TIME = (
     "No expected resolution time recorded, so holding cost cannot be computed"
@@ -138,6 +152,59 @@ class WatchlistEntry:
 
 
 @dataclass
+class CostRow:
+    """One contract's execution cost, independent of any opinion about it."""
+
+    market_id: int
+    platform: str
+    title: str
+    category: str | None
+    nominal_price: Decimal
+    measured_cost: Decimal
+    measured_premium: Decimal
+    measured_premium_ratio: Decimal | None
+    breakeven_probability: Decimal | None
+    #: False when priced from a venue summary, where depth impact is unknown and
+    #: excluded - which makes the premium a floor rather than an estimate.
+    depth_known: bool
+
+
+@dataclass
+class CostSector:
+    """Median execution-cost premium for one market category."""
+
+    category: str
+    n: int
+    median_premium_ratio: Decimal
+    depth_coverage: Decimal
+
+
+@dataclass
+class CostSummary:
+    """What it costs to trade, across the Snapshot.
+
+    The section that always has content. Every other part of this report is
+    downstream of a probability estimate, and the independence rule declines to
+    produce one for most markets - which is why the candidate list is usually
+    empty and why a report built only from it says "nothing today" most days.
+
+    Execution cost needs no probability: fees at size, the venue's rounding rule,
+    depth impact where a book was captured, transfer and capital cost are all
+    derived from the contract and the published schedules. So this is computed
+    for every quoted market in the artefact, on every run.
+    """
+
+    priced_at_size: Decimal
+    markets_priced: int
+    sectors: list[CostSector] = field(default_factory=list)
+    costliest: list[CostRow] = field(default_factory=list)
+
+    @property
+    def has_content(self) -> bool:
+        return bool(self.sectors or self.costliest)
+
+
+@dataclass
 class DigestReport:
     """The daily report. Renders identically in Markdown, HTML and text."""
 
@@ -156,6 +223,8 @@ class DigestReport:
     top_rejections: list[RejectionReason] = field(default_factory=list)
     markets_examined: int = 0
     horizon: str = "7d"
+    #: Present whenever the Snapshot was readable, candidates or not.
+    cost: CostSummary | None = None
 
     #: Actionable candidates only. The watchlist is deliberately excluded: it is
     #: diagnostic, and counting it here would overstate what the report found.
@@ -785,6 +854,129 @@ def _to_candidate(
 # ------------------------------------------------------------------- report --
 
 
+def select_cost_summary(
+    conn: sqlite3.Connection, *, size: Decimal = COST_REFERENCE_SIZE
+) -> CostSummary:
+    """Execution cost across every quoted, open market in the Snapshot.
+
+    Uses the same `analyse_cost` the site does, so a figure here and a figure on
+    `/cost/{id}` cannot disagree. Markets without a captured book are priced from
+    the venue summary and carry `depth_known=False`: their premium excludes depth
+    impact entirely, which makes it a floor and therefore *understates* them.
+    """
+    from ..pricing.cost_truth import analyse_cost
+
+    def column(row: sqlite3.Row, name: str) -> Any:
+        """A column that may not exist in every Snapshot schema.
+
+        `sqlite3.Row` raises IndexError rather than returning None for an unknown
+        key. A report generator crashing because one optional column is absent is
+        a worse failure than the report omitting one figure.
+        """
+        return row[name] if name in row.keys() else None
+
+    rows: list[CostRow] = []
+    by_category: dict[str, list[Decimal]] = {}
+    with_book: dict[str, int] = {}
+
+    for row in conn.execute(
+        "select * from markets where status = 'open' and accepting_orders = 1 "
+        "order by cast(coalesce(volume_24h, '0') as real) desc"
+    ):
+        market = _market_from_row(row)
+        if market is None:
+            continue
+        book = _book_for(conn, row["id"], market)
+        summary_ask = column(row, "best_yes_ask")
+        truth = analyse_cost(
+            market,
+            Side.YES,
+            book=book,
+            requested_size=size,
+            summary_ask=Decimal(str(summary_ask)) if summary_ask else None,
+            ladder=(),
+        )
+        if truth is None or truth.requested is None:
+            continue
+        entry = truth.requested
+        if entry.below_min_order_size or entry.measured_premium_ratio is None:
+            continue
+
+        category = column(row, "category") or "other"
+        by_category.setdefault(category, []).append(entry.measured_premium_ratio)
+        if truth.depth_known:
+            with_book[category] = with_book.get(category, 0) + 1
+
+        rows.append(
+            CostRow(
+                market_id=row["id"],
+                platform=column(row, "platform") or "",
+                title=column(row, "title") or "",
+                category=column(row, "category"),
+                nominal_price=entry.nominal_price,
+                measured_cost=entry.measured_cost,
+                measured_premium=entry.measured_premium,
+                measured_premium_ratio=entry.measured_premium_ratio,
+                breakeven_probability=entry.breakeven_probability,
+                depth_known=truth.depth_known,
+            )
+        )
+
+    sectors: list[CostSector] = []
+    for category, ratios in by_category.items():
+        if len(ratios) < MIN_COST_SAMPLE:
+            continue
+        ordered = sorted(ratios)
+        middle = len(ordered) // 2
+        median = (
+            ordered[middle]
+            if len(ordered) % 2
+            else (ordered[middle - 1] + ordered[middle]) / Decimal(2)
+        )
+        books = with_book.get(category, 0)
+        sectors.append(
+            CostSector(
+                category=category,
+                n=len(ordered),
+                median_premium_ratio=median,
+                depth_coverage=(
+                    Decimal(books) / Decimal(len(ordered))
+                ).quantize(Decimal("0.001")),
+            )
+        )
+    sectors.sort(key=lambda sector: sector.median_premium_ratio, reverse=True)
+
+    # Ranked by how far cost sits above the quoted price, not by absolute cost:
+    # a 1c contract carrying a 1c fee is the finding, and it would never appear
+    # in a ranking led by dollars.
+    #
+    # Capped per category, because the unbounded ranking is eight rows of the
+    # same contract: the cheapest tick has the widest premium by construction, so
+    # a straight sort returned four adjacent Bitcoin strikes and four legs of one
+    # e-sports match, all at 0.1c and all saying the same thing. Two per category
+    # keeps the list a finding rather than a list of near-duplicates.
+    ranked = sorted(
+        rows, key=lambda r: r.measured_premium_ratio or Decimal(0), reverse=True
+    )
+    per_category: dict[str, int] = {}
+    costliest: list[CostRow] = []
+    for row in ranked:
+        if len(costliest) >= MAX_COST_ROWS:
+            break
+        key = row.category or "other"
+        if per_category.get(key, 0) >= MAX_COST_PER_CATEGORY:
+            continue
+        per_category[key] = per_category.get(key, 0) + 1
+        costliest.append(row)
+
+    return CostSummary(
+        priced_at_size=size,
+        markets_priced=len(rows),
+        sectors=sectors,
+        costliest=costliest,
+    )
+
+
 def build_daily_digest(
     manifest_path: Path,
     gate_result: GateResult,
@@ -854,6 +1046,10 @@ def build_daily_digest(
                 gate_result.sla.candidate_quote_max_age_seconds
             ),
         )
+        # Computed from the same connection and the same artefact. Not gated on
+        # there being candidates: this is the part of the report that has an
+        # answer on a day when nothing clears the bar, which is most days.
+        cost = select_cost_summary(conn)
     finally:
         conn.close()
 
@@ -868,4 +1064,5 @@ def build_daily_digest(
         top_rejections=rejections,
         markets_examined=examined,
         horizon=horizon,
+        cost=cost,
     )

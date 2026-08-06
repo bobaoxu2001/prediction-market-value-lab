@@ -1031,3 +1031,73 @@ class TestRenderersSeparateTheTwoLevels:
         assert payload["gate"]["blocked_reason"] == ""
         blocked = {f["data_type"] for f in payload["gate"]["freshness"] if f["blocks_actionable"]}
         assert "top_of_book" in blocked
+
+
+class TestTheCostSectionIsAlwaysThere:
+    """The part of the report that does not depend on finding anything.
+
+    Everything else in the digest is downstream of a probability estimate, and
+    the independence rule declines to produce one for most markets — so a report
+    built only from candidates says "no actionable opportunity today" on most
+    days, which is what the pilot was selling. Execution cost needs no estimate:
+    fees at size, the venue's rounding rule, depth where a book exists, transfer
+    and capital cost are all derived from the contract and published schedules.
+    """
+
+    @staticmethod
+    def _report(snapshot) -> DigestReport:
+        as_of = snapshot.cutoff + timedelta(minutes=5)
+        return build_daily_digest(
+            snapshot.manifest, evaluate(snapshot.manifest, as_of=as_of)
+        )
+
+    def test_a_report_with_no_candidates_still_prices_contracts(self, snapshot):
+        report = self._report(snapshot)
+        assert report.cost is not None
+        assert report.cost.markets_priced > 0
+        assert report.cost.has_content
+
+    def test_every_format_carries_the_cost_section(self, snapshot):
+        report = self._report(snapshot)
+        for text in (to_markdown(report), to_text(report), to_html_email(report)):
+            lowered = text.lower()
+            assert "what it costs to trade today" in lowered
+            # The size the figures are priced at is stated wherever they appear:
+            # fee rounding makes the premium size-dependent, so a premium without
+            # its size is not a number a reader can use.
+            assert "100 contracts" in lowered
+
+    def test_every_format_states_the_break_even_reading(self, snapshot):
+        # The reason the figure matters: a binary contract pays exactly $1, so
+        # cost per contract IS the probability needed to break even.
+        report = self._report(snapshot)
+        for text in (to_markdown(report), to_text(report), to_html_email(report)):
+            assert "break even" in text.lower() or "break-even" in text.lower()
+
+    def test_a_thin_category_gets_no_median(self, snapshot):
+        """A sector premium drawn from one contract is a number about one contract.
+
+        The fixture holds a single market, well under the minimum sample, so the
+        by-category table must be absent entirely rather than reporting a
+        one-contract "median" as a property of the sector.
+        """
+        report = self._report(snapshot)
+        assert report.cost is not None
+        assert report.cost.sectors == []
+        # The individual contract is still priced - the minimum governs the
+        # aggregate, not the row.
+        assert report.cost.costliest
+
+    def test_the_gate_still_governs_whether_the_snapshot_is_read(self, snapshot):
+        """A Snapshot that failed its checks is not read for cost either.
+
+        The cheapest way to guarantee bad data is never published is to never
+        read it, and that rule does not get an exception for the section that
+        happens to always have content.
+        """
+        stale = snapshot.cutoff + timedelta(hours=12)
+        report = build_daily_digest(
+            snapshot.manifest, evaluate(snapshot.manifest, as_of=stale)
+        )
+        assert report.actionable_allowed is False
+        assert report.cost is None

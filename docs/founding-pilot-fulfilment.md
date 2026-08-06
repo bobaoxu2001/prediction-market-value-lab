@@ -116,6 +116,20 @@ Read the Markdown output end to end. Confirm, for every candidate:
 - [ ] The resolution date is right.
 - [ ] Nothing reads as instruction or advice.
 
+And for the cost section, which is present on every unblocked report:
+
+- [ ] The order size the figures are priced at is stated. Fee rounding makes the
+      premium size-dependent, so a premium without its size is not usable.
+- [ ] Categories priced mostly from venue summaries are labelled as a **floor**.
+      Missing depth understates the premium; it must never read as precision.
+- [ ] The break-even reading is present — cost per contract *is* the probability
+      needed to break even, and that is the reason the figure matters.
+- [ ] The "widest gap" list is not eight near-identical strikes off one board.
+      It is capped at two per category; if it still reads as one contract
+      repeated, say so rather than sending it.
+- [ ] No cost figure is phrased as an opportunity. This section measures what a
+      trade costs; it does not say a trade is worth making.
+
 And for every report:
 
 - [ ] No language promising or implying a return.

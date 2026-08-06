@@ -234,6 +234,83 @@ def _md_banner(report: Report) -> list[str]:
     return ["> ⚠️ **" + lines[0] + "**", ">", "> " + lines[1], ""]
 
 
+def _pct(value) -> str:  # noqa: ANN001
+    return "-" if value is None else f"{float(value) * 100:.1f}%"
+
+
+def _md_cost(cost) -> list[str]:  # noqa: ANN001
+    """What it costs to trade. The section that is never empty.
+
+    Every other part of this report is downstream of a probability estimate, and
+    the independence rule declines to produce one for most markets - so a report
+    built only from candidates says "nothing today" on most days. Execution cost
+    needs no estimate, so this is here whether or not anything cleared the bar.
+    """
+    if cost is None or not cost.has_content:
+        return []
+
+    size = int(cost.priced_at_size)
+    out = [
+        f"## What it costs to trade today — {cost.markets_priced:,} contracts priced",
+        "",
+        f"Every figure below is the cost of buying **{size} contracts**, above the "
+        "price on the venue's screen. It is computed from observed depth and the "
+        "venues' published fee schedules — no probability estimate is involved, "
+        "which is why this section has content on a day when nothing is actionable.",
+        "",
+        "Because a binary contract pays exactly $1, cost per contract is also the "
+        "probability you need just to break even.",
+        "",
+    ]
+
+    if cost.sectors:
+        out += [
+            "### By category",
+            "",
+            "| Category | Contracts | Median premium | Priced from a book |",
+            "| --- | ---: | ---: | ---: |",
+        ]
+        for sector in cost.sectors:
+            out.append(
+                f"| {sector.category} | {sector.n:,} | "
+                f"{_pct(sector.median_premium_ratio)} | {_pct(sector.depth_coverage)} |"
+            )
+        out += [
+            "",
+            "Where *priced from a book* is low the premium excludes order-book "
+            "depth entirely, which makes it a **floor** on the true cost rather "
+            "than an estimate of it — those categories are understated here, not "
+            "flattered.",
+            "",
+        ]
+
+    if cost.costliest:
+        out += [
+            "### Widest gap between the quoted price and the real one",
+            "",
+            "Ranked by premium as a share of the quoted price, not by dollars: a "
+            "1c contract carrying a 1c fee is the finding, and it would never "
+            "surface in a ranking led by absolute cost.",
+            "",
+            "| Contract | Quoted | True cost | Premium | Break-even |",
+            "| --- | ---: | ---: | ---: | ---: |",
+        ]
+        for row in cost.costliest:
+            breakeven = (
+                "impossible"
+                if row.breakeven_probability is None
+                else _pct(row.breakeven_probability)
+            )
+            out.append(
+                f"| {row.title} | {_cents(row.nominal_price)} | "
+                f"{_cents(row.measured_cost)} | {_pct(row.measured_premium_ratio)} | "
+                f"{breakeven} |"
+            )
+        out.append("")
+
+    return out
+
+
 def _md_watchlist(entries: list[WatchlistEntry]) -> list[str]:
     if not entries:
         return []
@@ -318,6 +395,7 @@ def _md_daily(report: DigestReport) -> str:
             "",
         ]
 
+    out += _md_cost(report.cost)
     out += _md_watchlist(report.watchlist)
 
     out += ["## How today's markets were filtered", "", "| Stage | Count | |", "| --- | ---: | --- |"]
@@ -528,6 +606,58 @@ def to_text(report: Report) -> str:
                 "priced venues, and reporting it is the product working rather than failing."
             )
             out.append("")
+
+        cost = report.cost
+        if cost is not None and cost.has_content:
+            size = int(cost.priced_at_size)
+            out += [
+                f"WHAT IT COSTS TO TRADE TODAY - {cost.markets_priced:,} CONTRACTS PRICED",
+                _rule("-"),
+                "",
+            ]
+            out += _wrap(
+                f"Every figure below is the cost of buying {size} contracts, above the "
+                "price on the venue's screen, computed from observed depth and the "
+                "venues' published fee schedules. No probability estimate is involved, "
+                "which is why this section has content on a day when nothing is "
+                "actionable. A binary contract pays exactly $1, so cost per contract is "
+                "also the probability needed just to break even."
+            )
+            out.append("")
+            if cost.sectors:
+                out.append("  By category:")
+                out.append("")
+                for sector in cost.sectors:
+                    out.append(
+                        f"    {sector.category:<14} {sector.n:>5} contracts   "
+                        f"median premium {_pct(sector.median_premium_ratio):>7}   "
+                        f"from a book {_pct(sector.depth_coverage):>7}"
+                    )
+                out.append("")
+                out += _wrap(
+                    "Where 'from a book' is low the premium excludes order-book depth "
+                    "entirely, which makes it a floor on the true cost rather than an "
+                    "estimate of it: those categories are understated here.",
+                    indent="  ",
+                )
+                out.append("")
+            if cost.costliest:
+                out.append("  Widest gap between the quoted price and the real one:")
+                out.append("")
+                for row in cost.costliest:
+                    breakeven = (
+                        "impossible"
+                        if row.breakeven_probability is None
+                        else _pct(row.breakeven_probability)
+                    )
+                    out.append(f"    {row.title[:60]}")
+                    out.append(
+                        f"      quoted {_cents(row.nominal_price)} -> true "
+                        f"{_cents(row.measured_cost)}  "
+                        f"(+{_pct(row.measured_premium_ratio)})  "
+                        f"break-even {breakeven}"
+                    )
+                out.append("")
 
         if report.watchlist:
             out += ["WATCHLIST - EXAMINED AND EXPLICITLY NOT ACTIONABLE", _rule("-"), ""]
@@ -797,6 +927,69 @@ def to_html_email(report: Report) -> str:
                     "rather than failing."
                 )
             )
+
+        cost = report.cost
+        if cost is not None and cost.has_content:
+            size = int(cost.priced_at_size)
+            body.append(
+                _html_h2(
+                    f"What it costs to trade today — {cost.markets_priced:,} "
+                    "contracts priced"
+                )
+            )
+            body.append(
+                _html_p(
+                    f"Every figure below is the cost of buying {size} contracts, above "
+                    "the price on the venue's screen, computed from observed depth and "
+                    "the venues' published fee schedules. No probability estimate is "
+                    "involved, which is why this section has content on a day when "
+                    "nothing is actionable. A binary contract pays exactly $1, so cost "
+                    "per contract is also the probability needed just to break even."
+                )
+            )
+            if cost.sectors:
+                body.append(
+                    _html_kv(
+                        [
+                            (
+                                _h(sector.category),
+                                f"{_pct(sector.median_premium_ratio)} median premium "
+                                f"({sector.n:,} contracts, "
+                                f"{_pct(sector.depth_coverage)} priced from a book)",
+                            )
+                            for sector in cost.sectors
+                        ]
+                    )
+                )
+                body.append(
+                    _html_p(
+                        "Where the book share is low the premium excludes order-book "
+                        "depth entirely, which makes it a floor on the true cost rather "
+                        "than an estimate of it: those categories are understated here."
+                    )
+                )
+            if cost.costliest:
+                body.append(
+                    _html_h2("Widest gap between the quoted price and the real one")
+                )
+                body.append(
+                    _html_kv(
+                        [
+                            (
+                                _h(row.title),
+                                f"quoted {_cents(row.nominal_price)} &rarr; true "
+                                f"{_cents(row.measured_cost)} "
+                                f"(+{_pct(row.measured_premium_ratio)}), break-even "
+                                + (
+                                    "impossible"
+                                    if row.breakeven_probability is None
+                                    else _pct(row.breakeven_probability)
+                                ),
+                            )
+                            for row in cost.costliest
+                        ]
+                    )
+                )
 
         if report.watchlist:
             body.append(_html_h2("Watchlist — examined and explicitly NOT actionable"))
