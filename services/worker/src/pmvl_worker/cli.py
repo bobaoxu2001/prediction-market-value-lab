@@ -131,6 +131,73 @@ def _fmt(value: Any) -> str:
 
 
 @app.command()
+def readiness(as_json: bool = typer.Option(False, "--json")) -> None:
+    """How far the live track record is from being able to support its claims."""
+    from pmvl_markets.backtest import track_record_readiness
+    from pmvl_shared.db import session_scope
+
+    with session_scope() as db:
+        payload = track_record_readiness(db).as_dict()
+
+    if as_json:
+        _emit(payload, as_json=True)
+        return
+
+    table = Table(title="Track record accrual")
+    for column in ("Milestone", "Have", "Needs", "Remaining", "Projected"):
+        table.add_column(column)
+    for milestone in payload["milestones"]:
+        table.add_row(
+            milestone["name"],
+            str(milestone["have"]),
+            str(milestone["needs"]),
+            "-" if milestone["met"] else str(milestone["remaining"]),
+            "met" if milestone["met"] else _fmt(milestone.get("projected_date")),
+        )
+    console.print(table)
+
+    console.print(
+        f"published={payload['published_total']} "
+        f"settled={payload['settled_recommendations']} "
+        f"pending={payload['pending_recommendations']} "
+        f"days={payload['days_of_history']} "
+        f"rate={_fmt(payload['settled_per_day'])}/day"
+    )
+    colour = "yellow" if payload["pipeline_stalled"] else "green"
+    console.print(f"[{colour}]{payload['summary']}[/{colour}]")
+    if payload["pipeline_stalled"]:
+        console.print(
+            "[dim]Start the clock with `pmvl schedule` as a long-lived process.[/dim]"
+        )
+
+
+@app.command()
+def calibrate(as_json: bool = typer.Option(False, "--json")) -> None:
+    """Fit a calibration map on settled recommendations, or say why not.
+
+    Fitting nothing is a successful run, and the expected one until several weeks
+    of real settled history exist.
+    """
+    payload = jobs.job_calibrate()
+    if as_json:
+        _emit(payload, as_json=True)
+        return
+
+    table = Table(title="Calibration fit")
+    table.add_column("Field")
+    table.add_column("Value")
+    for key in (
+        "method", "applied", "n_train", "n_validation",
+        "brier_identity", "brier_fitted", "brier_improvement",
+        "min_brier_improvement",
+    ):
+        table.add_row(key, _fmt(payload.get(key)))
+    console.print(table)
+    colour = "green" if payload.get("applied") else "yellow"
+    console.print(f"[{colour}]{payload.get('reason', '')}[/{colour}]")
+
+
+@app.command()
 def retrodict(
     settled_within_days: int = typer.Option(
         60, help="Only markets that settled within this many days"

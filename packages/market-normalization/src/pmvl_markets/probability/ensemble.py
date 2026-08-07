@@ -54,6 +54,7 @@ from pmvl_shared.timeutil import utcnow
 from ..research.provider import BaseResearchProvider, NullResearchProvider, ResearchResult
 from .base import ModelContext, ModelEstimate, ProbabilityModel, no_opinion
 from .categories.crypto import CryptoThresholdModel
+from .categories.economics import CpiNowcastModel
 from .categories.equity import EquityIndexThresholdModel
 from .categories.sports import SportsBaseRateModel
 from .categories.structural import (
@@ -180,6 +181,7 @@ class ProbabilityEnsemble:
             # game contract the estimate comes first and the "no model here" notice
             # second, which is the order a reader expects them in.
             SportsBaseRateModel(),
+            CpiNowcastModel(),
             *default_category_models(),
             ExtremePriceSanityModel(),
             TimeToResolutionModel(),

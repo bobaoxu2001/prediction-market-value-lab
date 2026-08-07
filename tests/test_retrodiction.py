@@ -208,6 +208,9 @@ def test_every_live_ensemble_model_declaring_as_of_support_is_deliberate():
         # Records counted from completed games strictly before the instant; the
         # scoreboard is used for identification only and cannot return a result.
         "sports_base_rate",
+        # Nowcasts are dated, and the error history is cut at the same instant so
+        # the dispersion cannot know about the regime it is forecasting in.
+        "cpi_nowcast_bucket",
     }
 
 

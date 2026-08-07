@@ -142,8 +142,21 @@ HEAD_TO_HEAD_SPORTS_SERIES: tuple[str, ...] = (
     "KXMLBGAME", "KXNBAGAME", "KXWNBAGAME", "KXNFLGAME", "KXNHLGAME",
 )
 
+#: CPI bucket boards -> CpiNowcastModel (Cleveland Fed nowcast, keyless).
+#:
+#: Exhaustive 0.1-point buckets over the figure BLS will publish. Headline and core,
+#: month-over-month and year-over-year - the four boards the nowcast covers. The
+#: other KXECONSTAT boards (unemployment, payrolls) have no nowcast behind them and
+#: are left out rather than ingested for a model that would decline them.
+CPI_BUCKET_SERIES: tuple[str, ...] = (
+    "KXECONSTATCPI", "KXECONSTATCPICORE",
+    "KXECONSTATCPIYOY", "KXECONSTATCORECPIYOY",
+)
+
 #: What ``list_modellable_markets`` fetches by default.
-TARGETED_SERIES: tuple[str, ...] = MODELLABLE_SERIES + HEAD_TO_HEAD_SPORTS_SERIES
+TARGETED_SERIES: tuple[str, ...] = (
+    MODELLABLE_SERIES + HEAD_TO_HEAD_SPORTS_SERIES + CPI_BUCKET_SERIES
+)
 
 
 def _dollars(payload: dict[str, Any], key: str) -> Decimal | None:

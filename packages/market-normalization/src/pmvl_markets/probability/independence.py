@@ -213,6 +213,17 @@ COMPONENT_INDEPENDENCE: dict[str, IndependenceMetadata] = {
             "prediction market. GBM understates jump risk."
         ),
     ),
+    "cpi_nowcast_bucket": IndependenceMetadata(
+        source_type=SourceType.EXTERNAL_REFERENCE_DATA,
+        correlation_group="inflation_nowcast",
+        reliability_weight=D("0.8"),
+        known_limitations=(
+            "The Cleveland Fed's published nowcast, with dispersion measured from "
+            "its own past errors. It cannot see the surprise component of a "
+            "single print, and the 0.1pp rounding bucket is narrow relative to "
+            "that error."
+        ),
+    ),
     "sports_base_rate": IndependenceMetadata(
         source_type=SourceType.HISTORICAL_BASE_RATE,
         correlation_group="sports_results_feed",

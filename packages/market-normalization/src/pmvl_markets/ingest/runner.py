@@ -76,9 +76,13 @@ def modellable_categories() -> frozenset[Category]:
     """
     from pmvl_shared.config import get_settings
 
+    # Economics joins unconditionally: the CPI nowcast model needs no key and no
+    # flag, so an economics contract on one of the bucket boards really can be
+    # scored. The sports model is the one still waiting on evidence.
+    categories = MODELLABLE_CATEGORIES | {Category.ECONOMICS}
     if getattr(get_settings(), "sports_model_enabled", False):
-        return MODELLABLE_CATEGORIES | {Category.SPORTS}
-    return MODELLABLE_CATEGORIES
+        categories |= {Category.SPORTS}
+    return categories
 
 #: No single series may take more than this share of one cycle's orderbook budget.
 MAX_SERIES_BUDGET_SHARE = 0.2
