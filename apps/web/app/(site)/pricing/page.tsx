@@ -4,11 +4,6 @@ import Link from "next/link";
 import { Faq, Section, SectionHeading } from "@/components/marketing";
 import { PricingPlans } from "@/components/pricing";
 import { getCurrentEntitlement } from "@/lib/billing/entitlement";
-import {
-  PILOT_DURATION_DAYS,
-  PILOT_MEMBER_CAP,
-  PILOT_PRICE_USD,
-} from "@/lib/pilot";
 import { absoluteUrl } from "@/lib/site";
 
 export const dynamic = "force-dynamic";
@@ -16,7 +11,7 @@ export const dynamic = "force-dynamic";
 export const metadata: Metadata = {
   title: "Pricing",
   description:
-    "The PMVL research product is public and free. A paid Founding Pro tier is in preparation and is not yet being sold; billing is disabled on the production deployment.",
+    "The PMVL research product is public and free, and nothing on this site is for sale. A paid data tier is described but not open: it requires a live track record and a published Brier score against the market first.",
   alternates: { canonical: absoluteUrl("/pricing") },
 };
 
@@ -31,18 +26,42 @@ export default async function PricingPage() {
 
       <Section>
         <SectionHeading
-          eyebrow="Available now"
-          title="The Founding Research Pilot"
-          lead={`Subscriptions are not open, but a small, finite pilot is: ${PILOT_DURATION_DAYS} days of the daily written research digest, delivered by email, capped at ${PILOT_MEMBER_CAP} members.`}
+          eyebrow="What has to be true first"
+          title="Two conditions before anything is sold"
+          lead="Written as conditions rather than intentions, because an intention can be quietly revised and a condition either holds or does not."
         />
-        <p className="t-body mt-6 max-w-2xl">
-          One-time USD {PILOT_PRICE_USD}, no account, no renewal and nothing to
-          cancel. Three
-          real sample reports — generated from the published Snapshot, and
-          labelled as historical rather than current research — are readable
-          before paying anything.{" "}
+        <div className="mt-8 grid gap-8 lg:grid-cols-2">
+          <div className="border-t border-line-subtle pt-4">
+            <h3 className="t-sub-title">A real track record exists</h3>
+            <p className="t-body mt-2">
+              At least 60 recommendations published live and settled, from a
+              pipeline that has not stalled. Today that count is zero: everything
+              downstream of the daily snapshot has only ever run on synthetic
+              history.
+            </p>
+          </div>
+          <div className="border-t border-line-subtle pt-4">
+            <h3 className="t-sub-title">
+              Its Brier score against the market is published
+            </h3>
+            <p className="t-body mt-2">
+              Whatever the sign. Replayed against already-settled markets, the
+              estimate currently scores marginally <em>worse</em> than the
+              market&rsquo;s own price — so the claim a subscription would rest on
+              is one we have not been able to demonstrate. That figure goes on{" "}
+              <Link href="/track-record" className="underline underline-offset-2">
+                the track record
+              </Link>{" "}
+              before any tier opens.
+            </p>
+          </div>
+        </div>
+        <p className="t-body mt-8 max-w-2xl">
+          The Founding Research Pilot that used to be offered here has been
+          withdrawn for the same reason. Nobody had paid, so there was nothing to
+          unwind.{" "}
           <Link href="/founding-pilot" className="underline underline-offset-2">
-            Read what the pilot is, and what it is not
+            What it was, and why it is closed
           </Link>
           .
         </p>

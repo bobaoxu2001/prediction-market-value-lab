@@ -4,10 +4,9 @@ import Link from "next/link";
 import { Faq, Section, SectionHeading } from "@/components/marketing";
 import {
   PILOT_DURATION_DAYS,
-  PILOT_INTEREST_MAILTO,
   PILOT_MEMBER_CAP,
   PILOT_PRICE_USD,
-  pilotPaymentLink,
+  PILOT_WITHDRAWN_REASON,
   pilotSeatsRemaining,
 } from "@/lib/pilot";
 import {
@@ -20,13 +19,13 @@ import { absoluteUrl, SUPPORT_EMAIL } from "@/lib/site";
 export const dynamic = "force-dynamic";
 
 export const metadata: Metadata = {
-  title: "Founding Research Pilot",
-  description: `A ${PILOT_DURATION_DAYS}-day paid pilot of PMVL's daily prediction-market research digest. One-time USD ${PILOT_PRICE_USD}, capped at ${PILOT_MEMBER_CAP} members. Research only — not advice, and no return is promised.`,
+  title: "Founding Research Pilot — closed",
+  description:
+    "The paid pilot of PMVL's daily research digest is withdrawn and was never sold. Measured against settled markets, our estimate scored slightly worse than the market price, so the premise the pilot rested on was one we could not demonstrate.",
   alternates: { canonical: absoluteUrl("/founding-pilot") },
 };
 
 export default function FoundingPilotPage() {
-  const paymentLink = pilotPaymentLink();
   const remaining = pilotSeatsRemaining();
 
   return (
@@ -53,8 +52,34 @@ export default function FoundingPilotPage() {
           opportunities, because the report still does not promise one.
         */}
         <h1 className="mt-3 max-w-4xl text-[2rem] leading-[1.12] sm:text-[2.5rem]">
-          Thirty days of estimated entry costs across these markets.
+          This pilot is closed, and was never sold.
         </h1>
+        <p className="t-lead mt-5 max-w-2xl">{PILOT_WITHDRAWN_REASON}</p>
+        <p className="t-lead mt-3 max-w-2xl">
+          The page is kept rather than deleted because withdrawing an offer
+          quietly is its own kind of claim. What follows is what the pilot would
+          have been, unchanged, so the decision can be read against it.{" "}
+          <Link href="/cost" className="underline underline-offset-2">
+            The cost measurement it was built around
+          </Link>{" "}
+          is free, on this site, and needs no forecast to be correct.
+        </p>
+
+        <div className="mt-8 max-w-2xl rounded-[3px] border border-line bg-sunken px-4 py-4">
+          <p className="t-label">What the measurement said</p>
+          <p className="t-meta mt-3">
+            Replayed against 92 already-settled contracts, the independent
+            estimate scored a Brier of 0.0742 against the market price&rsquo;s
+            0.0717 — about 0.0025 <em>worse</em>. A narrow sample, and the only
+            real evidence there is. The honest reading is not &ldquo;the model is
+            broken&rdquo; but &ldquo;there is no demonstrated edge to sell&rdquo;,
+            and those have the same commercial consequence.
+          </p>
+        </div>
+      </section>
+
+      <section className="mx-auto max-w-6xl px-4 pb-12">
+        <p className="t-label">For the record: what it would have been</p>
         <p className="t-lead mt-5 max-w-2xl">
           Each morning, one report. It prices every quoted contract in that
           day&apos;s snapshot using published venue fee rules and observed book depth,
@@ -66,8 +91,7 @@ export default function FoundingPilotPage() {
         <p className="t-lead mt-3 max-w-2xl">
           The same report carries the opportunity scan: what cleared the bar, what
           did not, and how many candidates were examined. Most days that part is
-          zero, and it says so plainly. You are buying the measurement and its
-          reasoning, not a promise that it finds something.
+          zero, and it says so plainly.
         </p>
 
         <dl className="mt-8 grid max-w-xl grid-cols-3 gap-x-6 border-y border-line py-5">
@@ -160,34 +184,21 @@ export default function FoundingPilotPage() {
           </ul>
         </div>
 
+        {/*
+          The enquiry CTA is gone along with the offer. An offer that has been
+          withdrawn on evidential grounds must not keep a "register your
+          interest" button attached to it: that collects intent for something
+          nobody intends to sell, and it reads as a queue rather than as a
+          decision.
+        */}
         <div className="mt-8 flex flex-wrap items-center gap-3">
-          {paymentLink ? (
-            <a href={paymentLink} className="btn-primary" rel="noreferrer noopener">
-              Join the pilot — ${PILOT_PRICE_USD}
-            </a>
-          ) : (
-            // No payment URL is configured, so there is nothing to buy. A button
-            // that looks like a purchase and is not one is the single most
-            // dishonest thing this page could do, so the CTA is an enquiry and
-            // says so.
-            <a href={PILOT_INTEREST_MAILTO} className="btn-primary">
-              Request a founding spot
-            </a>
-          )}
-          <Link href="/app" className="btn-quiet">
-            Read the free research first
+          <Link href="/cost" className="btn-primary">
+            Use the cost tool instead — free
+          </Link>
+          <Link href="/pricing" className="btn-quiet">
+            What would have to be true before anything is sold
           </Link>
         </div>
-
-        {!paymentLink ? (
-          <p className="mt-4 t-meta">
-            <strong className="text-ink-muted">
-              Payment is not open yet. Founding spots are being reviewed manually.
-            </strong>{" "}
-            Requesting a spot sends an email — it is an enquiry, not a purchase,
-            and nothing is charged.
-          </p>
-        ) : null}
 
         <p className="mt-6 t-meta">
           <strong className="text-ink-muted">
@@ -431,24 +442,15 @@ export default function FoundingPilotPage() {
       {/* ------------------------------------------------------------- cta -- */}
       <Section id="pilot-join">
         <div className="max-w-2xl">
-          <h2 className="t-page-title">
-            {paymentLink ? "Join the pilot" : "The pilot is not open yet"}
-          </h2>
+          <h2 className="t-page-title">The pilot is closed</h2>
           <p className="t-prose mt-3">
-            {paymentLink
-              ? `USD ${PILOT_PRICE_USD}, one time, ${PILOT_DURATION_DAYS} days, capped at ${PILOT_MEMBER_CAP} members. Read the samples first — they are the product, not a teaser for it.`
-              : `Payment is not open yet and founding spots are being reviewed manually, so nothing on this page can charge you. Requesting a spot sends an email and is an enquiry, not a purchase. Until payment opens, the samples and the whole research product are free to read.`}
+            Nothing on this page can charge you, and nothing is being collected —
+            no enquiries, no waiting list. The sample reports stay readable, and
+            the measurement they were built around is free on this site. If a paid
+            tier ever opens it will sell data rather than forecasts, and only
+            after a live track record exists.
           </p>
           <div className="mt-6 flex flex-wrap items-center gap-3">
-            {paymentLink ? (
-              <a href={paymentLink} className="btn-primary" rel="noreferrer noopener">
-                Join the pilot — ${PILOT_PRICE_USD}
-              </a>
-            ) : (
-              <a href={PILOT_INTEREST_MAILTO} className="btn-primary">
-                Request a founding spot
-              </a>
-            )}
             <Link href="/app" className="btn-quiet">
               Explore the free research
             </Link>

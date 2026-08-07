@@ -37,11 +37,12 @@ const FREE: Plan = {
   price: "$0",
   cadence: "no card required",
   summary:
-    "The research product as it stands today, in full. Everything the hosted deployment can currently show, it shows to everyone.",
+    "The research product as it stands today, in full — led by the execution-cost engine, which is the product rather than the consolation prize. Everything the hosted deployment can currently show, it shows to everyone.",
   includes: [
     // Listed first because it is the only surface that answers on every visit:
     // execution cost needs no probability estimate, so the independence rule
-    // that empties the others cannot empty it.
+    // that empties the others cannot empty it. ADR 003 makes this the entry
+    // point rather than the page a reader lands on when the list is empty.
     "Execution cost for any contract, at any size, with the break-even it implies",
     "The research briefing: what is actionable, what is not, and why",
     "Market discovery across both venues with executable prices and depth",
@@ -54,19 +55,23 @@ const FREE: Plan = {
 
 const PRO: Plan = {
   id: "pro",
-  name: "Founding Pro",
+  name: "Data access",
   price: "Not yet priced",
-  cadence: "early access",
+  cadence: "not open",
   summary:
-    "A paid tier is being prepared. It is not finished, so it is not being sold. What it will include is being decided against what the pipeline can actually support, not against what would be easy to advertise.",
+    "If a paid tier ever opens it will sell data, not opinion: normalised cross-venue markets with cost-adjusted execution prices, over an API. Everything in it is checkable against the venues' own endpoints on the day you buy it, so none of it asks you to trust a forecast we have not validated.",
   includes: [
-    "Early access to account-tier features as they are completed",
-    "A say in what gets built first, before the tier is priced",
+    "Normalised markets across both venues, with the settlement rules attached",
+    "Executable ask ladders and depth, not midpoints or last trades",
+    "The full cost stack per contract and size: fees, rounding, spread, transfer",
     "The same public research, unchanged and never moved behind the paywall",
   ],
   excludes: [
-    "No alerts, watchlists, exports or API exist today, and none are promised",
-    "No signal service, no recommendations to act on, no execution",
+    // Named because the obvious thing to sell here is the thing we cannot
+    // currently justify selling. Measured against settled markets, the
+    // independent estimate scored slightly worse than the market's own price.
+    "No signals, no ranked picks, no digest — the paid tier is not the forecast",
+    "None of it is built or priced yet, and none of it is being sold today",
   ],
 };
 
@@ -100,12 +105,13 @@ export function PricingPlans({
         <div className="max-w-2xl">
           <p className="t-label">Pricing</p>
           <Heading className="t-page-title mt-2">
-            Two plans, one of them not for sale yet
+            Nothing here is for sale
           </Heading>
           <p className="t-prose mt-3">
-            The public research product is free and stays free. The paid tier is
-            in preparation; until it is finished and reviewed, this deployment
-            cannot take a payment at all.
+            The research product is free and stays free. There is no paid tier,
+            no waiting list and no way for this deployment to take a payment.
+            What a paid tier would be is written below, along with the two things
+            that have to be true before one opens.
           </p>
         </div>
       ) : null}
@@ -156,21 +162,14 @@ export function PricingPlans({
             </>
           ) : checkoutAvailable ? (
             <CheckoutForms />
-          ) : accountsEnabled ? (
-            <>
-              <Link href="/sign-up" className="btn-primary">
-                Join Pro early access
-              </Link>
-              <span className="chip bg-sunken text-ink-muted">
-                Billing not yet live
-              </span>
-            </>
           ) : (
-            // Nothing to join yet: there is no account to register and no tier
-            // to pay for. Deliberately not a button - a disabled-looking control
-            // still invites a click and still implies the thing nearly works.
+            // Deliberately not a button, and deliberately not "join the waitlist"
+            // either. ADR 003 put an evidential gate in front of selling anything:
+            // a live Brier-versus-market figure has to exist first. A signup
+            // affordance here would imply a queue that leads somewhere, when what
+            // it actually leads to is a measurement that has not been taken.
             <span className="chip bg-sunken text-ink-muted">
-              Coming soon — accounts and billing are not yet enabled
+              Not for sale — see what has to be true first
             </span>
           )}
         </PlanCard>

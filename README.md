@@ -118,6 +118,9 @@ then visit any page with `?mode=demo`.
 | `make score` | run the probability ensemble without publishing |
 | `make rank` | score → rank → publish Top-N per horizon |
 | `make arbitrage` | all five arbitrage scanners |
+| `pmvl retrodict` | replay the models against settled markets: do they beat the price? |
+| `pmvl readiness` | how far the live track record is from supporting its claims |
+| `pmvl calibrate` | fit a calibration map on settled recommendations, or record why not |
 | `make settle` | sync settlements, grade past recommendations |
 | `make snapshot` | freeze today's batch into the immutable record |
 | `make backtest` | walk-forward backtest across 10 strategies |
@@ -182,6 +185,8 @@ All market data comes from **public, unauthenticated** endpoints.
 | Polymarket Data API | none | public trade prints |
 | Coinbase Exchange | none | spot + realised volatility for the crypto model |
 | NWS (weather.gov) | none | gridpoint forecasts for the weather model |
+| Cleveland Fed | none | inflation nowcast + its own realised-error history, for CPI boards |
+| ESPN (site API) | none | fixtures and completed-game results, for the sports model |
 | Anthropic | key | optional research agent, **disabled by default** |
 
 The `KALSHI_*` variables in `.env.example` exist only for a future, isolated
@@ -215,15 +220,46 @@ is scaled *down* by inter-component disagreement.
   standard error propagated into the interval
 - **Weather**: NWS gridpoint forecast + a lead-time-dependent Gaussian error model —
   the same source Kalshi settles on
+- **Inflation**: the Cleveland Fed's published nowcast, turned into a bucket
+  probability with a dispersion measured from the nowcast's own 158 months of past
+  errors rather than assumed. Keyless
+- **Sports** (head-to-head games only, **off by default**): Log5 over win-loss
+  records from ESPN's keyless feeds. Enabled only on evidence that it beats the
+  market price — see below
 - Research agent (capped at 0.35 confidence, weight earned from dated novel sources)
 
 *Not independent (display only):*
 - Target-market reference prior
 - Extreme-price sanity anchor
 
-*Not modelled:* Sports, macro and politics return **no opinion** and name the
+*Not modelled:* Politics, and every sports contract that is not a head-to-head
+game — golf finishing positions, motorsport, tournament futures, player props, which
+between them are most of that board. These return **no opinion** and name the
 credentialed feed they would need. A guess would still be weighted, would still move
 the estimate, and would still generate edge that is pure noise.
+
+### Do the models actually beat the market?
+
+`pmvl retrodict` replays the models against **already-settled** markets at past
+instants and scores them against both the outcome and the venue's own price at that
+moment. It is deliberately a separate path from the backtest: the backtest reads a
+frozen artefact so look-ahead is impossible by construction, while this reaches
+backwards through live endpoints and rests on defences that can be wrong. The two
+must never be pooled into one number.
+
+The first real result, on 92 crypto forecasts across four lead times:
+
+| | Brier |
+|---|---:|
+| Independent estimate | 0.07415 |
+| The market's own price | 0.07167 |
+| **Improvement** | **−0.0025** |
+
+Close to a tie, slightly worse. A narrow sample — two days of settlements, one
+category — and the only real evidence there is. It is why the paid pilot was
+withdrawn rather than repriced (see
+[ADR 003](docs/adr-003-withdraw-the-pilot.md)), and why the sports model ships
+behind `SPORTS_MODEL_ENABLED=false`.
 
 The interval is deliberately **not** presented as a formal confidence interval — the
 components are not independent draws from a common distribution.
@@ -335,7 +371,7 @@ redaction filter.
 
 Key knobs: `MIN_CONSERVATIVE_NET_EV`, `SLIPPAGE_TICKS`, `CAPITAL_COST_ANNUAL_RATE`,
 `POLYMARKET_TRANSFER_COST_USD`, `KELLY_FRACTION`, `MAX_QUOTE_AGE_SECONDS`,
-`DAILY_SNAPSHOT_HOUR_UTC`, `ALLOW_DEMO_DATA`.
+`DAILY_SNAPSHOT_HOUR_UTC`, `ALLOW_DEMO_DATA`, `SPORTS_MODEL_ENABLED`.
 
 ---
 
@@ -384,9 +420,17 @@ the suite depending on the venues being up.
 
 See `/methodology` for the live list. The significant ones:
 
-- Sports, macro and politics have no independent model in this release. They
-  are covered by `/cost`, which needs none, but they are never ranked as
-  opportunities.
+- **No model has yet been shown to beat the market price.** The one real
+  measurement puts the crypto model 0.0025 Brier *worse* than the quote. Nothing
+  here should be read as a demonstrated edge.
+- Politics has no independent model, and neither does any sports contract that is
+  not a head-to-head game — which is most of that board. They are covered by
+  `/cost`, which needs no model, but are never ranked as opportunities.
+- The sports model is off by default. Win-loss record ignores lineups, injuries and
+  rest, all of which the market prices, so it is expected to lose to the quote until
+  measured otherwise.
+- There is no live track record yet: `pmvl readiness` reports 0 settled live
+  recommendations against the 60 needed to quote a Brier-versus-market figure.
 - Genuinely rule-identical pairs across these two venues are rare, so cross-platform
   arbitrage rarely has anything to report.
 - Polymarket expected resolution adds a fixed oracle-latency estimate to `endDate`;

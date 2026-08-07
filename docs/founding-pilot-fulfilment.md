@@ -1,5 +1,20 @@
 # Founding Pilot — manual fulfilment runbook
 
+> **SUSPENDED — the pilot was withdrawn on 7 August 2026 and never sold.**
+>
+> See [ADR 003](adr-003-withdraw-the-pilot.md). In short: `pmvl retrodict` scored
+> the independent estimate against the venues' own prices on settled markets and
+> it came out marginally *worse*, so the premise the digest was sold on could not
+> be demonstrated. The member ledger is still the empty template and no report was
+> ever delivered.
+>
+> **This document is kept deliberately, not left behind by accident.** The
+> editorial discipline in it — a job produces a draft, a person approves it, a
+> blocked report is still sent, the freshness gates are never relaxed to make a
+> Snapshot pass — is the right shape for any future paid delivery, and it would be
+> lost if it had to be reconstructed from memory later. Nothing below is currently
+> in operation.
+
 **This process is manual. Nothing here is automated, and nothing should be
 described to a member as automated.** A scheduled job produces a candidate
 report; a person decides whether it is sent. For the first five members that is the

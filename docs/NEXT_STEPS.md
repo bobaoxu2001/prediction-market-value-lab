@@ -5,8 +5,10 @@
 | Area | Status | Why |
 |---|---|---|
 | WebSocket orderbook streaming | Not implemented | Polling at 1–3 min is sufficient for the current scan cadence. Specified in `.env.example` (`POLYMARKET_WS_BASE`) and the provider interface has room for it. |
-| Sports / macro / politics models | **No opinion**, by design | Every usable feed is credentialed. These categories return `no_opinion` and name the feed they would need, rather than guessing. They are covered by `/cost`, which needs no model. |
-| Isotonic / Platt / Beta calibration | Metrics computed, fitting not wired | Calibration *measurement* (reliability curve, Brier vs market) is live. Fitting a calibrator needs a walk-forward validation set of real settled recommendations, which does not exist until the platform has run for weeks. |
+| Sports (head-to-head games) | **Built, off by default** | Log5 over ESPN win-loss records. `SPORTS_MODEL_ENABLED=false` until `pmvl retrodict` shows it beats the market price. Everything else on the sports board — golf, motorsport, futures, props — still returns `no_opinion`. |
+| Macro / CPI | **Built** | Cleveland Fed nowcast with dispersion measured from its own past errors. Keyless; no FRED key needed after all. Payrolls, GDP and unemployment still return `no_opinion`. |
+| Politics | **No opinion**, by design | No keyless, licensed polling aggregate exists. Covered by `/cost`, which needs no model. |
+| Isotonic / Beta calibration | **Wired**, refusing | `pmvl calibrate` fits walk-forward and adopts a map only if it beats identity on a held-out fold by more than noise would. With 0 live settled recommendations it records a refusal, which is the correct state until the run clock has been turning for weeks. |
 | LLM-assisted market matching | Interface present, unused | `MarketMatch.llm_assisted` exists. Deterministic verification is the gate, so an LLM can only propose candidates — worth adding once there is a candidate backlog to triage. |
 | Live Top-10 with real recommendations | Structurally working, empty in practice | The independence gate is doing its job. See below. |
 | Trading execution | Deliberately absent | Out of scope for v1. `/system/eligibility` exists as the gate for a future, isolated service. |
