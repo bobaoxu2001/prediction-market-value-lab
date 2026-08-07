@@ -25,16 +25,23 @@ from __future__ import annotations
 
 import math
 import re
+from datetime import datetime, timedelta
 from decimal import Decimal, InvalidOperation
 
 from pmvl_shared.config import get_settings
 from pmvl_shared.enums import Category
 from pmvl_shared.logging_setup import get_logger
 from pmvl_shared.money import D, ZERO, clamp_prob, quantize_prob
-from pmvl_shared.timeutil import utcnow, years_until
+from pmvl_shared.timeutil import iso, utcnow, years_until
 
 from ...providers.http import HttpClient, ProviderError
-from ..base import ModelContext, ModelEstimate, ProbabilityModel, no_opinion
+from ..base import (
+    ModelContext,
+    ModelEstimate,
+    ProbabilityModel,
+    lookahead_guard,
+    no_opinion,
+)
 
 log = get_logger(__name__)
 
@@ -53,6 +60,11 @@ _ASSET_PRODUCTS: list[tuple[re.Pattern[str], str]] = [
 
 #: Below this many hours of history the volatility estimate is too noisy to use.
 _MIN_CANDLES = 48
+
+_CANDLE_GRANULARITY_SECONDS = 3600
+#: How far back a windowed (historical) candle request reaches. Coinbase returns at
+#: most 300 candles per request, so this is the ceiling, not a preference.
+_HISTORY_WINDOW_HOURS = 290
 
 #: A *price* band written into the contract text: "60,000-62,000", "$60,000 to
 #: $62,000", "between $60,000 and $62,000".
@@ -214,6 +226,9 @@ class CryptoThresholdModel(ProbabilityModel):
     #: Capped below 1 because realised vol is a backward-looking proxy for the
     #: forward vol that actually determines the outcome.
     max_confidence = Decimal("0.68")
+    #: Both inputs are windowed candle requests ending at the evaluation instant,
+    #: so this model can be replayed. See ``_candles``.
+    supports_as_of = True
 
     def __init__(self, client: HttpClient | None = None) -> None:
         settings = get_settings()
@@ -222,11 +237,80 @@ class CryptoThresholdModel(ProbabilityModel):
             rate_per_second=4.0, cache_ttl_seconds=120.0,
         )
         self._spot_cache: dict[str, tuple[float, float]] = {}
+        #: Historical candle windows, keyed by (product, as_of). Spot and realised
+        #: volatility are derived from the same window, and under retrodiction that
+        #: window is fetched per evaluation rather than served from the client's
+        #: short TTL cache - so without this the harness makes exactly twice the
+        #: requests it needs, against a rate-limited public endpoint.
+        self._history_cache: dict[tuple[str, str], list[list[float]] | None] = {}
 
     async def aclose(self) -> None:
         await self._client.aclose()
 
-    async def _spot(self, product: str) -> float | None:
+    async def _candles(
+        self, product: str, *, as_of: datetime | None
+    ) -> list[list[float]] | None:
+        """Hourly candles, newest first, ending at ``as_of`` when one is given.
+
+        Coinbase caps a windowed request at 300 candles, which at hourly granularity
+        is twelve and a half days - comfortably more than the volatility window needs
+        and the reason the window is expressed in hours rather than days.
+        """
+        cache_key = (product, iso(as_of) or "")
+        if as_of is not None and cache_key in self._history_cache:
+            return self._history_cache[cache_key]
+
+        params: dict[str, object] = {"granularity": _CANDLE_GRANULARITY_SECONDS}
+        if as_of is not None:
+            start = as_of - timedelta(hours=_HISTORY_WINDOW_HOURS)
+            params["start"] = iso(start)
+            params["end"] = iso(as_of)
+        try:
+            candles = await self._client.get_json(
+                f"/products/{product}/candles", params=params
+            )
+        except ProviderError as exc:
+            log.debug("coinbase candles failed for %s: %s", product, exc)
+            if as_of is not None:
+                self._history_cache[cache_key] = None
+            return None
+        if not isinstance(candles, list):
+            if as_of is not None:
+                self._history_cache[cache_key] = None
+            return None
+
+        rows = [c for c in candles if isinstance(c, list) and len(c) >= 5]
+        if as_of is None:
+            return rows
+
+        # Belt and braces. The window was requested, but a provider that ignores or
+        # misreads `end` would hand back candles from after the evaluation instant,
+        # and every one of them would be look-ahead. Coinbase timestamps a candle
+        # with its OPENING time, so a candle is only fully in the past once its
+        # close - one granularity later - is at or before `as_of`.
+        cutoff = as_of.timestamp() - _CANDLE_GRANULARITY_SECONDS
+        windowed = [c for c in rows if float(c[0]) <= cutoff]
+        self._history_cache[cache_key] = windowed
+        return windowed
+
+    async def _spot(self, product: str, *, as_of: datetime | None = None) -> float | None:
+        """Spot price now, or the last completed hourly close at ``as_of``.
+
+        The live path reads the ticker because it is the freshest number available.
+        The historical path cannot: a ticker has no memory. It uses the close of the
+        most recent candle that had finished by ``as_of``, which is the best estimate
+        of "the price a trader could see at that moment" the free feed supports.
+        """
+        if as_of is not None:
+            candles = await self._candles(product, as_of=as_of)
+            if not candles:
+                return None
+            newest = max(candles, key=lambda c: float(c[0]))
+            try:
+                return float(newest[4])
+            except (IndexError, TypeError, ValueError):
+                return None
+
         try:
             data = await self._client.get_json(f"/products/{product}/ticker", allow_404=True)
         except ProviderError as exc:
@@ -239,26 +323,24 @@ class CryptoThresholdModel(ProbabilityModel):
         except (KeyError, TypeError, ValueError):
             return None
 
-    async def _realised_vol(self, product: str) -> tuple[float, int] | None:
+    async def _realised_vol(
+        self, product: str, *, as_of: datetime | None = None
+    ) -> tuple[float, int] | None:
         """Annualised realised volatility from hourly closes.
 
         Returns ``(sigma_annual, n_returns)``. The sample size is returned because the
         standard error of a volatility estimate is ``sigma / sqrt(2n)``, which the
         caller folds into the confidence interval.
         """
-        try:
-            candles = await self._client.get_json(
-                f"/products/{product}/candles", params={"granularity": 3600}
-            )
-        except ProviderError as exc:
-            log.debug("coinbase candles failed for %s: %s", product, exc)
-            return None
-        if not isinstance(candles, list) or len(candles) < _MIN_CANDLES:
+        candles = await self._candles(product, as_of=as_of)
+        if candles is None or len(candles) < _MIN_CANDLES:
             return None
 
         # Coinbase returns [time, low, high, open, close, volume], newest first.
-        closes = [float(c[4]) for c in candles if isinstance(c, list) and len(c) >= 5]
-        closes.reverse()
+        # Sort rather than reverse: the windowed request is not documented to
+        # preserve ordering, and a mis-ordered series turns real returns into noise.
+        ordered = sorted(candles, key=lambda c: float(c[0]))
+        closes = [float(c[4]) for c in ordered]
         returns = [
             math.log(closes[i] / closes[i - 1])
             for i in range(1, len(closes))
@@ -274,6 +356,9 @@ class CryptoThresholdModel(ProbabilityModel):
         return annual_sigma, len(returns)
 
     async def estimate(self, ctx: ModelContext) -> ModelEstimate:
+        if (declined := lookahead_guard(self, ctx)) is not None:
+            return declined
+
         market = ctx.market
         text = f"{market.title} {market.subtitle} {market.description[:400]}"
         product = detect_product(text)
@@ -335,13 +420,21 @@ class CryptoThresholdModel(ProbabilityModel):
                 return no_opinion("no numeric strike could be established")
 
         resolution = market.expected_resolution_time or market.close_time
-        tau = years_until(resolution, now=ctx.now or utcnow())
+        evaluated_at = ctx.evaluation_time or utcnow()
+        tau = years_until(resolution, now=evaluated_at)
         if tau <= 0:
             return no_opinion("market has no remaining time to resolution")
 
-        spot = await self._spot(product)
-        vol = await self._realised_vol(product)
+        spot = await self._spot(product, as_of=ctx.as_of)
+        vol = await self._realised_vol(product, as_of=ctx.as_of)
         if spot is None or vol is None:
+            if ctx.as_of is not None:
+                return no_opinion(
+                    f"coinbase has no {product} history covering "
+                    f"{ctx.as_of.isoformat()}; the window is capped at "
+                    f"{_HISTORY_WINDOW_HOURS}h and old candles are not retained "
+                    "indefinitely"
+                )
             return no_opinion(f"coinbase data unavailable for {product}")
         sigma, n_returns = vol
 
@@ -418,10 +511,17 @@ class CryptoThresholdModel(ProbabilityModel):
                 f"sigma={sigma:.1%}/yr tau={hours:.1f}h "
                 f"{'[touch]' if barrier else '[terminal]'} -> P={probability:.3f}"
             ),
-            data_freshness_seconds=0,
+            # Live, the ticker is current. Replayed, the freshest thing available is
+            # the last *completed* hourly candle, so the estimate is built on data up
+            # to one granularity old. Reporting 0 there would overstate it.
+            data_freshness_seconds=(
+                0 if ctx.as_of is None else _CANDLE_GRANULARITY_SECONDS
+            ),
             data={
                 "product": product,
                 "spot": f"{spot:.2f}",
+                "evaluated_as_of": iso(ctx.as_of),
+                "spot_source": "ticker" if ctx.as_of is None else "last_closed_hourly_candle",
                 "strike": strike_label,
                 "sigma_annual": f"{sigma:.4f}",
                 "tau_hours": f"{hours:.2f}",

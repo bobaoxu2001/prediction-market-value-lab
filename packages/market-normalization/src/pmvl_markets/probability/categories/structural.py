@@ -40,17 +40,25 @@ class _UnsourcedCategoryModel(ProbabilityModel):
 
 
 class SportsModel(_UnsourcedCategoryModel):
-    """Sports markets.
+    """Sports contracts that are not head-to-head games.
 
-    A real model needs team/player ratings and a match-state feed (Elo or a
-    market-calibrated power rating, plus injury and lineup data). Every such feed is
-    credentialed. Sports markets are also the most efficiently priced category on
-    both venues, so a naive model would be worse than the quote it is trying to beat.
+    :class:`~.sports.SportsBaseRateModel` now prices single-game winner contracts
+    from win-loss records, which are keyless. It prices nothing else, and "nothing
+    else" is most of the board: on the live universe the sports category is
+    dominated by golf finishing positions, NASCAR top-N, tournament futures years
+    out, and player props. None of those has a record-based analogue, and each
+    would need the licensed ratings and form data below.
+
+    This model therefore still exists and still declines - it now covers a smaller
+    but still large remainder.
     """
 
     name = "sports_unsourced"
     categories = (Category.SPORTS,)
-    required_source = "a licensed ratings/odds feed (e.g. Sportradar, Opta) - not keyless"
+    required_source = (
+        "a licensed ratings/odds feed (e.g. Sportradar, Opta) for anything that is "
+        "not a head-to-head game with a win-loss record - not keyless"
+    )
 
 
 class EconomicsModel(_UnsourcedCategoryModel):

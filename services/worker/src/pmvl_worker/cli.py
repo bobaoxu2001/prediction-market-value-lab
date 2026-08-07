@@ -131,6 +131,79 @@ def _fmt(value: Any) -> str:
 
 
 @app.command()
+def retrodict(
+    settled_within_days: int = typer.Option(
+        60, help="Only markets that settled within this many days"
+    ),
+    max_markets: int = typer.Option(200, help="Cap on markets sampled"),
+    as_json: bool = typer.Option(False, "--json"),
+) -> None:
+    """Replay the models against settled markets: do they beat the market price?
+
+    Distinct from `backtest`, which reads only published snapshots. This reaches
+    backwards through live endpoints and its honesty rests on defences rather than
+    on structure - see `pmvl_markets.retrodiction.harness`.
+    """
+    payload = asyncio.run(
+        jobs.job_retrodict(
+            settled_within_days=settled_within_days, max_markets=max_markets
+        )
+    )
+    if as_json:
+        _emit(payload, as_json=True)
+        return
+
+    sample = payload.get("sample", {})
+    result = payload.get("result", {})
+
+    console.print(
+        f"[bold]Sample[/bold]: {sample.get('n_markets', 0)} settled markets, "
+        f"YES base rate {_fmt(sample.get('yes_base_rate'))}, "
+        f"{sample.get('settled_from') or '-'} to {sample.get('settled_to') or '-'}"
+    )
+
+    table = Table(title="Retrodiction - model vs the market's own price")
+    for column in ("Split", "N", "Brier (model)", "Brier (market)", "Improvement"):
+        table.add_column(column)
+    table.add_row(
+        "[bold]all[/bold]",
+        str(result.get("n_scored_against_market", 0)),
+        _fmt(result.get("brier_model")),
+        _fmt(result.get("brier_market")),
+        _fmt(result.get("brier_improvement_vs_market")),
+    )
+    for label, block in (result.get("by_category") or {}).items():
+        table.add_row(
+            label,
+            str(block["n"]),
+            _fmt(block["brier_model"]),
+            _fmt(block["brier_market"]),
+            _fmt(block["brier_improvement_vs_market"]),
+        )
+    for label, block in (result.get("by_lead_time") or {}).items():
+        table.add_row(
+            f"lead {label}",
+            str(block["n"]),
+            _fmt(block["brier_model"]),
+            _fmt(block["brier_market"]),
+            _fmt(block["brier_improvement_vs_market"]),
+        )
+    console.print(table)
+
+    skips = result.get("skips") or {}
+    if skips:
+        console.print(
+            "[dim]Skipped:[/dim] "
+            + ", ".join(f"{reason} ({count})" for reason, count in skips.items())
+        )
+
+    interpretation = payload.get("interpretation") or payload.get("note") or ""
+    improvement = result.get("brier_improvement_vs_market")
+    colour = "green" if (improvement or 0) > 0 else "yellow"
+    console.print(f"[{colour}]{interpretation}[/{colour}]")
+
+
+@app.command()
 def prune(
     keep_days: int = typer.Option(30), as_json: bool = typer.Option(False, "--json")
 ) -> None:

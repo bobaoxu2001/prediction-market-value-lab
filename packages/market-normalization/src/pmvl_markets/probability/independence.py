@@ -213,6 +213,20 @@ COMPONENT_INDEPENDENCE: dict[str, IndependenceMetadata] = {
             "prediction market. GBM understates jump risk."
         ),
     ),
+    "sports_base_rate": IndependenceMetadata(
+        source_type=SourceType.HISTORICAL_BASE_RATE,
+        correlation_group="sports_results_feed",
+        # The lowest reliability weight of any independent component, and it should
+        # be. A win-loss record is a real observation about the world and it is a
+        # thin one: it cannot see the starting pitcher, the injury report or the
+        # rest day, all of which the market has already priced.
+        reliability_weight=D("0.35"),
+        known_limitations=(
+            "Win-loss record only, via Log5 plus a fixed home-field rate. Ignores "
+            "lineups, injuries, rest and travel. Counted from completed games "
+            "strictly before the evaluation instant."
+        ),
+    ),
     "weather_nws_threshold": IndependenceMetadata(
         source_type=SourceType.EXTERNAL_REFERENCE_DATA,
         correlation_group="nws_forecast",

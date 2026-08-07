@@ -59,6 +59,18 @@ class Settings(BaseSettings):
     #: Yahoo's public chart endpoint. Keyless; backs the equity index model.
     yahoo_finance_base: str = Field(default="https://query1.finance.yahoo.com")
     nws_api_base: str = Field(default="https://api.weather.gov")
+    #: ESPN's public scoreboard/schedule feeds. Keyless, and undocumented: they are
+    #: not a supported API and can change without notice, so the sports model treats
+    #: any failure as no_opinion rather than degrading its estimate.
+    espn_api_base: str = Field(default="https://site.api.espn.com/apis/site/v2/sports")
+    #: Whether the sports base-rate model may contribute an estimate.
+    #:
+    #: Default false, and the default is a claim about evidence, not caution for its
+    #: own sake. Win-loss record is a weak predictor against a market that prices
+    #: pitchers and injuries; `pmvl retrodict` measures whether it beats the market
+    #: price, and this is turned on only if it does. Shipping it on by default would
+    #: put an unmeasured model into the edge-bearing estimate.
+    sports_model_enabled: bool = Field(default=False)
     #: NWS requires a self-identifying User-Agent per their API terms.
     http_user_agent: str = Field(
         default="prediction-market-value-lab/0.1 (research; contact: set HTTP_USER_AGENT)"

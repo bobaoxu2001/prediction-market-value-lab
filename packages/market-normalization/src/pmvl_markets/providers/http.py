@@ -116,6 +116,7 @@ class HttpClient:
         rate_per_second: float = 8.0,
         headers: Mapping[str, str] | None = None,
         cache_ttl_seconds: float = 0.0,
+        identify_self: bool = True,
     ) -> None:
         settings = get_settings()
         self.name = name
@@ -130,14 +131,23 @@ class HttpClient:
         self._cache: dict[str, tuple[float, Any]] = {}
         self._semaphore = asyncio.Semaphore(settings.http_max_concurrency)
         self._max_retries = settings.http_max_retries
+        # `identify_self` exists for one host. NWS *requires* a self-identifying
+        # User-Agent, so it is the default. ESPN's edge does the opposite: it 403s
+        # every User-Agent outside a short allowlist of well-known client tokens,
+        # including this project's own descriptive string.
+        #
+        # Passing False leaves httpx to send its own `python-httpx/<version>`,
+        # which is a true statement about what is making the request - this client
+        # *is* httpx. Deliberately not a browser string: claiming to be Chrome to
+        # get past a filter is a different act from declining to add a custom
+        # header, and only the second one is honest.
+        base_headers: dict[str, str] = {"Accept": "application/json"}
+        if identify_self:
+            base_headers["User-Agent"] = settings.http_user_agent
         self._client = httpx.AsyncClient(
             base_url=self.base_url,
             timeout=httpx.Timeout(settings.http_timeout_seconds),
-            headers={
-                "User-Agent": settings.http_user_agent,
-                "Accept": "application/json",
-                **(headers or {}),
-            },
+            headers={**base_headers, **(headers or {})},
             follow_redirects=True,
         )
         #: Request counters surfaced on /system for observability.

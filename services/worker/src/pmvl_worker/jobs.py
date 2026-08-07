@@ -242,6 +242,35 @@ def job_backtest() -> dict[str, Any]:
         return payload
 
 
+async def job_retrodict(
+    *,
+    settled_within_days: int = 60,
+    max_markets: int = 200,
+) -> dict[str, Any]:
+    """Replay the models against already-settled markets.
+
+    Not part of ``pmvl pipeline`` and not on the scheduler. It reaches out to the
+    venues' candlestick endpoints for every market it samples, which is a heavy,
+    bursty read that has nothing to do with keeping the live surface fresh, and its
+    output is a measurement someone reads rather than a table the site serves.
+    """
+    from pmvl_markets.retrodiction import SamplingCriteria, run_retrodiction
+
+    with job_run("retrodict") as details:
+        criteria = SamplingCriteria(
+            settled_within_days=settled_within_days, max_markets=max_markets
+        )
+        with session_scope() as db:
+            payload = await run_retrodiction(db, criteria=criteria)
+        result = payload.get("result", {})
+        details["records_written"] = result.get("n_forecasts", 0)
+        details["brier_improvement_vs_market"] = result.get(
+            "brier_improvement_vs_market"
+        )
+        details["n_scored"] = result.get("n_scored_against_market", 0)
+        return payload
+
+
 def job_prune(*, keep_days: int = 30) -> dict[str, Any]:
     from pmvl_markets.ingest import prune_orderbook_snapshots
 

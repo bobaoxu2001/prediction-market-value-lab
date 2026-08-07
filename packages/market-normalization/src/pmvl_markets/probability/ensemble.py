@@ -55,6 +55,7 @@ from ..research.provider import BaseResearchProvider, NullResearchProvider, Rese
 from .base import ModelContext, ModelEstimate, ProbabilityModel, no_opinion
 from .categories.crypto import CryptoThresholdModel
 from .categories.equity import EquityIndexThresholdModel
+from .categories.sports import SportsBaseRateModel
 from .categories.structural import (
     ExtremePriceSanityModel,
     TimeToResolutionModel,
@@ -175,6 +176,10 @@ class ProbabilityEnsemble:
             CryptoThresholdModel(),
             EquityIndexThresholdModel(),
             WeatherThresholdModel(),
+            # Ordered before the unsourced declarations so that for a head-to-head
+            # game contract the estimate comes first and the "no model here" notice
+            # second, which is the order a reader expects them in.
+            SportsBaseRateModel(),
             *default_category_models(),
             ExtremePriceSanityModel(),
             TimeToResolutionModel(),
