@@ -1,6 +1,7 @@
 import { ImageResponse } from "next/og";
 
-import { apiGet, qs, type CostAtSize, type CostDetail } from "@/lib/api";
+import { apiGet, qs, type CostDetail } from "@/lib/api";
+import { dominantDriver, ladderStrip } from "@/lib/cost-ladder";
 
 /**
  * The share card for one contract's entry cost.
@@ -69,72 +70,6 @@ function percentOf(ratio: string | null | undefined): string {
 function truncate(text: string, limit: number): string {
   const clean = text.replace(/\s+/g, " ").trim();
   return clean.length <= limit ? clean : `${clean.slice(0, limit - 1)}…`;
-}
-
-/**
- * The smallest, cheapest and largest rungs the venue would actually accept.
- *
- * Not three evenly spaced sizes. Cost per contract is U-shaped — the fee and its
- * rounding dominate a small order, book depth dominates a large one — so the
- * middle of the ladder is not the interesting point and the *minimum* is. On a
- * live Kalshi contract quoted at 1.00¢: one contract 2.00¢, ten contracts 1.10¢,
- * a thousand 2.12¢. Picking positionally showed the 50-contract rung and hid the
- * cheapest size, which is the one thing here a reader can act on.
- *
- * Rungs that cannot be filled at observed depth are dropped rather than shown
- * with a partial fill, and so are sizes below the venue minimum.
- */
-function ladderStrip(ladder: CostAtSize[]): CostAtSize[] {
-  const fillable = ladder.filter(
-    (rung) =>
-      !rung.below_min_order_size &&
-      rung.fully_filled &&
-      rung.measured_cost !== null,
-  );
-  if (fillable.length <= 3) return fillable;
-
-  const cheapest = fillable.reduce((best, rung) =>
-    Number(rung.measured_cost) < Number(best.measured_cost) ? rung : best,
-  );
-  const picked = new Map<string, CostAtSize>();
-  for (const rung of [fillable[0], cheapest, fillable[fillable.length - 1]]) {
-    picked.set(rung.size, rung);
-  }
-  return [...picked.values()].sort((a, b) => Number(a.size) - Number(b.size));
-}
-
-/**
- * The largest component of the estimate, and whether it is an assumption.
- *
- * ``transfer_cost`` and ``capital_cost`` are disclosed configuration inputs, not
- * observations. When one of them is the majority of the premium the card says so
- * — otherwise the headline is a config default wearing the clothes of a
- * measurement.
- */
-function dominantDriver(
-  rung: CostAtSize,
-): { label: string; assumed: boolean; share: number } | null {
-  const components = rung.measured_components ?? {};
-  const named: Array<[string, boolean, string | null]> = [
-    ["order-book depth", false, components.depth_impact ?? null],
-    ["the venue fee", false, components.platform_fee ?? null],
-    ["fee rounding", false, components.fee_rounding ?? null],
-    ["the assumed transfer cost", true, components.transfer_cost ?? null],
-    ["the assumed capital cost", true, components.capital_cost ?? null],
-  ];
-  const values = named
-    .map(([label, assumed, raw]) => ({
-      label,
-      assumed,
-      value: Math.abs(Number(raw ?? 0)),
-    }))
-    .filter((row) => Number.isFinite(row.value) && row.value > 0);
-  if (!values.length) return null;
-
-  const total = values.reduce((sum, row) => sum + row.value, 0);
-  const top = values.reduce((a, b) => (b.value > a.value ? b : a));
-  if (total <= 0) return null;
-  return { label: top.label, assumed: top.assumed, share: top.value / total };
 }
 
 function Fallback({ note }: { note: string }) {

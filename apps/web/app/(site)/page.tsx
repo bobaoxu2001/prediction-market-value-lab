@@ -13,8 +13,16 @@ import {
 } from "@/components/marketing";
 import { PricingPlans } from "@/components/pricing";
 import { SectorPremium } from "@/components/sector-premium";
-import { apiGet, qs, type CostByCategory } from "@/lib/api";
-import { utcTime } from "@/lib/format";
+import {
+  apiGet,
+  qs,
+  type CostAtSize,
+  type CostByCategory,
+  type CostDetail,
+  type CostIndexRow,
+} from "@/lib/api";
+import { ladderStrip } from "@/lib/cost-ladder";
+import { cents, displayTitle, pct, utcTime } from "@/lib/format";
 import { getResearchProof, PROOF_HORIZON, type ResearchProof } from "@/lib/proof";
 import { getCurrentEntitlement } from "@/lib/billing/entitlement";
 import { isAuthConfigured } from "@/lib/auth-server";
@@ -53,6 +61,67 @@ const SNAPSHOT_CACHE_SECONDS = 3600;
 interface HomeSnapshotData {
   proof: ResearchProof;
   sectors: CostByCategory[] | null;
+  heroExample: HeroExample | null;
+}
+
+/** One real contract's ladder, shown in the hero as a worked example. */
+interface HeroExample {
+  marketId: number;
+  title: string;
+  platform: string;
+  quoted: string;
+  rungs: CostAtSize[];
+}
+
+/**
+ * A live contract whose ladder demonstrates the hero's claim.
+ *
+ * The hero asserted that a 1¢ Kalshi order pays a 1¢ fee and then asked the
+ * reader to take it on trust for four paragraphs. The assertion is true and it
+ * is abstract, and the surface it describes is the one thing here that always
+ * has an answer — so the first screen should show the answer, on a contract
+ * that exists, rather than describe the shape of one.
+ *
+ * Priced at one contract because the index sorts by premium and the fee-rounding
+ * effect is largest at a single lot, which surfaces exactly the contract that
+ * makes the point. Depth must be known: a ladder built from a venue summary
+ * quote has no depth impact in it, so its right-hand end would be flat and the
+ * U-shape — the actual finding — would not appear.
+ */
+async function readHeroExample(): Promise<HeroExample | null> {
+  // The full page of candidates, not the first handful. Order books are captured
+  // for only part of the snapshot, and the premium ranking is dominated by
+  // cheap contracts priced from a venue summary quote - on the live snapshot the
+  // top 25 Kalshi rows were *all* summary-quoted, so a short scan found nothing
+  // with depth and the hero silently fell back to prose.
+  const index = await apiGet<CostIndexRow[]>(
+    `/cost${qs({ limit: "200", platform: "kalshi", size: "1" })}`,
+  );
+  const candidates = (index?.data ?? []).filter(
+    (row) => row.depth_known && row.measured_premium_ratio !== null,
+  );
+
+  // A few attempts, because a candidate can still fail to produce a usable
+  // ladder - every rung below the venue minimum, or a book too thin to fill the
+  // larger sizes. Bounded so the landing page never waits on a long scan.
+  for (const candidate of candidates.slice(0, 4)) {
+    const detail = await apiGet<CostDetail>(`/cost/${candidate.market.id}`);
+    const data = detail?.data;
+    if (!data?.priced) continue;
+
+    const rungs = ladderStrip(data.ladder ?? []);
+    // Two rungs is the minimum that shows a spread; one is just a price.
+    if (rungs.length < 2) continue;
+
+    return {
+      marketId: data.market.id,
+      title: data.market.title,
+      platform: data.market.platform,
+      quoted: rungs[0].nominal_price,
+      rungs,
+    };
+  }
+  return null;
 }
 
 /**
@@ -67,19 +136,32 @@ interface HomeSnapshotData {
  * visitor's signed-in state to everyone the moment accounts are switched on.
  * Only the shared half is cached.
  */
+/**
+ * Bumped whenever {@link HomeSnapshotData} gains or changes a field.
+ *
+ * The key has to describe the *shape* it caches, not just the inputs. Adding
+ * `heroExample` without touching the key meant a running deployment kept serving
+ * entries written before the field existed, so the value read back was
+ * `undefined` and the hero rendered its fallback — for an hour, with no error
+ * anywhere, on a page that looked fine.
+ */
+const HOME_SNAPSHOT_SHAPE = "v3-hero-example";
+
 const readHomeSnapshotData = unstable_cache(
   readHomeSnapshotDataUncached,
-  ["home-snapshot-data", SECTOR_SIZE],
+  ["home-snapshot-data", HOME_SNAPSHOT_SHAPE, SECTOR_SIZE],
   { revalidate: SNAPSHOT_CACHE_SECONDS, tags: ["home-snapshot-data"] },
 );
 
 /** The same reads, going straight to the API. */
 async function readHomeSnapshotDataUncached(): Promise<HomeSnapshotData> {
-  const [proof, sectors] = await Promise.all([
+  const [proof, sectors, heroExample] = await Promise.all([
     getResearchProof(),
     apiGet<CostByCategory[]>(`/cost/by-category${qs({ size: SECTOR_SIZE })}`),
+    // The hero degrades to prose if this fails; it must never fail the page.
+    readHeroExample().catch(() => null),
   ]);
-  return { proof, sectors: sectors?.data ?? null };
+  return { proof, sectors: sectors?.data ?? null, heroExample };
 }
 
 /**
@@ -144,7 +226,7 @@ export default async function HomePage({
     getHomeSnapshotData(),
     getCurrentEntitlement(),
   ]);
-  const { proof, sectors } = snapshot;
+  const { proof, sectors, heroExample } = snapshot;
   // Whether anyone can actually register. Both Clerk keys, not just the public
   // one: a publishable key alone renders a form that cannot verify a session.
   const accountsEnabled = isAuthConfigured();
@@ -155,6 +237,7 @@ export default async function HomePage({
         proof={proof}
         signedIn={entitlement.signedIn}
         accountsEnabled={accountsEnabled}
+        example={heroExample}
       />
       <ProofBand proof={proof} />
       <SectorBand rows={sectors} />
@@ -172,14 +255,87 @@ export default async function HomePage({
 
 /* ------------------------------------------------------------------ hero -- */
 
+/**
+ * The hero's worked example: one contract, three order sizes.
+ *
+ * Deliberately a table and not a chart. Three numbers do not need an axis, and
+ * the reader's takeaway is the comparison between them, which a chart would make
+ * prettier and slower to read.
+ */
+function HeroExampleCard({ example }: { example: HeroExample }) {
+  const cheapest = example.rungs.reduce((best, rung) =>
+    Number(rung.measured_cost) < Number(best.measured_cost) ? rung : best,
+  );
+  const dearest = example.rungs.reduce((worst, rung) =>
+    Number(rung.measured_cost) > Number(worst.measured_cost) ? rung : worst,
+  );
+  const spread =
+    Number(cheapest.measured_cost) > 0
+      ? Number(dearest.measured_cost) / Number(cheapest.measured_cost)
+      : null;
+
+  return (
+    <div className="mt-6 max-w-xl rounded-lg border border-line bg-sunken p-4">
+      <div className="flex flex-wrap items-baseline justify-between gap-x-3 gap-y-1">
+        <Link
+          href={`/cost/${example.marketId}`}
+          className="text-sm underline decoration-line-strong underline-offset-4 hover:decoration-current"
+        >
+          {displayTitle(example.title)}
+        </Link>
+        <span className="t-meta">
+          {example.platform} · quoted{" "}
+          <span className="font-mono">{cents(example.quoted)}</span>
+        </span>
+      </div>
+
+      <table className="mt-3 w-full text-left">
+        <thead>
+          <tr className="t-meta">
+            <th className="pb-1 font-normal">Order size</th>
+            <th className="pb-1 text-right font-normal">Est. cost each</th>
+            <th className="pb-1 text-right font-normal">Over quote</th>
+          </tr>
+        </thead>
+        <tbody className="font-mono text-sm">
+          {example.rungs.map((rung) => (
+            <tr key={rung.size} className="border-t border-line">
+              <td className="py-1">{rung.size}</td>
+              <td className="py-1 text-right">{cents(rung.measured_cost)}</td>
+              <td className="py-1 text-right text-warn">
+                {rung.measured_premium_ratio === null
+                  ? "—"
+                  : `+${pct(rung.measured_premium_ratio)}`}
+              </td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+
+      <p className="mt-2.5 t-meta">
+        {spread && spread >= 1.5 ? (
+          <>
+            Same contract, same instant, a{" "}
+            <strong>{spread.toFixed(1)}× spread</strong> in cost per contract.{" "}
+          </>
+        ) : null}
+        Observed depth and published fee rules; transfer and capital assumptions
+        disclosed separately.
+      </p>
+    </div>
+  );
+}
+
 function Hero({
   proof,
   signedIn,
   accountsEnabled,
+  example,
 }: {
   proof: ResearchProof;
   signedIn: boolean;
   accountsEnabled: boolean;
+  example: HeroExample | null;
 }) {
   return (
     <section className="mx-auto max-w-6xl px-4 pb-14 pt-16 sm:pt-24">
@@ -199,17 +355,26 @@ function Hero({
        * opportunity surfaces empty.
        */}
       <p className="t-lead mt-5 max-w-2xl">
-        On a one-lot Kalshi order quoted at 1¢, the published rounding rule adds a
-        1¢ venue fee. PMVL builds an auditable entry-cost estimate from observed
-        book depth and published venue rules, plus separately disclosed transfer
-        and capital assumptions. For a binary contract, that estimate maps to the
-        break-even probability under the same assumptions.
+        What a contract costs to enter depends on how many you buy. PMVL builds an
+        auditable estimate from observed book depth and published venue rules,
+        plus separately disclosed transfer and capital assumptions. Because a
+        binary contract pays $1, that estimate is the break-even probability.
       </p>
-      <p className="t-lead mt-3 max-w-2xl">
-        It also estimates probabilities independently of the market&apos;s own
-        price where it has the coverage to do so. Where it does not, it says so
-        rather than reporting the market price back to you as a forecast.
-      </p>
+
+      {/*
+       * The worked example, not a restatement of the claim.
+       *
+       * The hero used to spend two paragraphs asserting that fee rounding makes
+       * small orders expensive, and showed no number until three screens down.
+       * The assertion is abstract and the demonstration is not, so the
+       * demonstration goes first — on a contract that exists, priced now.
+       *
+       * The second paragraph, about where the models do and do not have
+       * independent coverage, moved to the research section. It is true and it
+       * is a statement about a different surface; in the hero it answered a
+       * question a first-time reader has not asked yet.
+       */}
+      {example ? <HeroExampleCard example={example} /> : null}
 
       <div className="mt-8 flex flex-wrap items-center gap-3">
         <Link href="/cost" className="btn-primary">
