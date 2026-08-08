@@ -54,15 +54,30 @@ export async function generateMetadata({
   const contract = displayTitle(data.market.title);
   const quoted = cents(entry.nominal_price);
   const estimated = cents(entry.measured_cost);
-  const title = `${contract} — quoted ${quoted}, estimated entry cost ${estimated}`;
-  const description =
-    `Buying ${size} contract${size === "1" ? "" : "s"} has an estimated entry cost of ${estimated} each after ` +
-    `observed depth, published venue rules and disclosed transfer/capital assumptions. ` +
-    `Estimated break-even probability ${
-      entry.breakeven_probability === null
-        ? "is unreachable at this size"
-        : pct(entry.breakeven_probability)
-    }, not ${pct(entry.nominal_price)}. Research only.`;
+
+  // A preview must never headline a size the venue would reject.
+  //
+  // `size` defaults to 1, and on a contract with a five-contract minimum that
+  // produced "quoted 0.1¢, estimated entry cost 50.1¢" on every bare link — a
+  // startling figure for an order that cannot be placed. The page itself says so
+  // beside the number; a link preview has no room for that, and is seen by
+  // people who never open it.
+  const rejected = entry.below_min_order_size;
+  const title = rejected
+    ? `${contract} — quoted ${quoted}, below this venue's minimum order size`
+    : `${contract} — quoted ${quoted}, estimated entry cost ${estimated}`;
+
+  const description = rejected
+    ? `This venue will not accept an order of ${size} contract${size === "1" ? "" : "s"} on this ` +
+      `contract, so the ${estimated} figure is arithmetic rather than a trade you could place. ` +
+      `Open the page for the ladder at sizes the venue does accept. Research only.`
+    : `Buying ${size} contract${size === "1" ? "" : "s"} has an estimated entry cost of ${estimated} each after ` +
+      `observed depth, published venue rules and disclosed transfer/capital assumptions. ` +
+      `Estimated break-even probability ${
+        entry.breakeven_probability === null
+          ? "is unreachable at this size"
+          : pct(entry.breakeven_probability)
+      }, not ${pct(entry.nominal_price)}. Research only.`;
 
   return {
     title,
