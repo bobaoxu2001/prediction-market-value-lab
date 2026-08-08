@@ -55,7 +55,7 @@ import asyncio
 from dataclasses import dataclass, field
 from datetime import datetime, timedelta
 from decimal import Decimal
-from typing import Any, Protocol, Sequence
+from typing import Any, Callable, Protocol, Sequence
 
 from pmvl_shared.enums import Category, DataQuality, Platform
 from pmvl_shared.logging_setup import get_logger
@@ -206,66 +206,179 @@ class RetrodictionResult:
             "generated_at": iso(self.generated_at),
         }
 
-    def by_category(self) -> dict[str, dict[str, Any]]:
-        """Per-category Brier, because one aggregate hides a category that is lost.
+    def split_by(
+        self, key: Callable[[Forecast], str | None]
+    ) -> dict[str, dict[str, Any]]:
+        """Brier against the market within each group a key function produces.
 
-        A strong crypto model and a sports model that is worse than a coin flip pool
-        into a respectable-looking average. Splitting them is the only way the
-        sports result is visible.
+        One aggregate hides a category that is lost: a strong crypto model and a
+        sports model worse than a coin flip pool into a respectable-looking average.
         """
-        out: dict[str, dict[str, Any]] = {}
-        for category in sorted({f.category for f in self.forecasts}, key=lambda c: c.value):
-            subset = [
-                f
-                for f in self.forecasts
-                if f.category is category and f.market_probability is not None
-            ]
-            if not subset:
+        groups: dict[str, list[Forecast]] = {}
+        for forecast in self.forecasts:
+            if forecast.market_probability is None:
                 continue
-            model_b = brier_score(subset)
-            market_b = brier_score(subset, use_market=True)
-            out[category.value] = {
-                "n": len(subset),
-                "brier_model": _round(model_b),
-                "brier_market": _round(market_b),
-                "brier_improvement_vs_market": _round(
-                    market_b - model_b
-                    if model_b is not None and market_b is not None
-                    else None
-                ),
-            }
-        return out
+            label = key(forecast)
+            if label is not None:
+                groups.setdefault(label, []).append(forecast)
+        return {label: segment_metrics(rows) for label, rows in sorted(groups.items())}
+
+    def by_category(self) -> dict[str, dict[str, Any]]:
+        return self.split_by(lambda f: f.category.value)
 
     def by_lead_time(self) -> dict[str, dict[str, Any]]:
-        out: dict[str, dict[str, Any]] = {}
-        for lead in sorted({f.lead_time_hours for f in self.forecasts}):
-            subset = [
-                f
-                for f in self.forecasts
-                if f.lead_time_hours == lead and f.market_probability is not None
-            ]
-            if not subset:
-                continue
-            model_b = brier_score(subset)
-            market_b = brier_score(subset, use_market=True)
-            out[f"{lead:g}h"] = {
-                "n": len(subset),
-                "brier_model": _round(model_b),
-                "brier_market": _round(market_b),
-                "brier_improvement_vs_market": _round(
-                    market_b - model_b
-                    if model_b is not None and market_b is not None
-                    else None
-                ),
-            }
-        return out
+        return self.split_by(lambda f: f"{f.lead_time_hours:g}h")
+
+    def by_platform(self) -> dict[str, dict[str, Any]]:
+        return self.split_by(lambda f: f.platform.value)
+
+    def by_market_price(self) -> dict[str, dict[str, Any]]:
+        """Favourites against longshots.
+
+        The most likely place for a real effect, and the one with a name: prediction
+        markets are widely documented to overprice longshots. If this model has an
+        edge anywhere it is most plausibly on cheap contracts, and that is a claim
+        specific enough to be worth checking rather than hoping for.
+        """
+        return self.split_by(
+            lambda f: _band(
+                float(f.market_probability or 0),
+                ((0.05, "0-5c"), (0.15, "5-15c"), (0.35, "15-35c"),
+                 (0.65, "35-65c"), (0.85, "65-85c"), (0.95, "85-95c")),
+                "95c+",
+            )
+        )
+
+    def by_disagreement(self) -> dict[str, dict[str, Any]]:
+        """How far the model departed from the price.
+
+        The question a recommendation surface actually rests on. A model that only
+        matches the price adds nothing; one that beats it *when it disagrees* is
+        the only pattern that justifies acting on a disagreement.
+        """
+        return self.split_by(
+            lambda f: _band(
+                abs(float(f.predicted_probability) - float(f.market_probability or 0)),
+                ((0.02, "<2pp"), (0.05, "2-5pp"), (0.10, "5-10pp"), (0.20, "10-20pp")),
+                "20pp+",
+            )
+        )
+
+    def by_confidence(self) -> dict[str, dict[str, Any]]:
+        return self.split_by(
+            lambda f: _band(
+                float(f.model_confidence),
+                ((0.2, "0-0.2"), (0.4, "0.2-0.4"), (0.6, "0.4-0.6")),
+                "0.6+",
+            )
+        )
+
+    def segments(self) -> dict[str, dict[str, dict[str, Any]]]:
+        return {
+            "category": self.by_category(),
+            "lead_time": self.by_lead_time(),
+            "platform": self.by_platform(),
+            "market_price": self.by_market_price(),
+            "disagreement": self.by_disagreement(),
+            "confidence": self.by_confidence(),
+        }
 
     def as_report(self) -> dict[str, Any]:
+        segments = self.segments()
         return {
             **self.metrics(),
-            "by_category": self.by_category(),
-            "by_lead_time": self.by_lead_time(),
+            "by_category": segments["category"],
+            "by_lead_time": segments["lead_time"],
+            "segments": segments,
+            "segment_search": _segment_search_warning(segments),
         }
+
+
+def segment_metrics(rows: Sequence[Forecast]) -> dict[str, Any]:
+    """Brier for one segment, with the uncertainty on the difference.
+
+    The standard error is **paired**: both forecasts are scored against the same
+    outcome, so the quantity with a meaningful error bar is the per-forecast
+    difference, not the gap between two independently computed means. Reporting the
+    improvement without it is how a 6-observation segment gets read as a finding.
+    """
+    model_b = brier_score(rows)
+    market_b = brier_score(rows, use_market=True)
+    improvement = (
+        market_b - model_b
+        if model_b is not None and market_b is not None
+        else None
+    )
+
+    differences = [
+        (float(f.market_probability) - float(f.outcome_value)) ** 2
+        - (float(f.predicted_probability) - float(f.outcome_value)) ** 2
+        for f in rows
+        if f.market_probability is not None
+    ]
+    standard_error = None
+    t_statistic = None
+    if len(differences) > 1:
+        mean = sum(differences) / len(differences)
+        variance = sum((d - mean) ** 2 for d in differences) / (len(differences) - 1)
+        standard_error = (variance / len(differences)) ** 0.5
+        if standard_error > 0:
+            t_statistic = mean / standard_error
+
+    return {
+        "n": len(rows),
+        "brier_model": _round(model_b),
+        "brier_market": _round(market_b),
+        "brier_improvement_vs_market": _round(improvement),
+        "improvement_standard_error": _round(standard_error),
+        "t_statistic": _round(t_statistic, 3),
+        # Deliberately a plain flag rather than a p-value. A p-value invites being
+        # read as a decision, and after searching this many segments it would not
+        # be one - see `_segment_search_warning`.
+        "distinguishable_from_zero": (
+            abs(t_statistic) > 2 if t_statistic is not None else None
+        ),
+    }
+
+
+def _band(
+    value: float, edges: tuple[tuple[float, str], ...], overflow: str
+) -> str:
+    for threshold, label in edges:
+        if value < threshold:
+            return label
+    return overflow
+
+
+def _segment_search_warning(
+    segments: dict[str, dict[str, dict[str, Any]]]
+) -> dict[str, Any]:
+    """State how many segments were looked at, and how many would win by chance.
+
+    Searching for a segment where the model beats the price is exactly the
+    procedure that finds one whether or not it exists. Roughly one segment in
+    twenty clears |t| > 2 on noise alone, so the count of segments examined has to
+    travel next to any segment being pointed at - otherwise the search itself
+    manufactures the headline.
+    """
+    examined = sum(len(group) for group in segments.values())
+    winners = [
+        f"{dimension}={label}"
+        for dimension, group in segments.items()
+        for label, block in group.items()
+        if block.get("distinguishable_from_zero")
+        and (block.get("brier_improvement_vs_market") or 0) > 0
+    ]
+    return {
+        "segments_examined": examined,
+        "expected_false_positives_at_t2": round(examined * 0.05, 2),
+        "segments_beating_market": winners,
+        "note": (
+            "Segments were searched, not pre-registered. A winner here is a "
+            "hypothesis to confirm on later data, not a finding. Confirming it "
+            "means it keeps winning on forecasts made after this run."
+        ),
+    }
 
 
 def _round(value: float | None, digits: int = 5) -> float | None:

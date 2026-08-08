@@ -27,6 +27,7 @@ from pmvl_markets.probability.base import (
 )
 from pmvl_markets.probability.ensemble import ProbabilityEnsemble
 from pmvl_markets.retrodiction import (
+    RetrodictionResult,
     Forecast,
     RetrodictionHarness,
     RewindError,
@@ -374,6 +375,88 @@ def test_report_labels_its_provenance_and_price_quality():
     assert report["provenance"] == "retrodiction"
     assert "not executable quotes" in report["market_price_source"]
     assert result.forecasts[0].market_price_quality is DataQuality.CANDLE
+
+
+# ------------------------------------------------------- segment searching
+def _forecast(model_p: str, market_p: str, outcome: str, **kw) -> Forecast:
+    defaults = dict(
+        platform=Platform.KALSHI,
+        platform_market_id="M",
+        category=Category.CRYPTO,
+        as_of=RESOLUTION - timedelta(hours=24),
+        lead_time_hours=24.0,
+        model_confidence=Decimal("0.5"),
+    )
+    defaults.update(kw)
+    return Forecast(
+        predicted_probability=Decimal(model_p),
+        market_probability=Decimal(market_p),
+        outcome_value=Decimal(outcome),
+        **defaults,
+    )
+
+
+def test_segment_metrics_reports_a_paired_standard_error():
+    """Both forecasts are scored against the same outcome, so the error is paired."""
+    from pmvl_markets.retrodiction.harness import segment_metrics
+
+    rows = [_forecast("0.8", "0.5", "1") for _ in range(10)]
+    block = segment_metrics(rows)
+
+    assert block["n"] == 10
+    assert block["brier_improvement_vs_market"] == pytest.approx(0.21)
+    # Identical differences means zero variance, so nothing is distinguishable.
+    assert block["improvement_standard_error"] == pytest.approx(0.0)
+
+
+def test_segment_metrics_declines_a_verdict_on_one_observation():
+    from pmvl_markets.retrodiction.harness import segment_metrics
+
+    block = segment_metrics([_forecast("0.8", "0.5", "1")])
+
+    assert block["t_statistic"] is None
+    assert block["distinguishable_from_zero"] is None
+
+
+def test_segment_search_counts_what_it_searched():
+    """A winner found by searching needs the search size next to it."""
+    result = run_harness([_ReplayableModel("0.80")], _FakeHistory(Decimal("0.50")))
+    search = result.as_report()["segment_search"]
+
+    assert search["segments_examined"] > 0
+    assert search["expected_false_positives_at_t2"] == pytest.approx(
+        search["segments_examined"] * 0.05
+    )
+    assert "not pre-registered" in search["note"]
+
+
+def test_disagreement_split_separates_agreement_from_departure():
+    """The split a recommendation surface rests on: is the model right when it
+    departs from the price, or only when it agrees with it?"""
+    result = RetrodictionResult(
+        forecasts=[
+            _forecast("0.51", "0.50", "1"),
+            _forecast("0.80", "0.50", "1"),
+        ]
+    )
+    bands = result.by_disagreement()
+
+    assert set(bands) == {"<2pp", "20pp+"}
+    assert bands["<2pp"]["n"] == 1
+    assert bands["20pp+"]["n"] == 1
+
+
+def test_market_price_split_separates_longshots_from_favourites():
+    result = RetrodictionResult(
+        forecasts=[
+            _forecast("0.03", "0.02", "0"),
+            _forecast("0.50", "0.50", "1"),
+            _forecast("0.98", "0.97", "1"),
+        ]
+    )
+    bands = result.by_market_price()
+
+    assert set(bands) == {"0-5c", "35-65c", "95c+"}
 
 
 def test_skips_are_reported_alongside_the_score():

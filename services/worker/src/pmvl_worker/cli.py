@@ -230,7 +230,7 @@ def retrodict(
     )
 
     table = Table(title="Retrodiction - model vs the market's own price")
-    for column in ("Split", "N", "Brier (model)", "Brier (market)", "Improvement"):
+    for column in ("Split", "N", "Brier (model)", "Brier (market)", "Improvement", "t"):
         table.add_column(column)
     table.add_row(
         "[bold]all[/bold]",
@@ -238,30 +238,43 @@ def retrodict(
         _fmt(result.get("brier_model")),
         _fmt(result.get("brier_market")),
         _fmt(result.get("brier_improvement_vs_market")),
+        "",
     )
-    for label, block in (result.get("by_category") or {}).items():
-        table.add_row(
-            label,
-            str(block["n"]),
-            _fmt(block["brier_model"]),
-            _fmt(block["brier_market"]),
-            _fmt(block["brier_improvement_vs_market"]),
-        )
-    for label, block in (result.get("by_lead_time") or {}).items():
-        table.add_row(
-            f"lead {label}",
-            str(block["n"]),
-            _fmt(block["brier_model"]),
-            _fmt(block["brier_market"]),
-            _fmt(block["brier_improvement_vs_market"]),
-        )
+    for dimension, group in (result.get("segments") or {}).items():
+        for label, block in group.items():
+            improvement = block.get("brier_improvement_vs_market")
+            wins = (improvement or 0) > 0 and block.get("distinguishable_from_zero")
+            name = f"{dimension} {label}"
+            table.add_row(
+                f"[green]{name}[/green]" if wins else name,
+                str(block["n"]),
+                _fmt(block["brier_model"]),
+                _fmt(block["brier_market"]),
+                _fmt(improvement),
+                _fmt(block.get("t_statistic")),
+            )
     console.print(table)
+
+    search = result.get("segment_search") or {}
+    if search:
+        winners = search.get("segments_beating_market") or []
+        console.print(
+            f"[dim]Searched {search.get('segments_examined')} segments; "
+            f"~{search.get('expected_false_positives_at_t2')} would clear |t|>2 on "
+            f"noise alone.[/dim]"
+        )
+        console.print(
+            f"[green]Beat the market:[/green] {', '.join(winners)}"
+            if winners
+            else "[yellow]No segment beat the market at |t|>2.[/yellow]"
+        )
+        console.print(f"[dim]{search.get('note')}[/dim]")
 
     skips = result.get("skips") or {}
     if skips:
         console.print(
             "[dim]Skipped:[/dim] "
-            + ", ".join(f"{reason} ({count})" for reason, count in skips.items())
+            + ", ".join(f"{reason} ({count})" for reason, count in list(skips.items())[:4])
         )
 
     interpretation = payload.get("interpretation") or payload.get("note") or ""
