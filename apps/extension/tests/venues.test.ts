@@ -114,7 +114,7 @@ describe("kalshi", () => {
 
   it("prices a ladder whose cheapest size is not the smallest", async () => {
     const contract = await resolveKalshi("KXMLBGAME-26AUG092020HOUSD-SD", fetchJson);
-    const book = await kalshiBook(contract!.id, fetchJson);
+    const book = await kalshiBook(contract!.ids.yes, fetchJson);
     const ladder = costLadder(book!.levels, termsFromBook(contract!, book!));
 
     expect(ladder.length).toBeGreaterThan(3);
@@ -128,7 +128,7 @@ describe("kalshi", () => {
 
   it("never reports a break-even above certainty", async () => {
     const contract = await resolveKalshi("KXMLBGAME-26AUG092020HOUSD-SD", fetchJson);
-    const book = await kalshiBook(contract!.id, fetchJson);
+    const book = await kalshiBook(contract!.ids.yes, fetchJson);
     for (const row of costLadder(book!.levels, contract!.terms)) {
       if (row.breakevenProbability === null) continue;
       expect(toNumber(row.breakevenProbability)).toBeLessThan(1);
@@ -150,7 +150,7 @@ describe("polymarket", () => {
     expect(contract).not.toBeNull();
     expect(contract!.venue).toBe("polymarket");
     // clobTokenIds arrives as a JSON-encoded string, YES first.
-    expect(contract!.id).toMatch(/^\d{20,}$/);
+    expect(contract!.ids.yes).toMatch(/^\d{20,}$/);
   });
 
   it("reads depth, and the venue terms the book reports with it", async () => {
@@ -162,7 +162,7 @@ describe("polymarket", () => {
 
   it("marks sizes below the venue minimum as unplaceable", async () => {
     const contract = await resolvePolymarket("strait-of-hormuz", fetchJson);
-    const book = await polymarketBook(contract!.id, fetchJson);
+    const book = await polymarketBook(contract!.ids.yes, fetchJson);
     const ladder = costLadder(book!.levels, termsFromBook(contract!, book!));
 
     const one = ladder.find((r) => toNumber(r.size) === 1);

@@ -93,6 +93,32 @@
   color: #8FD19E;
 }
 
+/*
+ * The trader's own size outranks the cheapest-size highlight.
+ *
+ * When both land on the same row there is nothing to compare and the row is
+ * simply theirs; when they differ, the row they are about to place is the one
+ * they need to find first.
+ */
+.pmvl-panel .pmvl-table .pmvl-yours td {
+  color: #E9ECF0;
+  font-weight: 600;
+  background: rgba(122, 174, 219, 0.10);
+}
+
+.pmvl-panel .pmvl-tag {
+  margin-left: 6px;
+  padding: 1px 5px;
+  border-radius: 4px;
+  background: #7AAEDB;
+  color: #0C0E12;
+  font-size: 9.5px;
+  font-weight: 600;
+  letter-spacing: 0.5px;
+  text-transform: uppercase;
+  vertical-align: middle;
+}
+
 .pmvl-panel .pmvl-table td.pmvl-warn {
   color: #E0A458;
 }
@@ -122,6 +148,11 @@
   .pmvl-panel .pmvl-table th,
   .pmvl-panel .pmvl-note { color: #5B636E; }
   .pmvl-panel .pmvl-table .pmvl-best td { color: #1D7A3C; }
+  .pmvl-panel .pmvl-table .pmvl-yours td {
+    color: #14171C;
+    background: rgba(45, 116, 173, 0.12);
+  }
+  .pmvl-panel .pmvl-tag { background: #2D74AD; color: #FFFFFF; }
   .pmvl-panel .pmvl-table td.pmvl-warn { color: #B4700F; }
   .pmvl-panel .pmvl-best-note { color: #14171C; }
 }

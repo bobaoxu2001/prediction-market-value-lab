@@ -23,14 +23,10 @@ import kalshiOrderbook from "../fixtures/kalshi-orderbook.json";
 import polymarketMarket from "../fixtures/polymarket-market.json";
 import polymarketBookFixture from "../fixtures/polymarket-book.json";
 
+import { costAtSize, costLadder } from "../src/cost";
+import { dec } from "../src/decimal";
+import { panelHtml } from "../src/panel";
 import {
-  type CostAtSize,
-  cheapestPlaceable,
-  costLadder,
-} from "../src/cost";
-import { toNumber, toString as decToString } from "../src/decimal";
-import {
-  type Contract,
   kalshiBook,
   polymarketBook,
   resolveKalshi,
@@ -39,71 +35,6 @@ import {
 } from "../src/venues";
 
 const HERE = dirname(fileURLToPath(import.meta.url));
-
-const cents = (v: { units: bigint; scale: number }) => {
-  const n = toNumber(v) * 100;
-  return `${n < 10 ? n.toFixed(2) : n.toFixed(1)}¢`;
-};
-const percent = (v: { units: bigint; scale: number } | null) => {
-  if (v === null) return "—";
-  const n = toNumber(v) * 100;
-  return `${n >= 0 ? "+" : ""}${Math.abs(n) < 10 ? n.toFixed(1) : n.toFixed(0)}%`;
-};
-const prob = (v: { units: bigint; scale: number } | null) =>
-  v === null ? "—" : `${(toNumber(v) * 100).toFixed(1)}%`;
-const sizeLabel = (v: { units: bigint; scale: number }) =>
-  decToString(v).replace(/\.0+$/, "");
-
-function strip(ladder: CostAtSize[]): CostAtSize[] {
-  const usable = ladder.filter((r) => !r.belowMinOrderSize && r.fullyFilled);
-  if (usable.length <= 3) return usable;
-  const cheapest = cheapestPlaceable(usable)!;
-  const picked = new Map<string, CostAtSize>();
-  for (const row of [usable[0], cheapest, usable[usable.length - 1]]) {
-    const key = decToString(row.measuredCost);
-    const held = picked.get(key);
-    if (!held || toNumber(row.size) < toNumber(held.size)) picked.set(key, row);
-  }
-  return [...picked.values()].sort((a, b) => toNumber(a.size) - toNumber(b.size));
-}
-
-function panelHtml(contract: Contract, ladder: CostAtSize[]): string {
-  const rows = strip(ladder);
-  const cheapest = cheapestPlaceable(rows);
-  const assumptionLed = contract.venue === "polymarket";
-  return `
-    <div class="pmvl-head"><span class="pmvl-dot"></span>Entry cost, per contract</div>
-    <table class="pmvl-table">
-      <thead><tr><th>Size</th><th>Costs</th><th>Over quote</th><th>Break-even</th></tr></thead>
-      <tbody>
-        ${rows
-          .map(
-            (row) => `<tr${row === cheapest ? ' class="pmvl-best"' : ""}>
-              <td>${sizeLabel(row.size)}</td>
-              <td>${cents(row.measuredCost)}</td>
-              <td class="pmvl-warn">${percent(row.measuredPremiumRatio)}</td>
-              <td>${prob(row.breakevenProbability)}</td>
-            </tr>`,
-          )
-          .join("")}
-      </tbody>
-    </table>
-    ${
-      cheapest
-        ? `<p class="pmvl-note pmvl-best-note">Cheapest placeable size:
-           <strong>${sizeLabel(cheapest.size)}</strong>
-           at ${cents(cheapest.measuredCost)} each.</p>`
-        : ""
-    }
-    <p class="pmvl-note">
-      Observed ask depth and published venue fee and rounding rules${
-        assumptionLed
-          ? ", plus an assumed bridge/gas allowance amortised over the position"
-          : ""
-      }. Sizes below the venue minimum and sizes the book cannot fill are excluded.
-      Slippage is not included. No forecast, no recommendation — research only.
-    </p>`;
-}
 
 function recorded(routes: Record<string, unknown>) {
   return async (url: string) => {
@@ -125,18 +56,53 @@ describe("overlay renders from real venue payloads", () => {
       "gamma-api.polymarket.com/markets": polymarketMarket,
     });
 
+    // Fixed so the preview is byte-stable between runs; the panel prints a
+    // relative age, which would otherwise drift with the wall clock.
+    const NOW = 1_760_000_000_000;
+
     const kc = (await resolveKalshi("KXMLBGAME-26AUG092020HOUSD-SD", kalshiFetch))!;
-    const kb = (await kalshiBook(kc.id, kalshiFetch))!;
-    const kalshiPanel = panelHtml(kc, costLadder(kb.levels, termsFromBook(kc, kb)));
+    const kb = (await kalshiBook(kc.ids.yes, kalshiFetch))!;
+    const kTerms = termsFromBook(kc, kb);
+    // A one-lot on a deeply liquid contract. The size is theirs and is shown as
+    // such, but the book is flat past the smallest rungs so there is nothing to
+    // save and the panel must say nothing rather than manufacture advice.
+    const kalshiPanel = panelHtml({
+      venue: kc.venue,
+      side: "yes",
+      ladder: costLadder(kb.levels, kTerms),
+      observedAt: NOW - 8_000,
+      yourRow: costAtSize(kb.levels, dec("1"), kTerms),
+      now: NOW,
+    });
 
     const pc = (await resolvePolymarket("strait-of-hormuz", polyFetch))!;
-    const pb = (await polymarketBook(pc.id, polyFetch))!;
-    const polyPanel = panelHtml(pc, costLadder(pb.levels, termsFromBook(pc, pb)));
+    const pb = (await polymarketBook(pc.ids.yes, polyFetch))!;
+    const pTerms = termsFromBook(pc, pb);
+    // Ten contracts on Polymarket, where the fixed bridge allowance amortised over
+    // a small position dominates: the case where the overlay has real money to
+    // point at.
+    const polyPanel = panelHtml({
+      venue: pc.venue,
+      side: "yes",
+      ladder: costLadder(pb.levels, pTerms),
+      observedAt: NOW - 45_000,
+      yourRow: costAtSize(pb.levels, dec("10"), pTerms),
+      now: NOW,
+    });
 
     // Both must actually contain figures, or the preview is of an empty panel.
     expect(kalshiPanel).toContain("¢");
     expect(polyPanel).toContain("¢");
-    expect(kalshiPanel).toContain("Cheapest placeable size");
+    // The trader's own size is present and marked as theirs.
+    expect(kalshiPanel).toContain("pmvl-yours");
+    // Freshness is stated, since it is the whole reason this is not the website.
+    expect(kalshiPanel).toContain("8s ago");
+    // The side is named, so a NO panel can never be read as a YES one.
+    expect(kalshiPanel).toContain("Entry cost · YES");
+    // On the flat, liquid book there is nothing to save and nothing is claimed.
+    expect(kalshiPanel).not.toContain("less on an order this size");
+    // On the thin one there is, and it is stated in dollars.
+    expect(polyPanel).toContain("less on an order this size");
 
     const html = `<meta charset="utf-8"><title>PMVL overlay preview</title>
 <link rel="stylesheet" href="../overlay.css">
@@ -153,10 +119,10 @@ describe("overlay renders from real venue payloads", () => {
   .light .card h2, .light .card .contract { color: #5B636E; }
 </style>
 <div class="pane">
-  <div class="card"><h2>Kalshi · dark</h2>
+  <div class="card"><h2>Kalshi · liquid book, nothing to save</h2>
     <div class="contract">${kc.title}</div>
     <div id="pmvl-cost-overlay" class="pmvl-panel preview-panel">${kalshiPanel}</div></div>
-  <div class="card"><h2>Polymarket · dark</h2>
+  <div class="card"><h2>Polymarket · a cheaper size exists</h2>
     <div class="contract">${pc.title}</div>
     <div id="pmvl-cost-overlay-2" class="pmvl-panel preview-panel">${polyPanel}</div></div>
 </div>`;

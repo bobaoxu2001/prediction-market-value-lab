@@ -9,26 +9,33 @@
  *
  * ## What it shows, and what it deliberately does not
  *
- * Cost per contract at a few real sizes, the break-even probability that follows
- * from it, and which placeable size is cheapest. No probability estimate, no
- * edge, no recommendation: the retrodiction over 22 segments found no place where
- * this project's models beat the market's own price, and the one segment that
- * cleared significance did so in the wrong direction.
+ * Cost per contract at the size in the order form when one can be read, plus a
+ * few placeable sizes around it, the break-even that follows, and which size is
+ * cheapest. No probability estimate, no edge, no recommendation: the retrodiction
+ * over 22 segments found no place where this project's models beat the market's
+ * own price, and the one segment that cleared significance did so in the wrong
+ * direction.
  *
  * So the overlay says what the trade costs. It has no opinion on whether to make
- * it.
+ * it — except to point out when a different size costs less, which is arithmetic
+ * rather than a forecast.
  */
 
+import { type CostAtSize, DEFAULT_ASSUMPTIONS, costAtSize, costLadder } from "./cost";
+import { dec } from "./decimal";
+import { readOrderSize, watchOrderForm } from "./order-form";
+import { messageHtml, panelHtml } from "./panel";
 import {
-  type CostAtSize,
-  DEFAULT_ASSUMPTIONS,
-  cheapestPlaceable,
-  costLadder,
-} from "./cost";
-import { toNumber, toString as decToString } from "./decimal";
-import { type Contract, identify, loadBook, termsFromBook } from "./venues";
+  type Contract,
+  type LiveBook,
+  type Side,
+  identify,
+  loadBook,
+  termsFromBook,
+} from "./venues";
 
 const PANEL_ID = "pmvl-cost-overlay";
+/** How often the book is re-read while the tab sits open on one contract. */
 const REFRESH_MS = 20_000;
 
 async function fetchJson(url: string): Promise<unknown> {
@@ -37,37 +44,7 @@ async function fetchJson(url: string): Promise<unknown> {
   return reply.value;
 }
 
-/* ------------------------------------------------------------------ render -- */
-
-function cents(value: { units: bigint; scale: number }): string {
-  const n = toNumber(value) * 100;
-  return `${n < 10 ? n.toFixed(2) : n.toFixed(1)}¢`;
-}
-
-function percent(value: { units: bigint; scale: number } | null): string {
-  if (value === null) return "—";
-  const n = toNumber(value) * 100;
-  return `${n >= 0 ? "+" : ""}${Math.abs(n) < 10 ? n.toFixed(1) : n.toFixed(0)}%`;
-}
-
-function probability(value: { units: bigint; scale: number } | null): string {
-  if (value === null) return "—";
-  return `${(toNumber(value) * 100).toFixed(1)}%`;
-}
-
-/** Smallest, cheapest and largest placeable rungs — the U-shape, not three points. */
-function strip(ladder: CostAtSize[]): CostAtSize[] {
-  const usable = ladder.filter((r) => !r.belowMinOrderSize && r.fullyFilled);
-  if (usable.length <= 3) return usable;
-  const cheapest = cheapestPlaceable(usable)!;
-  const picked = new Map<string, CostAtSize>();
-  for (const row of [usable[0], cheapest, usable[usable.length - 1]]) {
-    const key = decToString(row.measuredCost);
-    const held = picked.get(key);
-    if (!held || toNumber(row.size) < toNumber(held.size)) picked.set(key, row);
-  }
-  return [...picked.values()].sort((a, b) => toNumber(a.size) - toNumber(b.size));
-}
+/* ------------------------------------------------------------------- panel -- */
 
 function panel(): HTMLElement {
   let node = document.getElementById(PANEL_ID);
@@ -81,67 +58,58 @@ function panel(): HTMLElement {
   return node;
 }
 
-function render(contract: Contract, ladder: CostAtSize[]): void {
-  const rows = strip(ladder);
-  const node = panel();
-
-  if (rows.length === 0) {
-    node.innerHTML = `
-      <div class="pmvl-head"><span class="pmvl-dot"></span>Entry cost</div>
-      <p class="pmvl-note">No size on this contract could be filled at the depth
-      currently on the book, so no cost is shown.</p>`;
-    return;
-  }
-
-  const cheapest = cheapestPlaceable(rows);
-  const assumptionLed = contract.venue === "polymarket";
-
-  node.innerHTML = `
-    <div class="pmvl-head"><span class="pmvl-dot"></span>Entry cost, per contract</div>
-    <table class="pmvl-table">
-      <thead><tr><th>Size</th><th>Costs</th><th>Over quote</th><th>Break-even</th></tr></thead>
-      <tbody>
-        ${rows
-          .map(
-            (row) => `<tr${row === cheapest ? ' class="pmvl-best"' : ""}>
-              <td>${decToString(row.size).replace(/\.0+$/, "")}</td>
-              <td>${cents(row.measuredCost)}</td>
-              <td class="pmvl-warn">${percent(row.measuredPremiumRatio)}</td>
-              <td>${probability(row.breakevenProbability)}</td>
-            </tr>`,
-          )
-          .join("")}
-      </tbody>
-    </table>
-    ${
-      cheapest
-        ? `<p class="pmvl-note pmvl-best-note">Cheapest placeable size:
-           <strong>${decToString(cheapest.size).replace(/\.0+$/, "")}</strong>
-           at ${cents(cheapest.measuredCost)} each.</p>`
-        : ""
-    }
-    <p class="pmvl-note">
-      Observed ask depth and published venue fee and rounding rules${
-        assumptionLed
-          ? ", plus an assumed bridge/gas allowance amortised over the position"
-          : ""
-      }. Sizes below the venue minimum and sizes the book cannot fill are excluded.
-      Slippage is not included. No forecast, no recommendation — research only.
-    </p>`;
+function removePanel(): void {
+  document.getElementById(PANEL_ID)?.remove();
 }
 
-function renderError(message: string): void {
-  panel().innerHTML = `
-    <div class="pmvl-head"><span class="pmvl-dot"></span>Entry cost</div>
-    <p class="pmvl-note">${message}</p>`;
+/* --------------------------------------------------------------------- run -- */
+
+/**
+ * Which side the page is showing.
+ *
+ * Read from the URL only. A DOM guess at the selected YES/NO toggle would be
+ * wrong on a redesign and wrong silently, and the side is named in the panel
+ * header either way, so a reader can always see which contract was priced.
+ */
+function detectSide(url: string): Side {
+  return /[?&](side|outcome)=no\b/i.test(url) ? "no" : "yes";
 }
 
-/* -------------------------------------------------------------------- run -- */
+/** The book and the contract behind whatever is currently on screen. */
+interface Loaded {
+  contract: Contract;
+  book: LiveBook;
+  side: Side;
+  ladder: CostAtSize[];
+}
 
-let timer: number | undefined;
+let loaded: Loaded | null = null;
+let refreshTimer: number | undefined;
 
-async function update(): Promise<void> {
+function draw(): void {
+  if (!loaded) return;
+  const { contract, book, side, ladder } = loaded;
+  const terms = termsFromBook(contract, book);
+
+  // The size the trader has typed, priced exactly rather than interpolated from
+  // the ladder. Null when the order form could not be read confidently.
+  const typed = readOrderSize();
+  const yourRow =
+    typed === null ? null : costAtSize(book.levels, dec(String(typed)), terms, DEFAULT_ASSUMPTIONS);
+
+  panel().innerHTML = panelHtml({
+    venue: contract.venue,
+    side,
+    ladder,
+    observedAt: book.observedAt,
+    yourRow,
+  });
+}
+
+async function reload(): Promise<void> {
   const url = location.href;
+  const side = detectSide(url);
+
   let contract: Contract | null = null;
   try {
     contract = await identify(url, document.body?.innerText ?? "", fetchJson);
@@ -153,26 +121,32 @@ async function update(): Promise<void> {
   // own API. Silence is the correct output for "I do not know what you are
   // looking at"; a number would be a guess placed beside a live order form.
   if (!contract) {
-    document.getElementById(PANEL_ID)?.remove();
+    loaded = null;
+    removePanel();
     return;
   }
 
   try {
-    const book = await loadBook(contract, fetchJson);
+    const book = await loadBook(contract, fetchJson, side);
     if (!book) {
-      renderError("The venue returned no order book for this contract just now.");
+      loaded = null;
+      panel().innerHTML = messageHtml(
+        `The venue returned no ${side.toUpperCase()} order book for this contract just now.`,
+      );
       return;
     }
     const terms = termsFromBook(contract, book);
-    render(contract, costLadder(book.levels, terms, DEFAULT_ASSUMPTIONS));
+    loaded = {
+      contract,
+      book,
+      side,
+      ladder: costLadder(book.levels, terms, DEFAULT_ASSUMPTIONS),
+    };
+    draw();
   } catch (error) {
-    renderError(`Could not read the live book: ${String(error)}`);
+    loaded = null;
+    panel().innerHTML = messageHtml(`Could not read the live book: ${String(error)}`);
   }
-}
-
-function schedule(): void {
-  window.clearInterval(timer);
-  timer = window.setInterval(update, REFRESH_MS);
 }
 
 /**
@@ -186,15 +160,19 @@ function watchNavigation(): void {
   const observer = new MutationObserver(() => {
     if (location.href === lastUrl) return;
     lastUrl = location.href;
-    void update();
+    void reload();
   });
   observer.observe(document.body, { childList: true, subtree: true });
 }
 
 if (document.body) {
-  void update();
-  schedule();
+  void reload();
+  refreshTimer = window.setInterval(reload, REFRESH_MS);
   watchNavigation();
+  // Typing a new size redraws from the book already in hand. Deliberately not a
+  // refetch: a trader adjusting a size field would otherwise fire a request per
+  // keystroke at an endpoint neither venue promises to keep fast.
+  watchOrderForm(draw);
 }
 
-export { strip, update };
+export { draw, reload, refreshTimer };

@@ -37,10 +37,19 @@ export const POLYMARKET_CLOB = "https://clob.polymarket.com";
  */
 const KALSHI_TICKER = /\bKX[A-Z0-9]+-[A-Z0-9]+-[A-Z0-9.]+\b/g;
 
+/** Which side of the contract is being bought. */
+export type Side = "yes" | "no";
+
 export interface Contract {
   venue: Venue;
-  /** The venue's own identifier: a Kalshi ticker or a Polymarket token id. */
-  id: string;
+  /**
+   * The venue's own identifier for each side.
+   *
+   * Kalshi uses one ticker for both — the side selects which set of resting bids
+   * to invert into asks. Polymarket issues a separate ERC-1155 token per side
+   * with an independent book, so `no` is a different id and may be absent.
+   */
+  ids: { yes: string; no: string | null };
   title: string;
   terms: ContractTerms;
 }
@@ -113,7 +122,7 @@ export async function resolveKalshi(
 
   return {
     venue: "kalshi",
-    id: market.ticker,
+    ids: { yes: market.ticker, no: market.ticker },
     title: [market.title, market.yes_sub_title].filter(Boolean).join(" — "),
     terms: {
       venue: "kalshi",
@@ -127,12 +136,18 @@ export async function resolveKalshi(
 }
 
 /**
- * Kalshi's book is bids-only, so YES asks are derived: a resting NO bid at X is a
- * YES ask at $1 − X, carrying the same size. Mirrors `KalshiProvider.parse_orderbook`.
+ * Kalshi's book is bids-only, so asks are derived: a resting bid on one side at X
+ * is an ask on the other at $1 − X, carrying the same size. Mirrors
+ * `KalshiProvider.parse_orderbook`.
+ *
+ * Both sides come back in one payload, so pricing NO costs no extra request. That
+ * matters because a trader on the NO side reading YES numbers is not looking at a
+ * slightly different figure, they are looking at the other contract.
  */
 export async function kalshiBook(
   ticker: string,
   fetchJson: FetchJson,
+  side: Side = "yes",
 ): Promise<LiveBook | null> {
   const payload = await fetchJson(
     `${KALSHI_API}/markets/${encodeURIComponent(ticker)}/orderbook?depth=100`,
@@ -142,9 +157,12 @@ export async function kalshiBook(
     (payload as Record<string, any> | null)?.orderbook;
   if (!book) return null;
 
-  const noBids: Array<[string, string]> = book.no_dollars ?? book.no ?? [];
+  // YES asks come from NO bids, and NO asks from YES bids.
+  const opposing: Array<[string, string]> =
+    side === "yes" ? (book.no_dollars ?? book.no ?? []) : (book.yes_dollars ?? book.yes ?? []);
+
   const levels: BookLevel[] = [];
-  for (const entry of noBids) {
+  for (const entry of opposing) {
     if (!Array.isArray(entry) || entry.length < 2) continue;
     const askPrice = quantizeUsd(sub(ONE, dec(String(entry[0]))));
     if (!gt(askPrice, dec("0"))) continue;
@@ -183,18 +201,18 @@ export async function resolvePolymarket(
   if (!market?.clobTokenIds) return null;
 
   // Gamma returns the token ids as a JSON-encoded string, YES first.
-  let yesToken: string | null = null;
+  let tokens: string[] = [];
   try {
-    const ids = JSON.parse(market.clobTokenIds) as string[];
-    yesToken = ids[0] ?? null;
+    tokens = JSON.parse(market.clobTokenIds) as string[];
   } catch {
-    yesToken = null;
+    tokens = [];
   }
+  const yesToken = tokens[0] ?? null;
   if (!yesToken) return null;
 
   return {
     venue: "polymarket",
-    id: yesToken,
+    ids: { yes: yesToken, no: tokens[1] ?? null },
     title: market.question ?? slug,
     terms: {
       venue: "polymarket",
@@ -278,10 +296,15 @@ export async function identify(
 export async function loadBook(
   contract: Contract,
   fetchJson: FetchJson,
+  side: Side = "yes",
 ): Promise<LiveBook | null> {
-  return contract.venue === "kalshi"
-    ? kalshiBook(contract.id, fetchJson)
-    : polymarketBook(contract.id, fetchJson);
+  if (contract.venue === "kalshi") {
+    return kalshiBook(contract.ids.yes, fetchJson, side);
+  }
+  const token = side === "yes" ? contract.ids.yes : contract.ids.no;
+  // A Polymarket market with no NO token has no NO book to price. Returning null
+  // shows the "no book" state rather than quietly pricing the other side.
+  return token ? polymarketBook(token, fetchJson) : null;
 }
 
 /**
