@@ -36,6 +36,27 @@ export const metadata: Metadata = {
 
 const SIZES = ["1", "10", "100", "1000"] as const;
 
+/**
+ * The categories offered as a front door, sports and politics first.
+ *
+ * Not alphabetical and not by market count. These two carry most of the retail
+ * volume on both venues and they are precisely the categories where every
+ * probability model here declines - sports has a base-rate prior that is off by
+ * default pending evidence, and politics has no keyless polling aggregate to
+ * build on at all. Cost needs no forecast, so this is the one surface that has a
+ * real answer for them, and it is the reason they belong at the front rather
+ * than behind an opportunity list that is empty for them by construction.
+ */
+const CATEGORIES: Array<{ key: string | undefined; label: string }> = [
+  { key: undefined, label: "All" },
+  { key: "sports", label: "Sports" },
+  { key: "politics", label: "Politics" },
+  { key: "crypto", label: "Crypto" },
+  { key: "economics", label: "Economics" },
+  { key: "finance", label: "Finance" },
+  { key: "weather", label: "Weather" },
+];
+
 export default async function CostPage({
   searchParams,
 }: {
@@ -51,10 +72,14 @@ export default async function CostPage({
     ? (one("size") as string)
     : "100";
   const platform = one("platform");
+  const rawCategory = one("category");
+  const category = CATEGORIES.some((c) => c.key === rawCategory)
+    ? rawCategory
+    : undefined;
   const mode = (one("mode") as DataMode) ?? "live";
 
   const res = await apiGet<CostIndexRow[]>(
-    `/cost${qs({ size, platform, mode, limit: 40 })}`,
+    `/cost${qs({ size, platform, category, mode, limit: 40 })}`,
   );
   if (!res) return <ApiDown />;
 
@@ -71,9 +96,12 @@ export default async function CostPage({
       <Explainer size={size} />
 
       <div className="mt-6 flex flex-wrap items-center gap-x-6 gap-y-3">
-        <SizePicker current={size} platform={platform} />
-        <PlatformPicker current={platform} size={size} />
+        <SizePicker current={size} platform={platform} category={category} />
+        <PlatformPicker current={platform} size={size} category={category} />
+        <CategoryPicker current={category} size={size} platform={platform} />
       </div>
+
+      <CategoryNote category={category} />
 
       {rows.length === 0 ? (
         <div className="mt-6">
@@ -122,9 +150,11 @@ function Explainer({ size }: { size: string }) {
 function SizePicker({
   current,
   platform,
+  category,
 }: {
   current: string;
   platform?: string;
+  category?: string;
 }) {
   return (
     <div className="flex items-center gap-2">
@@ -133,7 +163,7 @@ function SizePicker({
         {SIZES.map((size) => (
           <Link
             key={size}
-            href={`/cost${qs({ size, platform })}`}
+            href={`/cost${qs({ size, platform, category })}`}
             aria-current={size === current ? "page" : undefined}
             className={`seg-item ${size === current ? "seg-item-on" : "hover:text-ink"}`}
           >
@@ -148,9 +178,11 @@ function SizePicker({
 function PlatformPicker({
   current,
   size,
+  category,
 }: {
   current?: string;
   size: string;
+  category?: string;
 }) {
   const options: Array<{ key: string | undefined; label: string }> = [
     { key: undefined, label: "Both venues" },
@@ -164,7 +196,7 @@ function PlatformPicker({
         {options.map((option) => (
           <Link
             key={option.label}
-            href={`/cost${qs({ size, platform: option.key })}`}
+            href={`/cost${qs({ size, platform: option.key, category })}`}
             aria-current={option.key === current ? "page" : undefined}
             className={`seg-item ${option.key === current ? "seg-item-on" : "hover:text-ink"}`}
           >
@@ -173,6 +205,60 @@ function PlatformPicker({
         ))}
       </div>
     </div>
+  );
+}
+
+function CategoryPicker({
+  current,
+  size,
+  platform,
+}: {
+  current?: string;
+  size: string;
+  platform?: string;
+}) {
+  return (
+    <div className="flex items-center gap-2">
+      <span className="t-label">Category</span>
+      <div className="seg" role="group">
+        {CATEGORIES.map((option) => (
+          <Link
+            key={option.label}
+            href={`/cost${qs({ size, platform, category: option.key })}`}
+            aria-current={option.key === current ? "page" : undefined}
+            className={`seg-item ${option.key === current ? "seg-item-on" : "hover:text-ink"}`}
+          >
+            {option.label}
+          </Link>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+/**
+ * Why this category has no forecast, said on the category's own page.
+ *
+ * Sports and politics are the two the front door leads with, and they are the
+ * two where every probability model here declines. A reader who arrives from a
+ * shared link and sees only cost figures should be told that is the whole offer
+ * for this category, in one sentence, rather than discovering it by noticing an
+ * absence.
+ */
+function CategoryNote({ category }: { category?: string }) {
+  const notes: Record<string, string> = {
+    sports:
+      "No forecast is published for sports. The record-based prior is off by default until a historical evaluation shows it beats the market's own price, and everything that is not a head-to-head game — finishing positions, futures, player props — has no keyless model at all. The cost figures below need no forecast and are the whole offer here.",
+    politics:
+      "No forecast is published for politics. There is no keyless, live polling aggregate to build one on: FiveThirtyEight was wound down and its data URLs now answer with an HTML error page. Guessing would still be weighted and would still generate edge, so the category stays silent and the cost figures below stand alone.",
+  };
+  const note = category ? notes[category] : undefined;
+  if (!note) return null;
+  return (
+    <p className="panel mt-4 p-4 t-body max-w-3xl">
+      <span className="t-label">No forecast in this category</span>
+      <span className="mt-2 block">{note}</span>
+    </p>
   );
 }
 

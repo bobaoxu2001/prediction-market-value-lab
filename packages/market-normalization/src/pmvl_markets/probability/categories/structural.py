@@ -79,12 +79,36 @@ class PoliticsModel(_UnsourcedCategoryModel):
     """Elections and political events.
 
     A real model needs polling aggregates with house effects and a fundamentals
-    prior. No keyless, licensed, machine-readable aggregate exists.
+    prior. No keyless, live, machine-readable aggregate exists - checked rather
+    than assumed, on 9 August 2026:
+
+    * ``projects.fivethirtyeight.com/polls/data/*.csv`` answers **200 with an ABC
+      News HTML page**. The site was wound down and the data URLs now resolve to
+      the parent network's error document, which is worse than a 404: a fetch
+      succeeds, and only parsing catches it.
+    * The ``fivethirtyeight/data`` GitHub repo still exists but no longer carries
+      the ``polls/`` directory; both the raw and jsDelivr paths 404.
+    * RealClearPolitics' JSON endpoint answers 403 to anything but a browser.
+
+    So the category stays silent. The alternative is a "polling average" built by
+    scraping, whose freshness and house-effect handling nobody could audit, feeding
+    an estimate that would still be weighted and would still generate edge.
+
+    **The one politics series that is modellable without polls** is midterm
+    turnout - ``KXMIDTERMVOTETURN``, 212 contracts and the largest politics series
+    on the live board. They are quantitative buckets over a district's total vote
+    count, structurally the same shape as the CPI board, and district turnout is
+    strongly autocorrelated across cycles. That needs historical district returns
+    (MIT Election Data and Science Lab, via Harvard Dataverse) rather than a poll,
+    and is a separate piece of work.
     """
 
     name = "politics_unsourced"
     categories = (Category.POLITICS, Category.GEOPOLITICS)
-    required_source = "a licensed polling aggregate with house-effect adjustments"
+    required_source = (
+        "a licensed polling aggregate with house-effect adjustments; no keyless "
+        "live aggregate exists since FiveThirtyEight was wound down"
+    )
 
 
 class GenericEventModel(_UnsourcedCategoryModel):
