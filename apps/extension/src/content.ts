@@ -23,7 +23,13 @@
 
 import { type CostAtSize, DEFAULT_ASSUMPTIONS, costAtSize, costLadder } from "./cost";
 import { dec, toNumber } from "./decimal";
-import { contractsForDollars, readOrderInput, watchOrderForm } from "./order-form";
+import {
+  contractsForDollars,
+  orderPanelText,
+  readOrderInput,
+  readSelectedSide,
+  watchOrderForm,
+} from "./order-form";
 import { messageHtml, panelHtml } from "./panel";
 import {
   type Contract,
@@ -65,34 +71,16 @@ function removePanel(): void {
 /* --------------------------------------------------------------------- run -- */
 
 /**
- * Which side the page is showing.
+ * Which side the order ticket is set to.
  *
- * Read from the URL only. A DOM guess at the selected YES/NO toggle would be
- * wrong on a redesign and wrong silently, and the side is named in the panel
- * header either way, so a reader can always see which contract was priced.
+ * The toggle's own `aria-pressed` state first, then a URL parameter, then YES.
+ * An earlier version read the URL alone, which was simply wrong: Kalshi keeps
+ * the side in the DOM and never in the address, so a trader on NO was shown YES
+ * numbers on every page. The side is also named in the panel header, so a
+ * misread is visible rather than silent.
  */
 function detectSide(url: string): Side {
-  return /[?&](side|outcome)=no\b/i.test(url) ? "no" : "yes";
-}
-
-/**
- * Text of the block containing the order form.
- *
- * Used to tell an event's two markets apart: Kalshi's URL names the *event*
- * (`kxmlbgame-26aug101907bostor`), which expands to both sides of the game, and
- * the order panel prints the outcome it is set to ("Boston"). Scoped to the
- * form's own container rather than the whole page, because both outcomes are
- * named elsewhere on the page and matching against all of it would be ambiguous
- * every time.
- */
-function orderPanelText(): string {
-  const input = Array.from(document.querySelectorAll("input")).find((node) => {
-    const rect = node.getBoundingClientRect();
-    return rect.width > 0 && rect.height > 0 && /^\$?0?$/.test(node.placeholder);
-  });
-  let node: HTMLElement | null = input?.parentElement ?? null;
-  for (let hop = 0; hop < 6 && node?.parentElement; hop += 1) node = node.parentElement;
-  return (node?.innerText ?? "").slice(0, 600);
+  return readSelectedSide() ?? (/[?&](side|outcome)=no\b/i.test(url) ? "no" : "yes");
 }
 
 /** The book and the contract behind whatever is currently on screen. */
@@ -210,9 +198,32 @@ function watchNavigation(): void {
   observer.observe(document.body, { childList: true, subtree: true });
 }
 
+/**
+ * Switching YES/NO changes which contract is being bought, so it needs a new
+ * book rather than a redraw.
+ *
+ * The toggle is a button, not an input, so the order-form watcher never sees it
+ * and the panel would have kept showing the other side's costs until the next
+ * twenty-second refresh. Compared against the side actually loaded rather than
+ * fired on every click, so clicking around the ticket costs nothing.
+ */
+function watchSideToggle(): void {
+  document.addEventListener(
+    "click",
+    () => {
+      // After the venue's own handler has run and updated the toggle.
+      window.setTimeout(() => {
+        if (loaded && detectSide(location.href) !== loaded.side) void reload();
+      }, 120);
+    },
+    { capture: true, passive: true },
+  );
+}
+
 if (document.body) {
   void reload();
   refreshTimer = window.setInterval(reload, REFRESH_MS);
+  watchSideToggle();
   watchNavigation();
   // Typing a new size redraws from the book already in hand. Deliberately not a
   // refetch: a trader adjusting a size field would otherwise fire a request per

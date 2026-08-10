@@ -12,7 +12,11 @@
 
 import { beforeEach, describe, expect, it } from "vitest";
 
-import { contractsForDollars, readOrderInput } from "../src/order-form";
+import {
+  contractsForDollars,
+  readOrderInput,
+  readSelectedSide,
+} from "../src/order-form";
 
 /** jsdom gives every element a zero box; the reader requires a visible field. */
 function makeVisible(root: ParentNode): void {
@@ -180,5 +184,47 @@ describe("dollars into contracts", () => {
   it("refuses a zero or negative price rather than dividing by it", () => {
     expect(contractsForDollars(50, 0)).toBeNull();
     expect(contractsForDollars(0, 0.61)).toBeNull();
+  });
+});
+
+/* --------------------------------------------------------------- the side -- */
+
+/**
+ * The order panel's YES/NO toggle, as Kalshi actually publishes it.
+ *
+ * `aria-pressed` was read off the live page: the selected button carries
+ * `"true"` and swaps on click. Nothing else on the element says which is on —
+ * both are transparent-backgrounded and share a class string.
+ */
+const SIDE_PANEL = (yesPressed: boolean) => `
+  <div>
+    <div>BUY SELL DOLLARS</div>
+    <button aria-pressed="${yesPressed}">YES 62¢</button>
+    <button aria-pressed="${!yesPressed}">NO 39¢</button>
+    <div><span>Dollars</span><input placeholder="0" value="50"></div>
+  </div>`;
+
+describe("which side the ticket is set to", () => {
+  it("reads YES and NO off the toggle's pressed state", () => {
+    expect(readSelectedSide(page(SIDE_PANEL(true)) as Document)).toBe("yes");
+    expect(readSelectedSide(page(SIDE_PANEL(false)) as Document)).toBe("no");
+  });
+
+  it("ignores the market list's own Yes/No buttons below the ticket", () => {
+    // A baseball page carries ten of these, none of which say anything about
+    // what the trader is about to buy.
+    const withList = `${SIDE_PANEL(true)}
+      <div><button aria-pressed="true">Yes 49¢</button><button aria-pressed="false">No 52¢</button></div>`;
+    expect(readSelectedSide(page(withList) as Document)).toBe("yes");
+  });
+
+  it("returns null when nothing is marked selected", () => {
+    const none = `<div>Dollars<button>YES 62¢</button><button>NO 39¢</button><input placeholder="0" value="5"></div>`;
+    expect(readSelectedSide(page(none) as Document)).toBeNull();
+  });
+
+  it("returns null when both claim to be selected", () => {
+    const both = `<div>Dollars<button aria-pressed="true">YES</button><button aria-pressed="true">NO</button><input placeholder="0" value="5"></div>`;
+    expect(readSelectedSide(page(both) as Document)).toBeNull();
   });
 });

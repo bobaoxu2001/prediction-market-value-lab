@@ -97,11 +97,19 @@ adapters against payloads captured live from both venues; the panel's rendering
 in light and dark schemes.
 
 **Verified on the live venues**, by loading both sites and running the shipped
-logic in the page (10 August 2026). On the real Kalshi order ticket for
-`KXMLBGAME-26AUG101907BOSTOR-BOS`, quoted 62¢: discovery picked the Boston side,
-`$50` in the amount field was read as **dollars** and converted to 80 contracts,
-and the panel rendered at 320×283 fully on screen without overlapping the order
-form, reading `1 → 64.0¢ (+3.2%)`, `10 → 63.7¢`, `80 [yours] → 63.6¢`.
+logic in the page (10 August 2026).
+
+*Kalshi*, on `KXMLBGAME-26AUG101907BOSTOR-BOS` quoted 62¢: discovery picked the
+Boston side, `$50` was read as **dollars** and converted to 80 contracts, and the
+panel rendered at 320×283 fully on screen without overlapping the order form,
+reading `1 → 64.0¢ (+3.2%)`, `10 → 63.7¢`, `80 [yours] → 63.6¢`. Clicking the
+NO toggle flipped `aria-pressed` and the detector followed it; NO prices from a
+different side of the same payload — top ask 39¢, `1 → 41.00¢` — where before
+the fix a NO trader was shown 64¢, the other contract entirely.
+
+*Polymarket*, on the localised `/zh/event/…` path: the slug parsed, Gamma
+returned both tokens, and the CLOB book gave 126 ask levels with a minimum order
+of 5 — `5 → 14.10¢ each`, `1000 → 4.15¢`, the bridge allowance amortised.
 
 That pass found three bugs that every unit test had been passing over, because
 the tests encoded the same wrong assumptions as the code:

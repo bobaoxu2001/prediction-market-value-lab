@@ -188,3 +188,89 @@ export function watchOrderForm(onChange: () => void, delayMs = 300): () => void 
     document.removeEventListener("change", handler, { capture: true });
   };
 }
+
+/* ------------------------------------------------------- the order panel -- */
+
+/** A YES/NO control that publishes whether it is the selected one. */
+const SIDE_TOGGLE_SELECTOR =
+  "[aria-pressed],[aria-selected],[aria-checked],[data-state]";
+
+function isSideToggle(node: Element): boolean {
+  return /^(yes|no)\b/i.test((node.textContent ?? "").trim());
+}
+
+/**
+ * The block of the page containing the order form.
+ *
+ * Found from the amount field outward rather than by any class name, because
+ * both venues ship generated class names that change between deploys.
+ *
+ * Climbing stops at the first ancestor that holds a side toggle as well as the
+ * amount field — the smallest node that is recognisably the whole ticket. A
+ * fixed number of hops was tried first and is wrong in both directions: six was
+ * right for Kalshi's deep tree and swallowed the entire document on a shallow
+ * one, which pulled in the market list below the ticket and its ten other
+ * Yes/No buttons.
+ *
+ * The cap remains as a stop, so a page with no toggle at all yields a bounded
+ * region rather than the body.
+ */
+export function orderPanelElement(root: Document = document): HTMLElement | null {
+  const field = Array.from(root.querySelectorAll("input")).find((node) => {
+    const rect = node.getBoundingClientRect();
+    return rect.width > 0 && rect.height > 0 && /^\$?0?$/.test(node.placeholder);
+  });
+  if (!field) return null;
+
+  let box: HTMLElement | null = field.parentElement;
+  let widest: HTMLElement | null = box;
+  for (let hop = 0; hop < 6 && box; hop += 1) {
+    if (Array.from(box.querySelectorAll(SIDE_TOGGLE_SELECTOR)).some(isSideToggle)) {
+      return box;
+    }
+    widest = box;
+    box = box.parentElement;
+  }
+  return widest;
+}
+
+/** Text of the order panel, used to tell an event's two markets apart. */
+export function orderPanelText(root: Document = document): string {
+  return (orderPanelElement(root)?.innerText ?? "").slice(0, 600);
+}
+
+/** Attributes a toggle uses to say it is the selected one. */
+const SELECTED_ATTRS = ["aria-pressed", "aria-selected", "aria-checked"];
+
+/**
+ * Which of YES / NO the order ticket is set to, read from the toggle's own
+ * accessibility state.
+ *
+ * Kalshi's order panel marks its side buttons with `aria-pressed`, verified
+ * live: YES reads `true` and NO reads `false`, and they swap on click. That is a
+ * real state the venue publishes rather than a colour this code guesses at, so
+ * it survives a restyle.
+ *
+ * Scoped to the order panel deliberately. The page below the ticket lists every
+ * market in the event with its own Yes/No buttons — ten of them on a baseball
+ * page — and none of those say anything about what the trader is about to buy.
+ *
+ * Returns null when the page does not say, and the caller keeps its default.
+ * Guessing the side wrong prices the opposite contract.
+ */
+export function readSelectedSide(root: Document = document): "yes" | "no" | null {
+  const box = orderPanelElement(root);
+  if (!box) return null;
+
+  const toggles = Array.from(box.querySelectorAll(SIDE_TOGGLE_SELECTOR)).filter(
+    isSideToggle,
+  );
+
+  const selected = toggles.filter(
+    (node) =>
+      SELECTED_ATTRS.some((attr) => node.getAttribute(attr) === "true") ||
+      node.getAttribute("data-state") === "active",
+  );
+  if (selected.length !== 1) return null;
+  return /^no\b/i.test((selected[0].textContent ?? "").trim()) ? "no" : "yes";
+}
