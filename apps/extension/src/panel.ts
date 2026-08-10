@@ -78,6 +78,15 @@ export interface PanelInput {
   observedAt: number;
   /** The row for the size in the order form, when one could be read confidently. */
   yourRow: CostAtSize | null;
+  /**
+   * The dollar amount the contract count was derived from, when the order form
+   * was denominated in dollars rather than contracts.
+   *
+   * Shown so the reader can see where the count came from. Both venues default
+   * to dollars, so without this the panel would silently assert a contract count
+   * the trader never typed.
+   */
+  yourDollars?: number | null;
   now?: number;
 }
 
@@ -161,6 +170,12 @@ export function panelHtml(input: PanelInput): string {
   } else if (yours && cheapest) {
     const saving = savingNote(yours, cheapest);
     if (saving) warnings.push(saving);
+  }
+  if (yours && input.yourDollars) {
+    warnings.push(
+      `Your order form is in dollars: $${input.yourDollars} buys about
+       ${sizeLabel(yours.size)} contracts at the current top of book.`,
+    );
   }
   if (!yours && cheapest) {
     warnings.push(

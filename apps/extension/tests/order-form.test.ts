@@ -1,32 +1,27 @@
 /**
- * Reading the order size out of a form nobody here has seen.
+ * Reading the order form, with the two venues' real markup as the fixtures.
  *
- * Neither venue's DOM could be observed from the development environment, so
- * this reader is a set of guesses about someone else's markup. These tests pin
- * the shape of those guesses — and, more importantly, pin the cases where it must
- * refuse: a price field misread as a quantity puts a confident, fabricated number
- * next to a live order form, which is far worse than showing no row at all.
+ * The first version of these tests asserted a reader that looked for a contract
+ * count. Both venues were then loaded and neither has one — they are dollar
+ * fields — so the tests were passing against a design that would have misread
+ * every real order. The shapes below are copied from the live pages, observed on
+ * 10 August 2026, and the important cases are the refusals.
  */
 
 // @vitest-environment jsdom
 
 import { beforeEach, describe, expect, it } from "vitest";
 
-import { readOrderSize } from "../src/order-form";
+import { contractsForDollars, readOrderInput } from "../src/order-form";
 
-/**
- * jsdom gives every element a zero bounding box, and the reader requires a
- * visible field. Stubbing the measurement keeps the visibility rule under test
- * (see the hidden/disabled cases) without every fixture failing on layout.
- */
+/** jsdom gives every element a zero box; the reader requires a visible field. */
 function makeVisible(root: ParentNode): void {
   for (const input of Array.from(root.querySelectorAll("input"))) {
-    input.getBoundingClientRect = () =>
-      ({ width: 120, height: 32 }) as DOMRect;
+    input.getBoundingClientRect = () => ({ width: 120, height: 32 }) as DOMRect;
   }
 }
 
-function form(html: string): ParentNode {
+function page(html: string): ParentNode {
   document.body.innerHTML = html;
   makeVisible(document);
   return document;
@@ -36,109 +31,154 @@ beforeEach(() => {
   document.body.innerHTML = "";
 });
 
-describe("reads a size when it is unambiguous", () => {
-  it("takes the only numeric field on the page", () => {
-    expect(readOrderSize(form('<input type="number" value="37">'))).toBe(37);
+/* ------------------------------------------------------- the real venues -- */
+
+/**
+ * Kalshi's order ticket, reduced to what matters.
+ *
+ * The field itself says nothing — placeholder `0`, a generated React id, no
+ * name, no aria-label. Only the panel around it names the unit, and it says
+ * DOLLARS.
+ */
+const KALSHI_PANEL = `
+  <div>
+    <div>BUY SELL DOLLARS</div>
+    <div>Boston vs Toronto</div>
+    <div>Boston</div>
+    <div>YES 61¢ NO 40¢</div>
+    <div><span>Dollars</span><input type="text" id="_r_u_" placeholder="0" value="50"><span>$</span></div>
+    <div>Odds 62% chance</div>
+  </div>`;
+
+/** Polymarket's, where the placeholder itself carries the dollar sign. */
+const POLYMARKET_PANEL = `
+  <div>
+    <div>买入 卖出</div>
+    <div>是 4.2¢ 否 95.9¢</div>
+    <div>金额<input type="text" id="market-order-amount-input" placeholder="$0" value="25"></div>
+  </div>`;
+
+describe("the venues as they actually are", () => {
+  it("reads Kalshi's amount as dollars, not as a contract count", () => {
+    // The bug this replaced: 50 was taken as fifty contracts. It is fifty
+    // dollars, which on a 61c contract is 81 contracts — not a rounding error.
+    expect(readOrderInput(page(KALSHI_PANEL))).toEqual({ value: 50, unit: "dollars" });
   });
 
-  it("accepts a text field holding a whole number", () => {
-    expect(readOrderSize(form('<input type="text" name="qty" value="12">'))).toBe(12);
+  it("reads Polymarket's amount as dollars from the placeholder alone", () => {
+    expect(readOrderInput(page(POLYMARKET_PANEL))).toEqual({
+      value: 25,
+      unit: "dollars",
+    });
   });
 
-  it("tolerates thousands separators", () => {
-    expect(readOrderSize(form('<input name="quantity" value="1,500">'))).toBe(1500);
+  it("ignores the site search box sitting on the same page", () => {
+    // A number typed into search was previously a valid candidate, and with no
+    // other numeric field on the page it became the trader's "order size".
+    const withSearch = `<input type="text" name="search" placeholder="Trade on anything" value="100">${KALSHI_PANEL}`;
+    expect(readOrderInput(page(withSearch))).toEqual({ value: 50, unit: "dollars" });
   });
 });
 
-describe("refuses rather than guessing", () => {
-  it("ignores a field named like a price", () => {
-    // The killer case: a limit price of "37" is indistinguishable from a size of
-    // "37" by value, so the name is the only thing that separates them.
-    expect(readOrderSize(form('<input type="number" name="limitPrice" value="37">')))
-      .toBeNull();
+/* ------------------------------------------------------------- the units -- */
+
+describe("the unit must be established", () => {
+  it("reads a contract count when the form says contracts", () => {
+    expect(
+      readOrderInput(
+        page('<div><label for="q">Contracts</label><input id="q" value="37"></div>'),
+      ),
+    ).toEqual({ value: 37, unit: "contracts" });
   });
 
-  it("ignores price fields by placeholder, aria-label and test id", () => {
-    for (const attr of [
-      'placeholder="Limit price"',
-      'aria-label="Price per contract"',
-      'data-testid="order-price-input"',
-    ]) {
-      expect(readOrderSize(form(`<input type="number" ${attr} value="42">`))).toBeNull();
+  it("refuses a bare number with nothing naming its unit", () => {
+    // The whole point. A naked integer is more likely to be dollars than
+    // contracts on both venues, so guessing would be wrong more often than right.
+    expect(readOrderInput(page("<div><input value=\"50\"></div>"))).toBeNull();
+  });
+
+  it("treats an ambiguous panel as dollars, matching the venues' default", () => {
+    const both = `<div><span>Dollars</span><span>Contracts</span><input value="20"></div>`;
+    expect(readOrderInput(page(both))).toEqual({ value: 20, unit: "dollars" });
+  });
+});
+
+describe("fields that are not an order amount", () => {
+  it("ignores a limit price", () => {
+    expect(
+      readOrderInput(
+        page('<div>Dollars<input aria-label="Limit price" value="37"></div>'),
+      ),
+    ).toBeNull();
+  });
+
+  it("ignores odds and percentage fields", () => {
+    for (const label of ["Odds", "Percent"]) {
+      expect(
+        readOrderInput(page(`<div>Dollars<input aria-label="${label}" value="37"></div>`)),
+      ).toBeNull();
     }
   });
 
-  it("ignores a price field identified only by its label", () => {
-    expect(
-      readOrderSize(
-        form('<label for="p">Price (¢)</label><input id="p" type="number" value="42">'),
-      ),
-    ).toBeNull();
-  });
-
-  it("returns nothing when two plausible fields both survive", () => {
-    // Picking between them is exactly the coin flip this must not make.
-    expect(
-      readOrderSize(
-        form('<input type="number" value="10"><input type="number" value="99">'),
-      ),
-    ).toBeNull();
-  });
-
-  it("breaks a tie only when one field is positively named a quantity", () => {
-    expect(
-      readOrderSize(
-        form(
-          '<input type="number" value="10">' +
-            '<input type="number" name="contracts" value="99">',
-        ),
-      ),
-    ).toBe(99);
-  });
-
-  it("still refuses when two fields both look like quantities", () => {
-    expect(
-      readOrderSize(
-        form(
-          '<input type="number" name="qty" value="10">' +
-            '<input type="number" name="shareCount" value="99">',
-        ),
-      ),
-    ).toBeNull();
+  it("refuses when two amount fields both qualify", () => {
+    const two = `<div>Dollars<input value="10"></div><div>Dollars<input value="99"></div>`;
+    expect(readOrderInput(page(two))).toBeNull();
   });
 });
 
-describe("what is not a contract count", () => {
-  it("rejects fractional and negative values", () => {
-    expect(readOrderSize(form('<input type="number" value="1.5">'))).toBeNull();
-    expect(readOrderSize(form('<input type="number" value="-4">'))).toBeNull();
+describe("values that cannot be an order", () => {
+  it("rejects zero, negatives and implausible magnitudes", () => {
+    for (const value of ["0", "-4", "99999999"]) {
+      expect(
+        readOrderInput(page(`<div>Dollars<input value="${value}"></div>`)),
+      ).toBeNull();
+    }
   });
 
-  it("rejects zero and implausibly large counts", () => {
-    expect(readOrderSize(form('<input type="number" value="0">'))).toBeNull();
-    expect(readOrderSize(form('<input type="number" value="99999999">'))).toBeNull();
+  it("accepts a fractional dollar amount, which is a real thing to type", () => {
+    expect(readOrderInput(page('<div>Dollars<input value="12.50"></div>'))).toEqual({
+      value: 12.5,
+      unit: "dollars",
+    });
   });
 
-  it("rejects an empty or non-numeric field", () => {
-    expect(readOrderSize(form('<input type="number" value="">'))).toBeNull();
-    expect(readOrderSize(form('<input type="text" value="all in">'))).toBeNull();
+  it("rejects empty and non-numeric fields", () => {
+    expect(readOrderInput(page('<div>Dollars<input value=""></div>'))).toBeNull();
+    expect(readOrderInput(page('<div>Dollars<input value="all in"></div>'))).toBeNull();
   });
-});
 
-describe("fields the trader cannot be using", () => {
-  it("ignores hidden, disabled and read-only inputs", () => {
-    expect(readOrderSize(form('<input type="hidden" value="7">'))).toBeNull();
-    expect(readOrderSize(form('<input type="number" value="7" disabled>'))).toBeNull();
-    expect(readOrderSize(form('<input type="number" value="7" readonly>'))).toBeNull();
+  it("ignores hidden, disabled and read-only fields", () => {
+    expect(
+      readOrderInput(page('<div>Dollars<input type="hidden" value="7"></div>')),
+    ).toBeNull();
+    expect(
+      readOrderInput(page('<div>Dollars<input value="7" disabled></div>')),
+    ).toBeNull();
+    expect(
+      readOrderInput(page('<div>Dollars<input value="7" readonly></div>')),
+    ).toBeNull();
   });
 
   it("ignores a field with no box on screen", () => {
-    document.body.innerHTML = '<input type="number" value="7">';
-    // Left at jsdom's zero-size default rather than made visible.
-    expect(readOrderSize(document)).toBeNull();
+    document.body.innerHTML = '<div>Dollars<input value="7"></div>';
+    expect(readOrderInput(document)).toBeNull();
+  });
+});
+
+/* --------------------------------------------------------- the conversion -- */
+
+describe("dollars into contracts", () => {
+  it("floors, because a rounded-up count costs more than was typed", () => {
+    // $50 at 61c is 81.9 contracts; 82 would exceed the amount.
+    expect(contractsForDollars(50, 0.61)).toBe(81);
   });
 
-  it("returns nothing on a page with no inputs at all", () => {
-    expect(readOrderSize(form("<div>no form here</div>"))).toBeNull();
+  it("returns nothing when the amount cannot buy even one contract", () => {
+    expect(contractsForDollars(0.5, 0.61)).toBeNull();
+  });
+
+  it("refuses a zero or negative price rather than dividing by it", () => {
+    expect(contractsForDollars(50, 0)).toBeNull();
+    expect(contractsForDollars(0, 0.61)).toBeNull();
   });
 });

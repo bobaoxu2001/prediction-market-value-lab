@@ -1,5 +1,5 @@
 /**
- * Reading the size the trader has actually typed, out of the venue's order form.
+ * Reading what the trader has typed into the venue's order form.
  *
  * This is the difference between the extension and the website. A fixed ladder
  * teaches a general lesson once — that small orders pay more — and a reader who
@@ -7,44 +7,64 @@
  * different thing: it is arithmetic on a number that changes every time, which is
  * why the value does not wear off.
  *
- * ## Why it is written so defensively
+ * ## The unit is the whole problem
  *
- * Neither venue's DOM could be observed from the development environment
- * (kalshi.com answers 429 to automated access), so every assumption here is a
- * guess about someone else's markup. A wrong guess that reads the *limit price*
- * field and prices "37 contracts" would be a confident, wrong number beside a
- * live order form.
+ * The first version of this file looked for a contract count. Both venues were
+ * then loaded and neither has one. On 10 August 2026:
  *
- * So the reader is conservative in four ways, and returns null rather than
- * stretching any of them:
+ * - **Kalshi** offers a `DOLLARS` / contracts switch and defaults to dollars. Its
+ *   amount field has placeholder `0`, a generated React id, no name and no
+ *   aria-label. Nothing about the element says what its number means.
+ * - **Polymarket** is dollars only, with placeholder `$0` and id
+ *   `market-order-amount-input`.
  *
- * - only `<input>` elements, only numeric ones;
- * - only whole numbers in a plausible contract range;
- * - never a field that looks like a price, a limit or a dollar amount, by name,
- *   placeholder, label or adjacent text;
- * - and when several candidates survive, none of them, because picking between
- *   two plausible fields is exactly the guess this must not make.
+ * So a bare integer in an order form is *more likely to be dollars than
+ * contracts*, and the old reader would have taken Kalshi's `50` — fifty dollars —
+ * and priced fifty contracts. On a 5¢ contract that is a tenfold error, printed
+ * confidently beside a live order ticket. It only avoided doing so on Polymarket
+ * by luck, because `$` happened to appear in the placeholder.
+ *
+ * The reader therefore returns a **value and a unit**, and returns nothing at all
+ * when the unit cannot be established from the text around the field. Refusing is
+ * cheap — the panel falls back to the ladder — and guessing is not.
  */
 
-/** Contract counts outside this range are almost certainly not contract counts. */
+/** What the number in the order form means. */
+export type OrderUnit = "contracts" | "dollars";
+
+export interface OrderInput {
+  value: number;
+  unit: OrderUnit;
+}
+
+/** Values outside this range are almost certainly not an order. */
 const MIN_PLAUSIBLE = 1;
 const MAX_PLAUSIBLE = 1_000_000;
 
-/**
- * Words that mark a field as something other than a quantity.
- *
- * A price field holding "37" is indistinguishable from a size field holding "37"
- * by value alone, so the name is the only signal available. Erring toward
- * rejection: a missed size field shows the ladder, a mistaken price field shows
- * a fabricated row.
- */
-const NOT_A_SIZE = /price|limit|cost|usd|dollar|\$|cents?|odds|percent|%|avg|average/i;
+/** How far up the tree to look for text that names the unit. */
+const CONTEXT_HOPS = 5;
 
-/** Words that positively mark a field as a quantity. */
-const LOOKS_LIKE_SIZE = /qty|quantity|amount|contracts?|shares?|size|count/i;
+/*
+ * Anchored on a leading word boundary only, deliberately.
+ *
+ * Adjacent inline elements concatenate when read as text — a panel rendering
+ * `<span>Dollars</span><span>Contracts</span>` yields `DollarsContracts` — and a
+ * trailing `\b` then fails to match either word. Requiring the boundary at the
+ * start alone survives that without matching arbitrary substrings.
+ */
+const SAYS_DOLLARS = /\bdollar|\busd\b|\$/i;
+const SAYS_CONTRACTS = /\bcontract|\bshares?\b|\bqty\b|\bquantity\b/i;
+
+/**
+ * Text that marks a field as something other than an order amount entirely.
+ *
+ * A limit price and an order amount are both bare integers, and only the
+ * surrounding words separate them.
+ */
+const NOT_AN_AMOUNT = /limit price|\bodds\b|percent|%|\bavg\b|average|\bsearch\b/i;
 
 function describe(input: HTMLInputElement): string {
-  const label =
+  const labels =
     input.labels && input.labels.length > 0
       ? Array.from(input.labels)
           .map((l) => l.textContent ?? "")
@@ -56,10 +76,22 @@ function describe(input: HTMLInputElement): string {
     input.placeholder,
     input.getAttribute("aria-label") ?? "",
     input.getAttribute("data-testid") ?? "",
-    label,
-  ]
-    .join(" ")
-    .trim();
+    labels,
+  ].join(" ");
+}
+
+/** The text of the field's nearest few ancestors, where the unit label lives. */
+function context(input: HTMLInputElement): string {
+  let node: HTMLElement | null = input.parentElement;
+  let text = "";
+  for (let hop = 0; hop < CONTEXT_HOPS && node; hop += 1) {
+    text = (node.innerText ?? node.textContent ?? "").replace(/\s+/g, " ");
+    // Stop as soon as an ancestor says something about units; going further
+    // eventually swallows the whole page and matches everything.
+    if (SAYS_DOLLARS.test(text) || SAYS_CONTRACTS.test(text)) break;
+    node = node.parentElement;
+  }
+  return text;
 }
 
 function isVisible(input: HTMLInputElement): boolean {
@@ -68,33 +100,76 @@ function isVisible(input: HTMLInputElement): boolean {
   return rect.width > 0 && rect.height > 0;
 }
 
+function numericValue(input: HTMLInputElement): number | null {
+  const raw = input.value.trim().replace(/[,$\s]/g, "");
+  if (raw === "" || !/^\d+(?:\.\d+)?$/.test(raw)) return null;
+  const value = Number(raw);
+  if (!Number.isFinite(value) || value < MIN_PLAUSIBLE || value > MAX_PLAUSIBLE) {
+    return null;
+  }
+  return value;
+}
+
 /**
- * The order size on the page, or null when it cannot be told apart from
- * something else.
+ * Establishes the unit, or gives up.
+ *
+ * Dollars is checked first and wins ties. Kalshi's panel prints both "Dollars"
+ * and the contract's own name nearby, and its default is dollars — so on an
+ * ambiguous panel, reading the number as dollars is the reading that matches
+ * what the venue is actually doing.
  */
-export function readOrderSize(root: ParentNode = document): number | null {
-  const inputs = Array.from(root.querySelectorAll("input")).filter((input) => {
-    if (!isVisible(input)) return false;
-    if (input.type !== "number" && input.type !== "text" && input.type !== "tel") {
-      return false;
-    }
-    const raw = input.value.trim().replace(/,/g, "");
-    if (raw === "" || !/^\d+$/.test(raw)) return false;
-    const value = Number(raw);
-    if (!Number.isInteger(value) || value < MIN_PLAUSIBLE || value > MAX_PLAUSIBLE) {
-      return false;
-    }
-    return !NOT_A_SIZE.test(describe(input));
-  });
+function unitOf(input: HTMLInputElement): OrderUnit | null {
+  const own = describe(input);
+  if (SAYS_DOLLARS.test(own)) return "dollars";
+  if (SAYS_CONTRACTS.test(own)) return "contracts";
 
-  if (inputs.length === 0) return null;
-  if (inputs.length === 1) return Number(inputs[0].value.trim().replace(/,/g, ""));
-
-  // Several numeric fields. Only a positively-named one breaks the tie; anything
-  // else is a coin flip between the trader's size and some other integer.
-  const named = inputs.filter((input) => LOOKS_LIKE_SIZE.test(describe(input)));
-  if (named.length === 1) return Number(named[0].value.trim().replace(/,/g, ""));
+  const around = context(input);
+  if (SAYS_DOLLARS.test(around)) return "dollars";
+  if (SAYS_CONTRACTS.test(around)) return "contracts";
   return null;
+}
+
+/**
+ * The order amount on the page and what it is denominated in, or null.
+ *
+ * Null whenever the page is ambiguous: no candidate, several candidates, or a
+ * candidate whose unit cannot be read. The panel then shows its ladder, which is
+ * always correct if less specific.
+ */
+export function readOrderInput(root: ParentNode = document): OrderInput | null {
+  const candidates: OrderInput[] = [];
+
+  for (const input of Array.from(root.querySelectorAll("input"))) {
+    if (!isVisible(input)) continue;
+    if (input.type !== "number" && input.type !== "text" && input.type !== "tel") {
+      continue;
+    }
+    if (NOT_AN_AMOUNT.test(describe(input))) continue;
+
+    const value = numericValue(input);
+    if (value === null) continue;
+
+    const unit = unitOf(input);
+    if (unit === null) continue;
+
+    candidates.push({ value, unit });
+  }
+
+  return candidates.length === 1 ? candidates[0] : null;
+}
+
+/**
+ * Contracts a dollar amount buys, at a price.
+ *
+ * Whole contracts only: both venues fill in whole units at these sizes, and
+ * "you are buying 83.3 contracts" is not a thing a trader can act on. Floored
+ * rather than rounded, because rounding up describes an order that costs more
+ * than the amount typed.
+ */
+export function contractsForDollars(dollars: number, pricePerContract: number): number | null {
+  if (!(dollars > 0) || !(pricePerContract > 0)) return null;
+  const contracts = Math.floor(dollars / pricePerContract);
+  return contracts >= 1 ? contracts : null;
 }
 
 /** Calls back when any input on the page changes, debounced. */

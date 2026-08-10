@@ -19,6 +19,8 @@ import { dec, gt, lt, toNumber, toString, ZERO } from "../src/decimal";
 import {
   kalshiBook,
   kalshiCandidates,
+  kalshiEventTicker,
+  marketNamedInPanel,
   polymarketBook,
   polymarketSlug,
   resolveKalshi,
@@ -69,6 +71,57 @@ describe("finding the contract on the page", () => {
       (_, i) => `KXTEST-26AUG${String(i).padStart(2, "0")}AAA-YES`,
     ).join(" ");
     expect(kalshiCandidates("https://kalshi.com/", body).length).toBeLessThanOrEqual(8);
+  });
+
+  it("survives a locale segment in the Polymarket path", () => {
+    // The live site serves `/zh/event/...`. The old pattern required `event` to
+    // follow the hostname directly, so on any localised page the slug came back
+    // null and the overlay never rendered at all.
+    expect(
+      polymarketSlug("https://polymarket.com/zh/event/strait-of-hormuz/strait-of-hormuz"),
+    ).toBe("strait-of-hormuz");
+    expect(polymarketSlug("https://polymarket.com/pt-br/event/a/b")).toBe("b");
+  });
+
+  it("reads the event ticker out of a Kalshi path", () => {
+    // Kalshi puts no market ticker in the URL. The last segment is the *event*
+    // ticker, lower-cased, and it is the only identifier the address carries.
+    expect(
+      kalshiEventTicker(
+        "https://kalshi.com/markets/kxmlbgame/professional-baseball-game/kxmlbgame-26aug101907bostor",
+      ),
+    ).toBe("KXMLBGAME-26AUG101907BOSTOR");
+    expect(kalshiEventTicker("https://kalshi.com/markets")).toBeNull();
+  });
+
+  it("finds tickers in markup that never reach the rendered text", () => {
+    // On the live page `document.body.innerText` contains no ticker at all; they
+    // exist only in the HTML. Scanning the text found nothing and the overlay
+    // was absent on every Kalshi page.
+    const html = '<div data-ticker="KXMLBGAME-26AUG101907BOSTOR-BOS"></div>';
+    expect(kalshiCandidates("https://kalshi.com/markets/x", html)).toContain(
+      "KXMLBGAME-26AUG101907BOSTOR-BOS",
+    );
+  });
+
+  it("picks the selected outcome by how often the panel names it", () => {
+    // The real panel reads "Boston vs Toronto / Boston / YES 62c NO 39c": both
+    // outcomes appear, so a presence test matched both and refused every time.
+    // The selected one is named once more.
+    const markets = [
+      { ticker: "…-BOS", yes_sub_title: "Boston" },
+      { ticker: "…-TOR", yes_sub_title: "Toronto" },
+    ];
+    const panel = "BUY SELL DOLLARS Boston vs Toronto Boston YES 62¢ NO 39¢";
+    expect(marketNamedInPanel(markets, panel)?.ticker).toBe("…-BOS");
+  });
+
+  it("refuses when both outcomes are named equally often", () => {
+    const markets = [
+      { ticker: "…-BOS", yes_sub_title: "Boston" },
+      { ticker: "…-TOR", yes_sub_title: "Toronto" },
+    ];
+    expect(marketNamedInPanel(markets, "Boston vs Toronto")).toBeNull();
   });
 
   it("takes the market slug from a Polymarket event URL", () => {

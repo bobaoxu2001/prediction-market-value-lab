@@ -94,23 +94,28 @@ venue.
 
 **Verified here:** the cost maths against the Python, case for case; the venue
 adapters against payloads captured live from both venues; the panel's rendering
-and legibility in light and dark schemes.
+in light and dark schemes.
 
-**Not verified here:** anything that touches the venues' own markup. kalshi.com
-rate-limits automated access (HTTP 429 from this environment), so the content
-script has never run on a real venue page. Two things follow from that:
+**Verified on the live venues**, by loading both sites and running the shipped
+logic in the page (10 August 2026). On the real Kalshi order ticket for
+`KXMLBGAME-26AUG101907BOSTOR-BOS`, quoted 62¢: discovery picked the Boston side,
+`$50` in the amount field was read as **dollars** and converted to 80 contracts,
+and the panel rendered at 320×283 fully on screen without overlapping the order
+form, reading `1 → 64.0¢ (+3.2%)`, `10 → 63.7¢`, `80 [yours] → 63.6¢`.
 
-- *Contract discovery* is written to fail closed — a ticker that does not resolve
-  against the venue's own API renders nothing at all.
-- *Reading the order size* (`src/order-form.ts`) is a set of guesses about
-  someone else's DOM. It refuses on any ambiguity: a field named like a price is
-  rejected, two plausible fields produce no answer, and only whole numbers in a
-  plausible contract range are accepted. A missed size field falls back to the
-  ladder; a misread *price* field would put a fabricated row next to a live order
-  form, so the rules are tuned to miss rather than to guess.
+That pass found three bugs that every unit test had been passing over, because
+the tests encoded the same wrong assumptions as the code:
 
-Whether the panel appears, where it sits relative to the order ticket, and
-whether the size field is found at all, all need a human with the unpacked
-extension loaded.
+1. **Polymarket served `/zh/event/...`** and the slug pattern required `event`
+   directly after the hostname — so on any localised page the overlay was absent.
+2. **Kalshi puts no ticker in the URL and none in the rendered text.** Discovery
+   scanned `innerText` and found nothing, on every page.
+3. **Both order forms are denominated in dollars, not contracts.** The reader
+   looked for a contract count and would have priced Kalshi's `50` as fifty
+   contracts when it means fifty dollars — 80 contracts at 62¢, a 60% error
+   printed beside a live order ticket.
 
-That is the first thing to check before this goes anywhere near a user.
+**Still not verified:** the packaged extension itself. The logic above ran via
+the page console, not through `manifest.json`, a content script and the
+background service worker. Loading it unpacked is what exercises the message
+channel, the host permissions and the injection timing.

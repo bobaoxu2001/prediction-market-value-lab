@@ -22,8 +22,8 @@
  */
 
 import { type CostAtSize, DEFAULT_ASSUMPTIONS, costAtSize, costLadder } from "./cost";
-import { dec } from "./decimal";
-import { readOrderSize, watchOrderForm } from "./order-form";
+import { dec, toNumber } from "./decimal";
+import { contractsForDollars, readOrderInput, watchOrderForm } from "./order-form";
 import { messageHtml, panelHtml } from "./panel";
 import {
   type Contract,
@@ -75,6 +75,26 @@ function detectSide(url: string): Side {
   return /[?&](side|outcome)=no\b/i.test(url) ? "no" : "yes";
 }
 
+/**
+ * Text of the block containing the order form.
+ *
+ * Used to tell an event's two markets apart: Kalshi's URL names the *event*
+ * (`kxmlbgame-26aug101907bostor`), which expands to both sides of the game, and
+ * the order panel prints the outcome it is set to ("Boston"). Scoped to the
+ * form's own container rather than the whole page, because both outcomes are
+ * named elsewhere on the page and matching against all of it would be ambiguous
+ * every time.
+ */
+function orderPanelText(): string {
+  const input = Array.from(document.querySelectorAll("input")).find((node) => {
+    const rect = node.getBoundingClientRect();
+    return rect.width > 0 && rect.height > 0 && /^\$?0?$/.test(node.placeholder);
+  });
+  let node: HTMLElement | null = input?.parentElement ?? null;
+  for (let hop = 0; hop < 6 && node?.parentElement; hop += 1) node = node.parentElement;
+  return (node?.innerText ?? "").slice(0, 600);
+}
+
 /** The book and the contract behind whatever is currently on screen. */
 interface Loaded {
   contract: Contract;
@@ -91,11 +111,27 @@ function draw(): void {
   const { contract, book, side, ladder } = loaded;
   const terms = termsFromBook(contract, book);
 
-  // The size the trader has typed, priced exactly rather than interpolated from
-  // the ladder. Null when the order form could not be read confidently.
-  const typed = readOrderSize();
+  // What the trader has typed, and in what unit. Both venues default to dollars,
+  // so a bare integer is converted rather than taken as a contract count.
+  const typed = readOrderInput();
+  let contracts: number | null = null;
+  let fromDollars: number | null = null;
+
+  if (typed?.unit === "contracts") {
+    contracts = typed.value;
+  } else if (typed?.unit === "dollars") {
+    // Converted at the top-of-book price, which is the figure the venue itself
+    // uses to show what an amount buys. The resulting cost row is then priced
+    // properly by walking the ladder, so only the *count* is an approximation.
+    const top = ladder[0]?.nominalPrice;
+    contracts = top ? contractsForDollars(typed.value, toNumber(top)) : null;
+    fromDollars = contracts === null ? null : typed.value;
+  }
+
   const yourRow =
-    typed === null ? null : costAtSize(book.levels, dec(String(typed)), terms, DEFAULT_ASSUMPTIONS);
+    contracts === null
+      ? null
+      : costAtSize(book.levels, dec(String(contracts)), terms, DEFAULT_ASSUMPTIONS);
 
   panel().innerHTML = panelHtml({
     venue: contract.venue,
@@ -103,6 +139,7 @@ function draw(): void {
     ladder,
     observedAt: book.observedAt,
     yourRow,
+    yourDollars: fromDollars,
   });
 }
 
@@ -112,7 +149,15 @@ async function reload(): Promise<void> {
 
   let contract: Contract | null = null;
   try {
-    contract = await identify(url, document.body?.innerText ?? "", fetchJson);
+    contract = await identify(
+      url,
+      // The page's markup, not its rendered text: on Kalshi the ticker appears
+      // only in the HTML, so scanning innerText found nothing and the overlay
+      // never appeared at all.
+      document.documentElement?.innerHTML ?? "",
+      fetchJson,
+      orderPanelText(),
+    );
   } catch {
     contract = null;
   }

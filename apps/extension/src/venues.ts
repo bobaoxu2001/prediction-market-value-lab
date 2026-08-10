@@ -9,15 +9,28 @@
  *
  * ## Identification fails closed
  *
- * Kalshi's own site rate-limits automated access, so the DOM and URL shapes could
- * not be verified from the development environment. Rather than guess and hope,
- * discovery produces *candidates* and every candidate is checked against the
+ * Discovery produces *candidates* and every candidate is checked against the
  * public API before anything is rendered. A ticker that does not resolve to a real
- * market produces no overlay at all.
+ * market produces no overlay at all. A wrong guess that silently rendered would
+ * put a confident, wrong cost next to somebody's order ticket, which is worse
+ * than the extension appearing not to work.
  *
- * That ordering matters. A wrong guess that silently rendered would put a
- * confident, wrong cost next to somebody's order ticket, which is worse than the
- * extension appearing not to work.
+ * ## What the real pages turned out to look like
+ *
+ * The first version of this file was written without being able to load either
+ * venue, and every assumption in it about their URLs and markup was wrong. Both
+ * were then observed directly, on 10 August 2026:
+ *
+ * **Kalshi** puts no market ticker in the URL and none in the rendered text. The
+ * last path segment is the *event* ticker in lower case
+ * (`.../kxmlbgame-26aug101907bostor`), and the market tickers appear only inside
+ * the HTML. Scanning `innerText` therefore found nothing at all and the overlay
+ * never appeared. The event ticker is now taken from the path and expanded via
+ * `/markets?event_ticker=`, which returns both sides of the contract.
+ *
+ * **Polymarket** serves localised paths — `polymarket.com/zh/event/<slug>/<slug>`
+ * — and the old pattern required `event` to follow the hostname directly, so on
+ * any non-English locale the slug came back null and, again, nothing rendered.
  */
 
 import { type BookLevel, type ContractTerms, type Venue } from "./cost";
@@ -36,6 +49,20 @@ export const POLYMARKET_CLOB = "https://clob.polymarket.com";
  * candidates that each cost an API call to reject.
  */
 const KALSHI_TICKER = /\bKX[A-Z0-9]+-[A-Z0-9]+-[A-Z0-9.]+\b/g;
+
+/**
+ * The event ticker Kalshi puts in the last path segment, upper-cased.
+ *
+ * `/markets/kxmlbgame/professional-baseball-game/kxmlbgame-26aug101907bostor`
+ * carries two hyphen-separated parts rather than a market ticker's three, and it
+ * is the only machine-readable identifier the page's URL contains.
+ */
+const KALSHI_EVENT_IN_PATH = /\/(kx[a-z0-9]+-[a-z0-9]+)(?:[/?#]|$)/i;
+
+export function kalshiEventTicker(url: string): string | null {
+  const match = KALSHI_EVENT_IN_PATH.exec(url);
+  return match ? match[1].toUpperCase() : null;
+}
 
 /** Which side of the contract is being bought. */
 export type Side = "yes" | "no";
@@ -78,21 +105,21 @@ export interface LiveBook {
  * being looked at, whereas the body may also mention related contracts in a
  * sidebar, and showing costs for the wrong one is the failure to avoid.
  */
-export function kalshiCandidates(url: string, bodyText: string): string[] {
+export function kalshiCandidates(url: string, pageSource: string): string[] {
   const seen = new Set<string>();
-  const push = (raw: string) => {
-    const ticker = raw.toUpperCase();
-    if (!seen.has(ticker)) seen.add(ticker);
-  };
+  const push = (raw: string) => seen.add(raw.toUpperCase());
 
   for (const match of decodeURIComponent(url).matchAll(KALSHI_TICKER)) push(match[0]);
-  for (const match of bodyText.matchAll(KALSHI_TICKER)) push(match[0]);
+  // `pageSource` is the page's HTML, not its rendered text. On the live site the
+  // ticker appears only in the markup - reading `innerText` returned nothing and
+  // the overlay never appeared on any Kalshi page.
+  for (const match of pageSource.matchAll(KALSHI_TICKER)) push(match[0]);
   // Bounded: each candidate costs a request, and a page that yields dozens is a
   // page this extension has not understood.
   return [...seen].slice(0, 8);
 }
 
-interface KalshiMarket {
+export interface KalshiMarket {
   ticker: string;
   title?: string;
   yes_sub_title?: string;
@@ -114,6 +141,10 @@ export async function resolveKalshi(
   const market = (payload as { market?: KalshiMarket } | null)?.market;
   if (!market?.ticker) return null;
 
+  return contractFromKalshiMarket(market);
+}
+
+export function contractFromKalshiMarket(market: KalshiMarket): Contract {
   const multiplier =
     market.fee_multiplier === undefined || market.fee_multiplier === null
       ? dec("1")
@@ -174,9 +205,18 @@ export async function kalshiBook(
 
 /* ------------------------------------------------------------- polymarket -- */
 
-/** `polymarket.com/event/<event-slug>/<market-slug>` — the market slug is last. */
+/**
+ * `polymarket.com/event/<event-slug>/<market-slug>` — the market slug is last.
+ *
+ * The optional locale segment is load-bearing. The live site serves
+ * `polymarket.com/zh/event/...`, and a pattern anchored directly on the hostname
+ * matched nothing there, so the overlay was absent on every localised page.
+ */
 export function polymarketSlug(url: string): string | null {
-  const match = /polymarket\.com\/(?:event|market)\/([^/?#]+)(?:\/([^/?#]+))?/.exec(url);
+  const match =
+    /polymarket\.com\/(?:[a-z]{2}(?:-[a-z]{2})?\/)?(?:event|market)\/([^/?#]+)(?:\/([^/?#]+))?/i.exec(
+      url,
+    );
   if (!match) return null;
   return match[2] ?? match[1];
 }
@@ -276,17 +316,82 @@ export function yearsUntil(iso: string | undefined | null, now = Date.now()): De
   return dec(years.toFixed(6));
 }
 
+/**
+ * Every market on a Kalshi event, from the event ticker in the page's path.
+ *
+ * The path is the only identifier a Kalshi market page's URL carries, and it
+ * names the event rather than either side of it, so a game returns two markets.
+ */
+export async function kalshiEventMarkets(
+  eventTicker: string,
+  fetchJson: FetchJson,
+): Promise<KalshiMarket[]> {
+  const payload = await fetchJson(
+    `${KALSHI_API}/markets?event_ticker=${encodeURIComponent(eventTicker)}&limit=100`,
+  );
+  const markets = (payload as { markets?: KalshiMarket[] } | null)?.markets;
+  return Array.isArray(markets) ? markets.filter((m) => m?.ticker) : [];
+}
+
+/**
+ * Which of an event's markets the order ticket is actually on.
+ *
+ * Each market's `yes_sub_title` is the outcome's name — "Boston", "Toronto" —
+ * and the order panel prints the one it is set to. Matching on that is how the
+ * two sides of a game are told apart without hard-coding either venue's markup.
+ *
+ * Selected by **occurrence count**, not by presence. The panel carries the
+ * matchup title as well as the selection, so on the live page it reads
+ * "Boston vs Toronto / Boston / YES 62¢ NO 39¢": both outcomes are present, and
+ * a presence test matched both and refused every time. The selected one is named
+ * once more than the other.
+ *
+ * A tie returns null. Two outcomes named equally often is a panel that has not
+ * said which is selected, and picking would be a coin flip over which contract
+ * to price.
+ */
+export function marketNamedInPanel(
+  markets: KalshiMarket[],
+  panelText: string,
+): KalshiMarket | null {
+  const haystack = panelText.toLowerCase();
+  const scored = markets
+    .map((market) => {
+      const label = (market.yes_sub_title ?? "").trim().toLowerCase();
+      if (label.length < 2) return { market, mentions: 0 };
+      return { market, mentions: haystack.split(label).length - 1 };
+    })
+    .filter((row) => row.mentions > 0)
+    .sort((a, b) => b.mentions - a.mentions);
+
+  if (scored.length === 0) return null;
+  if (scored.length === 1) return scored[0].market;
+  return scored[0].mentions > scored[1].mentions ? scored[0].market : null;
+}
+
 /** Identify the contract on the page, or return null and render nothing. */
 export async function identify(
   url: string,
-  bodyText: string,
+  pageSource: string,
   fetchJson: FetchJson,
+  panelText = "",
 ): Promise<Contract | null> {
   if (/(^|\.)polymarket\.com/.test(new URL(url).hostname)) {
     const slug = polymarketSlug(url);
     return slug ? resolvePolymarket(slug, fetchJson) : null;
   }
-  for (const ticker of kalshiCandidates(url, bodyText)) {
+
+  // The event ticker in the path is the reliable identifier; the scan of the
+  // markup is the fallback for pages whose URL does not carry one.
+  const eventTicker = kalshiEventTicker(url);
+  if (eventTicker) {
+    const markets = await kalshiEventMarkets(eventTicker, fetchJson);
+    const chosen =
+      markets.length === 1 ? markets[0] : marketNamedInPanel(markets, panelText);
+    if (chosen) return contractFromKalshiMarket(chosen);
+  }
+
+  for (const ticker of kalshiCandidates(url, pageSource)) {
     const contract = await resolveKalshi(ticker, fetchJson);
     if (contract) return contract;
   }
