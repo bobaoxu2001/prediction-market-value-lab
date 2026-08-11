@@ -167,6 +167,47 @@ describe("finding the contract on the page", () => {
     expect(contract?.ids.yes).toBe("KXBTCD-26AUG1117-T64249.99");
   });
 
+  it("resolves a single-market event whose ticker has no three-part form", async () => {
+    // KXELONMARS-99 is one market whose ticker *is* the event ticker — one
+    // hyphen part, not three. The markup scan finds nothing on that page at all,
+    // so before the event lookup existed the overlay was simply absent there.
+    const market = { ticker: "KXELONMARS-99", yes_sub_title: "Mars" };
+    const fetchJson = async (url: string) => {
+      if (url.includes("event_ticker=")) return { markets: [market] };
+      throw new Error(`unexpected request: ${url}`);
+    };
+
+    const contract = await identify(
+      "https://kalshi.com/markets/kxelonmars/elon-mars/kxelonmars-99",
+      "<div>no three-part ticker anywhere in this markup</div>",
+      fetchJson,
+      "", // no outcome named; a single-market event needs none
+    );
+    expect(contract?.ids.yes).toBe("KXELONMARS-99");
+  });
+
+  it("finds no three-part ticker on that page, which is why the event lookup exists", () => {
+    expect(
+      kalshiCandidates(
+        "https://kalshi.com/markets/kxelonmars/elon-mars/kxelonmars-99",
+        "<div>KXELONMARS-99 appears here but is not a market-ticker shape</div>",
+      ),
+    ).toEqual([]);
+  });
+
+  it("renders nothing on a Polymarket event URL that names no market", async () => {
+    // A multi-market event is served at `/event/<event-slug>` with no market
+    // segment and no order ticket until one is picked. Gamma's `?slug=` filter
+    // is over market slugs, so an event slug returns [] — the correct silence.
+    const fetchJson = async () => [];
+    const contract = await identify(
+      "https://polymarket.com/zh/event/fed-decision-in-september-762",
+      "",
+      fetchJson,
+    );
+    expect(contract).toBeNull();
+  });
+
   it("takes the market slug from a Polymarket event URL", () => {
     expect(
       polymarketSlug("https://polymarket.com/event/some-event/the-market-slug?x=1"),

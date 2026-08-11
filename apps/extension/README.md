@@ -114,6 +114,19 @@ the first ticker in the HTML, a $64,000 strike nobody had selected, priced as
 confidently as if it were theirs. Knowing the event and not the outcome is
 exactly the state that must produce silence.
 
+*Kalshi, a single-market event* (`kxelonmars-99`): the market's ticker **is** the
+event ticker — one hyphen part, not the usual three — so the markup scan finds
+nothing on that page at all and the event lookup is the only thing that resolves
+it. Quoted 11.0¢, it prices `1 → 12.00¢`, `100 → 11.69¢` (cheapest), `1000 →
+13.16¢` as depth runs out.
+
+*Polymarket, a multi-market event* (`fed-decision-in-september-762`, five
+markets): served at `/event/<event-slug>` with no market segment and no order
+ticket until one is picked. Gamma's `?slug=` filter is over market slugs, so an
+event slug returns `[]` and the overlay stays silent — correct. Checked that
+this does not cost coverage elsewhere: across 100 sampled live events, all eight
+single-market ones have `event slug == market slug`, so those still resolve.
+
 *Polymarket*, on the localised `/zh/event/…` path: the slug parsed, Gamma
 returned both tokens, and the CLOB book gave 126 ask levels with a minimum order
 of 5 — `5 → 14.10¢ each`, `1000 → 4.15¢`, the bridge allowance amortised.
