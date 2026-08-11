@@ -17,6 +17,7 @@ import polymarketBookFixture from "../fixtures/polymarket-book.json";
 import { cheapestPlaceable, costLadder } from "../src/cost";
 import { dec, gt, lt, toNumber, toString, ZERO } from "../src/decimal";
 import {
+  identify,
   kalshiBook,
   kalshiCandidates,
   kalshiEventTicker,
@@ -122,6 +123,48 @@ describe("finding the contract on the page", () => {
       { ticker: "…-TOR", yes_sub_title: "Toronto" },
     ];
     expect(marketNamedInPanel(markets, "Boston vs Toronto")).toBeNull();
+  });
+
+  it("renders nothing when the event is known but the outcome is not", async () => {
+    // A Bitcoin threshold board carries 80 strikes in one event and shows no
+    // order ticket until a strike is picked, so the panel names nothing. The
+    // markup scan happily returned the first ticker in the HTML — a $64,000
+    // strike nobody had selected — and priced it as confidently as if it were
+    // the trader's. Knowing the event and not the outcome must render nothing.
+    const strikes = Array.from({ length: 5 }, (_, i) => ({
+      ticker: `KXBTCD-26AUG1117-T${63000 + i * 250}.99`,
+      yes_sub_title: `$${63000 + i * 250} or above`,
+    }));
+    const fetchJson = async (url: string) => {
+      if (url.includes("event_ticker=")) return { markets: strikes };
+      throw new Error(`should not have fallen back to a per-ticker lookup: ${url}`);
+    };
+
+    const contract = await identify(
+      "https://kalshi.com/markets/kxbtcd/bitcoin-price-abovebelow/kxbtcd-26aug1117",
+      strikes.map((s) => s.ticker).join(" "),
+      fetchJson,
+      "", // no order panel on screen yet
+    );
+    expect(contract).toBeNull();
+  });
+
+  it("still resolves when the panel does name the outcome", async () => {
+    const strikes = [
+      { ticker: "KXBTCD-26AUG1117-T63999.99", yes_sub_title: "$64,000 or above" },
+      { ticker: "KXBTCD-26AUG1117-T64249.99", yes_sub_title: "$64,250 or above" },
+    ];
+    const fetchJson = async (url: string) => {
+      if (url.includes("event_ticker=")) return { markets: strikes };
+      throw new Error("unexpected");
+    };
+    const contract = await identify(
+      "https://kalshi.com/markets/kxbtcd/x/kxbtcd-26aug1117",
+      "",
+      fetchJson,
+      "Buy $64,250 or above · YES 31¢ · $64,250 or above",
+    );
+    expect(contract?.ids.yes).toBe("KXBTCD-26AUG1117-T64249.99");
   });
 
   it("takes the market slug from a Polymarket event URL", () => {

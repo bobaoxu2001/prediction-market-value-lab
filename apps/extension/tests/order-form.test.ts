@@ -228,3 +228,17 @@ describe("which side the ticket is set to", () => {
     expect(readSelectedSide(page(both) as Document)).toBeNull();
   });
 });
+
+/* ------------------------------------------------------- a hidden document -- */
+
+describe("a backgrounded tab", () => {
+  it("finds no order panel, because layout is not computed", () => {
+    // Documented rather than worked around. A hidden tab reports zero-sized
+    // rects for everything, so the readers correctly find nothing — and the
+    // content script must therefore skip its refresh instead of concluding the
+    // page is unrecognised and removing the panel.
+    document.body.innerHTML = KALSHI_PANEL; // no makeVisible(): zero-sized rects
+    expect(readOrderInput(document)).toBeNull();
+    expect(readSelectedSide(document)).toBeNull();
+  });
+});

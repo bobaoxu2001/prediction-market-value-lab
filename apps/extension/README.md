@@ -107,6 +107,13 @@ NO toggle flipped `aria-pressed` and the detector followed it; NO prices from a
 different side of the same payload — top ask 39¢, `1 → 41.00¢` — where before
 the fix a NO trader was shown 64¢, the other contract entirely.
 
+*Kalshi, a multi-outcome board* (`kxbtcd-26aug1117`, 80 strikes in one event):
+the page shows no order ticket until a strike is picked, so nothing names the
+outcome — and the overlay now renders nothing. Before, the markup scan supplied
+the first ticker in the HTML, a $64,000 strike nobody had selected, priced as
+confidently as if it were theirs. Knowing the event and not the outcome is
+exactly the state that must produce silence.
+
 *Polymarket*, on the localised `/zh/event/…` path: the slug parsed, Gamma
 returned both tokens, and the CLOB book gave 126 ask levels with a minimum order
 of 5 — `5 → 14.10¢ each`, `1000 → 4.15¢`, the bridge allowance amortised.

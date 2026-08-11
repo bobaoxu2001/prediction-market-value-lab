@@ -132,6 +132,16 @@ function draw(): void {
 }
 
 async function reload(): Promise<void> {
+  // A hidden tab computes no layout: every `getBoundingClientRect` returns zero
+  // and `innerText` comes back empty, so the order panel cannot be found and the
+  // contract cannot be identified. Left alone, the refresh timer would then treat
+  // a backgrounded tab as "I do not know what this page is" and delete the panel,
+  // so switching away and back showed an empty corner until the next refresh.
+  //
+  // Nothing needs recomputing while nobody is looking. `visibilitychange` picks
+  // it up again.
+  if (document.hidden) return;
+
   const url = location.href;
   const side = detectSide(url);
 
@@ -220,10 +230,18 @@ function watchSideToggle(): void {
   );
 }
 
+/** Recompute as soon as the tab is looked at again. */
+function watchVisibility(): void {
+  document.addEventListener("visibilitychange", () => {
+    if (!document.hidden) void reload();
+  });
+}
+
 if (document.body) {
   void reload();
   refreshTimer = window.setInterval(reload, REFRESH_MS);
   watchSideToggle();
+  watchVisibility();
   watchNavigation();
   // Typing a new size redraws from the book already in hand. Deliberately not a
   // refetch: a trader adjusting a size field would otherwise fire a request per

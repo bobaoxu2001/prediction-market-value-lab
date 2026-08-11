@@ -382,13 +382,26 @@ export async function identify(
   }
 
   // The event ticker in the path is the reliable identifier; the scan of the
-  // markup is the fallback for pages whose URL does not carry one.
+  // markup is a fallback for pages whose URL does not carry one.
   const eventTicker = kalshiEventTicker(url);
   if (eventTicker) {
     const markets = await kalshiEventMarkets(eventTicker, fetchJson);
-    const chosen =
-      markets.length === 1 ? markets[0] : marketNamedInPanel(markets, panelText);
-    if (chosen) return contractFromKalshiMarket(chosen);
+    if (markets.length > 0) {
+      const chosen =
+        markets.length === 1 ? markets[0] : marketNamedInPanel(markets, panelText);
+      // Deliberately no fallback from here.
+      //
+      // Once the event is known, the markup scan is not a second opinion - it is
+      // a worse one. A Bitcoin threshold board carries 80 strikes in one event
+      // and shows no order ticket until the trader picks one, so the panel names
+      // nothing and the scan happily returned the first ticker in the HTML:
+      // `KXBTCD-26AUG1117-T63999.99`, a $64,000 strike nobody had selected,
+      // priced as confidently as if it were theirs.
+      //
+      // Knowing the event and not the outcome is precisely the state in which
+      // this must render nothing.
+      return chosen ? contractFromKalshiMarket(chosen) : null;
+    }
   }
 
   for (const ticker of kalshiCandidates(url, pageSource)) {
