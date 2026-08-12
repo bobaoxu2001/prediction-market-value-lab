@@ -143,7 +143,31 @@ the tests encoded the same wrong assumptions as the code:
    contracts when it means fifty dollars — 80 contracts at 62¢, a 60% error
    printed beside a live order ticket.
 
-**Still not verified:** the packaged extension itself. The logic above ran via
-the page console, not through `manifest.json`, a content script and the
-background service worker. Loading it unpacked is what exercises the message
-channel, the host permissions and the injection timing.
+### Loading the packaged extension
+
+Everything above tests the extension's *logic*. Loading the packaged artefact
+found a bug none of it could: `dist/content.js` was built as ESM and ended with
+`export { … }`. A MV3 content script is a classic script with no way to mark it
+as a module, so that line is a SyntaxError, the script never parsed, and the
+overlay never appeared in a real browser — while every unit test passed, because
+they import `src/` and never touch the bundle.
+
+`tests/package.test.ts` now asserts against the artefact Chrome loads: no
+top-level `import`/`export` in the content script, the worker built as the module
+the manifest declares, every referenced file present, and the worker's fetch
+allowlist in step with `host_permissions`. Those need no browser and run with the
+rest of the suite.
+
+`scripts/bundle.mjs` builds the two entry points in **different formats** for
+this reason — IIFE for the content script, ESM for the service worker.
+
+**Chrome stable no longer loads unpacked extensions from the command line.**
+Verified on Chrome 151: `--load-extension` is accepted and silently ignored —
+`chrome://extensions` lists nothing, no service worker starts, and nothing is
+written to stderr. `scripts/verify-loaded.mjs` drives a browser that does accept
+it (Chrome for Testing, `npx @puppeteer/browsers install chrome@stable`) and
+checks that the service worker starts and the panel renders with figures on a
+live venue page.
+
+So the remaining manual step is the ordinary one: `chrome://extensions` →
+Developer mode → **Load unpacked** → this directory.
