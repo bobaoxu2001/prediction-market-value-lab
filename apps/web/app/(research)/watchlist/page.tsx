@@ -1,10 +1,15 @@
 "use client";
 
-import { useEffect, useState, useSyncExternalStore } from "react";
+import { use, useEffect, useState, useSyncExternalStore } from "react";
 import Link from "next/link";
 
 import { API_BASE, qs, type CostDetail, type Envelope } from "@/lib/api";
 import { cents, displayTitle, num, pct } from "@/lib/format";
+import {
+  normalizeResearchMode,
+  withResearchMode,
+  type ResearchMode,
+} from "@/lib/research-mode";
 import {
   clearWatchlist,
   getWatchlistServerSnapshot,
@@ -31,7 +36,12 @@ import {
 /** `false` once a fetch has failed or returned an unpriceable contract. */
 type Priced = CostDetail | false;
 
-export default function WatchlistPage() {
+export default function WatchlistPage({
+  searchParams,
+}: {
+  searchParams: Promise<{ mode?: string }>;
+}) {
+  const mode = normalizeResearchMode(use(searchParams).mode);
   const items = useSyncExternalStore(
     subscribeToWatchlist,
     getWatchlistSnapshot,
@@ -40,9 +50,9 @@ export default function WatchlistPage() {
   // Keyed by contract rather than parallel to `items`, so removing one row does
   // not misalign every price after it.
   const [prices, setPrices] = useState<Record<string, Priced>>({});
-  const [hydrated, setHydrated] = useState(false);
+  const [pricedSignature, setPricedSignature] = useState<string | null>(null);
 
-  const signature = items
+  const signature = `${mode}:` + items
     .map((item) => `${watchKey(item.marketId, item.side)}@${item.size}`)
     .join(",");
 
@@ -58,6 +68,7 @@ export default function WatchlistPage() {
               `${API_BASE}/cost/${entry.marketId}${qs({
                 size: entry.size,
                 side: entry.side,
+                mode,
               })}`,
               { cache: "no-store" },
             );
@@ -73,7 +84,7 @@ export default function WatchlistPage() {
       );
       if (cancelled) return;
       setPrices(Object.fromEntries(results));
-      setHydrated(true);
+      setPricedSignature(signature);
     }
 
     void priceAll();
@@ -110,7 +121,10 @@ export default function WatchlistPage() {
             and side come with it, so the premium you see here is the one you were
             actually looking at.
           </p>
-          <Link href="/cost" className="btn-quiet mt-4 inline-flex">
+          <Link
+            href={withResearchMode("/cost", mode)}
+            className="btn-quiet mt-4 inline-flex"
+          >
             Browse contracts by premium
           </Link>
         </div>
@@ -149,7 +163,8 @@ export default function WatchlistPage() {
                     <Row
                       key={key}
                       entry={entry}
-                      cost={hydrated ? (prices[key] ?? false) : undefined}
+                      mode={mode}
+                      cost={pricedSignature === signature ? (prices[key] ?? false) : undefined}
                       onRemove={() => removeWatch(entry.marketId, entry.side)}
                     />
                   );
@@ -173,10 +188,12 @@ export default function WatchlistPage() {
 
 function Row({
   entry,
+  mode,
   cost,
   onRemove,
 }: {
   entry: WatchedContract;
+  mode: ResearchMode;
   /** `undefined` while pricing is in flight. */
   cost: Priced | undefined;
   onRemove: () => void;
@@ -190,7 +207,10 @@ function Row({
     <tr>
       <th scope="row" className="cell-title col-sticky">
         <Link
-          href={`/cost/${entry.marketId}${qs({ size: entry.size, side: entry.side })}`}
+          href={withResearchMode(
+            `/cost/${entry.marketId}${qs({ size: entry.size, side: entry.side })}`,
+            mode,
+          )}
           className="hover:underline"
         >
           {displayTitle(entry.title)}

@@ -1,6 +1,7 @@
 import Link from "next/link";
 import { apiGet, qs, type ArbitrageOpportunity, type DataMode } from "@/lib/api";
 import { cents, compactUsd, displayTitle, localTime, pct, relativeToSnapshot, usd } from "@/lib/format";
+import { withResearchMode } from "@/lib/research-mode";
 import {
   ApiDown,
   ArbLabelChip,
@@ -94,6 +95,7 @@ export default async function ArbitragePage({
       ) : (
         <DiagnosticsView
           rows={rows}
+          mode={mode}
           diagnostics={diagnostics}
           meanings={meanings}
           counts={counts}
@@ -123,7 +125,7 @@ function ViewSwitch({ mode, view }: { mode: DataMode; view: string }) {
         {items.map(([key, label]) => (
           <Link
             key={key}
-            href={`/arbitrage${qs({ mode, view: key })}`}
+            href={withResearchMode(`/arbitrage${qs({ view: key })}`, mode)}
             aria-current={view === key ? "page" : undefined}
             className={`seg-item ${view === key ? "seg-item-on" : "hover:text-ink"}`}
           >
@@ -229,7 +231,10 @@ function ActionableView({
           }
           action={
             <Link
-              href={`/arbitrage${qs({ mode, view: "diagnostics" })}`}
+              href={withResearchMode(
+                `/arbitrage${qs({ view: "diagnostics" })}`,
+                mode,
+              )}
               className="text-sm underline"
             >
               See what was examined and why it was rejected
@@ -273,7 +278,7 @@ function ActionableView({
                 <Metric label="Net ROI" value={pct(a.net_roi)} />
               </div>
 
-              <LegTable legs={a.legs} />
+              <LegTable legs={a.legs} mode={mode} />
 
               {a.risk_flags?.length > 0 && <RiskNotes flags={a.risk_flags} />}
 
@@ -294,12 +299,14 @@ function ActionableView({
 
 function DiagnosticsView({
   rows,
+  mode,
   diagnostics,
   meanings,
   counts,
   snapshotAt,
 }: {
   rows: ArbitrageOpportunity[];
+  mode: DataMode;
   diagnostics:
     | {
         pairs_examined?: number;
@@ -459,7 +466,7 @@ function DiagnosticsView({
                   <summary className="cursor-pointer t-label">
                     Legs ({a.legs.length})
                   </summary>
-                  <LegTable legs={a.legs} />
+                  <LegTable legs={a.legs} mode={mode} />
                 </details>
               </li>
             ))}
@@ -470,7 +477,13 @@ function DiagnosticsView({
   );
 }
 
-function LegTable({ legs }: { legs: ArbitrageOpportunity["legs"] }) {
+function LegTable({
+  legs,
+  mode,
+}: {
+  legs: ArbitrageOpportunity["legs"];
+  mode: DataMode;
+}) {
   return (
     <div className="table-wrap mt-3">
       <table className="w-full">
@@ -498,7 +511,10 @@ function LegTable({ legs }: { legs: ArbitrageOpportunity["legs"] }) {
             <tr key={`${leg.platform_market_id}-${leg.side}-${i}`}>
               <td className="col-title">
                 {leg.market_id ? (
-                  <Link href={`/market/${leg.market_id}`} className="hover:underline">
+                  <Link
+                    href={withResearchMode(`/market/${leg.market_id}`, mode)}
+                    className="hover:underline"
+                  >
                     {leg.title || leg.platform_market_id}
                   </Link>
                 ) : (

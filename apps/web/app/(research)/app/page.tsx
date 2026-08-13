@@ -8,6 +8,7 @@ import {
 } from "@/lib/api";
 import type { Divergence, FunnelStage } from "@/lib/api";
 import { ageRelativeToSnapshot, cents, compactUsd, displayTitle, localTime, pct, prob, relativeToSnapshot, signedCents, usd, utcTime } from "@/lib/format";
+import { withResearchMode } from "@/lib/research-mode";
 import {
   ApiDown,
   DemoBanner,
@@ -139,7 +140,7 @@ export default async function TodayPage({
           return (
             <Link
               key={h.key}
-              href={`/app${qs({ horizon: h.key, mode })}`}
+              href={withResearchMode(`/app${qs({ horizon: h.key })}`, mode)}
               aria-current={active ? "page" : undefined}
               className={`rounded-[2px] border px-3 py-2 text-sm transition-colors ${
                 active
@@ -157,7 +158,7 @@ export default async function TodayPage({
       {rows.length > 0 ? (
         <div className="space-y-3">
           {rows.map((o) => (
-            <OpportunityCard key={o.id} o={o} snapshotAt={snapshotAt} />
+            <OpportunityCard key={o.id} o={o} snapshotAt={snapshotAt} mode={mode} />
           ))}
         </div>
       ) : funnel?.data?.length ? null : (
@@ -219,7 +220,10 @@ export default async function TodayPage({
                   return (
                     <tr key={d.market_id}>
                       <td className="col-sticky col-title">
-                        <Link href={`/market/${d.market_id}`} className="hover:underline">
+                        <Link
+                          href={withResearchMode(`/market/${d.market_id}`, mode)}
+                          className="hover:underline"
+                        >
                           {displayTitle(d.title)}
                         </Link>
                       </td>
@@ -272,7 +276,10 @@ export default async function TodayPage({
                 {watch.data.map((w) => (
                   <tr key={w.market_id}>
                     <td className="col-sticky col-title">
-                      <Link href={`/market/${w.market_id}`} className="hover:underline">
+                      <Link
+                        href={withResearchMode(`/market/${w.market_id}`, mode)}
+                        className="hover:underline"
+                      >
                         {displayTitle(w.title)}
                       </Link>
                     </td>
@@ -427,12 +434,15 @@ function ResearchSnapshot({
             <span className="num text-ink-muted">{system.model_version}</span>
           </span>
         ) : null}
-        <Link href="/system" className="underline underline-offset-2">
+        <Link
+          href={withResearchMode("/system", mode)}
+          className="underline underline-offset-2"
+        >
           Operational detail
         </Link>
         {mode === "live" ? (
           <Link
-            href={`/app${qs({ horizon, mode: "demo" })}`}
+            href={withResearchMode(`/app${qs({ horizon })}`, "demo")}
             className="underline underline-offset-2"
           >
             Switch to the demo dataset
@@ -479,9 +489,11 @@ function Brief({
 function OpportunityCard({
   o,
   snapshotAt,
+  mode,
 }: {
   o: Opportunity;
   snapshotAt: string | null;
+  mode: DataMode;
 }) {
   return (
     <article className="card p-4">
@@ -492,7 +504,7 @@ function OpportunityCard({
           </div>
           <div className="min-w-0">
             <Link
-              href={`/market/${o.market_id}`}
+              href={withResearchMode(`/market/${o.market_id}`, mode)}
               className="block truncate font-medium hover:underline"
             >
               {displayTitle(o.title)}
@@ -661,7 +673,7 @@ function FilterFunnel({
       </p>
       {mode === "live" ? (
         <Link
-          href={`/app${qs({ horizon, mode: "demo" })}`}
+          href={withResearchMode(`/app${qs({ horizon })}`, "demo")}
           className="mt-3 inline-block text-sm underline"
         >
           See the demo dataset for how a populated list looks

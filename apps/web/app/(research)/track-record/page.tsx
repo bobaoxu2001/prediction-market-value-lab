@@ -1,6 +1,7 @@
 import Link from "next/link";
 import { apiGet, qs, type DataMode, type TrackRecordRow } from "@/lib/api";
 import { cents, displayTitle, localTime, prob, signedCents, usd } from "@/lib/format";
+import { withResearchMode } from "@/lib/research-mode";
 import {
   ApiDown, DemoBanner, EmptyState, PageHeader, PlatformChip, SideChip,
 } from "@/components/ui";
@@ -55,12 +56,18 @@ export default async function TrackRecordPage({
       <div className="mb-3 flex flex-wrap gap-2 text-sm">
         {["", "24h", "7d", "30d"].map((h) => (
           <Link key={h || "all"}
-            href={`/track-record${qs({ mode, horizon: h || undefined, settled: params.settled })}`}
+            href={withResearchMode(
+              `/track-record${qs({ horizon: h || undefined, settled: params.settled })}`,
+              mode,
+            )}
             className={`rounded border px-3 py-1 ${(params.horizon ?? "") === h ? "border-neutral-900 bg-neutral-900 text-white dark:border-line-subtle dark:bg-neutral-100 dark:text-neutral-900" : "border-line"}`}>
             {h || "All horizons"}
           </Link>
         ))}
-        <Link href={`/track-record${qs({ mode, horizon: params.horizon, settled: params.settled === "1" ? undefined : "1" })}`}
+        <Link href={withResearchMode(
+          `/track-record${qs({ horizon: params.horizon, settled: params.settled === "1" ? undefined : "1" })}`,
+          mode,
+        )}
           className={`rounded border px-3 py-1 ${params.settled === "1" ? "border-neutral-900 bg-neutral-900 text-white dark:border-line-subtle dark:bg-neutral-100 dark:text-neutral-900" : "border-line"}`}>
           Settled only
         </Link>
@@ -71,7 +78,7 @@ export default async function TrackRecordPage({
           title="No recommendations recorded yet"
           body="Snapshots are written by `make snapshot` after a ranking run. Until then there is no history to show."
           action={mode === "live" ? (
-            <Link href={`/track-record${qs({ mode: "demo" })}`} className="text-sm underline">
+            <Link href={withResearchMode("/track-record", "demo")} className="text-sm underline">
               View the demo dataset
             </Link>
           ) : undefined}
@@ -96,7 +103,10 @@ export default async function TrackRecordPage({
                     <tr key={r.id} className="hover:bg-neutral-50 dark:hover:bg-neutral-900">
                       <td className="text-ink-faint">{localTime(r.recommendation_created_at)}</td>
                       <td className="max-w-xs truncate">
-                        <Link href={`/market/${r.market_id}`} className="hover:underline">
+                        <Link
+                          href={withResearchMode(`/market/${r.market_id}`, mode)}
+                          className="hover:underline"
+                        >
                           {displayTitle(r.market_title)}
                         </Link>
                       </td>
@@ -136,11 +146,17 @@ export default async function TrackRecordPage({
             </span>
             <div className="flex gap-2">
               {offset > 0 && (
-                <Link href={`/track-record${qs({ mode, horizon: params.horizon, settled: params.settled, offset: Math.max(0, offset - 100) })}`}
+                <Link href={withResearchMode(
+                  `/track-record${qs({ horizon: params.horizon, settled: params.settled, offset: Math.max(0, offset - 100) })}`,
+                  mode,
+                )}
                   className="rounded border border-neutral-300 px-3 py-1 dark:border-neutral-700">Previous</Link>
               )}
               {rows.length === 100 && (
-                <Link href={`/track-record${qs({ mode, horizon: params.horizon, settled: params.settled, offset: offset + 100 })}`}
+                <Link href={withResearchMode(
+                  `/track-record${qs({ horizon: params.horizon, settled: params.settled, offset: offset + 100 })}`,
+                  mode,
+                )}
                   className="rounded border border-neutral-300 px-3 py-1 dark:border-neutral-700">Next</Link>
               )}
             </div>

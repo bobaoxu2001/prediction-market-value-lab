@@ -166,11 +166,48 @@ describe("the side is always stated", () => {
 });
 
 describe("assumptions are disclosed per venue", () => {
-  it("names the bridge allowance on Polymarket and not on Kalshi", () => {
-    expect(panelHtml({ ...BASE, venue: "polymarket", yourRow: null })).toContain(
-      "bridge/gas allowance",
-    );
+  it("names the bridge allowance only when it contributes to Polymarket figures", () => {
+    const withTransfer = [rung("5", "0.60", { transferCost: dec("0.10") })];
+    const html = panelHtml({
+      ...BASE,
+      venue: "polymarket",
+      ladder: withTransfer,
+      yourRow: null,
+    });
+    expect(html).toContain("assumed $0.50 bridge/gas allowance");
     expect(panelHtml({ ...BASE, yourRow: null })).not.toContain("bridge/gas");
+    expect(
+      panelHtml({ ...BASE, venue: "polymarket", yourRow: null }),
+    ).not.toContain("bridge/gas");
+  });
+
+  it("names the annual capital rate only when it contributes to the figures", () => {
+    const withCapital = [rung("10", "0.56", { capitalCost: dec("0.01") })];
+    const html = panelHtml({ ...BASE, ladder: withCapital, yourRow: null });
+    expect(html).toContain("assumed 5% annual capital-cost rate through resolution");
+    expect(panelHtml({ ...BASE, yourRow: null })).not.toContain(
+      "annual capital-cost rate",
+    );
+  });
+
+  it("discloses custom assumption values instead of silently naming defaults", () => {
+    const html = panelHtml({
+      ...BASE,
+      venue: "polymarket",
+      ladder: [
+        rung("10", "0.57", {
+          transferCost: dec("0.02"),
+          capitalCost: dec("0.01"),
+        }),
+      ],
+      yourRow: null,
+      assumptions: {
+        polymarketTransferCostUsd: dec("0.20"),
+        capitalCostAnnualRate: dec("0.08"),
+      },
+    });
+    expect(html).toContain("assumed $0.20 bridge/gas allowance");
+    expect(html).toContain("assumed 8% annual capital-cost rate");
   });
 
   it("always says slippage is excluded and offers no recommendation", () => {

@@ -77,9 +77,10 @@ export default async function CostPage({
     ? rawCategory
     : undefined;
   const mode = (one("mode") as DataMode) ?? "live";
+  const q = (one("q") ?? "").trim().slice(0, 120);
 
   const res = await apiGet<CostIndexRow[]>(
-    `/cost${qs({ size, platform, category, mode, limit: 40 })}`,
+    `/cost${qs({ size, platform, category, q: q || undefined, mode, limit: 40 })}`,
   );
   if (!res) return <ApiDown />;
 
@@ -93,12 +94,20 @@ export default async function CostPage({
         subtitle="A contract's quoted price is not the whole entry cost. This page combines observed ask depth and published venue fee rules with disclosed transfer and capital-cost assumptions, then shows the estimate and its basis for every market with a quote."
       />
 
+      <LiveOverlayCallout />
       <Explainer size={size} />
+      <ContractSearch
+        q={q}
+        size={size}
+        platform={platform}
+        category={category}
+        mode={mode}
+      />
 
-      <div className="mt-6 flex flex-wrap items-center gap-x-6 gap-y-3">
-        <SizePicker current={size} platform={platform} category={category} />
-        <PlatformPicker current={platform} size={size} category={category} />
-        <CategoryPicker current={category} size={size} platform={platform} />
+      <div className="mt-6 flex min-w-0 flex-wrap items-center gap-x-6 gap-y-3">
+        <SizePicker current={size} platform={platform} category={category} q={q} mode={mode} />
+        <PlatformPicker current={platform} size={size} category={category} q={q} mode={mode} />
+        <CategoryPicker current={category} size={size} platform={platform} q={q} mode={mode} />
       </div>
 
       <CategoryNote category={category} />
@@ -106,21 +115,96 @@ export default async function CostPage({
       {rows.length === 0 ? (
         <div className="mt-6">
           <EmptyState
-            title="No markets could be priced"
-            body="This is an observation gap, not a finding: no market in the current snapshot carried an ask price from either the order book or the venue summary. The system page reports when data was last ingested."
+            title={q ? `No priced contract matched “${q}”` : "No markets could be priced"}
+            body={
+              q
+                ? "Try fewer words, a venue market ID, or clear the search. Search results still require an observed ask, so an unpriced contract will not appear here."
+                : "This is an observation gap, not a finding: no market in the current snapshot carried an ask price from either the order book or the venue summary. The system page reports when data was last ingested."
+            }
             action={
-              <Link href="/system" className="btn-quiet">
-                Check system status
+              <Link
+                href={q ? `/cost${qs({ size, platform, category, mode })}` : "/system"}
+                className="btn-quiet"
+              >
+                {q ? "Clear search" : "Check system status"}
               </Link>
             }
           />
         </div>
       ) : (
-        <CostTable rows={rows} size={size} />
+        <CostTable rows={rows} size={size} mode={mode} />
       )}
 
       <Method />
     </>
+  );
+}
+
+function LiveOverlayCallout() {
+  return (
+    <div className="mt-5 flex flex-col gap-3 rounded-[3px] border border-accent/35 bg-accent/5 p-4 sm:flex-row sm:items-center sm:justify-between">
+      <div className="max-w-3xl">
+        <p className="t-label text-accent">Live on the venue page</p>
+        <p className="t-body mt-1">
+          This table is a hosted snapshot. The read-only browser overlay recalculates
+          the same cost stack for the order size on an open Kalshi or Polymarket page.
+        </p>
+      </div>
+      <Link href="/extension" className="btn-primary shrink-0">
+        Get the live overlay
+      </Link>
+    </div>
+  );
+}
+
+function ContractSearch({
+  q,
+  size,
+  platform,
+  category,
+  mode,
+}: {
+  q: string;
+  size: string;
+  platform?: string;
+  category?: string;
+  mode: DataMode;
+}) {
+  return (
+    <form method="get" action="/cost" className="panel mt-5 p-4">
+      <label htmlFor="contract-search" className="t-label">
+        Find your contract
+      </label>
+      <div className="mt-2 flex flex-col gap-2 sm:flex-row">
+        <input
+          id="contract-search"
+          name="q"
+          type="search"
+          maxLength={120}
+          defaultValue={q}
+          placeholder="Title or venue market ID"
+          className="field min-w-0 flex-1"
+        />
+        <input type="hidden" name="size" value={size} />
+        {platform ? <input type="hidden" name="platform" value={platform} /> : null}
+        {category ? <input type="hidden" name="category" value={category} /> : null}
+        <input type="hidden" name="mode" value={mode} />
+        <button type="submit" className="btn-primary">
+          Price this contract
+        </button>
+        {q ? (
+          <Link
+            href={`/cost${qs({ size, platform, category, mode })}`}
+            className="btn-quiet justify-center"
+          >
+            Clear
+          </Link>
+        ) : null}
+      </div>
+      <p className="t-meta mt-2">
+        Matches words across the contract title, subtitle, and venue market ID.
+      </p>
+    </form>
   );
 }
 
@@ -151,19 +235,23 @@ function SizePicker({
   current,
   platform,
   category,
+  q,
+  mode,
 }: {
   current: string;
   platform?: string;
   category?: string;
+  q: string;
+  mode: DataMode;
 }) {
   return (
-    <div className="flex items-center gap-2">
+    <div className="flex min-w-0 max-w-full items-center gap-2">
       <span className="t-label">Order size</span>
-      <div className="seg" role="group">
+      <div className="seg seg-scroll" role="group" aria-label="Order size">
         {SIZES.map((size) => (
           <Link
             key={size}
-            href={`/cost${qs({ size, platform, category })}`}
+            href={`/cost${qs({ size, platform, category, q: q || undefined, mode })}`}
             aria-current={size === current ? "page" : undefined}
             className={`seg-item ${size === current ? "seg-item-on" : "hover:text-ink"}`}
           >
@@ -179,10 +267,14 @@ function PlatformPicker({
   current,
   size,
   category,
+  q,
+  mode,
 }: {
   current?: string;
   size: string;
   category?: string;
+  q: string;
+  mode: DataMode;
 }) {
   const options: Array<{ key: string | undefined; label: string }> = [
     { key: undefined, label: "Both venues" },
@@ -190,13 +282,13 @@ function PlatformPicker({
     { key: "polymarket", label: "Polymarket" },
   ];
   return (
-    <div className="flex items-center gap-2">
+    <div className="flex min-w-0 max-w-full items-center gap-2">
       <span className="t-label">Venue</span>
-      <div className="seg" role="group">
+      <div className="seg seg-scroll" role="group" aria-label="Venue">
         {options.map((option) => (
           <Link
             key={option.label}
-            href={`/cost${qs({ size, platform: option.key, category })}`}
+            href={`/cost${qs({ size, platform: option.key, category, q: q || undefined, mode })}`}
             aria-current={option.key === current ? "page" : undefined}
             className={`seg-item ${option.key === current ? "seg-item-on" : "hover:text-ink"}`}
           >
@@ -212,19 +304,23 @@ function CategoryPicker({
   current,
   size,
   platform,
+  q,
+  mode,
 }: {
   current?: string;
   size: string;
   platform?: string;
+  q: string;
+  mode: DataMode;
 }) {
   return (
-    <div className="flex items-center gap-2">
+    <div className="flex min-w-0 max-w-full items-center gap-2">
       <span className="t-label">Category</span>
-      <div className="seg" role="group">
+      <div className="seg seg-scroll" role="group" aria-label="Category">
         {CATEGORIES.map((option) => (
           <Link
             key={option.label}
-            href={`/cost${qs({ size, platform, category: option.key })}`}
+            href={`/cost${qs({ size, platform, category: option.key, q: q || undefined, mode })}`}
             aria-current={option.key === current ? "page" : undefined}
             className={`seg-item ${option.key === current ? "seg-item-on" : "hover:text-ink"}`}
           >
@@ -264,7 +360,15 @@ function CategoryNote({ category }: { category?: string }) {
 
 /* ------------------------------------------------------------------- table -- */
 
-function CostTable({ rows, size }: { rows: CostIndexRow[]; size: string }) {
+function CostTable({
+  rows,
+  size,
+  mode,
+}: {
+  rows: CostIndexRow[];
+  size: string;
+  mode: DataMode;
+}) {
   return (
     <div className="table-wrap mt-6">
       <table>
@@ -291,7 +395,7 @@ function CostTable({ rows, size }: { rows: CostIndexRow[]; size: string }) {
         </thead>
         <tbody>
           {rows.map((row) => (
-            <CostRow key={row.market.id} row={row} size={size} />
+            <CostRow key={row.market.id} row={row} size={size} mode={mode} />
           ))}
         </tbody>
       </table>
@@ -299,7 +403,15 @@ function CostTable({ rows, size }: { rows: CostIndexRow[]; size: string }) {
   );
 }
 
-function CostRow({ row, size }: { row: CostIndexRow; size: string }) {
+function CostRow({
+  row,
+  size,
+  mode,
+}: {
+  row: CostIndexRow;
+  size: string;
+  mode: DataMode;
+}) {
   const ratio = num(row.measured_premium_ratio);
   // A premium is a cost, so it never reads as a gain. The scale is severity:
   // a doubling of cost and a 2% overhead should not look the same.
@@ -316,7 +428,7 @@ function CostRow({ row, size }: { row: CostIndexRow; size: string }) {
     <tr>
       <th scope="row" className="cell-title col-sticky">
         <Link
-          href={`/cost/${row.market.id}${qs({ size })}`}
+          href={`/cost/${row.market.id}${qs({ size, mode })}`}
           className="hover:underline"
           title={displayTitle(row.market.title)}
         >
@@ -366,8 +478,15 @@ function CostRow({ row, size }: { row: CostIndexRow; size: string }) {
 function BasisChip({ row }: { row: CostIndexRow }) {
   if (!row.depth_known) {
     return (
-      <span className="chip bg-sunken text-ink-muted" title="No order book was captured for this contract, so depth impact is unknown and excluded. The estimate is incomplete.">
-        summary only
+      <span
+        className={`chip ${row.is_stale ? "bg-warn/15 text-warn" : "bg-sunken text-ink-muted"}`}
+        title={
+          row.is_stale
+            ? "The summary quote is stale and no order book was captured, so depth impact is also unknown and excluded."
+            : "No order book was captured for this contract, so depth impact is unknown and excluded. The estimate is incomplete."
+        }
+      >
+        {row.is_stale ? "stale summary" : "summary only"}
       </span>
     );
   }

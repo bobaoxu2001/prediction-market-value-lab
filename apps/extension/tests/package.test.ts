@@ -32,6 +32,7 @@ interface Manifest {
   manifest_version: number;
   background?: { service_worker?: string; type?: string };
   content_scripts?: Array<{ js?: string[]; css?: string[]; matches?: string[] }>;
+  permissions?: string[];
   host_permissions?: string[];
 }
 
@@ -94,8 +95,8 @@ describe("the service worker is a module, as the manifest declares", () => {
   });
 
   it("does not reference chrome APIs the manifest has not asked for", () => {
-    // `permissions` covers `storage`; anything else the worker touches would
-    // fail at runtime in a way no unit test would show.
+    // Runtime messaging is a base extension API. Anything beyond it would need a
+    // manifest grant and should fail this narrow-permission check first.
     const worker = read("dist/background.js");
     const used = [...worker.matchAll(/chrome\.(\w+)/g)].map((m) => m[1]);
     expect([...new Set(used)].sort()).toEqual(["runtime"]);
@@ -103,6 +104,13 @@ describe("the service worker is a module, as the manifest declares", () => {
 });
 
 describe("network access is declared and narrow", () => {
+  it("requests no general browser permissions", () => {
+    // Runtime messaging is available to the extension without a manifest grant.
+    // The previous `storage` permission was unused and needlessly widened the
+    // install prompt for a product whose trust claim is that it only reads books.
+    expect(manifest().permissions ?? []).toEqual([]);
+  });
+
   it("permits exactly the three read-only venue endpoints", () => {
     expect(manifest().host_permissions?.sort()).toEqual([
       "https://api.elections.kalshi.com/*",

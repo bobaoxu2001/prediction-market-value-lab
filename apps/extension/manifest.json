@@ -3,7 +3,6 @@
   "name": "PMVL — true entry cost",
   "version": "0.1.0",
   "description": "Shows what a Kalshi or Polymarket order actually costs per contract, and which size costs least.",
-  "permissions": ["storage"],
   "host_permissions": [
     "https://api.elections.kalshi.com/*",
     "https://gamma-api.polymarket.com/*",

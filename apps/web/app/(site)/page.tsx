@@ -31,9 +31,9 @@ import { absoluteUrl } from "@/lib/site";
 export const dynamic = "force-dynamic";
 
 export const metadata: Metadata = {
-  title: "What prediction-market entry can cost",
+  title: "Know what a prediction-market order really costs",
   description:
-    "PMVL estimates the gap between a contract's quoted price and its entry-cost stack — observed depth, venue fees and rounding, plus disclosed transfer and capital-cost assumptions — for every market with a quote. It also estimates probabilities where it has independent coverage, and says so when it does not.",
+    "PMVL's read-only browser overlay estimates entry cost and break-even probability from public Kalshi and Polymarket books, at the order size on the ticket.",
   alternates: { canonical: absoluteUrl("/") },
 };
 
@@ -235,8 +235,6 @@ export default async function HomePage({
     <>
       <Hero
         proof={proof}
-        signedIn={entitlement.signedIn}
-        accountsEnabled={accountsEnabled}
         example={heroExample}
       />
       <ProofBand proof={proof} />
@@ -276,6 +274,7 @@ function HeroExampleCard({ example }: { example: HeroExample }) {
 
   return (
     <div className="mt-6 max-w-xl rounded-lg border border-line bg-sunken p-4">
+      <p className="t-label mb-2">Hosted snapshot example</p>
       <div className="flex flex-wrap items-baseline justify-between gap-x-3 gap-y-1">
         <Link
           href={`/cost/${example.marketId}`}
@@ -289,28 +288,30 @@ function HeroExampleCard({ example }: { example: HeroExample }) {
         </span>
       </div>
 
-      <table className="mt-3 w-full text-left">
-        <thead>
-          <tr className="t-meta">
-            <th className="pb-1 font-normal">Order size</th>
-            <th className="pb-1 text-right font-normal">Est. cost each</th>
-            <th className="pb-1 text-right font-normal">Over quote</th>
-          </tr>
-        </thead>
-        <tbody className="font-mono text-sm">
-          {example.rungs.map((rung) => (
-            <tr key={rung.size} className="border-t border-line">
-              <td className="py-1">{rung.size}</td>
-              <td className="py-1 text-right">{cents(rung.measured_cost)}</td>
-              <td className="py-1 text-right text-warn">
-                {rung.measured_premium_ratio === null
-                  ? "—"
-                  : `+${pct(rung.measured_premium_ratio)}`}
-              </td>
+      <div className="table-wrap mt-3">
+        <table className="w-full text-left">
+          <thead>
+            <tr className="t-meta">
+              <th className="pb-1 font-normal">Order size</th>
+              <th className="pb-1 text-right font-normal">Est. cost each</th>
+              <th className="pb-1 text-right font-normal">Over quote</th>
             </tr>
-          ))}
-        </tbody>
-      </table>
+          </thead>
+          <tbody className="font-mono text-sm">
+            {example.rungs.map((rung) => (
+              <tr key={rung.size} className="border-t border-line">
+                <td className="py-1">{rung.size}</td>
+                <td className="py-1 text-right">{cents(rung.measured_cost)}</td>
+                <td className="py-1 text-right text-warn">
+                  {rung.measured_premium_ratio === null
+                    ? "—"
+                    : `+${pct(rung.measured_premium_ratio)}`}
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
 
       <p className="mt-2.5 t-meta">
         {spread && spread >= 1.5 ? (
@@ -328,20 +329,16 @@ function HeroExampleCard({ example }: { example: HeroExample }) {
 
 function Hero({
   proof,
-  signedIn,
-  accountsEnabled,
   example,
 }: {
   proof: ResearchProof;
-  signedIn: boolean;
-  accountsEnabled: boolean;
   example: HeroExample | null;
 }) {
   return (
     <section className="mx-auto max-w-6xl px-4 pb-14 pt-16 sm:pt-24">
       <p className="t-label">Prediction Market Value Lab</p>
       <h1 className="mt-3 max-w-4xl text-[2rem] leading-[1.12] sm:text-[2.75rem]">
-        The quoted price is only the first input.
+        Know what your order really costs — before you place it.
       </h1>
       {/*
        * The hero used to end on "most of the time the answer is that no trade is
@@ -355,10 +352,10 @@ function Hero({
        * opportunity surfaces empty.
        */}
       <p className="t-lead mt-5 max-w-2xl">
-        What a contract costs to enter depends on how many you buy. PMVL builds an
-        auditable estimate from observed book depth and published venue rules,
-        plus separately disclosed transfer and capital assumptions. Because a
-        binary contract pays $1, that estimate is the break-even probability.
+        PMVL&apos;s read-only browser overlay prices the side and size on an open
+        Kalshi or Polymarket ticket from the public book. It shows estimated cost
+        per contract, break-even probability, and when another placeable size costs
+        less — without touching the order.
       </p>
 
       {/*
@@ -377,35 +374,17 @@ function Hero({
       {example ? <HeroExampleCard example={example} /> : null}
 
       <div className="mt-8 flex flex-wrap items-center gap-3">
-        <Link href="/cost" className="btn-primary">
-          Inspect entry-cost estimates
+        <Link href="/extension" className="btn-primary">
+          Get the live cost overlay
         </Link>
-        <Link href="/app" className="btn-quiet">
-          Research briefing
+        <Link href="/cost" className="btn-quiet">
+          Try the snapshot calculator
         </Link>
-        {signedIn ? (
-          <Link href="/account" className="btn-quiet">
-            Account
-          </Link>
-        ) : accountsEnabled ? (
-          <Link href="/sign-up" className="btn-quiet">
-            Create free account
-          </Link>
-        ) : (
-          // Accounts are not enabled on this deployment, so a "Create free
-          // account" button would be a primary call to action leading to a page
-          // that says it cannot be done. The research needs no account anyway -
-          // that is the whole free-Beta proposition - so the honest thing is to
-          // say accounts are coming rather than to invite a click that fails.
-          <span className="chip bg-sunken text-ink-muted">
-            Accounts coming soon
-          </span>
-        )}
         <Link
-          href="/methodology"
+          href="/app"
           className="text-sm underline decoration-line-strong underline-offset-4 hover:decoration-current"
         >
-          View methodology
+          Research briefing
         </Link>
       </div>
 
@@ -560,7 +539,7 @@ function ProductSurfaces() {
       <SectionHeading
         eyebrow="The product"
         title="Seven surfaces, all of them public"
-        lead="Screenshots of the deployed application, not renderings of a planned one. Every surface below is reachable right now without an account."
+        lead="Screens from the working application and packaged extension beta, not renderings of a planned product. Every surface is reachable without an account."
       />
 
       <div className="mt-6">
@@ -573,19 +552,19 @@ function ProductSurfaces() {
          */}
         <FeatureRow
           index={1}
-          title="What entry can cost"
-          body="A quoted price is a top-of-book number for one contract. PMVL builds an auditable entry-cost estimate from the venue fee at that size, its rounding rule, observed depth, and explicitly disclosed transfer and capital-cost assumptions. Because a binary contract pays exactly $1, that total is the estimated probability needed to break even under those assumptions."
+          title="Live cost, on the order ticket"
+          body="The browser overlay reads the side and size a trader is already considering, fetches the public book, and calculates the entry-cost stack locally. The hosted snapshot remains available for exploration and shareable deep dives; the time-sensitive answer lives beside the ticket."
           points={[
-            "Observed depth and published fee rules kept separate from configured assumptions",
-            "The same contract at 1, 10, 100 and 1000 contracts, where the premium can swing tenfold",
-            "The modelled slippage pad reported separately, never folded into the headline",
+            "The user's size, cost per contract, premium, and break-even in one compact panel",
+            "A lower-cost placeable size when the arithmetic supports one",
+            "Read-only public data, with assumptions and quote freshness stated in the panel",
           ]}
-          href="/cost"
-          linkLabel="Open the cost surface"
+          href="/extension"
+          linkLabel="Open the live-overlay beta"
           shot={
             <ProductShot
-              src="/product/cost.png"
-              alt="The PMVL cost surface showing a frozen-snapshot disclosure, order-size and venue controls, and contracts ranked by estimated premium over the quoted price."
+              src="/product/live-entry-cost-overlay.jpg"
+              alt="A working PMVL browser-extension preview showing the user's Polymarket order size, estimated cost, premium over the quote, break-even probability, a lower-cost size, public-book freshness, and read-only research disclosures."
               width={1280}
               height={720}
               priority
@@ -948,14 +927,17 @@ function ClosingCta({
   return (
     <Section id="get-started">
       <div className="max-w-2xl">
-        <h2 className="t-page-title">Start with the research, not the signup</h2>
+        <h2 className="t-page-title">Start with the cost of the order in front of you</h2>
         <p className="t-prose mt-3">
-          The whole research product is public. Read the briefing, check the
-          funnel on a day when nothing qualifies, and look at the methodology
-          before deciding whether an account is worth having.
+          Install the read-only beta for a live venue page, or use the hosted
+          snapshot calculator to inspect and share the same cost stack without an
+          extension. The full research record and methodology remain public.
         </p>
         <div className="mt-6 flex flex-wrap items-center gap-3">
-          <Link href="/app" className="btn-primary">
+          <Link href="/extension" className="btn-primary">
+            Get the live overlay
+          </Link>
+          <Link href="/app" className="btn-quiet">
             Explore research
           </Link>
           {signedIn ? (

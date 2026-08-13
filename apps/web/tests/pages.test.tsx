@@ -225,11 +225,11 @@ describe("marketing homepage", () => {
       "create free account",
     );
 
-    // The research is still one click away — that is the whole proposition.
+    // The useful products are still one click away without inventing a signup.
     expect(
       screen.getAllByRole("link", { name: /explore research/i }).length,
-    ).toBeGreaterThanOrEqual(2);
-    expect(screen.getAllByText(/accounts coming soon/i).length).toBeGreaterThan(0);
+    ).toBeGreaterThanOrEqual(1);
+    expect(screen.getAllByRole("link", { name: /live.*overlay/i }).length).toBeGreaterThan(0);
   });
 
   it("makes no forbidden performance claim", async () => {
@@ -264,6 +264,35 @@ describe("marketing homepage", () => {
       const alt = image.getAttribute("alt") ?? "";
       expect(alt.length).toBeGreaterThan(40);
     }
+  });
+});
+
+describe("live entry-cost extension", () => {
+  it("labels the manual-install and read-only trust boundary", async () => {
+    const { default: ExtensionPage } = await import("@/app/(site)/extension/page");
+    const { container } = render(<ExtensionPage />);
+    const text = container.textContent ?? "";
+
+    expect(text).toMatch(/developer-mode chrome beta/i);
+    expect(text).toMatch(/not reviewed or distributed by the chrome web store/i);
+    expect(text).toMatch(/places no orders/i);
+    expect(text).toMatch(/no storage, tabs, clipboard, identity, wallet, or trading permission/i);
+  });
+
+  it("offers the packaged beta twice and lists the install sequence", async () => {
+    const { default: ExtensionPage } = await import("@/app/(site)/extension/page");
+    const { container } = render(<ExtensionPage />);
+
+    expect(
+      container.querySelectorAll('a[href="/downloads/pmvl-entry-cost-beta.zip"]'),
+    ).toHaveLength(2);
+    expect(screen.getByRole("heading", { name: /load the beta in three steps/i })).toBeTruthy();
+    expect(screen.getByText(/load unpacked/i)).toBeTruthy();
+  });
+
+  it("is discoverable from the sitemap", async () => {
+    const { default: sitemap } = await import("@/app/sitemap");
+    expect(sitemap().some((entry) => entry.url.endsWith("/extension"))).toBe(true);
   });
 });
 

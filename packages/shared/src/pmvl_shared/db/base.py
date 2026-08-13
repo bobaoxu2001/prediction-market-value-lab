@@ -10,7 +10,7 @@ from contextlib import contextmanager
 from decimal import Decimal
 from typing import Any, Iterator
 
-from sqlalchemy import JSON, Numeric, create_engine, event
+from sqlalchemy import JSON, Numeric, cast, create_engine, event, literal
 from sqlalchemy.engine import Engine
 from sqlalchemy.orm import DeclarativeBase, Session, sessionmaker
 from sqlalchemy.types import TypeDecorator
@@ -32,6 +32,57 @@ class Money(TypeDecorator):
 
     impl = Numeric(20, 8)
     cache_ok = True
+
+    class comparator_factory(TypeDecorator.Comparator):
+        """Make SQLite compare the stored decimal text as a number.
+
+        SQLite's TEXT affinity otherwise makes ``9990`` sort ahead of
+        ``3137050`` and makes a threshold such as ``>= 500`` lexicographic. The
+        cast lives on the comparator rather than the stored representation so
+        existing read-only snapshots remain compatible and Decimal round-trips
+        stay exact. Applying the same NUMERIC cast on PostgreSQL is semantically
+        neutral.
+        """
+
+        def _number(self):  # noqa: ANN201
+            return cast(self.expr, Numeric(20, 8))
+
+        @staticmethod
+        def _other(value):  # noqa: ANN001, ANN205
+            if isinstance(value, (Decimal, int, float, str)):
+                # Bind as canonical text and let the database cast it. This
+                # avoids sending a Decimal through SQLite's float-only numeric
+                # binder at the exact comparison boundary.
+                return cast(literal(str(value)), Numeric(20, 8))
+            return value
+
+        def __lt__(self, other):  # noqa: ANN001, ANN204
+            return self._number() < self._other(other)
+
+        def __le__(self, other):  # noqa: ANN001, ANN204
+            return self._number() <= self._other(other)
+
+        def __gt__(self, other):  # noqa: ANN001, ANN204
+            return self._number() > self._other(other)
+
+        def __ge__(self, other):  # noqa: ANN001, ANN204
+            return self._number() >= self._other(other)
+
+        def __eq__(self, other):  # noqa: ANN001, ANN204
+            if other is None:
+                return self.expr.is_(None)
+            return self._number() == self._other(other)
+
+        def __ne__(self, other):  # noqa: ANN001, ANN204
+            if other is None:
+                return self.expr.is_not(None)
+            return self._number() != self._other(other)
+
+        def asc(self):  # noqa: ANN201
+            return self._number().asc()
+
+        def desc(self):  # noqa: ANN201
+            return self._number().desc()
 
     def load_dialect_impl(self, dialect):  # noqa: ANN001, ANN201
         if dialect.name == "sqlite":

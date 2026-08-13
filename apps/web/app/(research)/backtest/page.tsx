@@ -1,6 +1,7 @@
 import Link from "next/link";
 import { apiGet, qs, type BacktestRun, type DataMode } from "@/lib/api";
 import { METRIC_HELP, localDate, pct, strategyLabel, usd } from "@/lib/format";
+import { withResearchMode } from "@/lib/research-mode";
 import {
   ApiDown, DemoBanner, EmptyState, Metric, PageHeader, VerdictCard, toneFor,
 } from "@/components/ui";
@@ -56,7 +57,13 @@ export default async function BacktestPage({
             <span>2. Inspect the calibration curve</span>
             <span>
               3.{" "}
-              <Link href={`/track-record${qs({ mode, settled_only: true })}`} className="underline">
+              <Link
+                href={withResearchMode(
+                  `/track-record${qs({ settled_only: true })}`,
+                  mode,
+                )}
+                className="underline"
+              >
                 Open the losing recommendations
               </Link>
             </span>
@@ -74,7 +81,7 @@ export default async function BacktestPage({
           body={(res.empty_reason as string) ?? "Published recommendations must reach their resolution date before there is anything to measure."}
           action={
             mode === "live" ? (
-              <Link href={`/backtest${qs({ mode: "demo" })}`} className="text-sm underline">
+              <Link href={withResearchMode("/backtest", "demo")} className="text-sm underline">
                 View the demo dataset
               </Link>
             ) : undefined
@@ -108,7 +115,10 @@ export default async function BacktestPage({
                       {/* Sticky, so the strategy name stays visible while the
                           eleven measurement columns scroll. */}
                       <td className={`col-sticky col-title ${active ? "bg-sunken" : ""}`}>
-                        <Link href={`/backtest${qs({ mode, strategy: r.strategy })}`}
+                        <Link href={withResearchMode(
+                          `/backtest${qs({ strategy: r.strategy })}`,
+                          mode,
+                        )}
                           className="hover:underline" title={r.description}>
                           {strategyLabel(r.strategy)}
                         </Link>

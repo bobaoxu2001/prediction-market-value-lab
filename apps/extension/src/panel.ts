@@ -6,8 +6,13 @@
  * a preview of markup nobody ships is worth very little.
  */
 
-import { type CostAtSize, cheapestPlaceable } from "./cost";
-import { type Dec, toNumber, toString as decToString } from "./decimal";
+import {
+  type Assumptions,
+  type CostAtSize,
+  DEFAULT_ASSUMPTIONS,
+  cheapestPlaceable,
+} from "./cost";
+import { type Dec, isZero, toNumber, toString as decToString } from "./decimal";
 import { type Venue } from "./cost";
 import { type Side } from "./venues";
 
@@ -87,7 +92,21 @@ export interface PanelInput {
    * the trader never typed.
    */
   yourDollars?: number | null;
+  /** The scenario inputs used to compute the supplied rows. */
+  assumptions?: Assumptions;
   now?: number;
+}
+
+function dollars(value: Dec): string {
+  return `$${decToString(value)}`;
+}
+
+function annualRate(value: Dec): string {
+  const percentage = (toNumber(value) * 100)
+    .toFixed(2)
+    .replace(/\.0+$/, "")
+    .replace(/(\.\d*?)0+$/, "$1");
+  return `${percentage}% annual capital-cost rate`;
 }
 
 function row(entry: CostAtSize, kind: "" | "best" | "yours"): string {
@@ -184,6 +203,27 @@ export function panelHtml(input: PanelInput): string {
     );
   }
 
+  const assumptions = input.assumptions ?? DEFAULT_ASSUMPTIONS;
+  const includedAssumptions: string[] = [];
+  if (
+    input.venue === "polymarket" &&
+    shown.some((entry) => !isZero(entry.transferCost))
+  ) {
+    includedAssumptions.push(
+      `an assumed ${dollars(assumptions.polymarketTransferCostUsd)} bridge/gas allowance amortised over the position`,
+    );
+  }
+  if (shown.some((entry) => !isZero(entry.capitalCost))) {
+    includedAssumptions.push(
+      `an assumed ${annualRate(assumptions.capitalCostAnnualRate)} through resolution`,
+    );
+  }
+
+  const assumptionDisclosure =
+    includedAssumptions.length > 0
+      ? ` Scenario inputs included in these figures: ${includedAssumptions.join("; ")}.`
+      : "";
+
   return `${head}
     <table class="pmvl-table">
       <thead><tr><th>Size</th><th>Costs</th><th>Over quote</th><th>Break-even</th></tr></thead>
@@ -191,12 +231,9 @@ export function panelHtml(input: PanelInput): string {
     </table>
     ${warnings.map((w) => `<p class="pmvl-note pmvl-best-note">${w}</p>`).join("")}
     <p class="pmvl-note">
-      Book read ${freshness(input.observedAt, input.now)}. Observed ask depth and
-      published venue fee and rounding rules${
-        input.venue === "polymarket"
-          ? ", plus an assumed bridge/gas allowance amortised over the position"
-          : ""
-      }. Slippage is not included. No forecast, no recommendation — research only.
+      Book read ${freshness(input.observedAt, input.now)}. Cost uses observed ask
+      depth and published venue fee and rounding rules.${assumptionDisclosure}
+      Slippage is not included. No forecast, no recommendation — research only.
     </p>`;
 }
 

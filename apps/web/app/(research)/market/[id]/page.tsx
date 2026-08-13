@@ -1,6 +1,7 @@
 import Link from "next/link";
 import { apiGet, qs, type DataMode } from "@/lib/api";
 import { humanizeSeconds, ageRelativeToSnapshot, cents, compactUsd, displayTitle, localTime, pct, prob, relativeToSnapshot, signedCents } from "@/lib/format";
+import { withResearchMode } from "@/lib/research-mode";
 import { ApiDown, DemoBanner, EmptyState, Metric, PageHeader, PlatformChip, SideChip, StateChip, VenueAvailability } from "@/components/ui";
 import { PriceChart } from "@/components/PriceChart";
 
@@ -298,7 +299,10 @@ export default async function MarketDetailPage({
                 {d.cross_platform_matches.map((mt: any, i: number) => (
                   <tr key={i}>
                     <td className="max-w-xs truncate">
-                      <Link href={`/market/${mt.other_market_id}`} className="hover:underline">
+                      <Link
+                        href={withResearchMode(`/market/${mt.other_market_id}`, mode)}
+                        className="hover:underline"
+                      >
                         {displayTitle(mt.other_title)}
                       </Link>
                     </td>
