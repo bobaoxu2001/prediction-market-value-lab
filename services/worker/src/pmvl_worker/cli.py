@@ -131,6 +131,159 @@ def _fmt(value: Any) -> str:
 
 
 @app.command()
+def readiness(as_json: bool = typer.Option(False, "--json")) -> None:
+    """How far the live track record is from being able to support its claims."""
+    from pmvl_markets.backtest import track_record_readiness
+    from pmvl_shared.db import session_scope
+
+    with session_scope() as db:
+        payload = track_record_readiness(db).as_dict()
+
+    if as_json:
+        _emit(payload, as_json=True)
+        return
+
+    table = Table(title="Track record accrual")
+    for column in ("Milestone", "Have", "Needs", "Remaining", "Projected"):
+        table.add_column(column)
+    for milestone in payload["milestones"]:
+        table.add_row(
+            milestone["name"],
+            str(milestone["have"]),
+            str(milestone["needs"]),
+            "-" if milestone["met"] else str(milestone["remaining"]),
+            "met" if milestone["met"] else _fmt(milestone.get("projected_date")),
+        )
+    console.print(table)
+
+    console.print(
+        f"published={payload['published_total']} "
+        f"settled={payload['settled_recommendations']} "
+        f"pending={payload['pending_recommendations']} "
+        f"days={payload['days_of_history']} "
+        f"rate={_fmt(payload['settled_per_day'])}/day"
+    )
+    colour = "yellow" if payload["pipeline_stalled"] else "green"
+    console.print(f"[{colour}]{payload['summary']}[/{colour}]")
+    if payload["pipeline_stalled"]:
+        console.print(
+            "[dim]Start the clock with `pmvl schedule` as a long-lived process.[/dim]"
+        )
+
+
+@app.command()
+def calibrate(as_json: bool = typer.Option(False, "--json")) -> None:
+    """Fit a calibration map on settled recommendations, or say why not.
+
+    Fitting nothing is a successful run, and the expected one until several weeks
+    of real settled history exist.
+    """
+    payload = jobs.job_calibrate()
+    if as_json:
+        _emit(payload, as_json=True)
+        return
+
+    table = Table(title="Calibration fit")
+    table.add_column("Field")
+    table.add_column("Value")
+    for key in (
+        "method", "applied", "n_train", "n_validation",
+        "brier_identity", "brier_fitted", "brier_improvement",
+        "min_brier_improvement",
+    ):
+        table.add_row(key, _fmt(payload.get(key)))
+    console.print(table)
+    colour = "green" if payload.get("applied") else "yellow"
+    console.print(f"[{colour}]{payload.get('reason', '')}[/{colour}]")
+
+
+@app.command()
+def retrodict(
+    settled_within_days: int = typer.Option(
+        60, help="Only markets that settled within this many days"
+    ),
+    max_markets: int = typer.Option(200, help="Cap on markets sampled"),
+    as_json: bool = typer.Option(False, "--json"),
+) -> None:
+    """Replay the models against settled markets: do they beat the market price?
+
+    Distinct from `backtest`, which reads only published snapshots. This reaches
+    backwards through live endpoints and its honesty rests on defences rather than
+    on structure - see `pmvl_markets.retrodiction.harness`.
+    """
+    payload = asyncio.run(
+        jobs.job_retrodict(
+            settled_within_days=settled_within_days, max_markets=max_markets
+        )
+    )
+    if as_json:
+        _emit(payload, as_json=True)
+        return
+
+    sample = payload.get("sample", {})
+    result = payload.get("result", {})
+
+    console.print(
+        f"[bold]Sample[/bold]: {sample.get('n_markets', 0)} settled markets, "
+        f"YES base rate {_fmt(sample.get('yes_base_rate'))}, "
+        f"{sample.get('settled_from') or '-'} to {sample.get('settled_to') or '-'}"
+    )
+
+    table = Table(title="Retrodiction - model vs the market's own price")
+    for column in ("Split", "N", "Brier (model)", "Brier (market)", "Improvement", "t"):
+        table.add_column(column)
+    table.add_row(
+        "[bold]all[/bold]",
+        str(result.get("n_scored_against_market", 0)),
+        _fmt(result.get("brier_model")),
+        _fmt(result.get("brier_market")),
+        _fmt(result.get("brier_improvement_vs_market")),
+        "",
+    )
+    for dimension, group in (result.get("segments") or {}).items():
+        for label, block in group.items():
+            improvement = block.get("brier_improvement_vs_market")
+            wins = (improvement or 0) > 0 and block.get("distinguishable_from_zero")
+            name = f"{dimension} {label}"
+            table.add_row(
+                f"[green]{name}[/green]" if wins else name,
+                str(block["n"]),
+                _fmt(block["brier_model"]),
+                _fmt(block["brier_market"]),
+                _fmt(improvement),
+                _fmt(block.get("t_statistic")),
+            )
+    console.print(table)
+
+    search = result.get("segment_search") or {}
+    if search:
+        winners = search.get("segments_beating_market") or []
+        console.print(
+            f"[dim]Searched {search.get('segments_examined')} segments; "
+            f"~{search.get('expected_false_positives_at_t2')} would clear |t|>2 on "
+            f"noise alone.[/dim]"
+        )
+        console.print(
+            f"[green]Beat the market:[/green] {', '.join(winners)}"
+            if winners
+            else "[yellow]No segment beat the market at |t|>2.[/yellow]"
+        )
+        console.print(f"[dim]{search.get('note')}[/dim]")
+
+    skips = result.get("skips") or {}
+    if skips:
+        console.print(
+            "[dim]Skipped:[/dim] "
+            + ", ".join(f"{reason} ({count})" for reason, count in list(skips.items())[:4])
+        )
+
+    interpretation = payload.get("interpretation") or payload.get("note") or ""
+    improvement = result.get("brier_improvement_vs_market")
+    colour = "green" if (improvement or 0) > 0 else "yellow"
+    console.print(f"[{colour}]{interpretation}[/{colour}]")
+
+
+@app.command()
 def prune(
     keep_days: int = typer.Option(30), as_json: bool = typer.Option(False, "--json")
 ) -> None:

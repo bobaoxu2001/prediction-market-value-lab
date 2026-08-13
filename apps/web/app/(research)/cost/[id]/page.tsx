@@ -2,7 +2,13 @@ import type { Metadata } from "next";
 import Link from "next/link";
 import { notFound } from "next/navigation";
 
-import { apiGet, qs, type CostAtSize, type CostDetail } from "@/lib/api";
+import {
+  apiGet,
+  qs,
+  type CostAtSize,
+  type CostDetail,
+  type DataMode,
+} from "@/lib/api";
 import {
   cents,
   centsFine,
@@ -22,6 +28,7 @@ import {
   PlatformChip,
 } from "@/components/ui";
 import { WatchButton } from "@/components/watch-button";
+import { ShareResultButton } from "@/components/share-result-button";
 
 export const dynamic = "force-dynamic";
 
@@ -45,8 +52,9 @@ export async function generateMetadata({
   const raw = query.size;
   const size = sanitiseSize(typeof raw === "string" ? raw : undefined);
   const side = query.side === "no" ? "no" : "yes";
+  const mode = sanitiseMode(query.mode);
 
-  const res = await apiGet<CostDetail>(`/cost/${id}${qs({ size, side })}`);
+  const res = await apiGet<CostDetail>(`/cost/${id}${qs({ size, side, mode })}`);
   const data = res?.data;
   const entry = data?.priced ? data.requested : null;
   if (!data || !entry) return { title: "Contract cost" };
@@ -54,15 +62,30 @@ export async function generateMetadata({
   const contract = displayTitle(data.market.title);
   const quoted = cents(entry.nominal_price);
   const estimated = cents(entry.measured_cost);
-  const title = `${contract} — quoted ${quoted}, estimated entry cost ${estimated}`;
-  const description =
-    `Buying ${size} contract${size === "1" ? "" : "s"} has an estimated entry cost of ${estimated} each after ` +
-    `observed depth, published venue rules and disclosed transfer/capital assumptions. ` +
-    `Estimated break-even probability ${
-      entry.breakeven_probability === null
-        ? "is unreachable at this size"
-        : pct(entry.breakeven_probability)
-    }, not ${pct(entry.nominal_price)}. Research only.`;
+
+  // A preview must never headline a size the venue would reject.
+  //
+  // `size` defaults to 1, and on a contract with a five-contract minimum that
+  // produced "quoted 0.1¢, estimated entry cost 50.1¢" on every bare link — a
+  // startling figure for an order that cannot be placed. The page itself says so
+  // beside the number; a link preview has no room for that, and is seen by
+  // people who never open it.
+  const rejected = entry.below_min_order_size;
+  const title = rejected
+    ? `${contract} — quoted ${quoted}, below this venue's minimum order size`
+    : `${contract} — quoted ${quoted}, estimated entry cost ${estimated}`;
+
+  const description = rejected
+    ? `This venue will not accept an order of ${size} contract${size === "1" ? "" : "s"} on this ` +
+      `contract, so the ${estimated} figure is arithmetic rather than a trade you could place. ` +
+      `Open the page for the ladder at sizes the venue does accept. Research only.`
+    : `Buying ${size} contract${size === "1" ? "" : "s"} has an estimated entry cost of ${estimated} each after ` +
+      `observed depth, published venue rules and disclosed transfer/capital assumptions. ` +
+      `Estimated break-even probability ${
+        entry.breakeven_probability === null
+          ? "is unreachable at this size"
+          : pct(entry.breakeven_probability)
+      }, not ${pct(entry.nominal_price)}. Research only.`;
 
   return {
     title,
@@ -99,9 +122,10 @@ export default async function CostDetailPage({
   const sizeParam = typeof raw === "string" ? raw : undefined;
   const side = query.side === "no" ? "no" : "yes";
   const size = sanitiseSize(sizeParam);
+  const mode = sanitiseMode(query.mode);
 
   const res = await apiGet<CostDetail>(
-    `/cost/${marketId}${qs({ size, side })}`,
+    `/cost/${marketId}${qs({ size, side, mode })}`,
   );
   if (!res) return <ApiDown />;
   const data = res.data;
@@ -111,7 +135,7 @@ export default async function CostDetailPage({
     return (
       <>
         <DemoBanner notice={res.demo_notice} />
-        <Header data={data} side={side} size={size} />
+        <Header data={data} side={side} size={size} mode={mode} />
         <div className="panel mt-6 p-6">
           <p className="t-sub-title">This contract cannot be priced</p>
           <p className="t-body mt-2 max-w-2xl">{data.reason}</p>
@@ -125,7 +149,7 @@ export default async function CostDetailPage({
   return (
     <>
       <DemoBanner notice={res.demo_notice} />
-      <Header data={data} side={side} size={size} />
+      <Header data={data} side={side} size={size} mode={mode} />
 
       {entry ? (
         <Headline data={data} entry={entry} size={size} />
@@ -137,11 +161,17 @@ export default async function CostDetailPage({
         </div>
       )}
 
-      <SizeControls marketId={data.market.id} current={size} side={side} />
+      <SizeControls marketId={data.market.id} current={size} side={side} mode={mode} />
 
       {entry && <Decomposition entry={entry} data={data} />}
 
-      <Ladder ladder={data.ladder} current={size} marketId={data.market.id} side={side} />
+      <Ladder
+        ladder={data.ladder}
+        current={size}
+        marketId={data.market.id}
+        side={side}
+        mode={mode}
+      />
 
       <Caveats caveats={data.caveats} />
     </>
@@ -157,16 +187,22 @@ function sanitiseSize(raw: string | undefined): string {
   return String(Math.floor(parsed));
 }
 
+function sanitiseMode(raw: string | string[] | undefined): DataMode {
+  return raw === "demo" || raw === "all" ? raw : "live";
+}
+
 /* ------------------------------------------------------------------ header -- */
 
 function Header({
   data,
   side,
   size,
+  mode,
 }: {
   data: CostDetail;
-  side: string;
+  side: "yes" | "no";
   size: string;
+  mode: DataMode;
 }) {
   const market = data.market;
   return (
@@ -178,7 +214,7 @@ function Header({
       </div>
       <h1 className="t-page-title mt-3">{displayTitle(market.title)}</h1>
       <div className="mt-3 flex flex-wrap items-center gap-x-4 gap-y-2">
-        <SideToggle marketId={market.id} current={side} size={size} />
+        <SideToggle marketId={market.id} current={side} size={size} mode={mode} />
         <WatchButton
           marketId={market.id}
           title={market.title}
@@ -186,14 +222,28 @@ function Header({
           side={side === "no" ? "no" : "yes"}
           size={size}
         />
+        {data.priced && data.requested ? (
+          <ShareResultButton
+            contract={displayTitle(market.title)}
+            side={side}
+            size={size}
+            quoted={cents(data.requested.nominal_price)}
+            estimated={cents(data.requested.measured_cost)}
+            breakeven={
+              data.requested.breakeven_probability === null
+                ? "above 100%"
+                : pct(data.requested.breakeven_probability)
+            }
+          />
+        ) : null}
         <Link
-          href={`/market/${market.id}`}
+          href={`/market/${market.id}${qs({ mode })}`}
           className="text-sm underline decoration-line-strong underline-offset-4 hover:decoration-current"
         >
           Full contract analysis
         </Link>
         <Link
-          href="/cost"
+          href={`/cost${qs({ mode })}`}
           className="text-sm underline decoration-line-strong underline-offset-4 hover:decoration-current"
         >
           All contracts by premium
@@ -207,17 +257,19 @@ function SideToggle({
   marketId,
   current,
   size,
+  mode,
 }: {
   marketId: number;
-  current: string;
+  current: "yes" | "no";
   size: string;
+  mode: DataMode;
 }) {
   return (
     <div className="seg" role="group">
       {["yes", "no"].map((side) => (
         <Link
           key={side}
-          href={`/cost/${marketId}${qs({ size, side })}`}
+          href={`/cost/${marketId}${qs({ size, side, mode })}`}
           aria-current={side === current ? "page" : undefined}
           className={`seg-item ${side === current ? "seg-item-on" : "hover:text-ink"}`}
         >
@@ -345,21 +397,23 @@ function SizeControls({
   marketId,
   current,
   side,
+  mode,
 }: {
   marketId: number;
   current: string;
-  side: string;
+  side: "yes" | "no";
+  mode: DataMode;
 }) {
   return (
     <section className="mt-6">
-      <div className="flex flex-wrap items-center gap-x-6 gap-y-3">
-        <div className="flex items-center gap-2">
-          <span className="t-label">Size</span>
-          <div className="seg" role="group">
+      <div className="flex min-w-0 flex-wrap items-center gap-x-6 gap-y-3">
+        <div className="flex min-w-0 max-w-full items-center gap-2">
+          <span className="t-label shrink-0">Size</span>
+          <div className="seg seg-scroll" role="group" aria-label="Order size">
             {PRESETS.map((size) => (
               <Link
                 key={size}
-                href={`/cost/${marketId}${qs({ size, side })}`}
+                href={`/cost/${marketId}${qs({ size, side, mode })}`}
                 aria-current={size === current ? "page" : undefined}
                 className={`seg-item ${size === current ? "seg-item-on" : "hover:text-ink"}`}
               >
@@ -371,8 +425,13 @@ function SizeControls({
 
         {/* A plain GET form: works without JavaScript, and the resulting URL is
             the shareable artefact. */}
-        <form method="get" action={`/cost/${marketId}`} className="flex items-center gap-2">
+        <form
+          method="get"
+          action={`/cost/${marketId}`}
+          className="flex flex-wrap items-center gap-2"
+        >
           <input type="hidden" name="side" value={side} />
+          <input type="hidden" name="mode" value={mode} />
           <label htmlFor="size" className="t-label">
             Custom
           </label>
@@ -426,7 +485,10 @@ function Decomposition({
     {
       label: "Fee rounding",
       value: parts.fee_rounding,
-      note: "Kalshi ceils the fee to the whole cent on the whole order. This is the part that exists purely because of that rule.",
+      note:
+        data.market.platform === "kalshi"
+          ? "Kalshi ceils the fee to the whole cent on the whole order. This is the part that exists purely because of that rule."
+          : "This venue does not use Kalshi's whole-cent order-fee rounding, so no Kalshi rounding surcharge is added here.",
     },
     {
       label: "Transfer",
@@ -514,11 +576,13 @@ function Ladder({
   current,
   marketId,
   side,
+  mode,
 }: {
   ladder: CostAtSize[];
   current: string;
   marketId: number;
-  side: string;
+  side: "yes" | "no";
+  mode: DataMode;
 }) {
   if (ladder.length === 0) return null;
 
@@ -573,7 +637,7 @@ function Ladder({
                 <tr key={entry.size} className={isCurrent ? "bg-sunken" : undefined}>
                   <th scope="row" className="num font-normal normal-case tracking-normal text-sm text-ink">
                     <Link
-                      href={`/cost/${marketId}${qs({ size: entry.size, side })}`}
+                      href={`/cost/${marketId}${qs({ size: entry.size, side, mode })}`}
                       className="hover:underline"
                     >
                       {compactNumber(entry.size)}

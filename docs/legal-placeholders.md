@@ -9,6 +9,14 @@ Guessing a legal entity name, a jurisdiction or a refund policy would produce a
 document that reads as finished and is wrong — which is worse than one that
 obviously is not.
 
+**Status change, 7 August 2026.** These placeholders were an open risk while the
+Founding Pilot was on sale: taking money against unreviewed terms with a blank
+refund policy is a bad idea independent of the software. The pilot is withdrawn
+([ADR 003](adr-003-withdraw-the-pilot.md)) and nothing on the site is purchasable,
+so they stop being urgent and become a **precondition**: resolving them is on the
+list of things that must be true before any paid tier opens, alongside the
+evidential gate in that ADR. They are not resolved by the pilot going away.
+
 ## How placeholders render
 
 `components/legal.tsx` exports `<Placeholder>`, which renders as a highlighted

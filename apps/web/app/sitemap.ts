@@ -16,6 +16,7 @@ import { absoluteUrl } from "@/lib/site";
 export default function sitemap(): MetadataRoute.Sitemap {
   const entries: Array<{ path: string; priority: number; changeFrequency: "daily" | "weekly" | "monthly" }> = [
     { path: "/", priority: 1, changeFrequency: "weekly" },
+    { path: "/extension", priority: 0.95, changeFrequency: "weekly" },
     { path: "/app", priority: 0.9, changeFrequency: "daily" },
     // High priority: it is the surface that answers on every visit, and the one
     // whose subject ("what can entry cost at this size") people search for.

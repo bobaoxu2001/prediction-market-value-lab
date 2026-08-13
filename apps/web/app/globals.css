@@ -417,6 +417,13 @@
   .seg {
     @apply inline-flex items-center gap-1 rounded-[3px] border border-line bg-sunken p-0.5;
   }
+  .seg-scroll {
+    @apply min-w-0 max-w-full overflow-x-auto;
+    scrollbar-width: thin;
+  }
+  .seg-scroll .seg-item {
+    @apply shrink-0 whitespace-nowrap;
+  }
   .seg-item {
     @apply rounded-[2px] px-3 py-1.5 text-sm font-medium text-ink-muted transition-colors;
   }

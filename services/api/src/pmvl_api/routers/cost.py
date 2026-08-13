@@ -16,7 +16,7 @@ from decimal import Decimal, InvalidOperation
 from typing import Any
 
 from fastapi import APIRouter, HTTPException, Query
-from sqlalchemy import select
+from sqlalchemy import and_, or_, select
 from sqlalchemy.orm import Session
 
 from pmvl_shared.config import get_settings
@@ -377,6 +377,11 @@ def cost_index(
     limit: int = Query(50, ge=1, le=200),
     platform: str | None = Query(None),
     category: str | None = Query(None),
+    q: str | None = Query(
+        None,
+        max_length=120,
+        description="Contract title, subtitle, or venue market ID to find.",
+    ),
     side: Side = Query(Side.YES),
     size: str = Query("100", description="Order size the comparison is priced at."),
     db: Session = DbDep,
@@ -399,6 +404,27 @@ def cost_index(
         stmt = stmt.where(Market.platform == platform)
     if category:
         stmt = stmt.where(Market.category == category)
+    # Search before the bounded volume scan. Otherwise a title can exist in the
+    # database and still appear to be missing simply because it was outside the
+    # first 300 volume-ranked rows. Each word must match at least one identity
+    # field; SQL LIKE metacharacters are escaped so a literal market ID such as
+    # ``KX_RATE_25`` does not turn underscores into one-character wildcards.
+    terms = [term for term in (q or "").split() if term]
+    if terms:
+        predicates = []
+        for term in terms:
+            escaped = (
+                term.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_")
+            )
+            pattern = f"%{escaped}%"
+            predicates.append(
+                or_(
+                    Market.title.ilike(pattern, escape="\\"),
+                    Market.subtitle.ilike(pattern, escape="\\"),
+                    Market.platform_market_id.ilike(pattern, escape="\\"),
+                )
+            )
+        stmt = stmt.where(and_(*predicates))
     stmt = apply_provenance(stmt, Market.provenance, mode)
     # Ordered by traded volume before pricing so the comparison is over contracts
     # someone might actually buy, then re-sorted by premium below. A scan of the

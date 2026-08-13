@@ -2,6 +2,7 @@
 
 import Link from "next/link";
 import { usePathname, useSearchParams } from "next/navigation";
+import { withResearchMode } from "@/lib/research-mode";
 
 /**
  * Navigation that carries the current data mode across pages.
@@ -19,9 +20,7 @@ export function ModeNav({
   const pathname = usePathname();
   const params = useSearchParams();
   const mode = params.get("mode");
-
-  const withMode = (href: string) =>
-    mode && mode !== "live" ? `${href}${href.includes("?") ? "&" : "?"}mode=${mode}` : href;
+  const withMode = (href: string) => withResearchMode(href, mode);
 
   return (
     /*

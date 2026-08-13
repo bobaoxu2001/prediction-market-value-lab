@@ -5,13 +5,15 @@ import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { PILOT_MEMBER_CAP } from "@/lib/pilot";
 
 /**
- * The Founding Pilot sales page.
+ * The Founding Pilot page, after the offer was withdrawn.
  *
- * This is the only page in the product that asks for money, which makes it the
- * only page where a wrong word is a misrepresentation rather than a typo. The
- * tests below are therefore mostly about what the page must *not* say, and about
- * the one structural rule that matters: when no payment URL is configured there
- * is nothing to buy, so nothing may look like a purchase.
+ * This used to be the only page in the product that asked for money. It no
+ * longer asks, and the tests below are about making sure it cannot start again
+ * by accident: the withdrawal is a code-level constant, so no environment
+ * variable may resurrect a checkout, and no affordance may collect interest in
+ * something nobody intends to sell.
+ *
+ * See docs/adr-003-withdraw-the-pilot.md for why.
  */
 
 const ORIGINAL_ENV = { ...process.env };
@@ -22,38 +24,44 @@ afterEach(() => {
 });
 
 async function renderPage() {
-  // Imported per test because the module reads `process.env` at call time and
-  // the page's payment branch is the thing under test.
+  // Imported per test because the module reads `process.env` at call time, and
+  // the point of several tests below is that doing so no longer changes
+  // anything.
   const { default: FoundingPilotPage } = await import(
     "@/app/(site)/founding-pilot/page"
   );
   render(<FoundingPilotPage />);
 }
 
-describe("founding pilot sales page", () => {
+describe("founding pilot page", () => {
   beforeEach(() => {
     delete process.env.PILOT_PAYMENT_LINK;
     delete process.env.PILOT_SEATS_TAKEN;
   });
 
-  describe("with no payment link configured", () => {
-    it("offers an enquiry, not a purchase", async () => {
+  describe("the offer is withdrawn", () => {
+    it("says so, at the top, in the heading", async () => {
       await renderPage();
 
-      const ctas = screen.getAllByRole("link", { name: /request a founding spot/i });
-      expect(ctas.length).toBeGreaterThan(0);
-      for (const cta of ctas) {
-        expect(cta.getAttribute("href")).toBe(
-          "mailto:ax2183@nyu.edu?subject=PMVL%20Founding%20Pilot%20interest",
-        );
-      }
+      expect(
+        screen.getByRole("heading", { name: /this pilot is closed/i }),
+      ).toBeTruthy();
+    });
+
+    it("gives the evidential reason rather than a vague 'not available'", async () => {
+      await renderPage();
+
+      // The reason is the whole point: the pilot rested on a premise the
+      // measurement did not support. "Sold out" or "paused" would be a
+      // different, and false, claim.
+      expect(
+        screen.getAllByText(/worse than the price/i).length,
+      ).toBeGreaterThan(0);
     });
 
     it("shows no control that looks like a purchase", async () => {
       await renderPage();
 
-      // A button reading "Join the pilot - $49" with nothing behind it is the
-      // single most dishonest thing this page could render.
       expect(screen.queryByRole("link", { name: /join the pilot/i })).toBeNull();
       expect(screen.queryByRole("button", { name: /join|buy|pay|checkout/i })).toBeNull();
       for (const link of screen.getAllByRole("link")) {
@@ -61,52 +69,63 @@ describe("founding pilot sales page", () => {
       }
     });
 
-    it("says plainly that payment is not open", async () => {
-      await renderPage();
-      expect(
-        screen.getAllByText(
-          /payment is not open yet\. founding spots are being reviewed manually\./i,
-        ).length,
-      ).toBeGreaterThan(0);
-    });
-
-    it("claims no specific number of remaining seats when nobody is counting", async () => {
-      await renderPage();
-      // Unset seat count must not render as "20 still open" - an unverified
-      // scarcity signal is a fabricated one.
-      expect(screen.queryByText(/still open/i)).toBeNull();
-    });
-  });
-
-  describe("with a payment link configured", () => {
-    beforeEach(() => {
-      process.env.PILOT_PAYMENT_LINK = "https://buy.stripe.com/test_founding";
-    });
-
-    it("offers the purchase and drops the enquiry CTA", async () => {
+    it("collects no interest for a product nobody intends to sell", async () => {
       await renderPage();
 
-      const join = screen.getAllByRole("link", { name: /join the pilot/i });
-      expect(join.length).toBeGreaterThan(0);
-      for (const link of join) {
-        expect(link.getAttribute("href")).toBe("https://buy.stripe.com/test_founding");
-      }
+      // A "register your interest" button on a withdrawn offer reads as a queue
+      // that leads somewhere. It does not.
+      //
+      // Scoped to the pilot-interest address rather than to every mailto: the
+      // page still carries a plain support contact, and removing a way to reach
+      // a person is not what withdrawing an offer means.
       expect(
         screen.queryByRole("link", { name: /request a founding spot/i }),
       ).toBeNull();
-      expect(screen.queryByText(/payment is not open yet/i)).toBeNull();
+      for (const link of screen.getAllByRole("link")) {
+        expect(link.getAttribute("href") ?? "").not.toContain("Pilot%20interest");
+      }
     });
 
-    it("ignores a payment URL that is not a Stripe payment link", async () => {
-      // A pasted mistake, or a substituted value, must degrade to "not open"
-      // rather than turn the CTA into a redirect to somebody else's payment page.
-      process.env.PILOT_PAYMENT_LINK = "https://evil.example/checkout";
+    it("points at the free cost tool instead", async () => {
+      await renderPage();
+
+      const cta = screen.getByRole("link", { name: /use the cost tool instead/i });
+      expect(cta.getAttribute("href")).toBe("/cost");
+    });
+  });
+
+  describe("no environment variable can reopen sales", () => {
+    it("ignores a valid Stripe payment link", async () => {
+      // The withdrawal is a constant in the module, checked before the
+      // environment is read at all. Reopening is a code change with a diff, for
+      // the same reason ADR 002 gave BILLING_MODE no `live` value.
+      process.env.PILOT_PAYMENT_LINK = "https://buy.stripe.com/test_founding";
       await renderPage();
 
       expect(screen.queryByRole("link", { name: /join the pilot/i })).toBeNull();
-      expect(
-        screen.getAllByRole("link", { name: /request a founding spot/i }).length,
-      ).toBeGreaterThan(0);
+      for (const link of screen.getAllByRole("link")) {
+        expect(link.getAttribute("href") ?? "").not.toContain("buy.stripe.com");
+      }
+    });
+
+    it("ignores a payment URL that is not a Stripe payment link", async () => {
+      process.env.PILOT_PAYMENT_LINK = "https://evil.example/checkout";
+      await renderPage();
+
+      for (const link of screen.getAllByRole("link")) {
+        expect(link.getAttribute("href") ?? "").not.toContain("evil.example");
+      }
+    });
+
+    it("keeps pilotPaymentLink null whatever the environment says", async () => {
+      process.env.PILOT_PAYMENT_LINK = "https://buy.stripe.com/test_founding";
+      const { PILOT_WITHDRAWN, pilotPaymentLink, pilotSalesOpen } = await import(
+        "@/lib/pilot"
+      );
+
+      expect(PILOT_WITHDRAWN).toBe(true);
+      expect(pilotPaymentLink()).toBeNull();
+      expect(pilotSalesOpen()).toBe(false);
     });
   });
 

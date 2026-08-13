@@ -23,16 +23,17 @@ import type { Entitlement } from "@/lib/billing/entitlement";
  */
 
 const PUBLIC_LINKS = [
-  { href: "/#product", label: "Product" },
+  { href: "/extension", label: "Live overlay" },
+  { href: "/cost", label: "Cost" },
   { href: "/app", label: "Research" },
   { href: "/methodology", label: "Methodology" },
-  { href: "/pricing", label: "Pricing" },
 ] as const;
 
 const AUTHED_LINKS = [
+  { href: "/extension", label: "Live overlay" },
+  { href: "/cost", label: "Cost" },
   { href: "/app", label: "Open research" },
   { href: "/account", label: "Account" },
-  { href: "/account/billing", label: "Manage billing" },
 ] as const;
 
 export function SiteHeader({ entitlement }: { entitlement: Entitlement }) {
@@ -82,13 +83,9 @@ export function SiteHeader({ entitlement }: { entitlement: Entitlement }) {
                 </Link>
               </>
             ) : (
-              // No auth provider is configured, so both of these would be
-              // prominent links to a page that says accounts cannot be created.
-              // A non-interactive note is the honest shape while the research
-              // itself - which needs no account - stays one click away.
-              <span className="chip bg-sunken text-ink-muted">
-                Accounts coming soon
-              </span>
+              <Link href="/extension" className="btn-primary">
+                Get beta
+              </Link>
             )}
           </div>
           <ThemeToggle />
@@ -163,9 +160,12 @@ function MobileMenu({
                 </Link>
               </>
             ) : (
-              <p className="px-2 py-2 text-sm text-ink-faint">
-                Accounts coming soon
-              </p>
+              <Link
+                href="/extension"
+                className="mt-1 block rounded-[2px] bg-accent px-2 py-2 text-sm font-medium text-accent-ink"
+              >
+                Get the beta overlay
+              </Link>
             )}
           </div>
         </nav>
@@ -183,8 +183,9 @@ export function SiteFooter() {
             title="Product"
             links={[
               { href: "/", label: "Overview" },
+              { href: "/extension", label: "Live entry-cost overlay" },
+              { href: "/cost", label: "Snapshot cost calculator" },
               { href: "/pricing", label: "Pricing" },
-              { href: "/app", label: "Research briefing" },
             ]}
           />
           <FooterColumn

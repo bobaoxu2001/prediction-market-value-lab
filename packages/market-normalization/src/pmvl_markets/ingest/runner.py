@@ -61,6 +61,29 @@ class IngestReport:
 #: gate on its own, so it should not outrank a modellable market for a book fetch.
 MODELLABLE_CATEGORIES = frozenset({Category.CRYPTO, Category.WEATHER, Category.FINANCE})
 
+
+def modellable_categories() -> frozenset[Category]:
+    """The modellable set for the current configuration.
+
+    Sports joins it only when ``SPORTS_MODEL_ENABLED`` is on. The scoring reserve
+    is for books that can produce a *score*, and while the sports model is off no
+    sports contract can - so promoting them would spend the scarce half of the
+    budget on markets that are then rejected for having no independent prior, which
+    is precisely the mistake ``orderbook_priority`` was written to avoid.
+
+    Their books are still fetched: the coverage reserve ranks by volume alone, and
+    single-game contracts are among the highest-volume on the venue.
+    """
+    from pmvl_shared.config import get_settings
+
+    # Economics joins unconditionally: the CPI nowcast model needs no key and no
+    # flag, so an economics contract on one of the bucket boards really can be
+    # scored. The sports model is the one still waiting on evidence.
+    categories = MODELLABLE_CATEGORIES | {Category.ECONOMICS}
+    if getattr(get_settings(), "sports_model_enabled", False):
+        categories |= {Category.SPORTS}
+    return categories
+
 #: No single series may take more than this share of one cycle's orderbook budget.
 MAX_SERIES_BUDGET_SHARE = 0.2
 #: ...but every series that qualifies at all gets at least this many, so a small
@@ -84,7 +107,7 @@ def orderbook_priority(
     still governs it. It stopped being the whole story once cost analysis existed:
     see ``coverage_priority``.
     """
-    modellable = 0 if market.category in MODELLABLE_CATEGORIES else 1
+    modellable = 0 if market.category in modellable_categories() else 1
     horizons = horizons_for(market.expected_resolution_time, now=now)
     bucket = {"24h": 0, "7d": 1, "30d": 2}.get(horizons[0] if horizons else "", 3)
     return (modellable, bucket, -(market.volume_24h or Decimal("0")))

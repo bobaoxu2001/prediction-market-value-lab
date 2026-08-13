@@ -242,6 +242,60 @@ def job_backtest() -> dict[str, Any]:
         return payload
 
 
+async def job_retrodict(
+    *,
+    settled_within_days: int = 60,
+    max_markets: int = 200,
+) -> dict[str, Any]:
+    """Replay the models against already-settled markets.
+
+    Not part of ``pmvl pipeline`` and not on the scheduler. It reaches out to the
+    venues' candlestick endpoints for every market it samples, which is a heavy,
+    bursty read that has nothing to do with keeping the live surface fresh, and its
+    output is a measurement someone reads rather than a table the site serves.
+    """
+    from pmvl_markets.retrodiction import SamplingCriteria, run_retrodiction
+
+    with job_run("retrodict") as details:
+        criteria = SamplingCriteria(
+            settled_within_days=settled_within_days, max_markets=max_markets
+        )
+        with session_scope() as db:
+            payload = await run_retrodiction(db, criteria=criteria)
+        result = payload.get("result", {})
+        details["records_written"] = result.get("n_forecasts", 0)
+        details["brier_improvement_vs_market"] = result.get(
+            "brier_improvement_vs_market"
+        )
+        details["n_scored"] = result.get("n_scored_against_market", 0)
+        return payload
+
+
+def job_calibrate() -> dict[str, Any]:
+    """Fit a calibration map on live settled recommendations, or record why not.
+
+    Safe to run on a schedule from day one: with too few settled recommendations
+    it stores a refusal and changes nothing, which is the honest state of the
+    system until the run clock has been turning for several weeks.
+    """
+    from pmvl_markets.backtest import fit_and_store
+    from pmvl_markets.probability.ensemble import MODEL_VERSION
+
+    with job_run("calibrate") as details:
+        with session_scope() as db:
+            fit = fit_and_store(db, model_name="ensemble", version=MODEL_VERSION)
+        payload = fit.as_dict()
+        details.update(
+            {
+                "applied": fit.applied,
+                "method": fit.method,
+                "n_train": fit.n_train,
+                "records_written": 1,
+            }
+        )
+        return payload
+
+
 def job_prune(*, keep_days: int = 30) -> dict[str, Any]:
     from pmvl_markets.ingest import prune_orderbook_snapshots
 

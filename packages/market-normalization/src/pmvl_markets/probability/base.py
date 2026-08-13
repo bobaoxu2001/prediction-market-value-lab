@@ -46,7 +46,31 @@ class ModelContext:
     sibling_outcome_prices: list[tuple[str, Decimal]] = field(default_factory=list)
     evidence: list[EvidenceRecord] = field(default_factory=list)
     now: datetime | None = None
+    #: Set only by the retrodiction harness. It means: *pretend this is the current
+    #: instant, and do not look at anything published after it.*
+    #:
+    #: This is not the same field as ``now``. ``now`` is what the model uses to
+    #: compute time to resolution, and a caller may set it for perfectly ordinary
+    #: reasons (a deterministic test, a snapshot replayed a few minutes late).
+    #: ``as_of`` is a much stronger claim, and it is the only thing standing between
+    #: a historical evaluation and a look-ahead result: with it set, "spot price"
+    #: must mean the spot price *then*, not the spot price now.
+    #:
+    #: A model that cannot honour it must decline - see :func:`lookahead_guard`.
+    #: Fetching current data under an ``as_of`` would not fail loudly; it would
+    #: quietly produce a spectacular backtest, which is the single most expensive
+    #: mistake this repository could make.
+    as_of: datetime | None = None
     extra: dict[str, Any] = field(default_factory=dict)
+
+    @property
+    def is_retrodiction(self) -> bool:
+        return self.as_of is not None
+
+    @property
+    def evaluation_time(self) -> datetime | None:
+        """The instant the model should treat as the present."""
+        return self.as_of or self.now
 
 
 @dataclass
@@ -99,6 +123,12 @@ class ProbabilityModel(ABC):
     independent: bool = True
     #: Ceiling on this model's confidence, expressing structural trust in the method.
     max_confidence: Decimal = Decimal("1")
+    #: Whether this model can reconstruct its inputs as they stood at a past instant.
+    #:
+    #: Defaults to False, and the default is the point. A model that has not been
+    #: audited for look-ahead is not presumed safe to replay; it is excluded from
+    #: historical evaluation until someone reads its data path and says otherwise.
+    supports_as_of: bool = False
 
     def handles(self, market: NormalizedMarket) -> bool:
         return not self.categories or market.category in self.categories
@@ -115,6 +145,26 @@ class ProbabilityModel(ABC):
 def no_opinion(detail: str) -> ModelEstimate:
     """Helper for the common 'not enough data' path."""
     return ModelEstimate(probability=None, confidence=ZERO, detail=detail)
+
+
+def lookahead_guard(model: ProbabilityModel, ctx: ModelContext) -> ModelEstimate | None:
+    """Refuse to answer a retrodiction the model cannot honestly answer.
+
+    Returns a ``no_opinion`` estimate when ``ctx.as_of`` is set and the model has not
+    declared ``supports_as_of``; otherwise ``None``, meaning carry on.
+
+    Every model consulted by the historical harness calls this first. Declining is
+    the safe direction: a category missing from the historical evaluation understates
+    what the system can do, whereas a category that silently answered with today's
+    data overstates it, and only one of those two errors gets caught by a reader
+    looking at a Brier score.
+    """
+    if ctx.as_of is None or model.supports_as_of:
+        return None
+    return no_opinion(
+        f"{model.name} cannot reconstruct its inputs as of "
+        f"{ctx.as_of.isoformat()}; declining rather than using present-day data"
+    )
 
 
 def clamp_confidence(value: Decimal, ceiling: Decimal) -> Decimal:

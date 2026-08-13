@@ -9,6 +9,7 @@ import {
   humanizeFlag,
   relativeToSnapshot,
 } from "@/lib/format";
+import { withResearchMode } from "@/lib/research-mode";
 import { ApiDown, DemoBanner, EmptyState, PageHeader, PlatformChip, VenueAvailability } from "@/components/ui";
 
 export const dynamic = "force-dynamic";
@@ -58,7 +59,10 @@ export default async function MarketsPage({
   const shownOf = rankedTotal ?? total;
 
   function link(patch: Record<string, string | number | undefined>) {
-    return `/markets${qs({ q: params.q, platform: params.platform, category: params.category, horizon: params.horizon, sort, mode, offset, ...patch })}`;
+    return withResearchMode(
+      `/markets${qs({ q: params.q, platform: params.platform, category: params.category, horizon: params.horizon, sort, offset, ...patch })}`,
+      mode,
+    );
   }
 
   return (
@@ -70,7 +74,7 @@ export default async function MarketsPage({
       <DemoBanner notice={res.demo_notice} />
 
       <form className="panel mb-4 flex flex-wrap items-end gap-3 p-3" action="/markets">
-        <input type="hidden" name="mode" value={mode} />
+        {mode === "demo" ? <input type="hidden" name="mode" value="demo" /> : null}
         <label className="flex flex-col gap-1">
           <span className="metric-label">Search</span>
           <input
@@ -141,7 +145,7 @@ export default async function MarketsPage({
             {rows.map((m) => (
               <li key={m.id} className="min-w-0 px-3 py-3">
                 <Link
-                  href={`/market/${m.id}`}
+                  href={withResearchMode(`/market/${m.id}`, mode)}
                   className="block min-w-0 break-words text-sm font-medium leading-snug text-ink hover:underline"
                 >
                   {displayTitle(m.title)}
@@ -188,7 +192,10 @@ export default async function MarketsPage({
                       value={
                         <>
                           Not exposed in index ·{" "}
-                          <Link href={`/market/${m.id}`} className="underline hover:text-ink">
+                          <Link
+                            href={withResearchMode(`/market/${m.id}`, mode)}
+                            className="underline hover:text-ink"
+                          >
                             open analysis
                           </Link>
                         </>
@@ -263,7 +270,12 @@ export default async function MarketsPage({
                     {/* Wraps rather than truncating. A clipped contract title with
                         no way to recover it is worse than a two-line one. */}
                     <td className="col-sticky market-table-title">
-                      <Link href={`/market/${m.id}`} className="hover:underline">{displayTitle(m.title)}</Link>
+                      <Link
+                        href={withResearchMode(`/market/${m.id}`, mode)}
+                        className="hover:underline"
+                      >
+                        {displayTitle(m.title)}
+                      </Link>
                       {m.venue_availability ? (
                         <div className="mt-1">
                           <VenueAvailability venues={m.venue_availability} compact />

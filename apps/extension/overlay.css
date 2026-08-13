@@ -1,0 +1,158 @@
+/*
+ * Scoped hard, and by class rather than by id.
+ *
+ * The class is what the styles hang off so the panel can be rendered outside the
+ * extension - the preview harness puts two of them side by side, which an
+ * id-scoped sheet silently left unstyled. The element still carries a unique id
+ * for lookup; only the styling is shared.
+ *
+ * Otherwise unchanged: This stylesheet is injected into someone else's application, so
+ * every rule is prefixed and the panel sets its own font and colours rather than
+ * inheriting: a venue restyling its body should never be able to make these
+ * numbers unreadable, and this must never leak a rule back onto their page.
+ */
+.pmvl-panel {
+  position: fixed;
+  right: 16px;
+  bottom: 16px;
+  z-index: 2147483000;
+  width: 320px;
+  max-width: calc(100vw - 32px);
+  max-height: 60vh;
+  overflow-y: auto;
+  padding: 12px 14px;
+  border: 1px solid #2A2F38;
+  border-radius: 10px;
+  background: #0C0E12;
+  color: #E9ECF0;
+  font: 13px/1.45 ui-sans-serif, system-ui, -apple-system, sans-serif;
+  box-shadow: 0 8px 28px rgba(0, 0, 0, 0.45);
+}
+
+.pmvl-panel .pmvl-head {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  font-size: 11px;
+  letter-spacing: 1.4px;
+  text-transform: uppercase;
+  color: #9BA3AF;
+  margin-bottom: 9px;
+}
+
+.pmvl-panel .pmvl-dot {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: #7AAEDB;
+}
+
+/*
+ * Colours are stated on the table and its cells, not inherited from the panel.
+ *
+ * This sheet is injected into someone else's application. A host page with a
+ * `table { color: ... }` rule of its own would otherwise repaint the numbers,
+ * and in light mode that is exactly what happened in the preview: the panel
+ * turned white while the figures stayed at the dark-scheme ink and became
+ * almost unreadable. An overlay cannot rely on inheritance surviving a page it
+ * does not control.
+ */
+.pmvl-panel .pmvl-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-variant-numeric: tabular-nums;
+  color: #E9ECF0;
+}
+
+.pmvl-panel .pmvl-table td {
+  color: #E9ECF0;
+}
+
+.pmvl-panel .pmvl-table th {
+  text-align: right;
+  font-weight: 400;
+  font-size: 10.5px;
+  letter-spacing: 0.6px;
+  text-transform: uppercase;
+  color: #9BA3AF;
+  padding-bottom: 4px;
+}
+
+.pmvl-panel .pmvl-table th:first-child,
+.pmvl-panel .pmvl-table td:first-child {
+  text-align: left;
+}
+
+.pmvl-panel .pmvl-table td {
+  text-align: right;
+  padding: 4px 0;
+  border-top: 1px solid #1C2028;
+}
+
+.pmvl-panel .pmvl-table .pmvl-best td {
+  color: #8FD19E;
+}
+
+/*
+ * The trader's own size outranks the cheapest-size highlight.
+ *
+ * When both land on the same row there is nothing to compare and the row is
+ * simply theirs; when they differ, the row they are about to place is the one
+ * they need to find first.
+ */
+.pmvl-panel .pmvl-table .pmvl-yours td {
+  color: #E9ECF0;
+  font-weight: 600;
+  background: rgba(122, 174, 219, 0.10);
+}
+
+.pmvl-panel .pmvl-tag {
+  margin-left: 6px;
+  padding: 1px 5px;
+  border-radius: 4px;
+  background: #7AAEDB;
+  color: #0C0E12;
+  font-size: 9.5px;
+  font-weight: 600;
+  letter-spacing: 0.5px;
+  text-transform: uppercase;
+  vertical-align: middle;
+}
+
+.pmvl-panel .pmvl-table td.pmvl-warn {
+  color: #E0A458;
+}
+
+.pmvl-panel .pmvl-note {
+  margin: 9px 0 0;
+  font-size: 11px;
+  line-height: 1.5;
+  color: #9BA3AF;
+}
+
+.pmvl-panel .pmvl-best-note {
+  color: #E9ECF0;
+}
+
+@media (prefers-color-scheme: light) {
+  .pmvl-panel {
+    border-color: #D4D8DE;
+    background: #FFFFFF;
+    color: #14171C;
+    box-shadow: 0 8px 28px rgba(0, 0, 0, 0.14);
+  }
+  .pmvl-panel .pmvl-table,
+  .pmvl-panel .pmvl-table td { color: #14171C; }
+  .pmvl-panel .pmvl-table td { border-top-color: #E7EAEE; }
+  .pmvl-panel .pmvl-head,
+  .pmvl-panel .pmvl-table th,
+  .pmvl-panel .pmvl-note { color: #5B636E; }
+  .pmvl-panel .pmvl-table .pmvl-best td { color: #1D7A3C; }
+  .pmvl-panel .pmvl-table .pmvl-yours td {
+    color: #14171C;
+    background: rgba(45, 116, 173, 0.12);
+  }
+  .pmvl-panel .pmvl-tag { background: #2D74AD; color: #FFFFFF; }
+  .pmvl-panel .pmvl-table td.pmvl-warn { color: #B4700F; }
+  .pmvl-panel .pmvl-best-note { color: #14171C; }
+}

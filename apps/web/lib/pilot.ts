@@ -44,6 +44,32 @@ export const PILOT_DURATION_DAYS = 30;
 export const PILOT_MEMBER_CAP = 5;
 
 /**
+ * The pilot is withdrawn. See `docs/adr-003-withdraw-the-pilot.md`.
+ *
+ * Not "unset", not "sold out" — withdrawn, because the reason is evidential
+ * rather than operational. `pmvl retrodict` scores the independent estimate
+ * against the venue's own price on already-settled markets, and on the first real
+ * sample it came out 0.0025 Brier WORSE than the price. The pilot's premise is
+ * that the digest contains information the price does not, and that premise is
+ * currently unsupported by the only measurement that bears on it.
+ *
+ * Nobody paid, so there is nothing to unwind: the member ledger is still the
+ * empty template.
+ */
+export const PILOT_WITHDRAWN = true;
+
+/**
+ * Why the page says the pilot is closed. Rendered verbatim, so it cannot drift
+ * from the reason recorded in the ADR.
+ */
+export const PILOT_WITHDRAWN_REASON =
+  "The pilot sold a daily research digest on the premise that our estimate " +
+  "contains information the market price does not. Measured against settled " +
+  "markets, it does not — our forecasts scored slightly worse than the price " +
+  "itself. Selling it anyway would have been selling a premise we had just " +
+  "failed to demonstrate.";
+
+/**
  * A Stripe Payment Link URL, supplied by the owner.
  *
  * Deliberately NOT a Stripe API integration:
@@ -55,9 +81,15 @@ export const PILOT_MEMBER_CAP = 5;
  *   - it is validated below rather than trusted, because an unset or malformed
  *     value must degrade to "not open yet" and never to a broken checkout.
  *
- * Set `PILOT_PAYMENT_LINK` to a `https://buy.stripe.com/...` URL to open sales.
+ * Now additionally closed at the top: `PILOT_WITHDRAWN` short-circuits before the
+ * environment is read at all. Withdrawing by deleting the variable would leave
+ * the decision one dashboard edit away from being reversed by someone who never
+ * saw the measurement behind it; this way reopening sales is a code change with a
+ * diff, which is the same reasoning ADR 002 applied to `BILLING_MODE`.
  */
 export function pilotPaymentLink(): string | null {
+  if (PILOT_WITHDRAWN) return null;
+
   const raw = process.env.PILOT_PAYMENT_LINK?.trim();
   if (!raw) return null;
   try {

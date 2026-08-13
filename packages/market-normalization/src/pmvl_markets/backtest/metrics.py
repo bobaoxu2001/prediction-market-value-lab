@@ -9,9 +9,28 @@ from __future__ import annotations
 import math
 from dataclasses import dataclass, field
 from decimal import Decimal
-from typing import Any, Sequence
+from typing import Any, Protocol, Sequence, runtime_checkable
 
 from pmvl_shared.money import D, ONE, ZERO, clamp_prob, quantize_usd, safe_div
+
+
+@runtime_checkable
+class Scoreable(Protocol):
+    """The three fields a *forecast accuracy* metric needs.
+
+    Brier, log loss and the reliability curve say nothing about money; they compare
+    a probability to an outcome. Stating that as a protocol lets the retrodiction
+    harness - which produces forecasts that were never traded - share one
+    implementation with the backtest instead of growing a second copy.
+
+    Two copies would be worse than duplication. Brier improvement versus the market
+    is the headline claim of this product, and two implementations of it are two
+    numbers that can disagree, in a place where nobody would think to look.
+    """
+
+    predicted_probability: Decimal
+    market_probability: Decimal | None
+    outcome_value: Decimal
 
 
 @dataclass
@@ -28,7 +47,7 @@ class Observation:
     outcome_value: Decimal  # 1 for YES-side win, 0 for loss, 0.5 for a split
 
 
-def brier_score(observations: Sequence[Observation], *, use_market: bool = False) -> float | None:
+def brier_score(observations: Sequence[Scoreable], *, use_market: bool = False) -> float | None:
     """Mean squared error of the probability forecast. Lower is better.
 
     A forecast that always says 0.5 scores 0.25, which is the reference point for
@@ -43,7 +62,7 @@ def brier_score(observations: Sequence[Observation], *, use_market: bool = False
     return sum(values) / len(values) if values else None
 
 
-def log_loss(observations: Sequence[Observation], *, use_market: bool = False) -> float | None:
+def log_loss(observations: Sequence[Scoreable], *, use_market: bool = False) -> float | None:
     """Negative log likelihood. Punishes confident errors far harder than Brier."""
     values = []
     for obs in observations:
@@ -57,7 +76,7 @@ def log_loss(observations: Sequence[Observation], *, use_market: bool = False) -
 
 
 def calibration_curve(
-    observations: Sequence[Observation], *, bins: int = 10, use_market: bool = False
+    observations: Sequence[Scoreable], *, bins: int = 10, use_market: bool = False
 ) -> list[dict[str, Any]]:
     """Reliability diagram data: predicted vs realised frequency per bin.
 
@@ -65,7 +84,7 @@ def calibration_curve(
     populated bin. Empty bins are omitted rather than reported as zero, which would
     imply data that does not exist.
     """
-    buckets: list[list[Observation]] = [[] for _ in range(bins)]
+    buckets: list[list[Scoreable]] = [[] for _ in range(bins)]
     for obs in observations:
         p = obs.market_probability if use_market else obs.predicted_probability
         if p is None:

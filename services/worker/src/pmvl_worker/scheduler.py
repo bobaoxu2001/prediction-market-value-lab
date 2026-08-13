@@ -133,6 +133,21 @@ def build_scheduler() -> BlockingScheduler:
         name="walk-forward backtest",
     )
 
+    # Calibration after the backtest, for the same reason the backtest follows the
+    # snapshot: it reads the day's settled record. Scheduled from day one even
+    # though it will refuse to fit for weeks - a recorded refusal each day is the
+    # audit trail for why estimates are still uncalibrated, and the day it starts
+    # fitting is then visible rather than needing to be remembered.
+    scheduler.add_job(
+        _guard(jobs.job_calibrate),
+        CronTrigger(
+            hour=(settings.daily_snapshot_hour_utc + 2) % 24,
+            minute=settings.daily_snapshot_minute_utc,
+        ),
+        id="calibrate",
+        name="calibration fit",
+    )
+
     scheduler.add_job(
         _guard(lambda: jobs.job_prune(keep_days=30)),
         CronTrigger(hour=4, minute=30),

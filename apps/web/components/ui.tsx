@@ -1,5 +1,6 @@
 import Link from "next/link";
 import { RISK_FLAG_EXPLANATIONS, humanizeFlag, num, utcTime } from "@/lib/format";
+import { withResearchMode } from "@/lib/research-mode";
 
 export function PageHeader({
   title,
@@ -197,9 +198,17 @@ export function ValueTone({ value, children }: { value: string | number | null; 
   return <span className={`num ${tone}`}>{children}</span>;
 }
 
-export function MarketLink({ id, children }: { id: number; children: React.ReactNode }) {
+export function MarketLink({
+  id,
+  mode,
+  children,
+}: {
+  id: number;
+  mode?: string | null;
+  children: React.ReactNode;
+}) {
   return (
-    <Link href={`/market/${id}`} className="hover:underline">
+    <Link href={withResearchMode(`/market/${id}`, mode)} className="hover:underline">
       {children}
     </Link>
   );
@@ -221,24 +230,31 @@ export function Disclaimer({ text }: { text: string }) {
  */
 export function SnapshotBanner({
   active,
+  staleLiveData = false,
   latestQuoteAt,
   arbitrageScanAt,
 }: {
   active?: boolean;
+  /** Computed by the server layout against the request time. */
+  staleLiveData?: boolean;
   /** The single most recent observation in the database - NOT a capture time
       for the dataset. Most markets are older, some by weeks. */
   latestQuoteAt?: string | null;
   arbitrageScanAt?: string | null;
 }) {
-  if (!active) return null;
+  if (!active && !staleLiveData) return null;
   return (
-    <div className="mb-4 rounded-[3px] border border-stale/50 border-l-2 border-l-stale bg-stale/10 px-4 py-3 text-sm">
+    <div
+      className="mb-4 rounded-[3px] border border-stale/50 border-l-2 border-l-stale bg-stale/10 px-4 py-3 text-sm"
+      role="status"
+    >
       <span className="font-semibold text-stale">
-        Research snapshot.
+        {active ? "Research snapshot." : "Recorded data is stale."}
       </span>{" "}
       <span className="text-ink">
-        This hosted deployment serves frozen data, not a live scan. Orderbooks and
-        model estimates are stale.
+        {active
+          ? "This hosted deployment serves frozen data, not a live scan. Orderbooks and model estimates are stale."
+          : "The pipeline can update, but its newest observed quote is already over 30 minutes old. Treat every research surface as historical until the pipeline is refreshed."}
         {process.env.NODE_ENV === "development" ? (
           <>
             {" "}Run the pipeline locally (
@@ -255,7 +271,7 @@ export function SnapshotBanner({
         <span className="mt-2 flex flex-wrap gap-x-4 gap-y-1 text-xs text-ink-muted">
           {latestQuoteAt && (
             <span>
-              Latest captured quote:{" "}
+              Newest observed quote:{" "}
               <span className="font-mono">{utcTime(latestQuoteAt)}</span>
             </span>
           )}

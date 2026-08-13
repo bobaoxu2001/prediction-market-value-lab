@@ -392,6 +392,65 @@ class TestCostApiRouting:
         assert client.get("/cost/by-category", params={"size": "-5"}).status_code == 400
 
 
+class TestCostIndexSearch:
+    """A reader can reach one contract without knowing its internal PMVL ID."""
+
+    @pytest.fixture()
+    def client(self, clean_db, kalshi_market):  # noqa: ANN001, ANN201
+        from fastapi.testclient import TestClient
+
+        from pmvl_api.main import app
+        from pmvl_markets.ingest.store import upsert_markets
+
+        markets = [
+            kalshi_market.model_copy(
+                update={
+                    "platform_market_id": "KX_RATE_25",
+                    "title": "Fed rate decision in September",
+                    "subtitle": "Federal Reserve target range",
+                    "best_yes_ask": D("0.40"),
+                    "volume_24h": D("10"),
+                }
+            ),
+            kalshi_market.model_copy(
+                update={
+                    "platform_market_id": "KXARATE125",
+                    "title": "Rain in New York",
+                    "subtitle": "Weather contract",
+                    "best_yes_ask": D("0.35"),
+                    "volume_24h": D("1000"),
+                }
+            ),
+        ]
+        upsert_markets(clean_db, markets)
+        clean_db.commit()
+        return TestClient(app)
+
+    def test_matches_all_words_across_contract_identity_fields(self, client) -> None:  # noqa: ANN001
+        response = client.get("/cost", params={"q": "fed SEPTEMBER"})
+
+        assert response.status_code == 200, response.text
+        assert [row["market"]["platform_market_id"] for row in response.json()["data"]] == [
+            "KX_RATE_25"
+        ]
+
+    def test_search_runs_before_the_volume_ranked_scan(self, client) -> None:  # noqa: ANN001
+        response = client.get("/cost", params={"q": "Federal Reserve"})
+
+        assert response.status_code == 200, response.text
+        assert response.json()["data"][0]["market"]["title"] == (
+            "Fed rate decision in September"
+        )
+
+    def test_like_wildcards_are_literal(self, client) -> None:  # noqa: ANN001
+        response = client.get("/cost", params={"q": "KX_RATE_25"})
+
+        assert response.status_code == 200, response.text
+        assert [row["market"]["platform_market_id"] for row in response.json()["data"]] == [
+            "KX_RATE_25"
+        ]
+
+
 class TestSectorComparisonCaching:
     """`/cost/by-category` prices thousands of contracts and renders on the homepage.
 

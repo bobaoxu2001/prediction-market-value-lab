@@ -45,6 +45,7 @@ export default async function ResearchLayout({
   let snapshotActive = false;
   let latestQuoteAt: string | null = null;
   let arbitrageScanAt: string | null = null;
+  let staleLiveData = false;
   try {
     const sys = await apiGet<{
       snapshot_mode?: boolean;
@@ -62,6 +63,11 @@ export default async function ResearchLayout({
       sys?.data?.freshest_quote_observed_at ??
       null;
     arbitrageScanAt = sys?.data?.snapshot_timing?.arbitrage_scan_at ?? null;
+    const latestMs = latestQuoteAt ? Date.parse(latestQuoteAt) : Number.NaN;
+    staleLiveData =
+      !snapshotActive &&
+      Number.isFinite(latestMs) &&
+      Date.now() - latestMs > 30 * 60 * 1000;
   } catch {
     // leave defaults
   }
@@ -96,6 +102,7 @@ export default async function ResearchLayout({
       <main id="main" className="mx-auto max-w-7xl px-4 py-6">
         <SnapshotBanner
           active={snapshotActive}
+          staleLiveData={staleLiveData}
           latestQuoteAt={latestQuoteAt}
           arbitrageScanAt={arbitrageScanAt}
         />

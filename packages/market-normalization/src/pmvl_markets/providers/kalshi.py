@@ -124,6 +124,40 @@ MODELLABLE_SERIES: tuple[str, ...] = (
     "KXINXU", "KXINX", "KXNASDAQ100", "KXINXY",
 )
 
+#: Head-to-head single-game winner boards -> SportsBaseRateModel (ESPN records).
+#:
+#: Fetched unconditionally, and *not* conditional on ``SPORTS_MODEL_ENABLED``, for
+#: two reasons that hold whether or not the model ever earns its keep:
+#:
+#: 1. These are among the highest-volume contracts on the venue, and execution cost
+#:    is computable for them with no probability model at all. The coverage reserve
+#:    in ``ingest.runner`` exists for exactly this case.
+#: 2. The sports model cannot be *measured* until game markets have been ingested
+#:    and have settled. Gating ingestion on the flag, and the flag on the
+#:    measurement, would be a loop with no entry point.
+#:
+#: Leagues where a match can end level are excluded: the model declines them, and a
+#: two-outcome record prior does not describe a three-outcome result.
+HEAD_TO_HEAD_SPORTS_SERIES: tuple[str, ...] = (
+    "KXMLBGAME", "KXNBAGAME", "KXWNBAGAME", "KXNFLGAME", "KXNHLGAME",
+)
+
+#: CPI bucket boards -> CpiNowcastModel (Cleveland Fed nowcast, keyless).
+#:
+#: Exhaustive 0.1-point buckets over the figure BLS will publish. Headline and core,
+#: month-over-month and year-over-year - the four boards the nowcast covers. The
+#: other KXECONSTAT boards (unemployment, payrolls) have no nowcast behind them and
+#: are left out rather than ingested for a model that would decline them.
+CPI_BUCKET_SERIES: tuple[str, ...] = (
+    "KXECONSTATCPI", "KXECONSTATCPICORE",
+    "KXECONSTATCPIYOY", "KXECONSTATCORECPIYOY",
+)
+
+#: What ``list_modellable_markets`` fetches by default.
+TARGETED_SERIES: tuple[str, ...] = (
+    MODELLABLE_SERIES + HEAD_TO_HEAD_SPORTS_SERIES + CPI_BUCKET_SERIES
+)
+
 
 def _dollars(payload: dict[str, Any], key: str) -> Decimal | None:
     """Read a ``*_dollars`` fixed-point string field."""
@@ -301,14 +335,15 @@ class KalshiProvider:
     async def list_modellable_markets(
         self,
         *,
-        series: Sequence[str] = MODELLABLE_SERIES,
+        series: Sequence[str] = TARGETED_SERIES,
         per_series_limit: int = 300,
         max_close_days: int = 30,
     ) -> list[NormalizedMarket]:
-        """Fetch every open market in the series the platform can actually model.
+        """Fetch every open market in the series the platform targets directly.
 
-        See :data:`MODELLABLE_SERIES`. One request per series, run concurrently, so
-        the whole set costs roughly a dozen requests.
+        See :data:`MODELLABLE_SERIES` and :data:`HEAD_TO_HEAD_SPORTS_SERIES`. One
+        request per series, run concurrently, so the whole set costs roughly two
+        dozen requests.
         """
         max_close_ts = int(utcnow().timestamp() + max_close_days * 86400)
 

@@ -225,11 +225,11 @@ describe("marketing homepage", () => {
       "create free account",
     );
 
-    // The research is still one click away — that is the whole proposition.
+    // The useful products are still one click away without inventing a signup.
     expect(
       screen.getAllByRole("link", { name: /explore research/i }).length,
-    ).toBeGreaterThanOrEqual(2);
-    expect(screen.getAllByText(/accounts coming soon/i).length).toBeGreaterThan(0);
+    ).toBeGreaterThanOrEqual(1);
+    expect(screen.getAllByRole("link", { name: /live.*overlay/i }).length).toBeGreaterThan(0);
   });
 
   it("makes no forbidden performance claim", async () => {
@@ -267,28 +267,66 @@ describe("marketing homepage", () => {
   });
 });
 
+describe("live entry-cost extension", () => {
+  it("labels the manual-install and read-only trust boundary", async () => {
+    const { default: ExtensionPage } = await import("@/app/(site)/extension/page");
+    const { container } = render(<ExtensionPage />);
+    const text = container.textContent ?? "";
+
+    expect(text).toMatch(/developer-mode chrome beta/i);
+    expect(text).toMatch(/not reviewed or distributed by the chrome web store/i);
+    expect(text).toMatch(/places no orders/i);
+    expect(text).toMatch(/no storage, tabs, clipboard, identity, wallet, or trading permission/i);
+  });
+
+  it("offers the packaged beta twice and lists the install sequence", async () => {
+    const { default: ExtensionPage } = await import("@/app/(site)/extension/page");
+    const { container } = render(<ExtensionPage />);
+
+    expect(
+      container.querySelectorAll('a[href="/downloads/pmvl-entry-cost-beta.zip"]'),
+    ).toHaveLength(2);
+    expect(screen.getByRole("heading", { name: /load the beta in three steps/i })).toBeTruthy();
+    expect(screen.getByText(/load unpacked/i)).toBeTruthy();
+  });
+
+  it("is discoverable from the sitemap", async () => {
+    const { default: sitemap } = await import("@/app/sitemap");
+    expect(sitemap().some((entry) => entry.url.endsWith("/extension"))).toBe(true);
+  });
+});
+
 describe("pricing", () => {
   async function renderPricing() {
     const { default: PricingPage } = await import("@/app/(site)/pricing/page");
     return render(await PricingPage());
   }
 
-  it("states the same pilot terms the pilot page and Stripe enforce", async () => {
-    // `/pricing` restated the offer as prose literals and drifted: it advertised
-    // "capped at 20 members" for four commits after the cohort was cut to five,
-    // which is the number both `/founding-pilot` and the Stripe Payment Link
-    // enforce. A buyer read one figure here and a different one at checkout.
-    //
-    // Asserted against `lib/pilot.ts` rather than against a hardcoded 5, so this
-    // keeps holding when the cohort size changes.
-    const { PILOT_MEMBER_CAP, PILOT_PRICE_USD, PILOT_DURATION_DAYS } =
-      await import("@/lib/pilot");
+  it("advertises no purchasable offer at all", async () => {
+    // This used to assert that /pricing restated the pilot's terms consistently
+    // with the pilot page and Stripe - it had once drifted to "capped at 20
+    // members" after the cohort was cut to five. The offer is now withdrawn
+    // (ADR 003), so the requirement inverts: the terms must not appear here at
+    // all, because restating a price for something nobody can buy is the same
+    // class of error the original test was written to catch.
+    const { PILOT_MEMBER_CAP, PILOT_PRICE_USD } = await import("@/lib/pilot");
     const { container } = await renderPricing();
     const text = container.textContent ?? "";
 
-    expect(text).toContain(`capped at ${PILOT_MEMBER_CAP} members`);
-    expect(text).toContain(`USD ${PILOT_PRICE_USD}`);
-    expect(text).toContain(`${PILOT_DURATION_DAYS} days`);
+    expect(text).not.toContain(`capped at ${PILOT_MEMBER_CAP} members`);
+    expect(text).not.toContain(`USD ${PILOT_PRICE_USD}`);
+    expect(text.toLowerCase()).toContain("nothing here is for sale");
+  });
+
+  it("states what must be true before anything is sold", async () => {
+    // The gate from ADR 003, on the page rather than only in the repository:
+    // a live settled track record, and its Brier score against the market
+    // published whatever the sign.
+    const { container } = await renderPricing();
+    const text = (container.textContent ?? "").toLowerCase();
+
+    expect(text).toContain("60 recommendations published live and settled");
+    expect(text).toContain("brier score against the market is published");
   });
 
   it("offers nothing to click on Pro while accounts and billing are both off", async () => {
@@ -297,7 +335,9 @@ describe("pricing", () => {
     // disabled-looking button either: a control that looks pressable still
     // implies the thing nearly works.
     const { container } = await renderPricing();
-    expect(screen.getAllByText(/coming soon/i).length).toBeGreaterThan(0);
+    // Was "coming soon", which implied a launch. The tier is not coming soon;
+    // it is conditional on a measurement that has not been taken.
+    expect(screen.getAllByText(/not for sale/i).length).toBeGreaterThan(0);
     expect(container.querySelector('a[href="/sign-up"]')).toBeNull();
     expect(screen.queryByRole("button", { name: /test checkout/i })).toBeNull();
     // The free tier is the public research, and it needs no account.
@@ -328,8 +368,11 @@ describe("pricing", () => {
         }}
       />,
     );
-    expect(screen.getByRole("link", { name: /join pro early access/i })).toBeTruthy();
-    expect(screen.getAllByText(/billing not yet live/i).length).toBeGreaterThan(0);
+    // No signup affordance on the paid tier any more: ADR 003 put an evidential
+    // gate in front of selling, so a "join early access" link would imply a
+    // queue leading to a measurement that has not been taken.
+    expect(screen.queryByRole("link", { name: /join pro early access/i })).toBeNull();
+    expect(screen.getAllByText(/not for sale/i).length).toBeGreaterThan(0);
     expect(screen.queryByRole("button", { name: /test checkout/i })).toBeNull();
   });
 
@@ -387,8 +430,10 @@ describe("pricing", () => {
   it("promises no feature that does not exist", async () => {
     const { container } = await renderPricing();
     const text = (container.textContent ?? "").toLowerCase();
-    // The Pro card names these only to say they do not exist.
-    expect(text).toContain("no alerts, watchlists, exports or api exist today");
+    // The paid card names what it would NOT be, so the obvious thing to sell -
+    // the forecast - is explicitly excluded rather than quietly implied.
+    expect(text).toContain("no signals, no ranked picks, no digest");
+    expect(text).toContain("none of it is being sold today");
   });
 });
 
