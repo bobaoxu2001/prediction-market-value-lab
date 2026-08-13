@@ -13,7 +13,8 @@
  * unpacked extension.
  */
 
-import { execSync } from "node:child_process";
+import { execFileSync, execSync } from "node:child_process";
+import { createHash } from "node:crypto";
 import { existsSync, readFileSync } from "node:fs";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -30,15 +31,33 @@ beforeAll(() => {
 
 interface Manifest {
   manifest_version: number;
+  version: string;
   background?: { service_worker?: string; type?: string };
   content_scripts?: Array<{ js?: string[]; css?: string[]; matches?: string[] }>;
   permissions?: string[];
   host_permissions?: string[];
+  icons?: Record<string, string>;
+  action?: { default_title?: string; default_icon?: Record<string, string> };
 }
 
 function manifest(): Manifest {
   return JSON.parse(read("manifest.json")) as Manifest;
 }
+
+const PUBLIC_ZIP = join(ROOT, "..", "web", "public", "downloads", "pmvl-entry-cost-beta.zip");
+const EXPECTED_ZIP_FILES = [
+  "README.md",
+  "dist/background.js",
+  "dist/content.js",
+  "icons/icon128.png",
+  "icons/icon16.png",
+  "icons/icon32.png",
+  "icons/icon48.png",
+  "manifest.json",
+  "onboarding.css",
+  "onboarding.html",
+  "overlay.css",
+];
 
 describe("the manifest points at files that exist", () => {
   it("references a real service worker and content script", () => {
@@ -57,6 +76,62 @@ describe("the manifest points at files that exist", () => {
 
   it("is manifest v3", () => {
     expect(manifest().manifest_version).toBe(3);
+  });
+
+  it("ships store-ready icons at every Chrome-required size", () => {
+    const m = manifest();
+    expect(m.icons).toEqual({
+      "16": "icons/icon16.png",
+      "32": "icons/icon32.png",
+      "48": "icons/icon48.png",
+      "128": "icons/icon128.png",
+    });
+    expect(m.action?.default_icon).toEqual({
+      "16": "icons/icon16.png",
+      "32": "icons/icon32.png",
+    });
+    for (const file of Object.values(m.icons ?? {})) {
+      expect(existsSync(join(ROOT, file)), `${file} is missing`).toBe(true);
+    }
+  });
+
+  it("ships the first-run guide opened by the service worker", () => {
+    expect(existsSync(join(ROOT, "onboarding.html"))).toBe(true);
+    expect(existsSync(join(ROOT, "onboarding.css"))).toBe(true);
+
+    const html = read("onboarding.html");
+    expect(html).toContain('href="onboarding.css"');
+    expect(html).toMatch(/your first live result/i);
+    expect(html).toMatch(/does not place an order/i);
+
+    const worker = read("dist/background.js");
+    expect(worker).toContain("onInstalled");
+    expect(worker).toContain("onboarding.html");
+    expect(manifest().action?.default_title).toMatch(/setup and help/i);
+  });
+});
+
+describe("the public download is the deterministic package under test", () => {
+  it("contains exactly the reviewed files and reproduces byte-for-byte", () => {
+    execFileSync("python3", ["scripts/package.py"], { cwd: ROOT, stdio: "ignore" });
+    const first = readFileSync(PUBLIC_ZIP);
+    const entries = execFileSync("unzip", ["-Z1", PUBLIC_ZIP], {
+      encoding: "utf8",
+    }).trim().split("\n").sort();
+
+    expect(entries).toEqual(EXPECTED_ZIP_FILES);
+    const packagedManifest = JSON.parse(
+      execFileSync("unzip", ["-p", PUBLIC_ZIP, "manifest.json"], {
+        encoding: "utf8",
+      }),
+    ) as Manifest;
+    expect(packagedManifest.version).toBe(manifest().version);
+
+    execFileSync("python3", ["scripts/package.py"], { cwd: ROOT, stdio: "ignore" });
+    const second = readFileSync(PUBLIC_ZIP);
+    expect(createHash("sha256").update(second).digest("hex")).toBe(
+      createHash("sha256").update(first).digest("hex"),
+    );
   });
 });
 
@@ -99,7 +174,10 @@ describe("the service worker is a module, as the manifest declares", () => {
     // manifest grant and should fail this narrow-permission check first.
     const worker = read("dist/background.js");
     const used = [...worker.matchAll(/chrome\.(\w+)/g)].map((m) => m[1]);
-    expect([...new Set(used)].sort()).toEqual(["runtime"]);
+    // `tabs.create` does not require the broad `tabs` manifest permission; it
+    // only opens our packaged onboarding page. `action` is likewise available
+    // because the manifest declares a toolbar action.
+    expect([...new Set(used)].sort()).toEqual(["action", "runtime", "tabs"]);
   });
 });
 

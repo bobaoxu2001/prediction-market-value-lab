@@ -48,6 +48,15 @@ reported beside the headline, never inside it — at a 1¢ tick it exceeds every
 observed or rule-derived cost combined on a cheap contract, so a blended number would make the
 product's central claim an artefact of a config default.
 
+The live overlay is packaged as a deterministic Chrome beta at `/extension`. Its
+first-run guide stays inside the extension, asks for no account, and sends no
+install or browsing event to PMVL. The website records only a small allowlist of
+anonymous action totals (download intent, Founding Lifetime interest, successful
+share, and watchlist add); those counts are not installs, unique users,
+first-result activations, or retention. Chrome Web Store install totals and a
+separately consented first-result signal are still required before claiming a
+1,000-activated-user milestone.
+
 ---
 
 ## What makes this different from a scanner that prints numbers

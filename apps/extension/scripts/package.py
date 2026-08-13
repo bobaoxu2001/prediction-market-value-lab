@@ -11,7 +11,13 @@ EXTENSION_DIR = Path(__file__).resolve().parents[1]
 OUTPUT = EXTENSION_DIR.parent / "web" / "public" / "downloads" / "pmvl-entry-cost-beta.zip"
 FILES = (
     "manifest.json",
+    "onboarding.html",
+    "onboarding.css",
     "overlay.css",
+    "icons/icon16.png",
+    "icons/icon32.png",
+    "icons/icon48.png",
+    "icons/icon128.png",
     "dist/background.js",
     "dist/content.js",
     "README.md",

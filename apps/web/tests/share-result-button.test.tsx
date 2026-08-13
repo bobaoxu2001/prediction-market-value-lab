@@ -22,6 +22,7 @@ function setNavigator(name: "share" | "clipboard", value: unknown) {
 
 beforeEach(() => {
   window.history.replaceState({}, "", "/cost/42?size=100&side=yes");
+  vi.stubGlobal("fetch", vi.fn(async () => new Response(null, { status: 204 })));
   setNavigator("share", undefined);
   setNavigator("clipboard", undefined);
 });
@@ -45,6 +46,16 @@ describe("ShareResultButton", () => {
     });
     expect(share.mock.calls[0][0].text).toContain("quoted 40.0¢, estimated entry 42.0¢");
     expect(screen.getByRole("status").textContent).toBe("Result shared.");
+    expect(fetch).toHaveBeenCalledWith(
+      "/api/funnel",
+      expect.objectContaining({
+        body: JSON.stringify({
+          name: "result_shared",
+          source: "web",
+          placement: "native_share",
+        }),
+      }),
+    );
   });
 
   it("copies the result and link when native sharing is unavailable", async () => {
@@ -57,6 +68,16 @@ describe("ShareResultButton", () => {
     await waitFor(() => expect(writeText).toHaveBeenCalledOnce());
     expect(writeText.mock.calls[0][0]).toContain(window.location.href);
     expect(screen.getByRole("status").textContent).toBe("Result and link copied.");
+    expect(fetch).toHaveBeenCalledWith(
+      "/api/funnel",
+      expect.objectContaining({
+        body: JSON.stringify({
+          name: "result_shared",
+          source: "web",
+          placement: "clipboard",
+        }),
+      }),
+    );
   });
 
   it("leaves an accessible manual fallback when copying fails", async () => {
@@ -71,5 +92,6 @@ describe("ShareResultButton", () => {
     await waitFor(() =>
       expect(screen.getByRole("status").textContent).toMatch(/copy this page/i),
     );
+    expect(fetch).not.toHaveBeenCalled();
   });
 });

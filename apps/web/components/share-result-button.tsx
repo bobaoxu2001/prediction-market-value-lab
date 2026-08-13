@@ -2,6 +2,8 @@
 
 import { useState } from "react";
 
+import { trackFunnelEvent } from "@/components/funnel-tracker";
+
 export interface ShareResultButtonProps {
   contract: string;
   side: "yes" | "no";
@@ -36,6 +38,7 @@ export function ShareResultButton({
     if (typeof navigator.share === "function") {
       try {
         await navigator.share({ title: `${contract} — PMVL entry cost`, text, url });
+        trackFunnelEvent("result_shared", "native_share");
         setStatus("Result shared.");
         return;
       } catch (error) {
@@ -50,6 +53,7 @@ export function ShareResultButton({
 
     try {
       await navigator.clipboard.writeText(`${text}\n${url}`);
+      trackFunnelEvent("result_shared", "clipboard");
       setStatus("Result and link copied.");
     } catch {
       setStatus("Could not copy automatically. Copy this page’s address from your browser.");

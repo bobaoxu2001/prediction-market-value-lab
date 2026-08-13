@@ -2,8 +2,8 @@ import type { Metadata } from "next";
 import Link from "next/link";
 
 import { LegalPage, LegalSection } from "@/components/legal";
-// The commercial terms come from the same constants the sales page renders, so
-// the agreement and the offer cannot state different prices, durations or caps.
+// The former pilot terms come from the same constants its preserved historical
+// page renders, so this document cannot describe a different withdrawn offer.
 import {
   PILOT_DURATION_DAYS,
   PILOT_MEMBER_CAP,
@@ -13,19 +13,16 @@ import {
   BUSINESS_MAILING_ADDRESS,
   DISPUTE_VENUE,
   GOVERNING_JURISDICTION,
-  LIABILITY_CAP,
   MINIMUM_AGE,
-  REFUND_POLICY,
   SELLER_DESCRIPTION,
   SELLER_LEGAL_NAME,
-  SERVICE_NAME,
 } from "@/lib/seller";
 import { absoluteUrl, SUPPORT_EMAIL } from "@/lib/site";
 
 export const metadata: Metadata = {
   title: "Terms of service",
   description:
-    "Draft terms for the PMVL research service: eligibility, acceptable use, one-time pilot billing, refunds, intellectual property, research limitations, availability and termination.",
+    "Draft terms for PMVL: free public research, the non-charging $29 Founding Lifetime demand test, the withdrawn Founding Research Pilot, acceptable use and research limitations.",
   alternates: { canonical: absoluteUrl("/terms") },
 };
 
@@ -33,14 +30,14 @@ export default function TermsPage() {
   return (
     <LegalPage
       title="Terms of service"
-      updated="2 August 2026"
-      summary="The agreement governing use of PMVL and the Founding Research Pilot. The commercial and jurisdictional terms are now settled; the document still has not been reviewed by a lawyer, and the notice above says so."
+      updated="13 August 2026"
+      summary="The agreement governing use of PMVL. It also records that the $29 Founding Lifetime page is product research rather than an offer for sale, and that the earlier Founding Research Pilot remains withdrawn. This document has not been reviewed by a lawyer."
     >
       <LegalSection id="parties" title="1. Who these terms are between">
         <p>
           These terms are between you and {SELLER_LEGAL_NAME}, {SELLER_DESCRIPTION}{" "}
-          offering the Prediction Market Value Lab service and the {SERVICE_NAME}{" "}
-          (&ldquo;PMVL&rdquo;, &ldquo;we&rdquo;, &ldquo;the service&rdquo;).
+          offering the Prediction Market Value Lab service (&ldquo;PMVL&rdquo;,
+          &ldquo;we&rdquo;, &ldquo;the service&rdquo;).
           Business mailing address: {BUSINESS_MAILING_ADDRESS}.
         </p>
         <p>
@@ -122,43 +119,45 @@ export default function TermsPage() {
 
       <LegalSection id="billing" title="5. What is sold, and how it is paid for">
         <p>
-          The only paid product is the Founding Research Pilot:{" "}
-          <strong>USD {PILOT_PRICE_USD}, charged once</strong>, for{" "}
-          {PILOT_DURATION_DAYS} days of emailed research digests counted from
-          your first delivery, plus any tax that applies where you are. The first
-          cohort is limited to {PILOT_MEMBER_CAP} members.
+          <strong>Nothing is currently sold.</strong> Public research and the
+          current cost tools are free. The proposed USD 29 Founding Lifetime
+          plan is a demand test, not an offer for sale: there is no checkout,
+          payment, contract, reservation, account entitlement or delivery
+          commitment attached to its interest link.
         </p>
         <p>
-          <strong>This is not a subscription.</strong> There is no recurring
-          charge, no automatic renewal and nothing to cancel. When the{" "}
-          {PILOT_DURATION_DAYS} days end, deliveries stop and you are not billed
-          again. Continuing afterwards would require a new, separate purchase.
+          Sending the pre-addressed interest email does not hold a price or place
+          and does not guarantee launch. PMVL may change the proposed scope,
+          price, availability or decide not to launch after evaluating demand,
+          ongoing cost and delivery feasibility.
         </p>
         <p>
-          Payment is taken on a Stripe-hosted payment page. We do not receive or
-          store your card details. Your use of Stripe&apos;s payment pages is
-          additionally subject to Stripe&apos;s terms.
+          If a Founding Lifetime product is offered later, it will have separate
+          final terms defining what &ldquo;lifetime&rdquo; means, included and
+          excluded capabilities, price, tax, refund rights, restoration and
+          termination. Expressing interest now is not acceptance of those future
+          terms.
         </p>
         <p>
-          Paying does not by itself start the service. Each payment is confirmed
-          by a person against Stripe&apos;s record before delivery begins, and we
-          contact you at the email address used at checkout. Public research on
-          this site is never gated on payment.
+          The earlier Founding Research Pilot remains withdrawn and was never
+          sold. Its recorded terms were USD {PILOT_PRICE_USD} once for{" "}
+          {PILOT_DURATION_DAYS} days, limited to {PILOT_MEMBER_CAP} members. They
+          are retained for transparency on the closed pilot page and do not
+          describe an available product.
         </p>
       </LegalSection>
 
       <LegalSection id="cancellation" title="6. Ending the service, and refunds">
         <p>
-          There is nothing to cancel: the Founding Research Pilot is a one-time
-          purchase that ends by itself after {PILOT_DURATION_DAYS} days. No
-          further payment is taken, so no cancellation step is required of you.
+          There is currently no purchase to cancel and no payment to refund. An
+          interest email may be withdrawn at any time by contacting us; withdrawal
+          does not require deleting aggregate, non-identifying event counts that
+          cannot be tied back to the sender.
         </p>
-        <p>{REFUND_POLICY.beforeDelivery}</p>
-        <p>{REFUND_POLICY.afterDelivery}</p>
-        <p>{REFUND_POLICY.notCovered}</p>
         <p>
-          Statutory cancellation and refund rights that apply where you live are
-          not affected by anything in this section.
+          If a paid offer opens later, its final cancellation and refund terms
+          will be shown before payment. Statutory rights that apply where you live
+          will not be affected.
         </p>
       </LegalSection>
 
@@ -166,9 +165,9 @@ export default function TermsPage() {
         <p>
           The software, models, methodology documentation, page designs and
           written analysis on this site belong to {SELLER_LEGAL_NAME} or its
-          licensors. Your purchase grants a personal, non-exclusive,
-          non-transferable right to use the service for your own research. It
-          does not transfer ownership of anything.
+          licensors. Free access grants no ownership or right to resell the
+          service. Any future purchase terms would define the personal,
+          non-exclusive and non-transferable licence it grants.
         </p>
         <p>
           Underlying market data originates from the public Kalshi and Polymarket
@@ -200,7 +199,12 @@ export default function TermsPage() {
           losses, lost profits, or indirect or consequential loss arising from use
           of the service.
         </p>
-        <p>{LIABILITY_CAP}</p>
+        <p>
+          Because nothing is currently sold, these terms do not set a paid-plan
+          liability cap. Any future paid offer will state its applicable limit
+          before purchase. Nothing here limits liability that cannot legally be
+          limited.
+        </p>
         <p>
           Nothing here excludes liability for fraud or for anything else that
           cannot be excluded by law.
@@ -213,15 +217,14 @@ export default function TermsPage() {
           maintenance, for upstream data-source outages, or without notice.
           Research content, model coverage, pipeline cadence and feature
           availability may change; where a change removes something a paid
-          subscription was sold on, we will give notice before it takes effect.
+          product was sold on, we will give notice before it takes effect.
         </p>
       </LegalSection>
 
       <LegalSection id="termination" title="10. Termination">
         <p>
-          You may stop using the service and close your account at any time.
-          Cancelling a subscription is separate from closing an account and is
-          described in section 6.
+          You may stop using the service and close your account at any time. There
+          is currently no paid plan or recurring billing to cancel.
         </p>
         <p>
           We may suspend or terminate an account for breach of these terms, for
@@ -261,10 +264,10 @@ export default function TermsPage() {
           . Legal notices: {SELLER_LEGAL_NAME}, {BUSINESS_MAILING_ADDRESS}.
         </p>
         <p>
-          The contact address above is confirmed and monitored. It is the only
-          value on this page that has been resolved; every bracketed marker is
-          still outstanding, and this document remains a draft that no lawyer has
-          read.
+          The contact address above is confirmed and monitored. This document
+          remains a draft that no lawyer has reviewed; no paid offer may rely on
+          it until that review and the product-specific commercial terms are
+          complete.
         </p>
       </LegalSection>
     </LegalPage>

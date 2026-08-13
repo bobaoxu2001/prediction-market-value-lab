@@ -23,6 +23,25 @@ const ALLOWED_PREFIXES = [
 const CACHE_TTL_MS = 10_000;
 const cache = new Map<string, { at: number; value: unknown }>();
 
+/**
+ * The extension's first-run surface is packaged with it instead of hosted on
+ * PMVL. Installation therefore succeeds even if the website is unavailable,
+ * and opening the guide reveals no installation event to a PMVL server.
+ */
+function openOnboarding(): void {
+  void chrome.tabs.create({ url: chrome.runtime.getURL("onboarding.html") });
+}
+
+chrome.runtime.onInstalled.addListener(({ reason }) => {
+  // Updates should stay quiet. An existing user has already crossed the setup
+  // path and Chrome may update the package while they are doing something else.
+  if (reason === "install") openOnboarding();
+});
+
+// The overlay itself is always visible on a supported contract. The toolbar
+// icon is a durable way back to setup, trust boundaries, and troubleshooting.
+chrome.action.onClicked.addListener(openOnboarding);
+
 function allowed(url: string): boolean {
   return ALLOWED_PREFIXES.some((prefix) => url.startsWith(prefix));
 }

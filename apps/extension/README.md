@@ -81,10 +81,21 @@ npm install && npm run build
 Then in Chrome: `chrome://extensions` → enable Developer mode → **Load unpacked**
 → select this directory.
 
+On first installation the service worker opens `onboarding.html`, a guide that
+ships inside the extension rather than reporting the installation to a PMVL
+server. It walks the user from a supported market to the first verified live
+overlay, explains why event pages without a selected contract remain silent,
+and restates the read-only trust boundary. Selecting the PMVL toolbar action
+opens the same guide again.
+
 ```bash
 npm test        # conformance + venue adapters + the render harness
 npm run typecheck
 ```
+
+`npm run package` produces the deterministic ZIP served by the public website.
+The archive includes the local onboarding page and the two built scripts Chrome
+loads; `tests/package.test.ts` pins that package boundary.
 
 `npm test` also writes `out/overlay-preview.html`, which renders the panel from
 the recorded venue payloads so the styling can be inspected without visiting a

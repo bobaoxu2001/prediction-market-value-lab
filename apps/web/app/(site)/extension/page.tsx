@@ -2,6 +2,7 @@ import type { Metadata } from "next";
 import Link from "next/link";
 
 import { ProductShot, Section, SectionHeading } from "@/components/marketing";
+import { chromeWebStoreUrl } from "@/lib/extension-distribution";
 import { absoluteUrl } from "@/lib/site";
 
 export const metadata: Metadata = {
@@ -14,11 +15,15 @@ export const metadata: Metadata = {
 const DOWNLOAD = "/downloads/pmvl-entry-cost-beta.zip";
 
 export default function ExtensionPage() {
+  const storeUrl = chromeWebStoreUrl();
+
   return (
     <>
       <section className="mx-auto grid max-w-6xl gap-10 px-4 pb-14 pt-16 sm:pt-24 lg:grid-cols-[0.85fr_1.15fr] lg:items-center">
         <div>
-          <p className="t-label">Developer-mode Chrome beta</p>
+          <p className="t-label">
+            {storeUrl ? "Chrome Web Store beta" : "Developer-mode Chrome beta"}
+          </p>
           <h1 className="mt-3 text-[2rem] leading-[1.12] sm:text-[2.75rem]">
             Live entry cost, where the order is placed.
           </h1>
@@ -29,17 +34,15 @@ export default function ExtensionPage() {
             costs less — before an order is submitted.
           </p>
           <div className="mt-7 flex flex-wrap items-center gap-3">
-            <a href={DOWNLOAD} download className="btn-primary">
-              Download beta ZIP
-            </a>
+            <InstallLink storeUrl={storeUrl} />
             <Link href="/cost" className="btn-quiet">
               Try the snapshot calculator
             </Link>
           </div>
           <p className="t-meta mt-4 max-w-xl">
-            Manual install for Chrome desktop. This beta is not reviewed or
-            distributed by the Chrome Web Store. It places no orders and asks for
-            no wallet, account, or browser-storage access.
+            {storeUrl
+              ? "Install once from the Chrome Web Store and receive automatic updates. The extension places no orders and asks for no wallet, account, or browser-storage access."
+              : "Manual install for Chrome desktop. This beta is not reviewed or distributed by the Chrome Web Store. It places no orders and asks for no wallet, account, or browser-storage access."}
           </p>
         </div>
 
@@ -82,21 +85,44 @@ export default function ExtensionPage() {
           <div>
             <SectionHeading
               eyebrow="Install"
-              title="Load the beta in three steps"
-              lead="The ZIP contains the same built files covered by the extension package tests. Keep the extracted folder after installation; Chrome loads the extension from that folder."
+              title={storeUrl ? "Install once from Chrome" : "Load the beta in three steps"}
+              lead={
+                storeUrl
+                  ? "The reviewed store package installs in one click and receives automatic updates from Chrome. After installation, PMVL opens a private, packaged first-run guide."
+                  : "The ZIP contains the same built files covered by the extension package tests. Keep the extracted folder after installation; Chrome loads the extension from that folder."
+              }
             />
             <ol className="mt-6 space-y-5">
-              <Step number="1" title="Download and unzip">
-                Download the beta ZIP above, then extract it to a folder you will keep.
-              </Step>
-              <Step number="2" title="Open Chrome Extensions">
-                Go to <span className="font-mono">chrome://extensions</span> and turn
-                on Developer mode.
-              </Step>
-              <Step number="3" title="Load the extracted folder">
-                Choose “Load unpacked”, select the extracted folder, then open a
-                single-contract Kalshi or Polymarket page.
-              </Step>
+              {storeUrl ? (
+                <>
+                  <Step number="1" title="Add PMVL to Chrome">
+                    Use the store button above and confirm the narrow venue access
+                    shown by Chrome.
+                  </Step>
+                  <Step number="2" title="Follow the private setup guide">
+                    Chrome opens a guide stored inside the extension. No install event
+                    is sent to a PMVL server.
+                  </Step>
+                  <Step number="3" title="Open one contract">
+                    Select a Kalshi or Polymarket contract and enter an amount to see
+                    the live overlay.
+                  </Step>
+                </>
+              ) : (
+                <>
+                  <Step number="1" title="Download and unzip">
+                    Download the beta ZIP above, then extract it to a folder you will keep.
+                  </Step>
+                  <Step number="2" title="Open Chrome Extensions">
+                    Go to <span className="font-mono">chrome://extensions</span> and turn
+                    on Developer mode.
+                  </Step>
+                  <Step number="3" title="Load the extracted folder">
+                    Choose “Load unpacked”, select the extracted folder, then open a
+                    single-contract Kalshi or Polymarket page.
+                  </Step>
+                </>
+              )}
             </ol>
           </div>
 
@@ -137,22 +163,86 @@ export default function ExtensionPage() {
         </div>
       </Section>
 
-      <Section className="bg-sunken">
+      <Section id="first-result" className="bg-sunken">
+        <SectionHeading
+          eyebrow="First success"
+          title="See the first live result in under five minutes"
+          lead="Installation is not activation. The useful moment is a verified live cost beside a real order ticket—without placing an order."
+        />
+        <ol className="mt-8 grid gap-6 md:grid-cols-3">
+          <FirstResult
+            number="01"
+            title="Open one contract"
+            body="On a multi-outcome board, select the exact contract first so its YES/NO order ticket is visible."
+          />
+          <FirstResult
+            number="02"
+            title="Choose a side and amount"
+            body="PMVL reads the visible ticket. It never types into the form, changes the amount, or requires submission."
+          />
+          <FirstResult
+            number="03"
+            title="Confirm the cost panel"
+            body="Look beside the ticket for cost per contract, break-even probability, quote age, and any cheaper placeable size."
+          />
+        </ol>
+        <p className="t-meta mt-6 max-w-2xl">
+          Not visible? Refresh the market tab once after installation and select a
+          specific contract. Event pages without a selected outcome intentionally
+          show no estimate rather than guessing.
+        </p>
+      </Section>
+
+      <Section>
         <div className="max-w-2xl">
           <p className="t-label">Beta status</p>
-          <h2 className="t-page-title mt-2">Useful now, still manually installed</h2>
+          <h2 className="t-page-title mt-2">
+            {storeUrl ? "Useful now, distributed with automatic updates" : "Useful now, still manually installed"}
+          </h2>
           <p className="t-prose mt-3">
-            The calculation, venue adapters, rendered panel, and packaged files are
-            covered by automated tests. Distribution polish, store review, automatic
-            updates, and resilience to every future venue redesign are not complete.
-            That boundary is why this download is labelled a developer-mode beta.
+            {storeUrl
+              ? "The calculation, venue adapters, rendered panel, packaged files, and first-run guide are covered by automated tests. Venue page markup can still change, so this remains a beta even after store review."
+              : "The calculation, venue adapters, rendered panel, packaged files, and first-run guide are covered by automated tests. Store review and automatic updates are not yet configured, and venue page markup can still change. That boundary is why this download is labelled a developer-mode beta."}
           </p>
-          <a href={DOWNLOAD} download className="btn-primary mt-6">
-            Download beta ZIP
-          </a>
+          <InstallLink storeUrl={storeUrl} className="mt-6" />
         </div>
       </Section>
     </>
+  );
+}
+
+function InstallLink({
+  storeUrl,
+  className = "",
+}: {
+  storeUrl: string | null;
+  className?: string;
+}) {
+  if (storeUrl) {
+    return (
+      <a
+        href={storeUrl}
+        target="_blank"
+        rel="noreferrer"
+        data-pmvl-funnel="extension_install_intent"
+        data-pmvl-placement="chrome_web_store"
+        className={`btn-primary ${className}`}
+      >
+        Add to Chrome
+      </a>
+    );
+  }
+
+  return (
+    <a
+      href={DOWNLOAD}
+      download
+      data-pmvl-funnel="extension_install_intent"
+      data-pmvl-placement="beta_zip"
+      className={`btn-primary ${className}`}
+    >
+      Download beta ZIP
+    </a>
   );
 }
 
@@ -192,6 +282,24 @@ function Step({
         <h3 className="t-sub-title">{title}</h3>
         <p className="t-body mt-1">{children}</p>
       </div>
+    </li>
+  );
+}
+
+function FirstResult({
+  number,
+  title,
+  body,
+}: {
+  number: string;
+  title: string;
+  body: string;
+}) {
+  return (
+    <li className="border-t border-line pt-4">
+      <p className="t-label">{number}</p>
+      <h3 className="t-sub-title mt-2">{title}</h3>
+      <p className="t-body mt-2">{body}</p>
     </li>
   );
 }

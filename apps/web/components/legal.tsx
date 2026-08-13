@@ -70,10 +70,9 @@ export function ReviewNotice() {
       <p className="mt-1.5 text-ink">
         This document is a foundation written to describe the software&apos;s
         actual behaviour. It has <strong>not</strong> been reviewed or approved
-        by a lawyer, and it contains bracketed placeholders where an owner or
-        legal decision is required. It must not be relied on as a finished legal
-        agreement, and billing must not be activated until the placeholders are
-        resolved and the document has been reviewed.
+        by a lawyer. It must not be relied on as a finished legal agreement, and
+        billing must not be activated until the commercial terms are final and
+        the document has been reviewed.
       </p>
     </aside>
   );
