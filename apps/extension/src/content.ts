@@ -161,9 +161,12 @@ async function reload(): Promise<void> {
   const side = detectSide(url);
   if (side === null) {
     // Fail closed: without a confident side there are no side-specific numbers
-    // to show, and a stale panel must not survive into the unknown state.
+    // to show. A stale YES/NO panel must not survive, but silence is also
+    // wrong — the trader needs to see that the side could not be read.
     loaded = null;
-    removePanel();
+    panel().innerHTML = messageHtml(
+      "Cannot determine whether this ticket is YES or NO. No side-specific cost is shown.",
+    );
     return;
   }
 

@@ -19,6 +19,23 @@ const ALLOWED_PREFIXES = [
   "https://clob.polymarket.com/",
 ];
 
+/** Pages the content script is allowed to run on, matching the manifest. */
+const ALLOWED_SENDER_HOSTS = new Set(["kalshi.com", "polymarket.com"]);
+
+function allowedSenderPage(url: string | undefined): boolean {
+  if (!url) return false;
+  let parsed: URL;
+  try {
+    parsed = new URL(url);
+  } catch {
+    return false;
+  }
+  if (parsed.protocol !== "https:") return false;
+  const host = parsed.hostname.toLowerCase();
+  if (ALLOWED_SENDER_HOSTS.has(host)) return true;
+  return [...ALLOWED_SENDER_HOSTS].some((allowed) => host.endsWith("." + allowed));
+}
+
 /** Books move; a short cache stops a size slider from hammering the venue. */
 const CACHE_TTL_MS = 10_000;
 const cache = new Map<string, { at: number; value: unknown }>();
@@ -71,6 +88,14 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
   // extension must not gain a proxy through this one.
   if (sender?.id !== chrome.runtime.id) {
     sendResponse({ ok: false, error: "blocked: sender is not this extension" });
+    return false;
+  }
+
+  // Content scripts inherit the page origin. A same-extension sender from a
+  // page we do not inject on (or a chrome-extension:// surface) must not gain
+  // the venue fetch proxy.
+  if (!allowedSenderPage(sender.url)) {
+    sendResponse({ ok: false, error: "blocked: sender page is not a venue page" });
     return false;
   }
 

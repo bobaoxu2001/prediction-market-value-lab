@@ -67,10 +67,32 @@ describe("detectSide fails closed", () => {
     expect(content.detectSide("https://kalshi.com/trade/KXTEST?side=yes")).toBe("no");
   });
 
-  it("a reload with no detectable side shows nothing and fetches nothing", async () => {
+  it("a reload with no detectable side shows an explicit unknown state and fetches nothing", async () => {
     await content.reload();
-    expect(document.getElementById(PANEL_ID)).toBeNull();
+    const node = document.getElementById(PANEL_ID);
+    expect(node).not.toBeNull();
+    expect(node?.textContent ?? "").toContain("Cannot determine whether this ticket is YES or NO");
+    expect(node?.textContent ?? "").not.toContain("Break-even");
     expect(sendMock).not.toHaveBeenCalled();
+  });
+
+  it("malformed side toggles do not become a YES guess", () => {
+    document.body.innerHTML =
+      "<input placeholder=\"0\">" +
+      "<button aria-pressed=\"true\">Buy</button>" +
+      "<button aria-pressed=\"false\">Sell</button>";
+    makeVisible(document);
+    expect(content.detectSide("https://kalshi.com/trade/KXTEST")).toBeNull();
+  });
+
+  it("two selected toggles fail closed instead of picking YES", () => {
+    document.body.innerHTML =
+      "<input placeholder=\"0\">" +
+      "<button aria-pressed=\"true\">YES 62¢</button>" +
+      "<button aria-pressed=\"true\">NO 39¢</button>";
+    makeVisible(document);
+    // No URL hint either: a contradictory ticket must not become YES.
+    expect(content.detectSide("https://kalshi.com/trade/KXTEST")).toBeNull();
   });
 });
 

@@ -12,6 +12,8 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 
 type Message = { type?: string; url?: string };
 type Sender = { id?: string; url?: string };
+
+const VENUE_PAGE = "https://kalshi.com/markets/kxtest/kxtest";
 type Response = { ok: boolean; value?: unknown; error?: string };
 type Listener = (
   message: Message,
@@ -55,15 +57,45 @@ describe("background message boundary", () => {
   it("rejects a sender that is not this extension", async () => {
     const response = await respondTo(
       { type: "pmvl:fetch", url: ALLOWED },
-      { id: "someone-elses-extension" },
+      { id: "someone-elses-extension", url: VENUE_PAGE },
     );
     expect(response.ok).toBe(false);
     expect(response.error).toContain("not this extension");
   });
 
   it("rejects a sender with no id", async () => {
-    const response = await respondTo({ type: "pmvl:fetch", url: ALLOWED }, {});
+    const response = await respondTo(
+      { type: "pmvl:fetch", url: ALLOWED },
+      { url: VENUE_PAGE },
+    );
     expect(response.ok).toBe(false);
+  });
+
+  it("rejects its own extension from a non-venue page", async () => {
+    const response = await respondTo(
+      { type: "pmvl:fetch", url: ALLOWED },
+      { id: "extension-under-test", url: "https://evil.example/steal" },
+    );
+    expect(response.ok).toBe(false);
+    expect(response.error).toContain("not a venue page");
+  });
+
+  it("rejects a missing sender URL even from this extension", async () => {
+    const response = await respondTo(
+      { type: "pmvl:fetch", url: ALLOWED },
+      { id: "extension-under-test" },
+    );
+    expect(response.ok).toBe(false);
+    expect(response.error).toContain("not a venue page");
+  });
+
+  it("rejects a kalshi.com lookalike host", async () => {
+    const response = await respondTo(
+      { type: "pmvl:fetch", url: ALLOWED },
+      { id: "extension-under-test", url: "https://kalshi.com.evil.example/trade" },
+    );
+    expect(response.ok).toBe(false);
+    expect(response.error).toContain("not a venue page");
   });
 
   it("accepts its own content script and fetches an allowlisted endpoint", async () => {
@@ -74,7 +106,7 @@ describe("background message boundary", () => {
 
     const response = await respondTo(
       { type: "pmvl:fetch", url: ALLOWED },
-      { id: "extension-under-test" },
+      { id: "extension-under-test", url: VENUE_PAGE },
     );
     expect(response.ok).toBe(true);
     expect(response.value).toEqual({ price: "1" });
@@ -84,10 +116,24 @@ describe("background message boundary", () => {
     );
   });
 
+  it("accepts a venue subdomain", async () => {
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValue({ ok: true, json: async () => ({ price: "1" }) });
+    vi.stubGlobal("fetch", fetchMock);
+
+    const response = await respondTo(
+      { type: "pmvl:fetch", url: ALLOWED },
+      { id: "extension-under-test", url: "https://trading.kalshi.com/markets/x" },
+    );
+    expect(response.ok).toBe(true);
+    expect(response.value).toEqual({ price: "1" });
+  });
+
   it("rejects a disallowed URL even from its own extension", async () => {
     const response = await respondTo(
       { type: "pmvl:fetch", url: "https://evil.example/steal" },
-      { id: "extension-under-test" },
+      { id: "extension-under-test", url: VENUE_PAGE },
     );
     expect(response.ok).toBe(false);
     expect(response.error).toContain("not a permitted endpoint");
@@ -100,24 +146,29 @@ describe("background message boundary", () => {
         type: "pmvl:fetch",
         url: "https://api.elections.kalshi.com.evil.example/trade-api/v2/markets/X",
       },
-      { id: "extension-under-test" },
+      { id: "extension-under-test", url: VENUE_PAGE },
     );
     expect(response.ok).toBe(false);
     expect(response.error).toContain("not a permitted endpoint");
   });
 
   it("ignores malformed messages", async () => {
-    expect(await respondTo({}, { id: "extension-under-test" })).toEqual({
+    expect(
+      await respondTo({}, { id: "extension-under-test", url: VENUE_PAGE }),
+    ).toEqual({
       ok: false,
       error: "not handled",
     });
     expect(
-      await respondTo({ type: "other" }, { id: "extension-under-test" }),
+      await respondTo(
+        { type: "other" },
+        { id: "extension-under-test", url: VENUE_PAGE },
+      ),
     ).toEqual({ ok: false, error: "not handled" });
     expect(
       await respondTo(
         { type: "pmvl:fetch", url: 42 as unknown as string },
-        { id: "extension-under-test" },
+        { id: "extension-under-test", url: VENUE_PAGE },
       ),
     ).toEqual({ ok: false, error: "not handled" });
   });
@@ -129,7 +180,7 @@ describe("background message boundary", () => {
     );
     const response = await respondTo(
       { type: "pmvl:fetch", url: ALLOWED },
-      { id: "extension-under-test" },
+      { id: "extension-under-test", url: VENUE_PAGE },
     );
     expect(response.ok).toBe(false);
     expect(response.error).toContain("503");

@@ -255,8 +255,8 @@ const SELECTED_ATTRS = ["aria-pressed", "aria-selected", "aria-checked"];
  * market in the event with its own Yes/No buttons — ten of them on a baseball
  * page — and none of those say anything about what the trader is about to buy.
  *
- * Returns null when the page does not say, and the caller keeps its default.
- * Guessing the side wrong prices the opposite contract.
+ * Returns null when the page does not say. Callers must fail closed — guessing
+ * the side wrong prices the opposite contract.
  */
 export function readSelectedSide(root: Document = document): "yes" | "no" | null {
   const box = orderPanelElement(root);
