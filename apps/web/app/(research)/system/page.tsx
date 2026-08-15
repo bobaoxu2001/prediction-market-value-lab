@@ -1,4 +1,5 @@
 import { apiGet, type SystemInfo } from "@/lib/api";
+import { safeExternalUrl } from "@/lib/safe-url";
 import { localTime, utcTime } from "@/lib/format";
 import { ApiDown, Metric, PageHeader } from "@/components/ui";
 
@@ -266,9 +267,16 @@ export default async function SystemPage() {
                     {src.used_for}
                   </td>
                   <td>
-                    <a href={src.docs} target="_blank" rel="noopener noreferrer" className="text-xs underline">
-                      docs
-                    </a>
+                    {(() => {
+                      const docsUrl = safeExternalUrl(src.docs);
+                      return docsUrl ? (
+                        <a href={docsUrl} target="_blank" rel="noopener noreferrer" className="text-xs underline">
+                          docs
+                        </a>
+                      ) : (
+                        <span className="text-xs text-ink-faint">docs unavailable</span>
+                      );
+                    })()}
                   </td>
                 </tr>
               ))}
