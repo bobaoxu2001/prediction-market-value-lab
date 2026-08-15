@@ -157,7 +157,7 @@ prediction-market-value-lab/
     shared/                        config, Decimal money core, ORM, schemas
     market-normalization/          providers, matching, pricing, probability,
                                    arbitrage, backtest, demo seeder
-  tests/                           1,100+ tests + recorded venue fixtures
+  tests/                           1,250+ tests + recorded venue fixtures
   data/                            SQLite database and scratch data
   docs/
 ```
@@ -407,9 +407,12 @@ make test-unit         # no database
 make test-integration  # database, pipelines, API
 ```
 
-Over 1,100 tests, no network access. Provider tests run against real responses captured from
-both venues into `tests/fixtures/`, so payload-shape regressions are caught without
-the suite depending on the venues being up.
+Over 1,250 Python tests, with no network access - outbound sockets are blocked in
+conftest, so an accidental live call fails loudly instead of flaking. Provider tests
+run against real responses captured from both venues into `tests/fixtures/`, so
+payload-shape regressions are caught without the suite depending on the venues being
+up. The web app adds 241 vitest tests and the extension 111 (conformance, escaping,
+message boundary, race and packaging suites), all executed in CI.
 
 ---
 

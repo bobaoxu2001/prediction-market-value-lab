@@ -95,11 +95,16 @@ npm run typecheck
 
 `npm run package` produces the deterministic ZIP served by the public website.
 The archive includes the local onboarding page and the two built scripts Chrome
-loads; `tests/package.test.ts` pins that package boundary.
+loads; `tests/package.test.ts` pins that package boundary, and CI fails the
+build when the committed archive and the source disagree.
 
 `npm test` also writes `out/overlay-preview.html`, which renders the panel from
 the recorded venue payloads so the styling can be inspected without visiting a
 venue.
+
+`scripts/verify-loaded.mjs` drives a real Chrome against a live venue page. It
+uses the `CHROME_PATH` environment variable or the system Chrome; browser
+binaries are deliberately not committed to the repository.
 
 ## Verified, and not verified
 

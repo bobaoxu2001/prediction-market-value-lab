@@ -305,7 +305,7 @@ jobs:
             -q
 
   docker:
-    name: Docker compose configuration
+    name: Docker compose build and smoke boot
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -313,8 +313,10 @@ jobs:
           ref: ${{ inputs.commit_sha || github.sha }}
       # A compose file that references Dockerfiles which do not exist was
       # committed once and shipped a documented-but-broken deployment path for
-      # weeks. `docker compose config` validates the file shape; the script
-      # then asserts every referenced build context and Dockerfile exists.
+      # weeks. This gate validates the file shape, asserts every referenced
+      # build path exists, BUILDS all three images, and smoke-boots the API
+      # against Postgres with a health check - config alone would be the fake
+      # claim of "Docker validated".
       - name: Validate the compose file
         run: docker compose config -q
       - name: Assert every referenced build path exists
@@ -345,6 +347,28 @@ jobs:
               sys.exit(1)
           print("all compose build paths exist")
           PY
+      - name: Build all images
+        run: docker compose build
+      - name: Smoke boot API against Postgres
+        run: |
+          docker compose up -d postgres api
+          healthy=false
+          for attempt in $(seq 1 40); do
+            if curl -fsS http://localhost:8000/health > /tmp/health.json 2>/dev/null; then
+              if grep -q '"status"' /tmp/health.json && grep -q 'ok' /tmp/health.json; then
+                healthy=true
+                break
+              fi
+            fi
+            sleep 3
+          done
+          if [ "$healthy" != true ]; then
+            echo "::error::API did not become healthy"
+            docker compose logs api postgres
+            exit 1
+          fi
+          echo "API healthy: $(cat /tmp/health.json)"
+          docker compose down -v --remove-orphans
 
   secrets:
     name: Secret scan
