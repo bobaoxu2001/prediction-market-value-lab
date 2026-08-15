@@ -10,7 +10,8 @@ WORKDIR /app
 ENV PYTHONUNBUFFERED=1 PYTHONDONTWRITEBYTECODE=1
 
 COPY requirements.txt ./requirements.txt
-RUN pip install --no-cache-dir -r requirements.txt uvicorn[standard]==0.38.0
+RUN pip install --no-cache-dir -r requirements.txt uvicorn[standard]==0.38.0 \
+    "psycopg[binary]>=3.2,<4"
 
 COPY packages ./packages
 COPY services/api ./services/api

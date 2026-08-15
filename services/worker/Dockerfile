@@ -9,7 +9,7 @@ WORKDIR /app
 ENV PYTHONUNBUFFERED=1 PYTHONDONTWRITEBYTECODE=1
 
 COPY requirements.txt requirements-dev.txt ./
-RUN pip install --no-cache-dir -r requirements-dev.txt
+RUN pip install --no-cache-dir -r requirements-dev.txt "psycopg[binary]>=3.2,<4"
 
 COPY packages ./packages
 COPY services/worker ./services/worker
