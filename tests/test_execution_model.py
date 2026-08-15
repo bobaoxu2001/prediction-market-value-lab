@@ -25,7 +25,10 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "packages/shared/sr
 
 import run_automated_snapshot_pipeline as pipeline  # noqa: E402
 from pmvl_shared.manifest import sha256_of  # noqa: E402
-from pmvl_shared.snapshot_artifact import compress_snapshot  # noqa: E402
+from pmvl_shared.snapshot_artifact import (  # noqa: E402
+    CURRENT_SNAPSHOT_SCHEMA_REVISION,
+    compress_snapshot,
+)
 
 from run_automated_snapshot_pipeline import (  # noqa: E402
     EXECUTION_MODEL,
@@ -82,7 +85,10 @@ def _compressed_candidate(
     connection.execute(
         "CREATE TABLE alembic_version (version_num VARCHAR(32) PRIMARY KEY)"
     )
-    connection.execute("INSERT INTO alembic_version VALUES ('c3d4e5f6a7b8')")
+    connection.execute(
+        "INSERT INTO alembic_version VALUES (?)",
+        (CURRENT_SNAPSHOT_SCHEMA_REVISION,),
+    )
     connection.execute(
         "CREATE TABLE job_runs ("
         "id INTEGER PRIMARY KEY, job_name TEXT, status TEXT, started_at TEXT"
@@ -104,8 +110,8 @@ def _compressed_candidate(
         json.dumps(
             {
                 "snapshot_id": "cand-1",
-                "schema_version": "c3d4e5f6a7b8",
-                "schema_revision": "c3d4e5f6a7b8",
+                "schema_version": CURRENT_SNAPSHOT_SCHEMA_REVISION,
+                "schema_revision": CURRENT_SNAPSHOT_SCHEMA_REVISION,
                 "code_commit_sha": "1" * 12,
                 "source_commit_sha": "1" * 12,
                 "built_at": "2026-07-31T08:00:00Z",

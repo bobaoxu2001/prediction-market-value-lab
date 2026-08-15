@@ -209,6 +209,101 @@ jobs:
       - name: Tests
         run: npm run test
 
+  extension:
+    name: Extension build and tests
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: apps/extension
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.commit_sha || github.sha }}
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: npm
+          cache-dependency-path: apps/extension/package-lock.json
+      - run: npm ci
+      - name: Typecheck
+        run: npx tsc --noEmit
+      - name: Build bundles
+        # Before the tests: the packaging tests read dist/, and building with
+        # them absent would be a gate that quietly skips itself.
+        run: npm run build
+      - name: Tests
+        # Conformance (BigInt vs Python), panel escaping, background message
+        # boundary, content race/fail-closed side, order-form readers, venue
+        # adapters, packaging - the suites that cannot run on an arm64 laptop
+        # with x64 tooling binaries.
+        run: npm run test
+      - name: Package the developer-mode beta
+        run: python3 scripts/package.py
+      - name: The shipped beta archive must match the source
+        # The web site serves this tracked zip as the public download. A source
+        # change that is not reflected in the shipped archive would publish an
+        # old extension under new release notes.
+        run: |
+          cd ../..
+          if ! git diff --quiet -- apps/web/public/downloads/pmvl-entry-cost-beta.zip; then
+            echo "::error::the committed beta archive is stale; rebuild and commit it"
+            exit 1
+          fi
+          echo "shipped beta archive matches the source"
+      - name: Upload the freshly built beta archive
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: pmvl-entry-cost-beta
+          path: apps/web/public/downloads/pmvl-entry-cost-beta.zip
+          retention-days: 7
+          if-no-files-found: error
+
+  postgres:
+    name: Postgres persistence semantics
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:17-alpine
+        env:
+          POSTGRES_USER: pmvl
+          POSTGRES_PASSWORD: pmvl
+          POSTGRES_DB: pmvl
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U pmvl -d pmvl"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 12
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.commit_sha || github.sha }}
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: pip
+      - name: Install
+        run: |
+          pip install -r requirements-dev.txt "psycopg[binary]>=3.2,<4"
+          pip install -e packages/shared -e packages/market-normalization \
+                      -e services/api -e services/worker
+      - name: Run the repaired persistence tests against PostgreSQL
+        # The same concurrency, idempotency and rule-persistence tests the
+        # default suite runs on SQLite, now against the production-style
+        # database: the ON CONFLICT paths, the partial unique index and the
+        # rule-hash round-trip must behave identically on both dialects.
+        env:
+          PMVL_TEST_DATABASE_URL: postgresql+psycopg://pmvl:pmvl@localhost:5432/pmvl
+        run: |
+          python -m pytest \
+            tests/test_ingest_concurrency_and_rule_roundtrip.py \
+            tests/test_job_idempotency.py \
+            tests/test_rule_version_ingestion.py \
+            tests/test_rule_versioning.py \
+            -q
+
   docker:
     name: Docker compose configuration
     runs-on: ubuntu-latest
