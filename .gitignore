@@ -73,6 +73,8 @@ docs/*_BRIEF_*.md
 apps/extension/dist/
 apps/extension/out/
 apps/extension/node_modules/
+# Vitest's transient config-bundle scratch files
+apps/extension/vitest.config.ts.timestamp-*.mjs
 
 # Local browser binaries for the load harness. A 50 MB Chrome archive must not
 # live in git (it bloats objects, drifts with every Chrome release, and is

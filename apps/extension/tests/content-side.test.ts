@@ -130,7 +130,8 @@ describe("reload is last-request-wins", () => {
     await content.reload(); // completes and draws the fresh contract
 
     const panelBefore = document.getElementById(PANEL_ID);
-    expect(panelBefore?.innerText).toContain("Break-even");
+    // jsdom does not implement innerText; textContent is the portable read.
+    expect(panelBefore?.textContent ?? "").toContain("Break-even");
 
     // The stale response lands AFTER the fresh panel is on screen.
     stalePhase = "resolved";
@@ -138,7 +139,7 @@ describe("reload is last-request-wins", () => {
     await slow;
 
     const panelAfter = document.getElementById(PANEL_ID);
-    expect(panelAfter?.innerText).toContain("Break-even");
-    expect(panelAfter?.innerText).not.toContain("returned no");
+    expect(panelAfter?.textContent ?? "").toContain("Break-even");
+    expect(panelAfter?.textContent ?? "").not.toContain("returned no");
   });
 });
