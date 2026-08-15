@@ -90,7 +90,7 @@ specific reason attached.
 
 ## Quick start
 
-Requires Python 3.11+ and Node 20+. No Docker, no PostgreSQL, no API keys.
+Requires Python 3.11+ and Node 22+. No Docker, no PostgreSQL, no API keys.
 
 ```bash
 make setup          # venv, dependencies, database migrations
@@ -148,7 +148,7 @@ shot.
 
 ```
 prediction-market-value-lab/
-  apps/web/                        Next.js 15 + TypeScript + Tailwind
+  apps/web/                        Next.js 16 + TypeScript + Tailwind
                                    13 research pages + 10 public-site pages
   services/
     api/                           FastAPI read-only research API
