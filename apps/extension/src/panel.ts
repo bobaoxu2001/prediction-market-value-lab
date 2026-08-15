@@ -180,13 +180,13 @@ export function panelHtml(input: PanelInput): string {
   const warnings: string[] = [];
   if (yours?.belowMinOrderSize) {
     warnings.push(
-      `This venue will not accept an order of ${sizeLabel(yours.size)} on this
+      `This venue will not accept an order of ${escapeHtml(sizeLabel(yours.size))} on this
        contract, so that figure is arithmetic rather than a trade you can place.`,
     );
   } else if (yours && !yours.fullyFilled) {
     warnings.push(
-      `The book cannot fill ${sizeLabel(yours.size)} right now — only
-       ${sizeLabel(yours.filledSize)} is available at any price on screen.`,
+      `The book cannot fill ${escapeHtml(sizeLabel(yours.size))} right now — only
+       ${escapeHtml(sizeLabel(yours.filledSize))} is available at any price on screen.`,
     );
   } else if (yours && cheapest) {
     const saving = savingNote(yours, cheapest);
@@ -231,7 +231,7 @@ export function panelHtml(input: PanelInput): string {
       <thead><tr><th>Size</th><th>Costs</th><th>Over quote</th><th>Break-even</th></tr></thead>
       <tbody>${body}</tbody>
     </table>
-    ${warnings.map((w) => `<p class="pmvl-note pmvl-best-note">${escapeHtml(w)}</p>`).join("")}
+    ${warnings.map((w) => `<p class="pmvl-note pmvl-best-note">${w}</p>`).join("")}
     <p class="pmvl-note">
       Book read ${escapeHtml(freshness(input.observedAt, input.now))}. Cost uses observed ask
       depth and published venue fee and rounding rules.${assumptionDisclosure}

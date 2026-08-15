@@ -83,18 +83,22 @@ describe("panelHtml renders hostile strings as text", () => {
     expect(html).not.toContain("<img");
   });
 
-  it("escapes your-order warnings", () => {
+  it("renders your-order warnings with intentional markup intact and no markup injection", () => {
     const html = panelHtml({
       venue: "kalshi",
       side: "yes",
       ladder,
       observedAt: 1_000,
       yourRow: rung("1", "0.60"),
-      yourDollars: Number.NaN, // hostile-ish numeric edge: String(NaN)
+      yourDollars: 5,
       now: 1_000,
     });
+    // The dollars warning renders, and no hostile markup can arrive via it.
+    expect(html).toContain("$5 buys about");
     expect(html).not.toContain("<img");
-    expect(html).toContain("$NaN");
+    // The intentional emphasis in the saving note survives escaping.
+    expect(html).toContain("<strong>$");
+    expect(html).not.toContain("&lt;strong&gt;");
   });
 });
 

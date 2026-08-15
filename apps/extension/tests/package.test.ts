@@ -190,8 +190,9 @@ describe("network access is declared and narrow", () => {
   });
 
   it("permits exactly the three read-only venue endpoints", () => {
+    // Kalshi is narrowed to the trade API path the worker allowlist serves.
     expect(manifest().host_permissions?.sort()).toEqual([
-      "https://api.elections.kalshi.com/*",
+      "https://api.elections.kalshi.com/trade-api/v2/*",
       "https://clob.polymarket.com/*",
       "https://gamma-api.polymarket.com/*",
     ]);

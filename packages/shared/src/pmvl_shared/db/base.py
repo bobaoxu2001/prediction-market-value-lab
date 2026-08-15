@@ -48,7 +48,11 @@ def insert_or_skip(
     kwargs: dict[str, object] = {"index_elements": list(conflict_cols)}
     if conflict_where is not None:
         kwargs["index_where"] = conflict_where
-    return session.execute(stmt.on_conflict_do_nothing(**kwargs)).rowcount > 0
+    # RETURNING, not rowcount: psycopg3 does not reliably report rows-affected
+    # for INSERT ... ON CONFLICT, so rowcount-based winner detection silently
+    # broke on PostgreSQL. A returned primary key means this writer inserted.
+    stmt = stmt.on_conflict_do_nothing(**kwargs).returning(table.c.id)
+    return session.execute(stmt).first() is not None
 
 
 class Base(DeclarativeBase):
