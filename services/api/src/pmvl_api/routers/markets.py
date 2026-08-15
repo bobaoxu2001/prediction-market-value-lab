@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from datetime import timedelta
 from decimal import Decimal
 from typing import Any
 
@@ -15,7 +16,7 @@ from pmvl_shared.enums import (
     availability_for,
 )
 from pmvl_shared.money import ZERO
-from pmvl_shared.timeutil import horizons_for, utcnow
+from pmvl_shared.timeutil import HORIZON_DELTAS, horizons_for, utcnow
 
 from pmvl_markets.db_models import (
     EvidenceItem,
@@ -31,10 +32,21 @@ from pmvl_markets.db_models import (
 )
 
 from ..deps import DataMode, DbDep, ModeDep, apply_provenance, envelope
-from ..quotes import coherent_quote
+from ..quotes import bulk_coherent_quotes, coherent_quote
 
 #: Candidate window when ordering by a quote-derived value.
 QUOTE_SORT_WINDOW = 400
+
+#: A horizon filter selects markets whose TIGHTEST bucket is the requested one
+#: (a 24h market is also within 7d, but ?horizon=7d has always meant "resolves
+#: after 24h and within 7d"). The lower bound per bucket mirrors
+#: ``horizon_for``'s bucketing exactly, so the SQL filter and the displayed
+#: horizon label can never disagree.
+_HORIZON_LOWER_BOUNDS: dict[str, timedelta] = {
+    "24h": timedelta(0),
+    "7d": HORIZON_DELTAS["24h"],
+    "30d": HORIZON_DELTAS["7d"],
+}
 
 router = APIRouter(prefix="/markets", tags=["markets"])
 
@@ -146,10 +158,17 @@ def _apply_market_filters(  # noqa: ANN001, ANN201
     platform: str | None,
     category: str | None,
     status: str | None,
+    horizon: str | None,
     min_volume: Decimal | None,
     has_orderbook: bool,
 ):
-    """Apply every SQL-level market filter to data and count queries alike."""
+    """Apply every SQL-level market filter to data and count queries alike.
+
+    Horizon is expressed in SQL so ``total``, ``offset`` and ``limit`` all refer
+    to the same filtered set - filtering in Python after paginating made the
+    count overstate and the pages skip. The bounds replicate
+    ``horizon_for``'s tightest-bucket semantics exactly.
+    """
     stmt = apply_provenance(stmt, Market.provenance, mode)
     if q:
         pattern = f"%{q.lower()}%"
@@ -165,6 +184,12 @@ def _apply_market_filters(  # noqa: ANN001, ANN201
         stmt = stmt.where(Market.category == category)
     if status:
         stmt = stmt.where(Market.status == status)
+    if horizon:
+        now = utcnow()
+        stmt = stmt.where(
+            Market.expected_resolution_time > now + _HORIZON_LOWER_BOUNDS[horizon],
+            Market.expected_resolution_time <= now + HORIZON_DELTAS[horizon],
+        )
     if min_volume is not None:
         stmt = stmt.where(Market.volume_24h >= min_volume)
     if has_orderbook:
@@ -193,6 +218,7 @@ def list_markets(
         "platform": platform,
         "category": category,
         "status": status,
+        "horizon": horizon,
         "min_volume": min_volume,
         "has_orderbook": has_orderbook,
     }
@@ -223,20 +249,14 @@ def list_markets(
         )
     ) or 0
 
-    # Horizon is derived from the current time rather than stored, so it is filtered
-    # after the query. Over-fetching keeps the page full after that filter.
-    # A quote-sorted view needs a wider candidate window, because the ordering is
-    # decided after the quotes are resolved.
-    window = QUOTE_SORT_WINDOW if quote_sorted else (limit * 3 if horizon else limit)
+    # Every filter - horizon included - is applied in SQL, so offset and limit
+    # paginate exactly the set ``total`` counts. A quote-sorted view still needs
+    # its wider candidate window because its ordering is decided in Python after
+    # the quotes are resolved; its honest limits are stated in the response.
+    window = QUOTE_SORT_WINDOW if quote_sorted else limit
     rows = list(db.scalars(stmt.offset(0 if quote_sorted else offset).limit(window)))
-    out = []
-    for market in rows:
-        row = _market_row(market, coherent_quote(db, market, mode.provenances))
-        if horizon and row["horizon"] != horizon:
-            continue
-        out.append(row)
-        if not quote_sorted and len(out) >= limit:
-            break
+    quotes = bulk_coherent_quotes(db, rows, mode.provenances)
+    out = [_market_row(market, quotes.get(market.id)) for market in rows]
 
     sort_note = None
     ranked_total = None

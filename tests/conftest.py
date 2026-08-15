@@ -6,7 +6,7 @@ import json
 from datetime import timedelta
 from decimal import Decimal
 from pathlib import Path
-from typing import Any
+from typing import Any, Iterator
 
 import pytest
 
@@ -29,6 +29,34 @@ def load_fixture(name: str) -> Any:
     """
     with (FIXTURE_DIR / name).open() as handle:
         return json.load(handle)
+
+
+@pytest.fixture(scope="session", autouse=True)
+def _block_outbound_network() -> Iterator[None]:
+    """Enforce the suite's no-network contract, not merely promise it.
+
+    A test that accidentally reaches a live venue used to pass on a networked
+    machine and fail offline - environment-dependent behaviour that looked like
+    a flaky suite. Blocking every outbound socket connection makes an accidental
+    live call fail loudly on every machine, which is the only honest state for
+    a suite whose fixtures are recorded payloads.
+    """
+    import socket
+
+    real_connect = socket.socket.connect
+
+    def blocked(self: socket.socket, address: Any) -> None:
+        raise RuntimeError(
+            "test attempted an outbound network connection to "
+            f"{address!r}; the suite is fixture-driven and must not reach "
+            "the network"
+        )
+
+    socket.socket.connect = blocked  # type: ignore[method-assign]
+    try:
+        yield
+    finally:
+        socket.socket.connect = real_connect  # type: ignore[method-assign]
 
 
 @pytest.fixture(scope="session", autouse=True)

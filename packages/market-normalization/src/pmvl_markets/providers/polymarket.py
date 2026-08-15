@@ -46,8 +46,8 @@ from pmvl_shared.schemas import (
 )
 from pmvl_shared.timeutil import parse_ts, utcnow
 
-from ..normalize.rules import normalize_rules
-from ..normalize.text import extract_features, normalize_title
+from ..normalize.rules import market_rule_inputs, rules_from_inputs
+from ..normalize.text import normalize_title
 from .http import HttpClient, ProviderError
 
 log = get_logger(__name__)
@@ -272,14 +272,17 @@ class PolymarketProvider:
 
         resolution_source = row.get("resolutionSource") or ""
         end_date = parse_ts(row.get("endDate"))
-        features = extract_features(question, description=description)
-        rules = normalize_rules(
+        # Built once and replayed by the store, exactly as on Kalshi: the cutoff
+        # is Polymarket's endDate (not the lag-adjusted expected resolution) and
+        # the source fallback prefers the description - both choices must survive
+        # persistence, or the stored rule hash would diverge from this stamp.
+        rule_inputs = market_rule_inputs(
             title=question,
             description=description,
             settlement_source=resolution_source or description,
             cutoff_time=end_date,
-            features=features,
         )
+        rules = rules_from_inputs(rule_inputs)
 
         closed = bool(row.get("closed"))
         active = bool(row.get("active", True))
@@ -330,6 +333,7 @@ class PolymarketProvider:
             settlement_rules_raw=description,
             settlement_rules_normalized=rules.summary,
             resolution_hash=rules.resolution_hash,
+            rule_inputs=rule_inputs,
             status=status,
             result=None,
             accepting_orders=accepting and not closed,

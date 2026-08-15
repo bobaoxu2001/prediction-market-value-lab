@@ -221,6 +221,12 @@ def max_profitable_size(
     Binary-searches the ask ladder. Because average cost rises monotonically as depth
     is consumed, the point where average EV turns negative bounds the profitable
     capacity. Returns ``(size, total_expected_profit)``.
+
+    Honesty note: Kalshi's cent-ceiling fee is a *stepwise* function of order
+    size, so average cost is not strictly monotonic there and the search tracks
+    the best profit seen rather than trusting unimodality. The result is still a
+    valid lower bound - a larger profitable size may exist inside the bracket -
+    which is the conservative direction for a capacity estimate.
     """
     available = sum((l.size for l in book.asks(side)), ZERO)
     if available <= 0:

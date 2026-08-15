@@ -20,8 +20,9 @@ import re
 from dataclasses import asdict, dataclass, field
 from datetime import datetime
 from decimal import Decimal
+from typing import Any
 
-from pmvl_shared.timeutil import ensure_utc
+from pmvl_shared.timeutil import ensure_utc, iso, parse_ts
 
 from .text import TitleFeatures, extract_features
 
@@ -151,6 +152,64 @@ def normalize_rules(
     rules.resolution_hash = rules.compute_hash()
     rules.summary = summarize(rules)
     return rules
+
+
+def market_rule_inputs(
+    *,
+    title: str,
+    subtitle: str = "",
+    description: str = "",
+    settlement_source: str = "",
+    cutoff_time: datetime | None = None,
+    explicit_threshold: Decimal | None = None,
+    explicit_comparator: str = "",
+    has_structured_strike: bool = False,
+) -> dict[str, Any]:
+    """The exact inputs that produced a market's normalized rules, JSON-safe.
+
+    Providers stamp this vector onto the market at ingest time and build the rules
+    *through* it. The store then replays the same vector via
+    :func:`rules_from_inputs` instead of re-deriving inputs from market columns, so
+    the hash the provider stamped and the hash persisted on the rule row are one
+    construction - a choice the provider made once (Polymarket's endDate cutoff, a
+    source fallback that prefers the description) can never silently diverge when
+    the row is written later.
+    """
+    return {
+        "title": title,
+        "subtitle": subtitle or "",
+        "description": description or "",
+        "settlement_source": settlement_source or "",
+        "cutoff_time": iso(cutoff_time),
+        "explicit_threshold": (
+            str(explicit_threshold) if explicit_threshold is not None else None
+        ),
+        "explicit_comparator": explicit_comparator or "",
+        "has_structured_strike": bool(has_structured_strike),
+    }
+
+
+def rules_from_inputs(inputs: dict[str, Any]) -> NormalizedRules:
+    """Reconstruct :class:`NormalizedRules` from a stored input vector.
+
+    The inverse of :func:`market_rule_inputs`: parsing the exact inputs back into
+    the call :func:`normalize_rules` made at ingest time, so the digest is stable
+    across the provider -> persistence -> reload round-trip by construction.
+    """
+    threshold_raw = inputs.get("explicit_threshold")
+    explicit_threshold = (
+        Decimal(str(threshold_raw)) if threshold_raw not in (None, "") else None
+    )
+    return normalize_rules(
+        title=str(inputs.get("title") or ""),
+        subtitle=str(inputs.get("subtitle") or ""),
+        description=str(inputs.get("description") or ""),
+        settlement_source=str(inputs.get("settlement_source") or ""),
+        cutoff_time=parse_ts(inputs.get("cutoff_time")),
+        explicit_threshold=explicit_threshold,
+        explicit_comparator=str(inputs.get("explicit_comparator") or ""),
+        has_structured_strike=bool(inputs.get("has_structured_strike")),
+    )
 
 
 def summarize(rules: NormalizedRules) -> str:

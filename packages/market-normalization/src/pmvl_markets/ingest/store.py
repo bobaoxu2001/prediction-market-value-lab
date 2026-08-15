@@ -16,6 +16,7 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from pmvl_shared.config import get_settings
+from pmvl_shared.db.base import insert_or_skip
 from pmvl_shared.enums import DataProvenance, Platform, Side
 from pmvl_shared.logging_setup import get_logger
 from pmvl_shared.money import D
@@ -33,7 +34,11 @@ from ..db_models import (
     Trade,
 )
 from ..matching.rule_history import record_rule_version
-from ..normalize.rules import normalize_rules
+from ..normalize.rules import (
+    KALSHI_STRIKE_COMPARATORS,
+    normalize_rules,
+    rules_from_inputs,
+)
 
 log = get_logger(__name__)
 
@@ -49,6 +54,7 @@ def _guard_provenance(provenance: DataProvenance) -> None:
         )
 
 
+
 def upsert_events(session: Session, events: Sequence[NormalizedEvent]) -> int:
     written = 0
     for ev in events:
@@ -61,12 +67,37 @@ def upsert_events(session: Session, events: Sequence[NormalizedEvent]) -> int:
         )
         now = utcnow()
         if row is None:
-            row = Event(
-                platform=ev.platform.value,
-                platform_event_id=ev.platform_event_id,
-                created_at=now,
+            insert_or_skip(
+                session,
+                Event.__table__,
+                {
+                    "platform": ev.platform.value,
+                    "platform_event_id": ev.platform_event_id,
+                    "created_at": now,
+                    "title": "",
+                    "normalized_title": "",
+                    "category": "other",
+                    "negative_risk": False,
+                    "mutually_exclusive": False,
+                    "exhaustive": False,
+                    "outcome_count": 0,
+                    "provenance": ev.provenance.value,
+                },
+                conflict_cols=["platform", "platform_event_id"],
             )
-            session.add(row)
+            # Whether we inserted or a concurrent writer beat us to the key,
+            # load the winner and update it in place.
+            row = session.scalar(
+                select(Event).where(
+                    Event.platform == ev.platform.value,
+                    Event.platform_event_id == ev.platform_event_id,
+                )
+            )
+            if row is None:  # pragma: no cover - the insert just targeted this key
+                raise RuntimeError(
+                    f"insert for {ev.platform.value}/{ev.platform_event_id} "
+                    "reported success but the row cannot be reloaded"
+                )
         row.series_ticker = ev.series_ticker
         row.title = ev.title
         row.normalized_title = ev.normalized_title
@@ -117,12 +148,49 @@ def upsert_markets(session: Session, markets: Sequence[NormalizedMarket]) -> dic
             )
         )
         if row is None:
-            row = Market(
-                platform=m.platform.value,
-                platform_market_id=m.platform_market_id,
-                created_at=now,
+            insert_or_skip(
+                session,
+                Market.__table__,
+                {
+                    "platform": m.platform.value,
+                    "platform_market_id": m.platform_market_id,
+                    "created_at": now,
+                    "title": "",
+                    "subtitle": "",
+                    "normalized_title": "",
+                    "description": "",
+                    "category": "other",
+                    "source_timezone": "UTC",
+                    "settlement_source": "",
+                    "settlement_rules_raw": "",
+                    "settlement_rules_normalized": "",
+                    "resolution_hash": "",
+                    "status": "unknown",
+                    "accepting_orders": True,
+                    "market_type": "binary",
+                    "tick_size": Decimal("0.01"),
+                    "price_level_structure": "linear_cent",
+                    "min_order_size": Decimal("1"),
+                    "fee_rate": Decimal("0"),
+                    "maker_fee_rate": Decimal("0"),
+                    "fee_type": "",
+                    "provenance": m.provenance.value,
+                },
+                conflict_cols=["platform", "platform_market_id"],
             )
-            session.add(row)
+            # Whether we inserted or a concurrent writer beat us to the key,
+            # load the winner and update it in place.
+            row = session.scalar(
+                select(Market).where(
+                    Market.platform == m.platform.value,
+                    Market.platform_market_id == m.platform_market_id,
+                )
+            )
+            if row is None:  # pragma: no cover - the insert just targeted this key
+                raise RuntimeError(
+                    f"insert for {m.platform.value}/{m.platform_market_id} "
+                    "reported success but the row cannot be reloaded"
+                )
 
         row.event_id = event_ids.get((m.platform.value, m.platform_event_id or ""))
         row.platform_event_id = m.platform_event_id
@@ -192,8 +260,29 @@ def _upsert_outcomes(session: Session, row: Market, m: NormalizedMarket) -> None
     for idx, label in enumerate(labels):
         out = existing.get(label)
         if out is None:
-            out = Outcome(market_id=row.id, label=label, created_at=utcnow())
-            session.add(out)
+            insert_or_skip(
+                session,
+                Outcome.__table__,
+                {
+                    "market_id": row.id,
+                    "label": label,
+                    "created_at": utcnow(),
+                    "index_in_market": 0,
+                    "is_yes": True,
+                },
+                conflict_cols=["market_id", "label"],
+            )
+            # Load the winner (ours or a concurrent writer's) and update it.
+            out = session.scalar(
+                select(Outcome).where(
+                    Outcome.market_id == row.id, Outcome.label == label
+                )
+            )
+            if out is None:  # pragma: no cover - the insert just targeted this key
+                raise RuntimeError(
+                    f"insert for outcome {label!r} of market {row.id} "
+                    "reported success but the row cannot be reloaded"
+                )
         out.index_in_market = idx
         out.is_yes = idx == 0
         out.token_id = tokens[idx] if idx < len(tokens) else None
@@ -202,19 +291,61 @@ def _upsert_outcomes(session: Session, row: Market, m: NormalizedMarket) -> None
 
 
 def _upsert_rule(session: Session, row: Market, m: NormalizedMarket) -> None:
-    rules = normalize_rules(
-        title=m.title,
-        subtitle=m.subtitle,
-        description=m.settlement_rules_raw,
-        settlement_source=m.settlement_source,
-        cutoff_time=m.event_occurrence_time or m.expected_resolution_time or m.close_time,
-        explicit_threshold=m.floor_strike if m.floor_strike is not None else m.cap_strike,
-        has_structured_strike=bool(m.strike_type),
-    )
+    if m.rule_inputs is not None:
+        # Replay the exact input vector the provider used. The provider's choices
+        # (Polymarket's endDate cutoff, its source fallback, Kalshi's comparator
+        # map) are part of what the stamped hash means, so re-deriving inputs
+        # from market columns could only diverge from it.
+        rules = rules_from_inputs(m.rule_inputs)
+        if rules.resolution_hash != m.resolution_hash:
+            # Impossible for rows written by the current providers - the stamp is
+            # computed from the same vector - but the mismatch is exactly the
+            # silent divergence this path exists to prevent, so say so loudly.
+            log.error(
+                "rule-input replay for %s/%s produced hash %s but the market "
+                "stamp is %s; keeping the replay and flagging for investigation",
+                m.platform.value, m.platform_market_id,
+                rules.resolution_hash, m.resolution_hash,
+            )
+    else:
+        # Legacy fallback for rows normalised before providers stamped their
+        # inputs. The market's own hash stays authoritative for matching; the
+        # rule row is the best reconstruction available from stored columns.
+        rules = normalize_rules(
+            title=m.title,
+            subtitle=m.subtitle,
+            description=m.settlement_rules_raw,
+            settlement_source=m.settlement_source,
+            cutoff_time=m.event_occurrence_time or m.expected_resolution_time or m.close_time,
+            explicit_threshold=m.floor_strike if m.floor_strike is not None else m.cap_strike,
+            explicit_comparator=KALSHI_STRIKE_COMPARATORS.get(m.strike_type or "", ""),
+            has_structured_strike=bool(m.strike_type),
+        )
     rule = session.scalar(select(MarketRule).where(MarketRule.market_id == row.id))
     if rule is None:
-        rule = MarketRule(market_id=row.id, created_at=utcnow())
-        session.add(rule)
+        insert_or_skip(
+            session,
+            MarketRule.__table__,
+            {
+                "market_id": row.id,
+                "created_at": utcnow(),
+                "settlement_source_name": "",
+                "settlement_source_url": "",
+                "threshold_semantics": "",
+                "comparator": "",
+                "cutoff_timezone": "UTC",
+                "resolution_hash": "",
+            },
+            conflict_cols=["market_id"],
+        )
+        # A concurrent writer may have created the rule for this market first;
+        # either way, load the winner and update it in place.
+        rule = session.scalar(select(MarketRule).where(MarketRule.market_id == row.id))
+        if rule is None:  # pragma: no cover - the insert just targeted this key
+            raise RuntimeError(
+                f"insert for MarketRule of market {row.id} "
+                "reported success but the row cannot be reloaded"
+            )
     rule.settlement_source_name = m.settlement_source
     rule.threshold_semantics = rules.threshold_semantics
     rule.threshold_value = rules.threshold
@@ -406,18 +537,25 @@ def store_trades(
         )
         if exists:
             continue
-        session.add(
-            Trade(
-                platform=t.platform.value,
-                platform_trade_id=t.platform_trade_id,
-                market_id=market_id,
-                traded_at=t.traded_at,
-                price=t.price,
-                size=t.size,
-                taker_side=t.taker_side,
-                provenance=t.provenance.value,
-            )
+        # Insert-only (trades are immutable prints): when a concurrent writer
+        # stored this exact print first, the conflict is a skip, not an error.
+        inserted = insert_or_skip(
+            session,
+            Trade.__table__,
+            {
+                "platform": t.platform.value,
+                "platform_trade_id": t.platform_trade_id,
+                "market_id": market_id,
+                "traded_at": t.traded_at,
+                "price": t.price,
+                "size": t.size,
+                "taker_side": t.taker_side,
+                "provenance": t.provenance.value,
+            },
+            conflict_cols=["platform", "platform_trade_id"],
         )
+        if not inserted:
+            continue
         written += 1
     session.flush()
     return written

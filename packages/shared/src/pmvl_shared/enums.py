@@ -119,8 +119,13 @@ class JobStatus(StrEnum):
     SUCCESS = "success"
     PARTIAL_SUCCESS = "partial_success"
     FAILED = "failed"
+    #: An identical run was already active, so this invocation recorded itself and
+    #: did no work. Terminal: its output is the other run's output.
     SKIPPED = "skipped"
     STALE = "stale"
+    #: A 'running' row whose process died. Superseded when a new run claims the
+    #: same idempotency key after the active-run window has passed.
+    INTERRUPTED = "interrupted"
 
     @property
     def produced_usable_output(self) -> bool:

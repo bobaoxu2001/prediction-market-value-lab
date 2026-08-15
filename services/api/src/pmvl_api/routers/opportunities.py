@@ -261,7 +261,14 @@ def funnel(
                 & (ModelPrediction.created_at == latest.c.latest_at),
             )
         ):
-            predictions[prediction.market_id] = prediction
+            # Two predictions can share a created_at and the join then returns
+            # both; the highest id is the later write within that instant.
+            current = predictions.get(prediction.market_id)
+            if current is None or (prediction.created_at, prediction.id) > (
+                current.created_at,
+                current.id,
+            ):
+                predictions[prediction.market_id] = prediction
 
     scored = [m for m in with_book if m.id in predictions]
     independent = [m for m in scored if predictions[m.id].has_independent_prior]
@@ -439,6 +446,18 @@ def disagreements(
             )
         )
     )
+    # Timestamp ties: the max(created_at) join returns every row sharing the
+    # latest instant. The highest id is the later write; pick it
+    # deterministically so the same database always reports the same row.
+    best_by_market: dict[int, Any] = {}
+    for prediction in predictions:
+        current = best_by_market.get(prediction.market_id)
+        if current is None or (prediction.created_at, prediction.id) > (
+            current.created_at,
+            current.id,
+        ):
+            best_by_market[prediction.market_id] = prediction
+    predictions = list(best_by_market.values())
 
     market_ids = {p.market_id for p in predictions}
     markets = {

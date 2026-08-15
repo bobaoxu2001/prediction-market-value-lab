@@ -39,8 +39,12 @@ from pmvl_shared.schemas import (
 )
 from pmvl_shared.timeutil import parse_ts, utcnow
 
-from ..normalize.rules import KALSHI_STRIKE_COMPARATORS, normalize_rules
-from ..normalize.text import extract_features, normalize_title
+from ..normalize.rules import (
+    KALSHI_STRIKE_COMPARATORS,
+    market_rule_inputs,
+    rules_from_inputs,
+)
+from ..normalize.text import normalize_title
 from .http import HttpClient, ProviderError
 
 log = get_logger(__name__)
@@ -511,8 +515,10 @@ class KalshiProvider:
         close_time = parse_ts(row.get("close_time"))
         occurrence = parse_ts(row.get("occurrence_datetime"))
 
-        features = extract_features(title, subtitle=subtitle, description=rules_raw)
-        rules = normalize_rules(
+        # The rule inputs are built ONCE and travel with the market: the store
+        # replays this exact vector when persisting the MarketRule, so the hash
+        # stamped here and the hash on the rule row are the same construction.
+        rule_inputs = market_rule_inputs(
             title=title,
             subtitle=subtitle,
             description=rules_raw,
@@ -521,8 +527,8 @@ class KalshiProvider:
             explicit_threshold=explicit_threshold,
             explicit_comparator=KALSHI_STRIKE_COMPARATORS.get(strike_type, ""),
             has_structured_strike=bool(strike_type),
-            features=features,
         )
+        rules = rules_from_inputs(rule_inputs)
 
         status = _STATUS_MAP.get(str(row.get("status", "")).lower(), MarketStatus.UNKNOWN)
 
@@ -575,6 +581,7 @@ class KalshiProvider:
             settlement_rules_raw=rules_raw,
             settlement_rules_normalized=rules.summary,
             resolution_hash=rules.resolution_hash,
+            rule_inputs=rule_inputs,
             status=status,
             result=(row.get("result") or None),
             accepting_orders=status == MarketStatus.OPEN,

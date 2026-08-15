@@ -129,9 +129,72 @@ def record_rule_version(
         first_observed_at=now,
         last_observed_at=now,
     )
-    session.add(row)
+    from pmvl_shared.db.base import insert_or_skip
+
+    inserted = insert_or_skip(
+        session,
+        MarketRuleVersion.__table__,
+        {
+            "market_id": market_id,
+            "version": row.version,
+            "raw_title": row.raw_title,
+            "raw_subtitle": row.raw_subtitle,
+            "raw_rules": row.raw_rules,
+            "raw_resolution_source": row.raw_resolution_source,
+            "raw_cancellation_language": row.raw_cancellation_language,
+            "raw_postponement_language": row.raw_postponement_language,
+            "platform_metadata": row.platform_metadata,
+            "fetched_at": row.fetched_at,
+            "source_endpoint": row.source_endpoint,
+            "source_payload_hash": row.source_payload_hash,
+            "parser_version": row.parser_version,
+            "normalized_terms": row.normalized_terms,
+            "normalized_rule_hash": row.normalized_rule_hash,
+            "extraction_confidence": row.extraction_confidence,
+            "completeness": row.completeness,
+            "rule_hash": row.rule_hash,
+            "changed_fields": row.changed_fields,
+            "first_observed_at": row.first_observed_at,
+            "last_observed_at": row.last_observed_at,
+        },
+        conflict_cols=["market_id", "rule_hash"],
+    )
+    if inserted:
+        # The Core insert does not backfill the ORM instance, so reload the
+        # persisted row: callers rely on its identity (id, timestamps).
+        persisted = session.scalar(
+            select(MarketRuleVersion)
+            .where(
+                MarketRuleVersion.market_id == market_id,
+                MarketRuleVersion.rule_hash == digest,
+            )
+            .limit(1)
+        )
+        if persisted is None:  # pragma: no cover - the insert just targeted this key
+            raise RuntimeError(
+                f"insert for market_rule_versions ({market_id}, {digest}) "
+                "reported success but the row cannot be reloaded"
+            )
+        return persisted
+    # Two concurrent ingests both missed the SELECT above; the unique
+    # (market_id, rule_hash) index proves this exact wording exists. Reload it
+    # and extend its observation window instead of failing the ingest.
+    existing = session.scalar(
+        select(MarketRuleVersion)
+        .where(
+            MarketRuleVersion.market_id == market_id,
+            MarketRuleVersion.rule_hash == digest,
+        )
+        .limit(1)
+    )
+    if existing is None:  # pragma: no cover - the insert just targeted this key
+        raise RuntimeError(
+            f"insert for market_rule_versions ({market_id}, {digest}) "
+            "reported success but the row cannot be reloaded"
+        )
+    existing.last_observed_at = now
     session.flush()
-    return row
+    return existing
 
 
 def current_rules(session: Session, market_id: int) -> MarketRuleVersion | None:
