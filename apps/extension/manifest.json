@@ -10,7 +10,7 @@
     "128": "icons/icon128.png"
   },
   "host_permissions": [
-    "https://api.elections.kalshi.com/*",
+    "https://api.elections.kalshi.com/trade-api/v2/*",
     "https://gamma-api.polymarket.com/*",
     "https://clob.polymarket.com/*"
   ],

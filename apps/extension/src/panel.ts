@@ -114,7 +114,9 @@ function row(entry: CostAtSize, kind: "" | "best" | "yours"): string {
     .filter(Boolean)
     .join(" ");
   const label =
-    kind === "yours" ? `${sizeLabel(entry.size)} <span class="pmvl-tag">yours</span>` : sizeLabel(entry.size);
+    kind === "yours"
+      ? `${escapeHtml(sizeLabel(entry.size))} <span class="pmvl-tag">yours</span>`
+      : escapeHtml(sizeLabel(entry.size));
   return `<tr${classes ? ` class="${classes}"` : ""}>
     <td>${label}</td>
     <td>${cents(entry.measuredCost)}</td>
@@ -137,14 +139,14 @@ function savingNote(yours: CostAtSize, cheapest: CostAtSize): string | null {
   const onYourOrder = perContract * toNumber(yours.size);
   // Under a cent on the whole order is not worth a sentence.
   if (onYourOrder < 0.01) return null;
-  return `At ${sizeLabel(yours.size)} you pay ${cents(yours.measuredCost)} each.
-    ${sizeLabel(cheapest.size)} costs ${cents(cheapest.measuredCost)} each —
+  return `At ${escapeHtml(sizeLabel(yours.size))} you pay ${escapeHtml(cents(yours.measuredCost))} each.
+    ${escapeHtml(sizeLabel(cheapest.size))} costs ${escapeHtml(cents(cheapest.measuredCost))} each —
     <strong>$${onYourOrder.toFixed(2)}</strong> less on an order this size.`;
 }
 
 export function panelHtml(input: PanelInput): string {
   const rows = strip(input.ladder);
-  const sideLabel = input.side.toUpperCase();
+  const sideLabel = escapeHtml(input.side.toUpperCase());
   const head = `<div class="pmvl-head"><span class="pmvl-dot"></span>Entry cost · ${sideLabel}</div>`;
 
   if (rows.length === 0 && input.yourRow === null) {
@@ -192,14 +194,14 @@ export function panelHtml(input: PanelInput): string {
   }
   if (yours && input.yourDollars) {
     warnings.push(
-      `Your order form is in dollars: $${input.yourDollars} buys about
-       ${sizeLabel(yours.size)} contracts at the current top of book.`,
+      `Your order form is in dollars: $${escapeHtml(String(input.yourDollars))} buys about
+       ${escapeHtml(sizeLabel(yours.size))} contracts at the current top of book.`,
     );
   }
   if (!yours && cheapest) {
     warnings.push(
-      `Cheapest placeable size: <strong>${sizeLabel(cheapest.size)}</strong> at
-       ${cents(cheapest.measuredCost)} each.`,
+      `Cheapest placeable size: <strong>${escapeHtml(sizeLabel(cheapest.size))}</strong> at
+       ${escapeHtml(cents(cheapest.measuredCost))} each.`,
     );
   }
 
@@ -221,7 +223,7 @@ export function panelHtml(input: PanelInput): string {
 
   const assumptionDisclosure =
     includedAssumptions.length > 0
-      ? ` Scenario inputs included in these figures: ${includedAssumptions.join("; ")}.`
+      ? ` Scenario inputs included in these figures: ${escapeHtml(includedAssumptions.join("; "))}.`
       : "";
 
   return `${head}
@@ -229,9 +231,9 @@ export function panelHtml(input: PanelInput): string {
       <thead><tr><th>Size</th><th>Costs</th><th>Over quote</th><th>Break-even</th></tr></thead>
       <tbody>${body}</tbody>
     </table>
-    ${warnings.map((w) => `<p class="pmvl-note pmvl-best-note">${w}</p>`).join("")}
+    ${warnings.map((w) => `<p class="pmvl-note pmvl-best-note">${escapeHtml(w)}</p>`).join("")}
     <p class="pmvl-note">
-      Book read ${freshness(input.observedAt, input.now)}. Cost uses observed ask
+      Book read ${escapeHtml(freshness(input.observedAt, input.now))}. Cost uses observed ask
       depth and published venue fee and rounding rules.${assumptionDisclosure}
       Slippage is not included. No forecast, no recommendation — research only.
     </p>`;

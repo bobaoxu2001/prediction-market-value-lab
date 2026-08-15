@@ -63,7 +63,17 @@ async function fetchJson(url: string): Promise<unknown> {
   return value;
 }
 
-chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
+chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
+  // Defense in depth: only this extension's own contexts may ask the worker to
+  // fetch. The manifest declares no `externally_connectable`, so a page script
+  // cannot message here today - but the boundary should not depend on the
+  // manifest staying that way, and a compromised content script from another
+  // extension must not gain a proxy through this one.
+  if (sender?.id !== chrome.runtime.id) {
+    sendResponse({ ok: false, error: "blocked: sender is not this extension" });
+    return false;
+  }
+
   if (message?.type !== "pmvl:fetch" || typeof message.url !== "string") return false;
 
   if (!allowed(message.url)) {
@@ -79,3 +89,7 @@ chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
   // Keeps the message channel open for the async reply.
   return true;
 });
+
+// The service worker is a module (manifest v3 type: module), and bundling it
+// keeps this file importable by the boundary tests.
+export {};

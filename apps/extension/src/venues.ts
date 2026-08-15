@@ -34,7 +34,7 @@
  */
 
 import { type BookLevel, type ContractTerms, type Venue } from "./cost";
-import { type Dec, ONE, dec, gt, quantizeUsd, sub } from "./decimal";
+import { type Dec, ONE, dec, gt, mul, quantizeUsd, sub } from "./decimal";
 
 export const KALSHI_API = "https://api.elections.kalshi.com/trade-api/v2";
 export const POLYMARKET_GAMMA = "https://gamma-api.polymarket.com";
@@ -157,7 +157,7 @@ export function contractFromKalshiMarket(market: KalshiMarket): Contract {
     title: [market.title, market.yes_sub_title].filter(Boolean).join(" — "),
     terms: {
       venue: "kalshi",
-      feeRate: multiplyRate(KALSHI_BASE_RATE, multiplier),
+      feeRate: mul(KALSHI_BASE_RATE, multiplier),
       feeType: market.fee_type ?? "",
       tickSize: dec("0.01"),
       minOrderSize: dec(String(market.minimum_order_size ?? 1)),
@@ -300,10 +300,6 @@ export async function polymarketBook(
 /* ------------------------------------------------------------------ shared -- */
 
 export type FetchJson = (url: string) => Promise<unknown>;
-
-function multiplyRate(base: Dec, multiplier: Dec): Dec {
-  return { units: base.units * multiplier.units, scale: base.scale + multiplier.scale };
-}
 
 /** Years until a timestamp, or zero. Zero disables the capital-cost component. */
 export function yearsUntil(iso: string | undefined | null, now = Date.now()): Dec {

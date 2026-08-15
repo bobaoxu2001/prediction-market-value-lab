@@ -49,8 +49,6 @@ import {
 
 export type Venue = "kalshi" | "polymarket";
 
-/** Published Kalshi rates at multiplier 1; per-series multipliers ride on `feeRate`. */
-export const KALSHI_TAKER_RATE = dec("0.07");
 
 export interface BookLevel {
   price: Dec;
