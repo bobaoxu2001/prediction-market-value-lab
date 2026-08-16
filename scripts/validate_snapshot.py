@@ -9,6 +9,12 @@ by a green build:
 3. the snapshot was present and openable but could not answer the API's queries.
 
 This checks all three, plus the size ceiling, so CI fails instead of production.
+
+It also rejects a production snapshot that has been run through the demo/archive
+prune. That path deliberately drops market-rule rows, raw rule text on
+non-recommendation markets, and price history. Those tables are what the market
+detail API and UI read. Demo artefacts are a different contract and are checked
+with ``--profile demo`` or ``scripts/build_demo_snapshot.py``.
 """
 
 from __future__ import annotations
@@ -250,6 +256,115 @@ def select_markets_with_books():  # noqa: ANN201
     )
 
 
+PRODUCTION_PROFILE = "production"
+DEMO_PROFILE = "demo"
+
+
+def production_coverage_problems(
+    db_path: Path, *, profile: str = PRODUCTION_PROFILE
+) -> list[str]:
+    """Reject a demo-pruned database masquerading as a production snapshot.
+
+    The production builder keeps settlement-rule evidence and price history for
+    surviving live markets. The demo/archive builder strips both so the artefact
+    is small enough to commit from a clean checkout. Those are different
+    artefacts. A production snapshot that still contains live markets outside the
+    recommendation set cannot have had that coverage collapse to zero.
+    """
+    if profile == DEMO_PROFILE:
+        return []
+    if profile != PRODUCTION_PROFILE:
+        return [f"unknown snapshot profile {profile!r}"]
+
+    try:
+        con = sqlite3.connect(f"file:{db_path}?mode=ro", uri=True)
+    except sqlite3.Error as exc:
+        return [f"production coverage check cannot open snapshot: {exc}"]
+
+    def scalar(sql: str) -> int | None:
+        try:
+            row = con.execute(sql).fetchone()
+        except sqlite3.Error:
+            return None
+        return int(row[0]) if row and row[0] is not None else 0
+
+    try:
+        live_non_rec = scalar(
+            """
+            SELECT COUNT(*) FROM markets
+             WHERE provenance = 'live'
+               AND id NOT IN (
+                   SELECT market_id FROM recommendations
+                    WHERE market_id IS NOT NULL
+                   UNION
+                   SELECT market_id FROM recommendation_snapshots
+                    WHERE market_id IS NOT NULL
+               )
+            """
+        )
+        if live_non_rec is None:
+            return [
+                "production coverage check could not read markets; "
+                "the snapshot is missing a required table"
+            ]
+        if live_non_rec == 0:
+            return []
+
+        rule_rows = scalar(
+            """
+            SELECT COUNT(*) FROM market_rules
+             WHERE market_id IN (
+                 SELECT id FROM markets
+                  WHERE provenance = 'live'
+                    AND id NOT IN (
+                        SELECT market_id FROM recommendations
+                         WHERE market_id IS NOT NULL
+                        UNION
+                        SELECT market_id FROM recommendation_snapshots
+                         WHERE market_id IS NOT NULL
+                    )
+             )
+            """
+        )
+        raw_rules = scalar(
+            """
+            SELECT COUNT(*) FROM markets
+             WHERE provenance = 'live'
+               AND COALESCE(settlement_rules_raw, '') != ''
+               AND id NOT IN (
+                   SELECT market_id FROM recommendations
+                    WHERE market_id IS NOT NULL
+                   UNION
+                   SELECT market_id FROM recommendation_snapshots
+                    WHERE market_id IS NOT NULL
+               )
+            """
+        )
+        price_rows = scalar("SELECT COUNT(*) FROM price_snapshots")
+    finally:
+        con.close()
+
+    problems: list[str] = []
+    if rule_rows is None or rule_rows == 0:
+        problems.append(
+            "production snapshot has live markets that require settlement rules "
+            "but market_rules coverage is empty; this is the demo/archive prune "
+            "signature, not a valid production artefact"
+        )
+    if raw_rules is None or raw_rules == 0:
+        problems.append(
+            "production snapshot has live markets outside the recommendation "
+            "set but none retain settlement_rules_raw; the demo/archive prune "
+            "strips that text and a production snapshot must not"
+        )
+    if price_rows is None or price_rows == 0:
+        problems.append(
+            "production snapshot has live markets but price_snapshots is empty; "
+            "required production price-history coverage cannot disappear entirely"
+        )
+    return problems
+
+
 def main(argv: list[str] | None = None) -> int:
     # Overridable so a CANDIDATE artefact can be validated in place before it is
     # promoted. Validation that could only run against the published path would
@@ -270,9 +385,21 @@ def main(argv: list[str] | None = None) -> int:
             "all read-only checks pass"
         ),
     )
+    parser.add_argument(
+        "--profile",
+        choices=(PRODUCTION_PROFILE, DEMO_PROFILE),
+        default=PRODUCTION_PROFILE,
+        help=(
+            "production (default) enforces rule and price-history coverage; "
+            "demo skips those checks for an intentionally pruned demo artefact"
+        ),
+    )
     args = parser.parse_args(argv)
     PUBLISHED_VALIDATION = args.snapshot is None
     FINALIZE_CANDIDATE = bool(args.finalize_candidate)
+    # The committed artefact is the production snapshot. A demo profile cannot
+    # be used to smuggle a pruned database through the published-path gate.
+    profile = PRODUCTION_PROFILE if PUBLISHED_VALIDATION else args.profile
     if args.snapshot:
         SNAPSHOT = Path(args.snapshot)
     MANIFEST_PATH = (
@@ -409,6 +536,8 @@ def main(argv: list[str] | None = None) -> int:
         con.close()
     except Exception as exc:  # noqa: BLE001
         problems.append(f"snapshot cannot be opened read-only: {exc}")
+
+    problems.extend(production_coverage_problems(SNAPSHOT, profile=profile))
 
     # It must actually answer the queries the API makes.
     os.environ["DATABASE_URL"] = f"sqlite+pysqlite:///file:{SNAPSHOT}?mode=ro&uri=true"
