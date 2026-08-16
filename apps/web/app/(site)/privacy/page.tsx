@@ -5,14 +5,13 @@ import { LegalPage, LegalSection } from "@/components/legal";
 import {
   BUSINESS_MAILING_ADDRESS,
   DATA_CONTROLLER,
-  DATA_RETENTION_POLICY,
 } from "@/lib/seller";
 import { absoluteUrl, SUPPORT_EMAIL } from "@/lib/site";
 
 export const metadata: Metadata = {
   title: "Privacy notice",
   description:
-    "What PMVL collects: account identity from Clerk, session cookies, the email and payment reference for a one-time Founding Pilot purchase, and operational logs. Nothing else, and no analytics.",
+    "What PMVL collects: optional account identity, privacy-minimised first-party funnel event counts, email you choose to send about the proposed $29 plan, and operational logs.",
   alternates: { canonical: absoluteUrl("/privacy") },
 };
 
@@ -20,7 +19,7 @@ export default function PrivacyPage() {
   return (
     <LegalPage
       title="Privacy notice"
-      updated="2 August 2026"
+      updated="13 August 2026"
       summary="What this application actually collects, why, and who else sees it. It describes the implementation as built — not a policy template with categories the software does not use."
     >
       <LegalSection id="scope" title="Scope of this notice">
@@ -32,8 +31,8 @@ export default function PrivacyPage() {
         </p>
         <p>
           Reading the public research requires no account and no sign-in. If you
-          never create an account, the only data involved is the operational
-          logging described below.
+          never create an account and do not use an instrumented product action,
+          the only data involved is the operational logging described below.
         </p>
       </LegalSection>
 
@@ -54,24 +53,39 @@ export default function PrivacyPage() {
           experience without them.
         </p>
         <p>
-          <strong>Purchase records, if you buy the Founding Pilot.</strong>{" "}
-          Payment is taken on a Stripe-hosted payment page. There is no
-          subscription and no automatic entitlement system: PMVL reads the
-          completed payment in Stripe&apos;s dashboard and records, by hand, the
-          Stripe payment identifier, the email address you gave at checkout, the
-          payment timestamp and amount, your service start and end dates, and a
-          log of which reports were sent to you.
+          <strong>Founding Lifetime interest email, only if you send it.</strong>{" "}
+          The interest action opens a pre-addressed draft in your own email app.
+          Nothing is sent to PMVL unless you choose to send it. If sent, PMVL
+          receives the address, message and ordinary email metadata and uses them
+          to evaluate the proposed plan and reply to you.
         </p>
         <p>
-          That record is what fulfilment runs on — it is how a person knows to
-          email you a report, and how a refund or extension can be worked out
-          later. It is kept privately and is never committed to the public code
-          repository.
+          Sending that message creates no purchase, reservation, entitlement or
+          promise of launch. It is kept privately and is never committed to the
+          public code repository. You can ask for it to be deleted through the
+          contact address below.
+        </p>
+        <p>
+          <strong>First-party funnel events.</strong> When you use a small set of
+          named product actions, the browser sends a same-origin request to PMVL.
+          The event contains only an allowlisted event name, the source
+          (&ldquo;web&rdquo;) and, when applicable, an allowlisted placement. The
+          server adds its time and deployment environment before writing a
+          structured operational log entry.
+        </p>
+        <p>
+          The funnel payload and PMVL&apos;s structured application log do not
+          include a cookie, persistent identifier, page URL, referrer, IP address,
+          user agent, market, order, account, email or payment data. As with every
+          web request, Vercel may still process ordinary network metadata such as
+          IP address and user agent in its platform access logs. PMVL cannot use
+          the application event implementation to count unique users across
+          sessions; it measures event totals and conversion intent only.
         </p>
         <p>
           <strong>PMVL never receives or stores card numbers</strong>, bank
-          details or any other payment instrument. Those go from your browser to
-          Stripe directly.
+          details or any other payment instrument. The $29 interest test contains
+          no card field or payment processor.
         </p>
         <p>
           <strong>Operational logs.</strong> The hosting platform records ordinary
@@ -84,9 +98,10 @@ export default function PrivacyPage() {
       <LegalSection id="not-collected" title="What is not collected">
         <ul className="list-disc space-y-1 pl-5">
           <li>
-            <strong>No analytics.</strong> There is no analytics package, no
-            tracking pixel and no advertising script on this site. If analytics is
-            added later, this notice will be updated before it ships.
+            <strong>No third-party or behavioural analytics.</strong> There is no
+            analytics package, tracking pixel, advertising script, cross-site
+            identifier or visitor profile. The privacy-minimised first-party event
+            counts described above are the only product measurement.
           </li>
           <li>No card, bank or payment-instrument data, at any point.</li>
           <li>
@@ -104,11 +119,11 @@ export default function PrivacyPage() {
       <LegalSection id="why" title="Why it is collected">
         <p>
           Account identity and session cookies exist to sign you in and to keep
-          the account pages private to you. Purchase records exist so a person
-          can confirm you paid, send you the reports you bought, and resolve a
-          refund or extension if delivery falls short. Operational logs exist to
-          keep the service running and to investigate faults. There is no other
-          purpose, and none of it is used for advertising or sold to anyone.
+          the account pages private to you. A Founding Lifetime interest email is
+          used to evaluate that product idea and reply. First-party funnel event
+          totals are used to understand whether key product actions are reached.
+          Operational logs exist to keep the service running and investigate
+          faults. None of this data is used for advertising or sold to anyone.
         </p>
       </LegalSection>
 
@@ -119,17 +134,17 @@ export default function PrivacyPage() {
             identity data and session activity.
           </li>
           <li>
-            <strong>Stripe</strong> — payment processing for the one-time
-            purchase. Sees your payment details and billing address, which PMVL
-            does not, and retains payment information under its own policies.
-          </li>
-          <li>
             <strong>Vercel</strong> — application hosting. Sees request metadata
             and server logs.
           </li>
           <li>
             <strong>Google</strong> — only if you choose to sign in with Google,
             and only to the extent of that sign-in.
+          </li>
+          <li>
+            <strong>Email providers</strong> — only if you send the Founding
+            Lifetime interest draft. Your provider and PMVL&apos;s provider process
+            the address, message and ordinary delivery metadata.
           </li>
         </ul>
         <p>
@@ -140,12 +155,12 @@ export default function PrivacyPage() {
       </LegalSection>
 
       <LegalSection id="retention" title="Retention">
-        <p>{DATA_RETENTION_POLICY}</p>
         <p>
-          Retention periods for server logs are additionally set by the hosting
-          provider. Deletion and anonymisation are carried out by hand: no
-          automated deletion or data-export process has been implemented in this
-          release, and claiming one would be false.
+          Retention periods for server logs, including the non-identifying funnel
+          event entries, are set by the hosting provider. Interest emails are
+          handled as product-research correspondence and can be deleted on
+          request. Deletion and export are carried out by hand: no automated
+          deletion or data-export process has been implemented in this release.
         </p>
       </LegalSection>
 
@@ -179,8 +194,8 @@ export default function PrivacyPage() {
           session cookies Clerk requires, and they are set only once you sign in.
           A theme preference is stored in your browser&apos;s local storage, which
           never leaves your device and is not a cookie. There are no advertising,
-          analytics or cross-site tracking cookies, which is why this site has no
-          consent banner — there is nothing to consent to.
+          advertising or cross-site tracking cookies. First-party funnel events
+          set no cookie and create no persistent visitor identifier.
         </p>
       </LegalSection>
 

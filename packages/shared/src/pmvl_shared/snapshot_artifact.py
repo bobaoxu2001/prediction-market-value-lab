@@ -55,7 +55,9 @@ _GZIP_FIELDS = frozenset(
 # from turning one cold start into an unbounded decompression.
 MAX_COMPRESSED_SIZE_BYTES = 128 * 1024 * 1024
 MAX_UNCOMPRESSED_SIZE_BYTES = 512 * 1024 * 1024
-CURRENT_SNAPSHOT_SCHEMA_REVISION = "c3d4e5f6a7b8"
+# Must match the alembic head in db/migrations/versions; the publication
+# gate rejects any snapshot built at a different revision.
+CURRENT_SNAPSHOT_SCHEMA_REVISION = "f1a2b3c4d5e6"
 
 ManifestInput: TypeAlias = Mapping[str, Any] | str | os.PathLike[str]
 

@@ -17,6 +17,7 @@ from pmvl_shared.snapshot_artifact import (
     clear_snapshot_resolution_cache,
     compress_snapshot,
     decompress_snapshot,
+    CURRENT_SNAPSHOT_SCHEMA_REVISION,
     materialize_verified_compressed_snapshot,
     resolve_snapshot_path,
     verify_compressed_snapshot,
@@ -31,7 +32,7 @@ def _database(
     path: Path,
     *,
     value: str = "AC" + "1" * 32,
-    schema_revision: str = "c3d4e5f6a7b8",
+    schema_revision: str = CURRENT_SNAPSHOT_SCHEMA_REVISION,
     job_status: str = "success",
 ) -> Path:
     connection = sqlite3.connect(path)
@@ -68,7 +69,7 @@ def _compressed_bundle(
     *,
     value: str = "AC" + "1" * 32,
     release_status: str = "published",
-    schema_revision: str = "c3d4e5f6a7b8",
+    schema_revision: str = CURRENT_SNAPSHOT_SCHEMA_REVISION,
     job_status: str = "success",
 ) -> tuple[Path, Path, Path, dict]:
     data = directory / "data"

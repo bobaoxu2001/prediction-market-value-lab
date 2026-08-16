@@ -41,6 +41,8 @@ def _sync(coro_factory: Callable[[], Any]) -> Callable[[], None]:
     def runner() -> None:
         try:
             asyncio.run(coro_factory())
+        except jobs.JobSkipped as exc:  # a skip is not a failure
+            log.info("%s", exc)
         except Exception as exc:  # noqa: BLE001 - a failed job must not kill the scheduler
             log.error("scheduled job failed: %s", exc)
 
@@ -51,6 +53,8 @@ def _guard(fn: Callable[[], Any]) -> Callable[[], None]:
     def runner() -> None:
         try:
             fn()
+        except jobs.JobSkipped as exc:
+            log.info("%s", exc)
         except Exception as exc:  # noqa: BLE001
             log.error("scheduled job failed: %s", exc)
 

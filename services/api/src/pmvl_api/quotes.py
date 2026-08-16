@@ -26,7 +26,7 @@ from datetime import datetime
 from decimal import Decimal
 from typing import Any
 
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
 from pmvl_shared.money import ONE, ZERO
@@ -117,38 +117,8 @@ def _summary_quote(market: Market) -> CoherentQuote:
     )
 
 
-def coherent_quote(
-    session: Session,
-    market: Market,
-    provenances: tuple[str, ...] | None = None,
-) -> CoherentQuote:
-    """The single quote a view should render for ``market``.
-
-    Prefers the order book, because it is refreshed far more often and is the thing
-    an order would actually execute against. Falls back to the venue summary only
-    when no book was captured, and says so.
-    """
-    snapshot_stmt = (
-        select(OrderbookSnapshot)
-        .where(OrderbookSnapshot.market_id == market.id)
-        .order_by(OrderbookSnapshot.observed_at.desc())
-        .limit(1)
-    )
-    if provenances is not None:
-        snapshot_stmt = snapshot_stmt.where(
-            OrderbookSnapshot.provenance.in_(provenances)
-        )
-    snapshot = session.scalar(snapshot_stmt)
-    if snapshot is None:
-        return _summary_quote(market)
-
-    levels = list(
-        session.scalars(
-            select(OrderbookLevel)
-            .where(OrderbookLevel.snapshot_id == snapshot.id)
-            .order_by(OrderbookLevel.level_index)
-        )
-    )
+def _quote_from_snapshot(market: Market, snapshot: OrderbookSnapshot, levels: list[OrderbookLevel]) -> CoherentQuote:
+    """Build the quote for one market from an already-loaded snapshot and levels."""
     if not levels:
         return _summary_quote(market)
 
@@ -187,3 +157,117 @@ def coherent_quote(
         summary_disagrees=disagrees,
         summary_ask=market.best_yes_ask,
     )
+
+
+def coherent_quote(
+    session: Session,
+    market: Market,
+    provenances: tuple[str, ...] | None = None,
+) -> CoherentQuote:
+    """The single quote a view should render for ``market``.
+
+    Prefers the order book, because it is refreshed far more often and is the thing
+    an order would actually execute against. Falls back to the venue summary only
+    when no book was captured, and says so.
+    """
+    snapshot_stmt = (
+        select(OrderbookSnapshot)
+        .where(OrderbookSnapshot.market_id == market.id)
+        .order_by(OrderbookSnapshot.observed_at.desc())
+        .limit(1)
+    )
+    if provenances is not None:
+        snapshot_stmt = snapshot_stmt.where(
+            OrderbookSnapshot.provenance.in_(provenances)
+        )
+    snapshot = session.scalar(snapshot_stmt)
+    if snapshot is None:
+        return _summary_quote(market)
+
+    levels = list(
+        session.scalars(
+            select(OrderbookLevel)
+            .where(OrderbookLevel.snapshot_id == snapshot.id)
+            .order_by(OrderbookLevel.level_index)
+        )
+    )
+    return _quote_from_snapshot(market, snapshot, levels)
+
+
+def bulk_coherent_quotes(
+    session: Session,
+    markets: list[Market],
+    provenances: tuple[str, ...] | None = None,
+) -> dict[int, CoherentQuote]:
+    """Coherent quotes for many markets in a bounded number of queries.
+
+    The per-market path issues two queries each (latest snapshot, its levels); a
+    quote-sorted list touches hundreds of markets, which is an N+1 that matters on
+    PostgreSQL. This loads the latest snapshot per market in one query and all of
+    their levels in a second, then derives each quote from the same logic as the
+    single-market path. Markets without a usable book fall back to their venue
+    summary exactly as before.
+    """
+    if not markets:
+        return {}
+    market_ids = [m.id for m in markets]
+
+    latest = (
+        select(
+            OrderbookSnapshot.market_id,
+            func.max(OrderbookSnapshot.observed_at).label("max_observed"),
+        )
+        .where(OrderbookSnapshot.market_id.in_(market_ids))
+    )
+    if provenances is not None:
+        latest = latest.where(OrderbookSnapshot.provenance.in_(provenances))
+    latest = latest.group_by(OrderbookSnapshot.market_id).subquery()
+
+    snapshot_stmt = (
+        select(OrderbookSnapshot)
+        .join(
+            latest,
+            (OrderbookSnapshot.market_id == latest.c.market_id)
+            & (OrderbookSnapshot.observed_at == latest.c.max_observed),
+        )
+    )
+    if provenances is not None:
+        # The join already restricts to the filtered max per market, but the
+        # snapshot row itself must satisfy the same provenance filter or a
+        # same-timestamp tie from another provenance could win.
+        snapshot_stmt = snapshot_stmt.where(
+            OrderbookSnapshot.provenance.in_(provenances)
+        )
+
+    # Two snapshots captured in the same instant tie on the max; keep one per
+    # market deterministically (the newest id), matching the single-market
+    # path's arbitrary-but-stable "latest" semantics.
+    by_market: dict[int, OrderbookSnapshot] = {}
+    for snapshot in session.scalars(snapshot_stmt):
+        current = by_market.get(snapshot.market_id)
+        if current is None or (
+            snapshot.observed_at, snapshot.id
+        ) > (
+            current.observed_at, current.id
+        ):
+            by_market[snapshot.market_id] = snapshot
+
+    levels_by_snapshot: dict[int, list[OrderbookLevel]] = {}
+    if by_market:
+        for level in session.scalars(
+            select(OrderbookLevel)
+            .where(OrderbookLevel.snapshot_id.in_([s.id for s in by_market.values()]))
+            .order_by(OrderbookLevel.snapshot_id, OrderbookLevel.level_index)
+        ):
+            levels_by_snapshot.setdefault(level.snapshot_id, []).append(level)
+
+    quotes: dict[int, CoherentQuote] = {}
+    for market in markets:
+        snapshot = by_market.get(market.id)
+        if snapshot is None:
+            quotes[market.id] = _summary_quote(market)
+        else:
+            quotes[market.id] = _quote_from_snapshot(
+                market, snapshot, levels_by_snapshot.get(snapshot.id, [])
+            )
+    return quotes

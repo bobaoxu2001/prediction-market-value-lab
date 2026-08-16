@@ -22,6 +22,7 @@ export default function sitemap(): MetadataRoute.Sitemap {
     // whose subject ("what can entry cost at this size") people search for.
     { path: "/cost", priority: 0.9, changeFrequency: "daily" },
     { path: "/pricing", priority: 0.8, changeFrequency: "monthly" },
+    { path: "/founding-lifetime", priority: 0.8, changeFrequency: "monthly" },
     { path: "/founding-pilot", priority: 0.8, changeFrequency: "monthly" },
     { path: "/markets", priority: 0.7, changeFrequency: "daily" },
     { path: "/arbitrage", priority: 0.7, changeFrequency: "daily" },

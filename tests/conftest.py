@@ -6,7 +6,7 @@ import json
 from datetime import timedelta
 from decimal import Decimal
 from pathlib import Path
-from typing import Any
+from typing import Any, Iterator
 
 import pytest
 
@@ -32,12 +32,71 @@ def load_fixture(name: str) -> Any:
 
 
 @pytest.fixture(scope="session", autouse=True)
+def _block_outbound_network() -> Iterator[None]:
+    """Enforce the suite's no-network contract, not merely promise it.
+
+    A test that accidentally reaches a live venue used to pass on a networked
+    machine and fail offline - environment-dependent behaviour that looked like
+    a flaky suite. Blocking every outbound socket connection makes an accidental
+    live call fail loudly on every machine, which is the only honest state for
+    a suite whose fixtures are recorded payloads.
+    """
+    import os
+    import socket
+
+    real_connect = socket.socket.connect
+
+    def _db_host() -> str | None:
+        # When PMVL_TEST_DATABASE_URL points at a service database (the CI
+        # Postgres job), connections to that host are part of the test
+        # harness, not accidental live-venue calls.
+        from urllib.parse import urlparse
+
+        raw = os.environ.get("PMVL_TEST_DATABASE_URL")
+        if not raw:
+            return None
+        try:
+            return urlparse(raw).hostname
+        except ValueError:
+            return None
+
+    database_host = _db_host()
+
+    def blocked(self: socket.socket, address: Any) -> None:
+        host = address[0] if isinstance(address, tuple) else str(address)
+        # Loopback (local SQLite services, test servers) and the configured
+        # test database are exempt; everything else is a live venue.
+        if host in ("127.0.0.1", "localhost", "::1") or (
+            database_host is not None and host == database_host
+        ):
+            real_connect(self, address)
+            return
+        raise RuntimeError(
+            "test attempted an outbound network connection to "
+            f"{address!r}; the suite is fixture-driven and must not reach "
+            "the network"
+        )
+
+    socket.socket.connect = blocked  # type: ignore[method-assign]
+    try:
+        yield
+    finally:
+        socket.socket.connect = real_connect  # type: ignore[method-assign]
+
+
+@pytest.fixture(scope="session", autouse=True)
 def _test_environment(tmp_path_factory: pytest.TempPathFactory) -> None:
     """Point every test at an isolated SQLite file, never the developer's database."""
     import os
 
-    db_path = tmp_path_factory.mktemp("pmvl") / "test.db"
-    os.environ["DATABASE_URL"] = f"sqlite+pysqlite:///{db_path}"
+    # PMVL_TEST_DATABASE_URL overrides the default isolated SQLite file, which
+    # is how the CI Postgres job points this same suite at a real database.
+    override = os.environ.get("PMVL_TEST_DATABASE_URL")
+    if override:
+        os.environ["DATABASE_URL"] = override
+    else:
+        db_path = tmp_path_factory.mktemp("pmvl") / "test.db"
+        os.environ["DATABASE_URL"] = f"sqlite+pysqlite:///{db_path}"
     # Tests that repoint the engine at the deployment snapshot restore this.
     import tests.test_integration as _ti  # noqa: PLC0415
 

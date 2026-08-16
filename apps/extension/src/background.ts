@@ -19,9 +19,45 @@ const ALLOWED_PREFIXES = [
   "https://clob.polymarket.com/",
 ];
 
+/** Pages the content script is allowed to run on, matching the manifest. */
+const ALLOWED_SENDER_HOSTS = new Set(["kalshi.com", "polymarket.com"]);
+
+function allowedSenderPage(url: string | undefined): boolean {
+  if (!url) return false;
+  let parsed: URL;
+  try {
+    parsed = new URL(url);
+  } catch {
+    return false;
+  }
+  if (parsed.protocol !== "https:") return false;
+  const host = parsed.hostname.toLowerCase();
+  if (ALLOWED_SENDER_HOSTS.has(host)) return true;
+  return [...ALLOWED_SENDER_HOSTS].some((allowed) => host.endsWith("." + allowed));
+}
+
 /** Books move; a short cache stops a size slider from hammering the venue. */
 const CACHE_TTL_MS = 10_000;
 const cache = new Map<string, { at: number; value: unknown }>();
+
+/**
+ * The extension's first-run surface is packaged with it instead of hosted on
+ * PMVL. Installation therefore succeeds even if the website is unavailable,
+ * and opening the guide reveals no installation event to a PMVL server.
+ */
+function openOnboarding(): void {
+  void chrome.tabs.create({ url: chrome.runtime.getURL("onboarding.html") });
+}
+
+chrome.runtime.onInstalled.addListener(({ reason }) => {
+  // Updates should stay quiet. An existing user has already crossed the setup
+  // path and Chrome may update the package while they are doing something else.
+  if (reason === "install") openOnboarding();
+});
+
+// The overlay itself is always visible on a supported contract. The toolbar
+// icon is a durable way back to setup, trust boundaries, and troubleshooting.
+chrome.action.onClicked.addListener(openOnboarding);
 
 function allowed(url: string): boolean {
   return ALLOWED_PREFIXES.some((prefix) => url.startsWith(prefix));
@@ -44,7 +80,25 @@ async function fetchJson(url: string): Promise<unknown> {
   return value;
 }
 
-chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
+chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
+  // Defense in depth: only this extension's own contexts may ask the worker to
+  // fetch. The manifest declares no `externally_connectable`, so a page script
+  // cannot message here today - but the boundary should not depend on the
+  // manifest staying that way, and a compromised content script from another
+  // extension must not gain a proxy through this one.
+  if (sender?.id !== chrome.runtime.id) {
+    sendResponse({ ok: false, error: "blocked: sender is not this extension" });
+    return false;
+  }
+
+  // Content scripts inherit the page origin. A same-extension sender from a
+  // page we do not inject on (or a chrome-extension:// surface) must not gain
+  // the venue fetch proxy.
+  if (!allowedSenderPage(sender.url)) {
+    sendResponse({ ok: false, error: "blocked: sender page is not a venue page" });
+    return false;
+  }
+
   if (message?.type !== "pmvl:fetch" || typeof message.url !== "string") return false;
 
   if (!allowed(message.url)) {
@@ -60,3 +114,7 @@ chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
   // Keeps the message channel open for the async reply.
   return true;
 });
+
+// The service worker is a module (manifest v3 type: module), and bundling it
+// keeps this file importable by the boundary tests.
+export {};

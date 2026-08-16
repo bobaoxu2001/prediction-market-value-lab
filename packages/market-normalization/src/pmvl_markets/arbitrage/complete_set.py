@@ -69,11 +69,22 @@ def scan_complete_set(
     # Slippage: one tick of latency padding per leg.
     slippage = market.tick_size * Decimal(settings.slippage_ticks) * Decimal("2") * sets
     # Both legs are on the same venue, so a single transfer covers the position.
-    from ..pricing.execution import transfer_cost_per_contract
+    from ..pricing.execution import capital_cost_per_contract, transfer_cost_per_contract
 
     transfer = transfer_cost_per_contract(market.platform, sets) * sets
+    # The capital for the pair is locked until the market's own resolution, the
+    # same cost the cross-platform scanner charges against its later leg.
+    # Omitting it overstated complete-set profit for long-dated markets and
+    # contradicted the "pessimistic at every step" cost-stack claim.
+    capital = (
+        capital_cost_per_contract(
+            yes_quote.average_price + no_quote.average_price,
+            market.expected_resolution_time,
+        )
+        * sets
+    )
 
-    total_cost = gross_cost + yes_fee + no_fee + slippage + transfer
+    total_cost = gross_cost + yes_fee + no_fee + slippage + transfer + capital
     payout = sets * ONE
     net_profit = payout - total_cost
 
@@ -150,6 +161,7 @@ def scan_complete_set(
             "no_fee": str(quantize_usd(no_fee)),
             "slippage": str(quantize_usd(slippage)),
             "transfer": str(quantize_usd(transfer)),
+            "capital": str(quantize_usd(capital)),
             "payout": str(quantize_usd(payout)),
         },
         provenance=market.provenance,

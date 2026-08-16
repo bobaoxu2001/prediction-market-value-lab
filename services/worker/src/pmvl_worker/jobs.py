@@ -11,8 +11,10 @@ import time
 import uuid
 import traceback
 from contextlib import contextmanager
-from datetime import datetime
+from datetime import datetime, timedelta
 from typing import Any, Callable, Iterator
+
+from sqlalchemy import select
 
 from pmvl_shared.db import session_scope
 from pmvl_shared.enums import JobStatus
@@ -24,6 +26,109 @@ from pmvl_shared.job_record import RunRecord, idempotency_key
 from pmvl_markets.db_models import JobRun
 
 log = get_logger(__name__)
+
+#: A 'running' row older than this is a process that died mid-run, not an active
+#: competitor. A new run with the same key supersedes it rather than being
+#: skipped forever.
+ACTIVE_RUN_STALE_AFTER = timedelta(hours=2)
+
+
+class JobSkipped(RuntimeError):
+    """An identical run is already active; this invocation did no work.
+
+    Raised from inside ``job_run`` BEFORE the wrapped body executes, so the job's
+    own code never runs. The skipped invocation is still recorded as a JobRun row
+    pointing at the active run, keeping the audit trail complete.
+    """
+
+    def __init__(self, job_name: str, active_run_id: int) -> None:
+        super().__init__(
+            f"{job_name} skipped: an identical run (id {active_run_id}) is already active"
+        )
+        self.job_name = job_name
+        self.active_run_id = active_run_id
+
+
+def _claim_active_key(db, job_name: str, key: str, started: datetime) -> int:
+    """Insert the running row, arbitrating identical concurrent runs.
+
+    Returns the new row's id. The partial unique index on (status='running',
+    idempotency_key) is the arbiter, enforced with an upsert primitive so a
+    losing writer never poisons its own transaction: a second writer inserting
+    the same key either records itself as skipped (a fresh run is genuinely
+    active) or supersedes dead 'running' rows and claims the key.
+    """
+    from sqlalchemy import text
+
+    from pmvl_shared.db.base import insert_or_skip
+
+    values = {
+        "job_name": job_name,
+        "status": JobStatus.RUNNING.value,
+        "started_at": started,
+        "idempotency_key": key,
+        "records_written": 0,
+        "error": "",
+    }
+    conflict_target = {
+        "conflict_cols": ["idempotency_key"],
+        "conflict_where": text("status = 'running' AND idempotency_key IS NOT NULL"),
+    }
+
+    def claim() -> int:
+        if not insert_or_skip(db, JobRun.__table__, dict(values), **conflict_target):
+            return -1
+        row = db.scalar(
+            select(JobRun)
+            .where(
+                JobRun.idempotency_key == key,
+                JobRun.status == JobStatus.RUNNING.value,
+                JobRun.started_at == started,
+            )
+            .order_by(JobRun.id.desc())
+            .limit(1)
+        )
+        if row is None:  # pragma: no cover - the insert just targeted this key
+            raise RuntimeError("claimed the idempotency key but cannot reload the row")
+        return row.id
+
+    record_id = claim()
+    if record_id != -1:
+        return record_id
+
+    active = db.scalar(
+        select(JobRun)
+        .where(
+            JobRun.idempotency_key == key,
+            JobRun.status == JobStatus.RUNNING.value,
+            JobRun.started_at > started - ACTIVE_RUN_STALE_AFTER,
+        )
+        .order_by(JobRun.started_at.desc())
+        .limit(1)
+    )
+    if active is not None:
+        raise JobSkipped(job_name, active.id)
+
+    # Everything still marked running for this key is a dead process. Mark it
+    # interrupted so the audit trail shows what happened, then claim the key.
+    stale = list(
+        db.scalars(
+            select(JobRun).where(
+                JobRun.idempotency_key == key,
+                JobRun.status == JobStatus.RUNNING.value,
+            )
+        )
+    )
+    for old in stale:
+        old.status = JobStatus.INTERRUPTED.value
+        old.finished_at = utcnow()
+        old.error = "interrupted: superseded by a new run with the same idempotency key"
+    db.flush()
+
+    record_id = claim()
+    if record_id == -1:  # pragma: no cover - the stale rows freed the key
+        raise RuntimeError("could not claim the idempotency key after superseding stale runs")
+    return record_id
 
 
 @contextmanager
@@ -56,14 +161,36 @@ def job_run(
     record_id: int | None = None
 
     with session_scope() as db:
-        row = JobRun(
-            job_name=job_name,
-            status=JobStatus.RUNNING.value,
-            started_at=started,
-        )
-        db.add(row)
-        db.flush()
-        record_id = row.id
+        try:
+            record_id = _claim_active_key(
+                db, job_name, record.idempotency_key, started
+            )
+        except JobSkipped as skip:
+            # Record this invocation as skipped so the audit trail shows both
+            # sides, then re-raise: the job body must not run.
+            db.add(
+                JobRun(
+                    job_name=job_name,
+                    status=JobStatus.SKIPPED.value,
+                    started_at=started,
+                    finished_at=utcnow(),
+                    duration_seconds=0.0,
+                    records_written=0,
+                    idempotency_key=record.idempotency_key,
+                    details={
+                        "run": {
+                            "run_id": record.run_id,
+                            "idempotency_key": record.idempotency_key,
+                            "skipped": True,
+                            "skipped_because_active_run_id": skip.active_run_id,
+                        }
+                    },
+                )
+            )
+            # session_scope rolls back on exception; the skipped record must
+            # survive so the audit trail shows both sides of the skip.
+            db.commit()
+            raise
 
     status = JobStatus.SUCCESS
     error = ""

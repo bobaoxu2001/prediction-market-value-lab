@@ -2,6 +2,7 @@
 
 import { useSyncExternalStore } from "react";
 
+import { trackFunnelEvent } from "@/components/funnel-tracker";
 import {
   getWatchlistServerSnapshot,
   getWatchlistSnapshot,
@@ -28,12 +29,19 @@ export function WatchButton(props: Omit<WatchedContract, "addedAt">) {
   const key = watchKey(props.marketId, props.side);
   const watched = items.some((item) => watchKey(item.marketId, item.side) === key);
 
+  function onToggle() {
+    const next = toggleWatch(props);
+    if (!watched && next.some((item) => watchKey(item.marketId, item.side) === key)) {
+      trackFunnelEvent("watchlist_added");
+    }
+  }
+
   return (
     <button
       type="button"
       className="btn-quiet"
       aria-pressed={watched}
-      onClick={() => toggleWatch(props)}
+      onClick={onToggle}
     >
       {watched ? "Watching ✓" : "Watch"}
     </button>

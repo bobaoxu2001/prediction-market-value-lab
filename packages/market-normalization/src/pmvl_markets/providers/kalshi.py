@@ -39,8 +39,12 @@ from pmvl_shared.schemas import (
 )
 from pmvl_shared.timeutil import parse_ts, utcnow
 
-from ..normalize.rules import KALSHI_STRIKE_COMPARATORS, normalize_rules
-from ..normalize.text import extract_features, normalize_title
+from ..normalize.rules import (
+    KALSHI_STRIKE_COMPARATORS,
+    market_rule_inputs,
+    rules_from_inputs,
+)
+from ..normalize.text import normalize_title
 from .http import HttpClient, ProviderError
 
 log = get_logger(__name__)
@@ -511,8 +515,10 @@ class KalshiProvider:
         close_time = parse_ts(row.get("close_time"))
         occurrence = parse_ts(row.get("occurrence_datetime"))
 
-        features = extract_features(title, subtitle=subtitle, description=rules_raw)
-        rules = normalize_rules(
+        # The rule inputs are built ONCE and travel with the market: the store
+        # replays this exact vector when persisting the MarketRule, so the hash
+        # stamped here and the hash on the rule row are the same construction.
+        rule_inputs = market_rule_inputs(
             title=title,
             subtitle=subtitle,
             description=rules_raw,
@@ -521,8 +527,8 @@ class KalshiProvider:
             explicit_threshold=explicit_threshold,
             explicit_comparator=KALSHI_STRIKE_COMPARATORS.get(strike_type, ""),
             has_structured_strike=bool(strike_type),
-            features=features,
         )
+        rules = rules_from_inputs(rule_inputs)
 
         status = _STATUS_MAP.get(str(row.get("status", "")).lower(), MarketStatus.UNKNOWN)
 
@@ -575,6 +581,7 @@ class KalshiProvider:
             settlement_rules_raw=rules_raw,
             settlement_rules_normalized=rules.summary,
             resolution_hash=rules.resolution_hash,
+            rule_inputs=rule_inputs,
             status=status,
             result=(row.get("result") or None),
             accepting_orders=status == MarketStatus.OPEN,
@@ -848,23 +855,51 @@ class KalshiProvider:
         if not row:
             return None
         status = str(row.get("status", "")).lower()
-        result = (row.get("result") or "").lower()
-        resolved = status in {"finalized", "settled"} and result in {"yes", "no", "void", ""}
-        if not resolved or not result:
+        if status not in {"finalized", "settled"}:
             return None
+        result = (row.get("result") or "").lower()
 
-        yes_payout = {"yes": ONE, "no": D(0), "void": D(0)}.get(result)
-        return ResolutionInfo(
-            platform=Platform.KALSHI,
-            platform_market_id=market.platform_market_id,
-            resolved=True,
-            result=result,
-            yes_payout=yes_payout,
-            settled_at=parse_ts(row.get("settled_time") or row.get("close_time")),
-            settlement_source=market.settlement_source,
-            disputed=False,
-            raw=row,
-        )
+        # The venue publishes the authoritative YES-side payout on the market
+        # row: settlement_value_dollars, per the get-market API reference
+        # (docs.kalshi.com). Prefer it over any local inference - sub-cent
+        # scalar rounding, refund-style settlements and any future settlement
+        # kind are the venue's call, not a guess this client is entitled to.
+        venue_value = row.get("settlement_value_dollars")
+        if venue_value is not None:
+            yes_payout = d_or_none(venue_value)
+            if yes_payout is None:
+                return None
+            return ResolutionInfo(
+                platform=Platform.KALSHI,
+                platform_market_id=market.platform_market_id,
+                resolved=True,
+                result=result or None,
+                yes_payout=yes_payout,
+                settled_at=parse_ts(row.get("settled_time") or row.get("close_time")),
+                settlement_source=market.settlement_source,
+                disputed=False,
+                raw=row,
+            )
+
+        # Fallback for payloads that omit the settlement value: the documented
+        # binary enum. The current API enum is {yes, no, scalar, ""} - there is
+        # no "void" value in it, and the venue's docs describe no void payout.
+        # A legacy payload carrying a state this client cannot verify must NOT
+        # be graded as a total loss: paying $0 for what might be a refund is
+        # fabricating settlement semantics, so it stays unrecorded.
+        if result in ("yes", "no"):
+            return ResolutionInfo(
+                platform=Platform.KALSHI,
+                platform_market_id=market.platform_market_id,
+                resolved=True,
+                result=result,
+                yes_payout=ONE if result == "yes" else D(0),
+                settled_at=parse_ts(row.get("settled_time") or row.get("close_time")),
+                settlement_source=market.settlement_source,
+                disputed=False,
+                raw=row,
+            )
+        return None
 
 
 def _levels_from(raw: Any) -> list[BookLevel]:

@@ -15,12 +15,13 @@ from pathlib import Path
 import pytest
 
 from pmvl_shared.manifest import REQUIRED_PROVENANCE, provenance_problems
+from pmvl_shared.snapshot_artifact import CURRENT_SNAPSHOT_SCHEMA_REVISION
 
 
 def _good() -> dict:
     return {
         "code_commit_sha": "43811bb6df9a",
-        "schema_version": "c3d4e5f6a7b8",
+        "schema_version": CURRENT_SNAPSHOT_SCHEMA_REVISION,
         "model_version": "ensemble-v1.0.0",
         "parser_version": "1.0.0",
         "snapshot_id": "43811bb6df9a-2026-07-28T08:07:03",

@@ -75,6 +75,26 @@ class TestCompleteSetArbitrage:
         assert result is not None
         assert result.label == ArbitrageLabel.INSUFFICIENT_LIQUIDITY
 
+    def test_capital_is_charged_until_resolution(self, kalshi_market, book_factory) -> None:  # noqa: ANN001
+        """YES+NO capital is locked until the market settles; omitting the
+        charge overstated long-dated complete-set profit relative to the
+        cross-platform scanner, which charges its later leg."""
+        # A 30-day horizon makes the locked-capital charge visible; the
+        # fixture's 6-hour horizon quantizes it to zero.
+        kalshi_market.expected_resolution_time = utcnow() + timedelta(days=30)
+        book = book_factory(yes_asks=[("0.40", "1000")], no_asks=[("0.45", "1000")])
+        result = scan_complete_set(kalshi_market, book)
+        assert result is not None
+        assert "capital" in result.cost_breakdown
+        assert Decimal(result.cost_breakdown["capital"]) > 0
+
+    def test_no_resolution_date_charges_no_capital(self, kalshi_market, book_factory) -> None:  # noqa: ANN001
+        kalshi_market.expected_resolution_time = None
+        book = book_factory(yes_asks=[("0.40", "1000")], no_asks=[("0.45", "1000")])
+        result = scan_complete_set(kalshi_market, book)
+        assert result is not None
+        assert Decimal(result.cost_breakdown["capital"]) == 0
+
 
 def equivalence(v, cancellation: str = "unknown"):  # noqa: ANN001, ANN201
     """Build an EquivalenceScore with an explicit cancellation status."""

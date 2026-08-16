@@ -22,6 +22,9 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "scripts"))
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "packages/shared/src"))
 
 from pmvl_shared.manifest import sha256_of  # noqa: E402
+from pmvl_shared.snapshot_artifact import (  # noqa: E402
+    CURRENT_SNAPSHOT_SCHEMA_REVISION,
+)
 
 from verify_candidate import check  # noqa: E402
 
@@ -36,7 +39,7 @@ def candidate(tmp_path):  # noqa: ANN001, ANN201
             {
                 "snapshot_id": "cand-1",
                 "code_commit_sha": "9c0da76be9e9",
-                "schema_version": "c3d4e5f6a7b8",
+                "schema_version": CURRENT_SNAPSHOT_SCHEMA_REVISION,
                 "model_version": "ensemble-v1.0.0",
                 "parser_version": "1.0.0",
                 "generated_at": "2026-07-29T10:00:00Z",

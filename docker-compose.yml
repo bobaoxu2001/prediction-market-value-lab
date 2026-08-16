@@ -1,5 +1,8 @@
 # Full stack for a machine with Docker available.
 # The default `make setup && make dev` path needs none of this - it runs on SQLite.
+#
+# Local development credentials only: POSTGRES_PASSWORD defaults to a clearly
+# labelled dev value and is overridable for anything resembling a real host.
 name: pmvl
 
 services:
@@ -7,7 +10,7 @@ services:
     image: postgres:17-alpine
     environment:
       POSTGRES_USER: pmvl
-      POSTGRES_PASSWORD: pmvl
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-pmvl-local-dev}
       POSTGRES_DB: pmvl
     ports:
       - "5432:5432"
@@ -24,7 +27,7 @@ services:
       context: .
       dockerfile: services/api/Dockerfile
     environment:
-      DATABASE_URL: postgresql+psycopg://pmvl:pmvl@postgres:5432/pmvl
+      DATABASE_URL: postgresql+psycopg://pmvl:${POSTGRES_PASSWORD:-pmvl-local-dev}@postgres:5432/pmvl
       API_CORS_ORIGINS: http://localhost:3000
     env_file:
       - path: .env
@@ -43,7 +46,7 @@ services:
       context: .
       dockerfile: services/worker/Dockerfile
     environment:
-      DATABASE_URL: postgresql+psycopg://pmvl:pmvl@postgres:5432/pmvl
+      DATABASE_URL: postgresql+psycopg://pmvl:${POSTGRES_PASSWORD:-pmvl-local-dev}@postgres:5432/pmvl
     env_file:
       - path: .env
         required: false
@@ -55,9 +58,13 @@ services:
   web:
     build:
       context: ./apps/web
+      args:
+        # NEXT_PUBLIC_* is inlined at BUILD time, so it travels through a build
+        # arg, not the runtime environment. Browser-side calls must reach the
+        # host-published port, not the compose DNS name.
+        NEXT_PUBLIC_API_BASE: http://localhost:8000
     environment:
-      # Browser-side calls must reach the host-published port, not the compose DNS name.
-      NEXT_PUBLIC_API_BASE: http://localhost:8000
+      NODE_ENV: production
     depends_on:
       - api
     ports:

@@ -123,6 +123,11 @@ class NormalizedMarket(StrictModel):
     settlement_rules_raw: str = ""
     settlement_rules_normalized: str = ""
     resolution_hash: str = ""
+    #: The exact ``normalize_rules`` inputs the provider used, JSON-safe (see
+    #: ``pmvl_markets.normalize.rules.market_rule_inputs``). The store replays this
+    #: vector when persisting the MarketRule so the hash can never diverge from the
+    #: one stamped here. None on records normalised before this field existed.
+    rule_inputs: dict[str, Any] | None = None
 
     status: MarketStatus = MarketStatus.UNKNOWN
     result: str | None = None

@@ -108,6 +108,7 @@ describe("server/client boundary", () => {
     expect([...publicNames].sort()).toEqual([
       "NEXT_PUBLIC_API_BASE",
       "NEXT_PUBLIC_BILLING_ENABLED",
+      "NEXT_PUBLIC_CHROME_EXTENSION_ID",
       "NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY",
       "NEXT_PUBLIC_SITE_URL",
     ]);

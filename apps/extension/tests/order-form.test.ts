@@ -227,6 +227,11 @@ describe("which side the ticket is set to", () => {
     const both = `<div>Dollars<button aria-pressed="true">YES</button><button aria-pressed="true">NO</button><input placeholder="0" value="5"></div>`;
     expect(readSelectedSide(page(both) as Document)).toBeNull();
   });
+
+  it("returns null when the selected control is not a YES/NO toggle", () => {
+    const garbled = `<div>Dollars<button aria-pressed="true">Buy</button><button aria-pressed="false">Sell</button><input placeholder="0" value="5"></div>`;
+    expect(readSelectedSide(page(garbled) as Document)).toBeNull();
+  });
 });
 
 /* ------------------------------------------------------- a hidden document -- */

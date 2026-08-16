@@ -3,11 +3,15 @@ import Link from "next/link";
 import { shouldShowCheckoutUi } from "@/lib/billing/config";
 import { isAuthConfigured } from "@/lib/auth-server";
 import type { Entitlement } from "@/lib/billing/entitlement";
+import {
+  FOUNDING_LIFETIME_INTEREST_MAILTO,
+  FOUNDING_LIFETIME_PRICE_USD,
+} from "@/lib/founding-lifetime";
 
 /**
  * Plans.
  *
- * Two rules govern every word below.
+ * Three rules govern every word below.
  *
  * The first: nothing is sold that does not exist. Pro is presented as early
  * access to a product still being finished, with the benefits that are actually
@@ -15,14 +19,18 @@ import type { Entitlement } from "@/lib/billing/entitlement";
  * an API here - none of which exist - would be the ordinary way this section
  * gets written and would be a lie.
  *
- * The second: the checkout affordance follows the *server's* billing gate, not
+ * The second: the $29 founding card is a demand test, not a sale. Its only
+ * outbound action is a pre-addressed email draft and every proposed capability
+ * is labelled as proposed.
+ *
+ * The third: the checkout affordance follows the *server's* billing gate, not
  * the public flag. When billing is off, which is its state in production, the
  * page offers account creation and an early-access signal, and says plainly that
  * billing is not live. It never renders a button that would 503.
  */
 
 interface Plan {
-  id: "free" | "pro";
+  id: "free" | "founding" | "pro";
   name: string;
   price: string;
   cadence: string;
@@ -75,6 +83,26 @@ const PRO: Plan = {
   ],
 };
 
+const FOUNDING: Plan = {
+  id: "founding",
+  name: "Founding Lifetime",
+  price: `$${FOUNDING_LIFETIME_PRICE_USD}`,
+  cadence: "proposed one-time founding price",
+  summary:
+    "A low-cost, local-first toolkit for people who repeatedly compare how order size changes entry cost. This page is testing demand before the plan is built or sold; expressing interest does not buy, reserve or unlock anything.",
+  includes: [
+    "Everything in Free, which stays free",
+    "Proposed: save reusable cost assumptions and order templates locally",
+    "Proposed: compare local cost history and export your own results",
+    "Proposed: advanced local scenarios and local watchlist tools",
+    "Proposed: future low-marginal-cost, local-first Pro updates",
+  ],
+  excludes: [
+    "Not included: cloud sync, alerts, API access, AI usage, server-hosted history or human support",
+    "Not built, not for sale, no card collected and no lifetime access promised today",
+  ],
+};
+
 export function PricingPlans({
   entitlement,
   heading = true,
@@ -104,19 +132,21 @@ export function PricingPlans({
       {heading ? (
         <div className="max-w-2xl">
           <p className="t-label">Pricing</p>
-          <Heading className="t-page-title mt-2">
-            Nothing here is for sale
-          </Heading>
+          <Heading className="t-page-title mt-2">Free now. Test the $29 idea.</Heading>
           <p className="t-prose mt-3">
-            The research product is free and stays free. There is no paid tier,
-            no waiting list and no way for this deployment to take a payment.
-            What a paid tier would be is written below, along with the two things
-            that have to be true before one opens.
+            The working product is free and stays free. Founding Lifetime is a
+            proposed local-first plan, shown now to measure demand before it is
+            built. The interest link opens an email draft; it does not take a
+            payment, reserve a place or create lifetime access.
           </p>
         </div>
       ) : null}
 
-      <div className="mt-8 grid gap-px overflow-hidden rounded-[3px] border border-line bg-line lg:grid-cols-2">
+      <div
+        className={`mt-8 grid gap-px overflow-hidden rounded-[3px] border border-line bg-line ${
+          checkoutAvailable ? "lg:grid-cols-3" : "lg:grid-cols-2"
+        }`}
+      >
         <PlanCard plan={FREE} entitlement={entitlement} headingLevel={cardHeading}>
           {entitlement.signedIn ? (
             <Link href="/app" className="btn-primary">
@@ -146,33 +176,43 @@ export function PricingPlans({
           )}
         </PlanCard>
 
-        <PlanCard plan={PRO} entitlement={entitlement} headingLevel={cardHeading}>
-          {entitlement.hasLiveSubscription ? (
-            // Already subscribed - including past-due, where a second checkout
-            // would add an invoice rather than fix the failed one. The server
-            // refuses this case too; showing the same answer here keeps the
-            // page from offering something the handler will reject.
-            <>
-              <Link href="/account/billing" className="btn-primary">
-                Manage billing
-              </Link>
-              <span className="chip bg-sunken text-ink-muted">
-                Subscription already active
-              </span>
-            </>
-          ) : checkoutAvailable ? (
-            <CheckoutForms />
-          ) : (
-            // Deliberately not a button, and deliberately not "join the waitlist"
-            // either. ADR 003 put an evidential gate in front of selling anything:
-            // a live Brier-versus-market figure has to exist first. A signup
-            // affordance here would imply a queue that leads somewhere, when what
-            // it actually leads to is a measurement that has not been taken.
-            <span className="chip bg-sunken text-ink-muted">
-              Not for sale — see what has to be true first
-            </span>
-          )}
+        <PlanCard plan={FOUNDING} entitlement={entitlement} headingLevel={cardHeading}>
+          <a
+            href={FOUNDING_LIFETIME_INTEREST_MAILTO}
+            className="btn-primary"
+            data-pmvl-funnel="founding_offer_intent"
+            data-pmvl-placement="pricing"
+          >
+            I&apos;d consider the $29 plan
+          </a>
+          <Link href="/founding-lifetime" className="btn-quiet">
+            See the proposed boundary
+          </Link>
+          <span className="chip bg-sunken text-ink-muted">
+            Interest only · no payment
+          </span>
         </PlanCard>
+
+        {checkoutAvailable ? (
+          <PlanCard plan={PRO} entitlement={entitlement} headingLevel={cardHeading}>
+            {entitlement.hasLiveSubscription ? (
+              // Already subscribed - including past-due, where a second checkout
+              // would add an invoice rather than fix the failed one. The server
+              // refuses this case too; showing the same answer here keeps the
+              // page from offering something the handler will reject.
+              <>
+                <Link href="/account/billing" className="btn-primary">
+                  Manage billing
+                </Link>
+                <span className="chip bg-sunken text-ink-muted">
+                  Subscription already active
+                </span>
+              </>
+            ) : (
+              <CheckoutForms />
+            )}
+          </PlanCard>
+        ) : null}
       </div>
 
       <p className="mt-6 t-meta">
@@ -188,10 +228,10 @@ export function PricingPlans({
         ) : (
           <>
             <strong className="text-ink-muted">Billing is disabled.</strong>{" "}
-            The server rejects checkout requests on this deployment regardless of
-            what the interface offers. Activating billing requires a server-side
-            billing mode, valid test credentials, allowlisted price IDs,
-            completed legal review and the owner&apos;s approval.
+            The $29 link never enters billing: it only opens an email draft. If
+            you send it, PMVL receives your email address and message for product
+            research. It is not an order, reservation or promise that the plan
+            will launch.
           </>
         )}{" "}
         Read the{" "}
@@ -202,8 +242,8 @@ export function PricingPlans({
         <Link href="/terms" className="underline underline-offset-2">
           terms
         </Link>{" "}
-        before subscribing. Prediction markets involve the risk of loss, and
-        PMVL&apos;s estimates can be wrong.
+        before using the product or expressing interest. Prediction markets
+        involve the risk of loss, and PMVL&apos;s estimates can be wrong.
       </p>
     </div>
   );

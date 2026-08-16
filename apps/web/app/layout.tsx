@@ -1,4 +1,5 @@
 import type { Metadata, Viewport } from "next";
+import { FunnelTracker } from "@/components/funnel-tracker";
 import { AuthProvider } from "@/lib/auth";
 import { SITE_NAME, SITE_URL } from "@/lib/site";
 import "./globals.css";
@@ -67,6 +68,7 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
             Skip to content
           </a>
           {children}
+          <FunnelTracker />
         </body>
       </html>
     </AuthProvider>

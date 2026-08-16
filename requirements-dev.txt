@@ -22,6 +22,9 @@ APScheduler==3.11.0
 typer==0.20.0
 rich==14.2.0
 
+# --- lint (pinned: the gate's rules must not drift with the install)
+ruff==0.16.0
+
 # --- tests
 pytest==8.4.2
 pytest-asyncio==1.2.0

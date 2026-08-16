@@ -393,17 +393,35 @@ class TestCryptoStrikeGuards:
         assert _TEXT_STRIKE_MIN_RATIO <= 100000 / spot <= _TEXT_STRIKE_MAX_RATIO
 
     @pytest.mark.asyncio
-    async def test_venue_strike_bypasses_the_plausibility_check(self) -> None:
-        """A venue-supplied strike is authoritative even if it looks unusual."""
+    async def test_venue_strike_bypasses_the_plausibility_check(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """A venue-supplied strike is authoritative even if it looks unusual.
+
+        The strike below is the historical bug shape - 26 against a ~65k spot,
+        scraped from a date - which the text-derived path must reject and the
+        venue-derived path must accept. Spot and volatility are stubbed exactly
+        like the equity-model guards, so this test never touches Coinbase: the
+        suite's no-network promise is enforced by conftest, not by luck.
+        """
         from pmvl_markets.probability.categories.crypto import CryptoThresholdModel
 
         model = CryptoThresholdModel()
+
+        async def _stub_spot(product: str, *, as_of=None) -> float:  # noqa: ANN001, ANN002, ARG001
+            return 65052.0
+
+        async def _stub_vol(product: str, *, as_of=None):  # noqa: ANN001, ANN002, ANN202, ARG001
+            return (0.45, 200)
+
+        monkeypatch.setattr(model, "_spot", _stub_spot)
+        monkeypatch.setattr(model, "_realised_vol", _stub_vol)
         try:
             result = await model.estimate(
                 ModelContext(
                     market=self._market(
                         "Bitcoin price on Jul 27, 2026?",
-                        floor_strike=Decimal("64000"),
+                        floor_strike=Decimal("26"),
                         strike_type="greater",
                     )
                 )
@@ -411,6 +429,7 @@ class TestCryptoStrikeGuards:
         finally:
             await model.aclose()
         assert result.probability is not None
+        assert result.confidence > 0
 
 
 class TestFuturesVolatilityTime:

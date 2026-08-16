@@ -30,6 +30,7 @@ import {
   readSelectedSide,
   watchOrderForm,
 } from "./order-form";
+import { Latest } from "./latest";
 import { messageHtml, panelHtml } from "./panel";
 import {
   type Contract,
@@ -73,14 +74,18 @@ function removePanel(): void {
 /**
  * Which side the order ticket is set to.
  *
- * The toggle's own `aria-pressed` state first, then a URL parameter, then YES.
- * An earlier version read the URL alone, which was simply wrong: Kalshi keeps
- * the side in the DOM and never in the address, so a trader on NO was shown YES
- * numbers on every page. The side is also named in the panel header, so a
- * misread is visible rather than silent.
+ * The toggle's own `aria-pressed` state first, then an explicit URL parameter,
+ * then NOTHING: it fails closed. An earlier version read the URL alone and
+ * defaulted to YES, so a trader on NO was shown YES numbers on every page. The
+ * null result must be respected by every caller - pricing the opposite contract
+ * from a guess is the worst output this extension can produce.
  */
-function detectSide(url: string): Side {
-  return readSelectedSide() ?? (/[?&](side|outcome)=no\b/i.test(url) ? "no" : "yes");
+export function detectSide(url: string): Side | null {
+  const fromDom = readSelectedSide();
+  if (fromDom) return fromDom;
+  if (/[?&](side|outcome)=no\b/i.test(url)) return "no";
+  if (/[?&](side|outcome)=yes\b/i.test(url)) return "yes";
+  return null;
 }
 
 /** The book and the contract behind whatever is currently on screen. */
@@ -93,6 +98,15 @@ interface Loaded {
 
 let loaded: Loaded | null = null;
 let refreshTimer: number | undefined;
+
+/**
+ * Monotonic generation for reload(). Reloads overlap - the timer, the URL
+ * watcher and the side-toggle watcher can all fire while an earlier reload is
+ * still awaiting the venue - and without a guard the slowest response wins and
+ * paints a stale contract beside a fresh order ticket. Every mutation after an
+ * await is therefore dropped unless this reload is still the newest one.
+ */
+const latest = new Latest();
 
 function draw(): void {
   if (!loaded) return;
@@ -142,8 +156,19 @@ async function reload(): Promise<void> {
   // it up again.
   if (document.hidden) return;
 
+  const generation = latest.begin();
   const url = location.href;
   const side = detectSide(url);
+  if (side === null) {
+    // Fail closed: without a confident side there are no side-specific numbers
+    // to show. A stale YES/NO panel must not survive, but silence is also
+    // wrong — the trader needs to see that the side could not be read.
+    loaded = null;
+    panel().innerHTML = messageHtml(
+      "Cannot determine whether this ticket is YES or NO. No side-specific cost is shown.",
+    );
+    return;
+  }
 
   let contract: Contract | null = null;
   try {
@@ -159,6 +184,7 @@ async function reload(): Promise<void> {
   } catch {
     contract = null;
   }
+  if (!latest.isCurrent(generation)) return; // a newer reload owns the panel now
 
   // No overlay at all when the contract cannot be confirmed against the venue's
   // own API. Silence is the correct output for "I do not know what you are
@@ -171,6 +197,7 @@ async function reload(): Promise<void> {
 
   try {
     const book = await loadBook(contract, fetchJson, side);
+    if (!latest.isCurrent(generation)) return; // a newer reload owns the panel now
     if (!book) {
       loaded = null;
       panel().innerHTML = messageHtml(
@@ -187,6 +214,7 @@ async function reload(): Promise<void> {
     };
     draw();
   } catch (error) {
+    if (!latest.isCurrent(generation)) return;
     loaded = null;
     panel().innerHTML = messageHtml(`Could not read the live book: ${String(error)}`);
   }
@@ -223,7 +251,8 @@ function watchSideToggle(): void {
     () => {
       // After the venue's own handler has run and updated the toggle.
       window.setTimeout(() => {
-        if (loaded && detectSide(location.href) !== loaded.side) void reload();
+        const detected = detectSide(location.href);
+        if (loaded && detected !== null && detected !== loaded.side) void reload();
       }, 120);
     },
     { capture: true, passive: true },

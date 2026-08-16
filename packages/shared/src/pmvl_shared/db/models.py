@@ -26,6 +26,7 @@ from sqlalchemy import (
     String,
     Text,
     UniqueConstraint,
+    text,
 )
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
@@ -198,6 +199,12 @@ class MarketRule(Base, TimestampMixin):
     """Structured settlement terms extracted from free-text rules."""
 
     __tablename__ = "market_rules"
+    __table_args__ = (
+        # One rule row per market: the store upserts, and the API reads a single
+        # row. The constraint is what makes concurrent upserts converge instead
+        # of silently accumulating two rows for the same market.
+        UniqueConstraint("market_id", name="uq_marketrule_market"),
+    )
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True)
     market_id: Mapped[int] = mapped_column(
@@ -732,11 +739,29 @@ class BacktestTrade(Base):
 
 class JobRun(Base):
     __tablename__ = "job_runs"
-    __table_args__ = (Index("ix_jobrun_name_started", "job_name", "started_at"),)
+    __table_args__ = (
+        Index("ix_jobrun_name_started", "job_name", "started_at"),
+        Index("ix_jobrun_idempotency_key", "idempotency_key"),
+        # At most ONE active run per logical work item. A scheduler and a manual
+        # CLI can otherwise both start "this job, over this input" and duplicate
+        # work against a venue that is already slow. Partial so that finished
+        # runs (success, failed, skipped) do not occupy the key and a legitimate
+        # retry after a failure can always start.
+        Index(
+            "uq_jobrun_active_key",
+            "idempotency_key",
+            unique=True,
+            sqlite_where=text("status = 'running' AND idempotency_key IS NOT NULL"),
+            postgresql_where=text("status = 'running' AND idempotency_key IS NOT NULL"),
+        ),
+    )
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True)
     job_name: Mapped[str] = mapped_column(String(64), nullable=False, index=True)
     status: Mapped[str] = mapped_column(String(16), nullable=False, default="running")
+    #: ``RunRecord.idempotency_key`` persisted, so the identity is queryable and
+    #: the active-run uniqueness above is enforceable at the database level.
+    idempotency_key: Mapped[str | None] = mapped_column(String(32), nullable=True)
     started_at: Mapped[datetime] = _utc_col(nullable=False)
     finished_at: Mapped[datetime | None] = _utc_col(nullable=True)
     duration_seconds: Mapped[float | None] = mapped_column(Float, nullable=True)

@@ -3,8 +3,9 @@
 from __future__ import annotations
 
 import asyncio
+import functools
 import json
-from typing import Any
+from typing import Any, Callable
 
 import typer
 from rich.console import Console
@@ -22,6 +23,20 @@ app = typer.Typer(
 console = Console()
 
 
+def _skip_guard(fn: Callable[..., Any]) -> Callable[..., Any]:
+    """A skip is a successful no-op at the CLI, not a crash."""
+
+    @functools.wraps(fn)
+    def wrapper(*args: Any, **kwargs: Any) -> Any:
+        try:
+            return fn(*args, **kwargs)
+        except jobs.JobSkipped as exc:
+            console.print(f"[yellow]{exc}[/yellow]")
+            return None
+
+    return wrapper
+
+
 def _emit(payload: dict[str, Any], *, as_json: bool) -> None:
     if as_json:
         console.print_json(json.dumps(payload, default=str))
@@ -35,6 +50,7 @@ def main() -> None:
 
 
 @app.command()
+@_skip_guard
 def ingest(
     market_limit: int = typer.Option(None, help="Max markets to fetch across both venues"),
     orderbook_limit: int = typer.Option(None, help="Max orderbooks to fetch"),
@@ -48,6 +64,7 @@ def ingest(
 
 
 @app.command()
+@_skip_guard
 def orderbooks(
     limit: int = typer.Option(None), as_json: bool = typer.Option(False, "--json")
 ) -> None:
@@ -56,6 +73,7 @@ def orderbooks(
 
 
 @app.command()
+@_skip_guard
 def score(
     limit: int = typer.Option(None), as_json: bool = typer.Option(False, "--json")
 ) -> None:
@@ -64,6 +82,7 @@ def score(
 
 
 @app.command()
+@_skip_guard
 def rank(
     limit: int = typer.Option(None), as_json: bool = typer.Option(False, "--json")
 ) -> None:
@@ -72,12 +91,14 @@ def rank(
 
 
 @app.command()
+@_skip_guard
 def arbitrage(as_json: bool = typer.Option(False, "--json")) -> None:
     """Run all five arbitrage scanners."""
     _emit(jobs.job_arbitrage(), as_json=as_json)
 
 
 @app.command()
+@_skip_guard
 def settle(
     lookback_days: int = typer.Option(45), as_json: bool = typer.Option(False, "--json")
 ) -> None:
@@ -86,6 +107,7 @@ def settle(
 
 
 @app.command()
+@_skip_guard
 def snapshot(
     force: bool = typer.Option(False, help="Allow a second snapshot on the same day"),
     as_json: bool = typer.Option(False, "--json"),
@@ -95,6 +117,7 @@ def snapshot(
 
 
 @app.command()
+@_skip_guard
 def backtest(as_json: bool = typer.Option(False, "--json")) -> None:
     """Walk-forward backtest across all strategies."""
     result = jobs.job_backtest()
@@ -172,6 +195,7 @@ def readiness(as_json: bool = typer.Option(False, "--json")) -> None:
 
 
 @app.command()
+@_skip_guard
 def calibrate(as_json: bool = typer.Option(False, "--json")) -> None:
     """Fit a calibration map on settled recommendations, or say why not.
 
@@ -284,6 +308,7 @@ def retrodict(
 
 
 @app.command()
+@_skip_guard
 def prune(
     keep_days: int = typer.Option(30), as_json: bool = typer.Option(False, "--json")
 ) -> None:
@@ -357,6 +382,7 @@ def status() -> None:
 
 
 @app.command()
+@_skip_guard
 def pipeline(
     market_limit: int = typer.Option(None),
     orderbook_limit: int = typer.Option(None),

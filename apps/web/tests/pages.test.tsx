@@ -20,10 +20,8 @@ import {
 import {
   BUSINESS_MAILING_ADDRESS,
   DATA_CONTROLLER,
-  DATA_RETENTION_POLICY,
   DISPUTE_VENUE,
   GOVERNING_JURISDICTION,
-  LIABILITY_CAP,
   MINIMUM_AGE,
   REFUND_POLICY_SENTENCES,
   SELLER_LEGAL_NAME,
@@ -286,8 +284,35 @@ describe("live entry-cost extension", () => {
     expect(
       container.querySelectorAll('a[href="/downloads/pmvl-entry-cost-beta.zip"]'),
     ).toHaveLength(2);
+    expect(
+      container.querySelectorAll(
+        'a[data-pmvl-funnel="extension_install_intent"][data-pmvl-placement="beta_zip"]',
+      ),
+    ).toHaveLength(2);
     expect(screen.getByRole("heading", { name: /load the beta in three steps/i })).toBeTruthy();
     expect(screen.getByText(/load unpacked/i)).toBeTruthy();
+  });
+
+  it("switches to the reviewed store path only after a concrete listing URL is configured", async () => {
+    process.env.NEXT_PUBLIC_CHROME_EXTENSION_ID =
+      "abcdefghijklmnopabcdefghijklmnop";
+
+    const { default: ExtensionPage } = await import("@/app/(site)/extension/page");
+    const { container } = render(<ExtensionPage />);
+    const storeLinks = container.querySelectorAll(
+      'a[href="https://chromewebstore.google.com/detail/pmvl-entry-cost/abcdefghijklmnopabcdefghijklmnop"]',
+    );
+
+    expect(storeLinks).toHaveLength(2);
+    expect(
+      container.querySelectorAll(
+        'a[data-pmvl-funnel="extension_install_intent"][data-pmvl-placement="chrome_web_store"]',
+      ),
+    ).toHaveLength(2);
+    expect(screen.getAllByRole("link", { name: /add to chrome/i })).toHaveLength(2);
+    expect(container.querySelector(`a[href="/downloads/pmvl-entry-cost-beta.zip"]`)).toBeNull();
+    expect(screen.getAllByText(/automatic updates/i).length).toBeGreaterThan(0);
+    expect(screen.getByText(/no install event is sent/i)).toBeTruthy();
   });
 
   it("is discoverable from the sitemap", async () => {
@@ -302,42 +327,41 @@ describe("pricing", () => {
     return render(await PricingPage());
   }
 
-  it("advertises no purchasable offer at all", async () => {
-    // This used to assert that /pricing restated the pilot's terms consistently
-    // with the pilot page and Stripe - it had once drifted to "capped at 20
-    // members" after the cohort was cut to five. The offer is now withdrawn
-    // (ADR 003), so the requirement inverts: the terms must not appear here at
-    // all, because restating a price for something nobody can buy is the same
-    // class of error the original test was written to catch.
+  it("shows the $29 proposition without creating a purchasable offer", async () => {
     const { PILOT_MEMBER_CAP, PILOT_PRICE_USD } = await import("@/lib/pilot");
     const { container } = await renderPricing();
     const text = container.textContent ?? "";
 
     expect(text).not.toContain(`capped at ${PILOT_MEMBER_CAP} members`);
     expect(text).not.toContain(`USD ${PILOT_PRICE_USD}`);
-    expect(text.toLowerCase()).toContain("nothing here is for sale");
+    expect(text).toContain("$29");
+    expect(text.toLowerCase()).toContain("interest only");
+    expect(text.toLowerCase()).toContain("no payment");
+    expect(container.querySelector('form[action="/api/billing/checkout"]')).toBeNull();
+
+    const intent = container.querySelector(
+      'a[data-pmvl-funnel="founding_offer_intent"][data-pmvl-placement="pricing"]',
+    );
+    expect(intent).toBeTruthy();
+    expect(intent?.getAttribute("href")).toMatch(/^mailto:/);
   });
 
-  it("states what must be true before anything is sold", async () => {
-    // The gate from ADR 003, on the page rather than only in the repository:
-    // a live settled track record, and its Brier score against the market
-    // published whatever the sign.
+  it("states the product and delivery evidence required before selling", async () => {
     const { container } = await renderPricing();
     const text = (container.textContent ?? "").toLowerCase();
 
-    expect(text).toContain("60 recommendations published live and settled");
-    expect(text).toContain("brier score against the market is published");
+    expect(text).toContain("repeatedly use the free cost workflow");
+    expect(text).toContain("working local entitlements");
+    expect(text).toContain("legal review");
   });
 
-  it("offers nothing to click on Pro while accounts and billing are both off", async () => {
+  it("offers only the Free and interest-test plans while billing is off", async () => {
     // With neither Clerk nor Stripe configured — the free-Beta state — there is
     // no account to register and no tier to pay for. Deliberately not a
     // disabled-looking button either: a control that looks pressable still
     // implies the thing nearly works.
     const { container } = await renderPricing();
-    // Was "coming soon", which implied a launch. The tier is not coming soon;
-    // it is conditional on a measurement that has not been taken.
-    expect(screen.getAllByText(/not for sale/i).length).toBeGreaterThan(0);
+    expect(screen.getByRole("heading", { name: /founding lifetime/i })).toBeTruthy();
     expect(container.querySelector('a[href="/sign-up"]')).toBeNull();
     expect(screen.queryByRole("button", { name: /test checkout/i })).toBeNull();
     // The free tier is the public research, and it needs no account.
@@ -346,9 +370,7 @@ describe("pricing", () => {
     expect(screen.getAllByText(/no account needed/i).length).toBeGreaterThan(0);
   });
 
-  it("still offers early access once accounts exist but billing does not", async () => {
-    // The intended next state: Clerk configured, Stripe not. The early-access
-    // path must come back on its own rather than needing another edit.
+  it("keeps the non-charging interest path when accounts exist", async () => {
     authState.configured = true;
     const { PricingPlans } = await import("@/components/pricing");
     render(
@@ -368,11 +390,7 @@ describe("pricing", () => {
         }}
       />,
     );
-    // No signup affordance on the paid tier any more: ADR 003 put an evidential
-    // gate in front of selling, so a "join early access" link would imply a
-    // queue leading to a measurement that has not been taken.
-    expect(screen.queryByRole("link", { name: /join pro early access/i })).toBeNull();
-    expect(screen.getAllByText(/not for sale/i).length).toBeGreaterThan(0);
+    expect(screen.getByRole("link", { name: /consider the \$29 plan/i })).toBeTruthy();
     expect(screen.queryByRole("button", { name: /test checkout/i })).toBeNull();
   });
 
@@ -427,13 +445,13 @@ describe("pricing", () => {
     },
   );
 
-  it("promises no feature that does not exist", async () => {
+  it("labels every unbuilt Founding feature as proposed", async () => {
     const { container } = await renderPricing();
     const text = (container.textContent ?? "").toLowerCase();
-    // The paid card names what it would NOT be, so the obvious thing to sell -
-    // the forecast - is explicitly excluded rather than quietly implied.
-    expect(text).toContain("no signals, no ranked picks, no digest");
-    expect(text).toContain("none of it is being sold today");
+    expect(text).toContain("proposed: save reusable cost assumptions");
+    expect(text).toContain("proposed: compare local cost history");
+    expect(text).toContain("not built, not for sale");
+    expect(text).toContain("not included: cloud sync");
   });
 });
 
@@ -560,17 +578,21 @@ describe("legal pages", () => {
     expect(terms).toContain(BUSINESS_MAILING_ADDRESS);
     expect(terms).toContain(GOVERNING_JURISDICTION);
     expect(terms).toContain(DISPUTE_VENUE);
-    expect(terms).toContain(LIABILITY_CAP);
     expect(terms).toContain(String(MINIMUM_AGE));
+    // The old $49 pilot is closed and its refund terms now live only on its
+    // preserved historical page. Reprinting them in the current terms would
+    // make a withdrawn offer look available again.
+    expect(terms).toContain("Nothing is currently sold");
+    expect(terms).toContain("USD 29 Founding Lifetime");
     for (const sentence of REFUND_POLICY_SENTENCES) {
-      expect(terms, "the refund policy must appear in full").toContain(sentence);
+      expect(terms).not.toContain(sentence);
     }
     cleanup();
 
     const { default: Privacy } = await import("@/app/(site)/privacy/page");
     const privacy = render(<Privacy />).container.textContent ?? "";
-    expect(privacy).toContain(DATA_RETENTION_POLICY);
     expect(privacy).toContain(DATA_CONTROLLER);
+    expect(privacy).toContain("Email providers");
     cleanup();
   });
 

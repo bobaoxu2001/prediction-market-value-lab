@@ -50,6 +50,9 @@ private/
 *.log
 .vercel
 
+# Agent/tooling scratch directories (never part of the repository)
+**/.*.tmpdir/
+
 # The deployment snapshot IS committed, deliberately.
 #
 # Vercel auto-deploys on every push to main, and a git-triggered build only contains
@@ -70,3 +73,11 @@ docs/*_BRIEF_*.md
 apps/extension/dist/
 apps/extension/out/
 apps/extension/node_modules/
+# Vitest's transient config-bundle scratch files
+apps/extension/vitest.config.ts.timestamp-*.mjs
+
+# Local browser binaries for the load harness. A 50 MB Chrome archive must not
+# live in git (it bloats objects, drifts with every Chrome release, and is
+# platform-specific). The harness uses CHROME_PATH or the system Chrome; a
+# pinned Chrome-for-Testing archive stays a local download.
+apps/extension/chrome/

@@ -11,7 +11,7 @@ export const dynamic = "force-dynamic";
 export const metadata: Metadata = {
   title: "Pricing",
   description:
-    "The PMVL research product is public and free, and nothing on this site is for sale. A paid data tier is described but not open: it requires a live track record and a published Brier score against the market first.",
+    "PMVL is free. A proposed $29 Founding Lifetime local-first plan is shown as a non-charging demand test: no purchase, reservation or entitlement is created.",
   alternates: { canonical: absoluteUrl("/pricing") },
 };
 
@@ -27,39 +27,32 @@ export default async function PricingPage() {
       <Section>
         <SectionHeading
           eyebrow="What has to be true first"
-          title="Two conditions before anything is sold"
-          lead="Written as conditions rather than intentions, because an intention can be quietly revised and a condition either holds or does not."
+          title="Evidence before a real offer opens"
+          lead="An interest click answers whether the proposition attracts attention. It does not prove retention, delivery feasibility or willingness to complete a purchase."
         />
         <div className="mt-8 grid gap-8 lg:grid-cols-2">
           <div className="border-t border-line-subtle pt-4">
             <h3 className="t-sub-title">A real track record exists</h3>
             <p className="t-body mt-2">
-              At least 60 recommendations published live and settled, from a
-              pipeline that has not stalled. Today that count is zero: everything
-              downstream of the daily snapshot has only ever run on synthetic
-              history.
+              Before accepting money, PMVL needs evidence that people repeatedly
+              use the free cost workflow — not just visit the pricing page. The
+              Founding Lifetime test measures intent while keeping that distinction
+              visible.
             </p>
           </div>
           <div className="border-t border-line-subtle pt-4">
-            <h3 className="t-sub-title">
-              Its Brier score against the market is published
-            </h3>
+            <h3 className="t-sub-title">The promised capability is built and bounded</h3>
             <p className="t-body mt-2">
-              Whatever the sign. Replayed against already-settled markets, the
-              estimate currently scores marginally <em>worse</em> than the
-              market&rsquo;s own price — so the claim a subscription would rest on
-              is one we have not been able to demonstrate. That figure goes on{" "}
-              <Link href="/track-record" className="underline underline-offset-2">
-                the track record
-              </Link>{" "}
-              before any tier opens.
+              A real offer needs working local entitlements, a precise definition
+              of lifetime, tested restoration and revocation, final refund and tax
+              handling, and legal review. None exists in the demand-test flow.
             </p>
           </div>
         </div>
         <p className="t-body mt-8 max-w-2xl">
-          The Founding Research Pilot that used to be offered here has been
-          withdrawn for the same reason. Nobody had paid, so there was nothing to
-          unwind.{" "}
+          The previous $49 Founding Research Pilot remains withdrawn. It sold a
+          forecast-based email digest; this $29 test is a different, local-first
+          cost-tool proposition and does not revive that offer.{" "}
           <Link href="/founding-pilot" className="underline underline-offset-2">
             What it was, and why it is closed
           </Link>
@@ -69,9 +62,9 @@ export default async function PricingPage() {
 
       <Section className="bg-sunken">
         <SectionHeading
-          eyebrow="Before you subscribe"
-          title="What a subscription would and would not buy"
-          lead="Written now, while nothing can be charged, so it cannot be quietly softened later."
+          eyebrow="Product boundary"
+          title="What the founding idea would and would not buy"
+          lead="Written while nothing can be charged, so the demand test does not quietly become a promise."
         />
         <div className="mt-8 grid gap-8 lg:grid-cols-2">
           <div className="border-t border-line-subtle pt-4">
@@ -101,48 +94,36 @@ export default async function PricingPage() {
       </Section>
 
       <Section>
-        <SectionHeading eyebrow="Billing questions" title="How billing will work" />
+        <SectionHeading eyebrow="Interest-test questions" title="What happens now" />
         <Faq
           items={[
             {
               q: "Can I be charged right now?",
-              a: "No. The production deployment has billing switched off at the server, not merely hidden in the interface. Even if the checkout buttons were forced to render, the server rejects the request. Activating billing requires a server-side billing mode, valid Stripe credentials, allowlisted price IDs, completed legal review and the owner's approval.",
+              a: "No. The production deployment has billing switched off at the server. The $29 action opens an email draft and never calls the billing route. No card, purchase, reservation or entitlement is created.",
             },
             {
-              q: "Who processes payments?",
-              a: "Stripe, on Stripe's own hosted checkout page. PMVL never sees or stores a card number: the browser goes to Stripe, and this application receives only a customer reference and a subscription status back.",
+              q: "What is measured?",
+              a: "The flow measures that someone chose the $29 interest action and, only if they send the draft, the message they chose to email. A click is evidence of interest, not a unique user, purchase or conversion.",
             },
             {
-              q: "How do I cancel?",
+              q: "Does expressing interest hold the $29 price?",
+              a: "No. It does not reserve a place or price. Scope, price and availability may change, and PMVL may decide not to launch the plan.",
+            },
+            {
+              q: "What stays free?",
+              a: "The working public research, snapshot cost calculator and current live overlay stay free. The proposed plan adds local workflow capability rather than moving today's public product behind a paywall.",
+            },
+            {
+              q: "What happens to my email?",
               a: (
                 <>
-                  Through Stripe&apos;s customer portal, reachable from{" "}
-                  <Link
-                    href="/account/billing"
-                    className="underline underline-offset-2"
-                  >
-                    your billing page
-                  </Link>
-                  . Cancelling stops the next renewal; access continues until the
-                  end of the period already paid for.
-                </>
-              ),
-            },
-            {
-              q: "What happens if a payment fails?",
-              a: "The account moves to a payment-failed state and Pro access is suspended until a payment succeeds. Public research is unaffected — it is not gated on billing at all, so a billing problem can never take it away.",
-            },
-            {
-              q: "What data is kept about my subscription?",
-              a: (
-                <>
-                  A Stripe customer ID, a subscription ID, the subscription
-                  status, the price ID, the current period end and whether a
-                  cancellation is scheduled. No card details, ever. The{" "}
+                  Nothing is sent unless you send the draft in your own mail app.
+                  If you do, PMVL uses the address and message to evaluate the
+                  concept and may reply. The{" "}
                   <Link href="/privacy" className="underline underline-offset-2">
                     privacy page
                   </Link>{" "}
-                  lists this exactly.
+                  describes the flow and retention.
                 </>
               ),
             },

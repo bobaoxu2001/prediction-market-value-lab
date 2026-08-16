@@ -2,6 +2,7 @@ import Link from "next/link";
 import { apiGet, qs, type DataMode } from "@/lib/api";
 import { humanizeSeconds, ageRelativeToSnapshot, cents, compactUsd, displayTitle, localTime, pct, prob, relativeToSnapshot, signedCents } from "@/lib/format";
 import { withResearchMode } from "@/lib/research-mode";
+import { safeExternalUrl } from "@/lib/safe-url";
 import { ApiDown, DemoBanner, EmptyState, Metric, PageHeader, PlatformChip, SideChip, StateChip, VenueAvailability } from "@/components/ui";
 import { PriceChart } from "@/components/PriceChart";
 
@@ -348,10 +349,17 @@ export default async function MarketDetailPage({
                 </div>
                 <p className="mt-1 text-sm">{displayTitle(e.title)}</p>
                 <p className="text-xs text-ink-muted">{e.summary}</p>
-                {e.source_url && (
-                  <a href={e.source_url} target="_blank" rel="noopener noreferrer"
-                    className="text-xs underline">source</a>
-                )}
+                {(() => {
+                  const sourceUrl = safeExternalUrl(e.source_url);
+                  return sourceUrl ? (
+                    <a href={sourceUrl} target="_blank" rel="noopener noreferrer"
+                      className="text-xs underline">source</a>
+                  ) : (
+                    e.source_url ? (
+                      <span className="text-xs text-ink-faint">source link unavailable</span>
+                    ) : null
+                  );
+                })()}
               </li>
             ))}
           </ul>

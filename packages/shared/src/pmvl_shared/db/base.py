@@ -8,7 +8,7 @@ from __future__ import annotations
 
 from contextlib import contextmanager
 from decimal import Decimal
-from typing import Any, Iterator
+from typing import Any, Iterator, Sequence
 
 from sqlalchemy import JSON, Numeric, cast, create_engine, event, literal
 from sqlalchemy.engine import Engine
@@ -16,6 +16,43 @@ from sqlalchemy.orm import DeclarativeBase, Session, sessionmaker
 from sqlalchemy.types import TypeDecorator
 
 from ..config import get_settings
+
+
+def insert_or_skip(
+    session: Session,
+    table,
+    values: dict[str, object],
+    *,
+    conflict_cols: Sequence[str],
+    conflict_where=None,
+) -> bool:
+    """INSERT with ON CONFLICT DO NOTHING; True when this writer inserted.
+
+    The database-native arbiter for SELECT-then-INSERT upserts. Two writers can
+    both miss the same SELECT and race to INSERT the same key; catching the
+    resulting IntegrityError is NOT a safe repair, because SQLAlchemy marks the
+    whole session transaction dead after a failed flush and the loser would lose
+    its own batch progress on the required rollback. The upsert primitive never
+    fails on the conflict: it does nothing and the rowcount says who won.
+
+    The conflict target is explicit, so every OTHER constraint failure (NOT
+    NULL, foreign key) still raises instead of being swallowed as "already
+    exists". ``values`` must cover every NOT NULL column without a server
+    default.
+    """
+    if session.get_bind().dialect.name == "sqlite":
+        from sqlalchemy.dialects.sqlite import insert as dialect_insert
+    else:
+        from sqlalchemy.dialects.postgresql import insert as dialect_insert
+    stmt = dialect_insert(table).values(**values)
+    kwargs: dict[str, object] = {"index_elements": list(conflict_cols)}
+    if conflict_where is not None:
+        kwargs["index_where"] = conflict_where
+    # RETURNING, not rowcount: psycopg3 does not reliably report rows-affected
+    # for INSERT ... ON CONFLICT, so rowcount-based winner detection silently
+    # broke on PostgreSQL. A returned primary key means this writer inserted.
+    stmt = stmt.on_conflict_do_nothing(**kwargs).returning(table.c.id)
+    return session.execute(stmt).first() is not None
 
 
 class Base(DeclarativeBase):
@@ -28,6 +65,12 @@ class Money(TypeDecorator):
     SQLite has no native NUMERIC affinity, and SQLAlchemy would otherwise hand back
     ``float`` - which is exactly what this project forbids in financial paths. Storing
     the canonical string keeps every value exact on both backends.
+
+    Bound: on SQLite the canonical string lives in a String(40) column. Binary
+    contract prices are at most a few dollars at sub-cent granularity, so any
+    value this codebase actually writes fits with huge headroom; magnitudes
+    beyond ~1e33 (or exponents) would not round-trip and must not be stored in
+    a Money column.
     """
 
     impl = Numeric(20, 8)
