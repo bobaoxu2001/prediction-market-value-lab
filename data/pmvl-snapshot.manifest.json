@@ -1,68 +1,162 @@
 {
   "artifact_encoding": "gzip",
   "artifact_format": "sqlite",
-  "built_at": "2026-08-16T01:35:28.842772Z",
-  "code_commit_sha": "fe59f86ce0c8",
+  "built_at": "2026-08-26T02:16:28.732074Z",
+  "code_commit_sha": "3beaae0e25b9",
   "compressed_path": "data/pmvl-snapshot.db.gz",
-  "compressed_sha256": "b6b0de038dbb587b23bd895ef5cb69c5ffc637006b603c8fac1496cbdf1628b7",
-  "compressed_size_bytes": 6338639,
+  "compressed_sha256": "374bccd53c6e630c99aa7d695c08cb1d874d9748a83b7e9d61d78058732441dc",
+  "compressed_size_bytes": 6366762,
   "compression_algorithm": "gzip",
   "compression_deterministic": true,
   "compression_level": 9,
-  "file_size_bytes": 32473088,
-  "freshest_quote_observed_at": "2026-08-05T16:23:57.333768Z",
-  "generated_at": "2026-08-16T01:35:28.842772Z",
+  "file_size_bytes": 31219712,
+  "freshest_quote_observed_at": "2026-08-26T02:12:41.458307Z",
+  "generated_at": "2026-08-26T02:16:28.732074Z",
   "ingest_window_end": null,
   "ingest_window_start": null,
   "job_statuses": {
     "arbitrage": "success",
     "backtest": "success",
+    "collection_health": "success",
+    "forecast_observations": "success",
     "ingest": "success",
+    "map_stations": "success",
     "orderbooks": "success",
     "prune": "success",
     "rank": "success",
+    "research_books": "success",
+    "research_trades": "success",
     "score": "success",
     "settle": "success",
-    "snapshot": "success"
+    "snapshot": "success",
+    "station_observations": "success"
   },
   "median_quote_observed_at": null,
   "model_version": "ensemble-v1.0.0",
-  "oldest_quote_observed_at": "2026-03-26T19:59:42.802208Z",
-  "parent_snapshot_id": "6b8abc6f7d4f-2026-08-05T16:23:57.333768",
-  "parent_snapshot_sha256": "e240b6fc946a0ba04b6236e8252848ef9570b345ff08c57822b94e374a2f2cb3",
+  "oldest_quote_observed_at": "2026-04-09T09:32:17.866806Z",
+  "parent_snapshot_id": "fe59f86ce0c8-2026-08-05T16:23:57.333768",
+  "parent_snapshot_sha256": "5d97a8cb6e2f60ccee10c9807c24c4f7b5867d9349ce0ec89b23ada7da7cf2f0",
   "parser_version": "1.0.0",
-  "pipeline_run_id": "",
+  "pipeline_run_id": "6801134495834ec9",
   "provider_error_counts": {},
   "release_status": "published",
+  "retention": {
+    "audit_markets": 462,
+    "bytes_after": 31219712,
+    "bytes_before": 44593152,
+    "ladder_engaged": true,
+    "ladder_rung_applied": 3,
+    "live_market_budget": 1600,
+    "markets_after": 4011,
+    "markets_before": 5433,
+    "policy": {
+      "market_ladder": [
+        [
+          4000,
+          6000
+        ],
+        [
+          3000,
+          4000
+        ],
+        [
+          2000,
+          3000
+        ],
+        [
+          1600,
+          2000
+        ],
+        [
+          1200,
+          1200
+        ],
+        [
+          800,
+          600
+        ],
+        [
+          400,
+          300
+        ]
+      ],
+      "max_backtest_runs": 30,
+      "max_bytes": 41943040,
+      "max_price_snapshots_per_market": 12,
+      "max_trades_per_market": 20,
+      "target_bytes": 33554432
+    },
+    "resolved_market_budget": 2000,
+    "steps": [
+      {
+        "bytes_after": 42008576,
+        "detail": "backtest_runs 70 -> 30, backtest_trades 12645 -> 7587",
+        "name": "backtest_history"
+      },
+      {
+        "bytes_after": 39735296,
+        "detail": "stripped free text from 886 resolved markets",
+        "name": "resolved_market_text"
+      },
+      {
+        "bytes_after": 38199296,
+        "detail": "trades 9982 -> 3380 (<= 20/market); price_snapshots 2803 -> 2803 (<= 12/market)",
+        "name": "per_market_history"
+      },
+      {
+        "bytes_after": 38199296,
+        "detail": "markets 5433 -> 5433 (live <= 4000, resolved <= 6000)",
+        "name": "market_budget_rung_0"
+      },
+      {
+        "bytes_after": 38199296,
+        "detail": "markets 5433 -> 5433 (live <= 3000, resolved <= 4000)",
+        "name": "market_budget_rung_1"
+      },
+      {
+        "bytes_after": 34025472,
+        "detail": "markets 5433 -> 4678 (live <= 2000, resolved <= 3000)",
+        "name": "market_budget_rung_2"
+      },
+      {
+        "bytes_after": 31219712,
+        "detail": "markets 4678 -> 4011 (live <= 1600, resolved <= 2000)",
+        "name": "market_budget_rung_3"
+      }
+    ]
+  },
   "row_counts": {
     "alembic_version": 1,
-    "arbitrage_opportunities": 14,
-    "backtest_runs": 60,
-    "backtest_trades": 10116,
-    "events": 1043,
-    "job_runs": 42,
-    "market_rule_versions": 2454,
-    "market_rules": 2454,
-    "markets": 4258,
-    "model_predictions": 785,
+    "arbitrage_opportunities": 15,
+    "backtest_runs": 30,
+    "backtest_trades": 7587,
+    "events": 1182,
+    "job_runs": 57,
+    "market_rule_versions": 2475,
+    "market_rules": 2474,
+    "markets": 4011,
+    "model_predictions": 889,
     "model_versions": 1,
-    "orderbook_levels": 66355,
-    "orderbook_snapshots": 1511,
-    "outcomes": 7592,
-    "price_snapshots": 1976,
+    "orderbook_levels": 79410,
+    "orderbook_snapshots": 1401,
+    "outcomes": 7098,
+    "poll_attempts": 14,
+    "price_snapshots": 2679,
     "recommendation_snapshots": 450,
     "recommendations": 462,
-    "settlements": 2287,
-    "trades": 7482
+    "settlements": 2678,
+    "source_observations": 84,
+    "station_observations": 252,
+    "trades": 3360
   },
-  "schema_revision": "f1a2b3c4d5e6",
-  "schema_version": "f1a2b3c4d5e6",
-  "sha256": "5d97a8cb6e2f60ccee10c9807c24c4f7b5867d9349ce0ec89b23ada7da7cf2f0",
-  "snapshot_id": "fe59f86ce0c8-2026-08-05T16:23:57.333768",
-  "source_commit_sha": "fe59f86ce0c8",
-  "source_data_cutoff": "2026-08-05T16:23:57.333768Z",
-  "uncompressed_sha256": "5d97a8cb6e2f60ccee10c9807c24c4f7b5867d9349ce0ec89b23ada7da7cf2f0",
-  "uncompressed_size_bytes": 32473088,
+  "schema_revision": "8c41f0d7ab29",
+  "schema_version": "8c41f0d7ab29",
+  "sha256": "5f90ff79cde3fe1a2d8882dcda33e3ce944aadf27258cc0f522d4ad7552b2d81",
+  "snapshot_id": "3beaae0e25b9-2026-08-26T02:12:41.458307",
+  "source_commit_sha": "3beaae0e25b9",
+  "source_data_cutoff": "2026-08-26T02:12:41.458307Z",
+  "uncompressed_sha256": "5f90ff79cde3fe1a2d8882dcda33e3ce944aadf27258cc0f522d4ad7552b2d81",
+  "uncompressed_size_bytes": 31219712,
   "validation_failures": [],
   "validation_status": "passed",
   "workflow_run_attempt": "",
