@@ -25,8 +25,15 @@ weather models — which in practice is a small minority of the universe. Concre
   `tests/test_equity.py`. `Category.FINANCE` is in `MODELLABLE_CATEGORIES`. This
   item was left stale in this document after the model landed; the coverage
   numbers quoted below were re-measured against the current code.
-- **Add an economics model** behind a FRED key: release calendar plus consensus and
-  the Cleveland Fed nowcast covers CPI/NFP/GDP markets on both venues.
+- ~~**Add an economics model** behind a FRED key.~~ **Done for CPI, keyless.**
+  `probability/categories/economics.py` reads the Cleveland Fed's published
+  nowcast and turns it into a bucket probability using a dispersion measured
+  from that nowcast's own 158 months of past errors. No FRED key was needed.
+  What is still open is narrower than the original item: **payrolls, GDP and
+  unemployment** have no nowcast in that file and return `no_opinion` from
+  `structural.EconomicsModel`. Those would need FRED or BLS, which is a separate
+  dependency and a separate piece of work. This line described the whole of
+  macro as unmodelled for several releases after CPI landed.
 - **Improve matching recall.** The proper-noun guard is correctly strict, but recall
   is now the bottleneck — an embedding-based candidate generator feeding the same
   deterministic verifier would raise matches without weakening the gate.
@@ -86,8 +93,11 @@ Still open:
   A market can sit in the 24h bucket and settle materially later.
 - **Slippage beyond measured book impact is a fixed tick pad**, not a fitted impact
   model. It will understate cost for large orders in thin books.
-- **The backtest cannot model queue position or partial fills**, so it flatters any
-  strategy that assumes it gets the whole top level.
+- **The published walk-forward backtest cannot model queue position or partial
+  fills**, so it flatters any strategy that assumes it gets the whole top level.
+  The event-driven research simulator in `pmvl_markets.alpha` models both and
+  will not fill a maker order on a quote touch, but it has no live point-in-time
+  history to run on yet - see [alpha-engine.md](alpha-engine.md).
 - **Demo data is one config flag away from the production surface.** The provenance
   filter defaults to live everywhere and is covered by tests, but any new endpoint
   must apply `apply_provenance` explicitly.

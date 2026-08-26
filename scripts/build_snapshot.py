@@ -5,10 +5,26 @@ than talk to a hosted one. What it CANNOT do is stay current: the result is froz
 build time, and the deployed site must say so. See `snapshot_meta` below, which the
 /system endpoint surfaces.
 
-Pruning targets the bulk without touching anything the UI reads:
+Two different things happen here, and keeping them apart is the point.
 
-* ``raw_payload`` on markets and events (~56 MB) - kept locally for debugging
-  provider field changes, never read by an endpoint.
+**Selection** decides what has any business being in a deployment artefact at
+all: raw provider payloads no endpoint reads, superseded order books and
+predictions, markets that can render nothing. Those rules live in this file and
+are unconditional - they would apply even if the artefact were a tenth the size.
+
+**Retention** decides what fits. That is
+:mod:`pmvl_shared.snapshot_retention`, applied after selection, and it is a set
+of explicit budgets with a fixed tightening ladder rather than a hope that the
+selection rules happen to land under the ceiling. They did not: the selection
+rules alone produced a 52.2 MB artefact against a 40 MiB ceiling on the database
+that motivated the split, because backtest history, resolved-market text and
+per-market trade history had no bound at all. See that module's docstring for
+the policy and ``docs/snapshot-retention.md`` for the reasoning.
+
+Selection, in order:
+
+* ``raw_payload`` on markets, events, order books and settlements (~56 MB) -
+  kept locally for debugging provider field changes, never read by an endpoint.
 * Historical orderbook levels beyond the latest snapshot per market - the detail page
   only renders the most recent book.
 * Superseded model predictions - only the newest per market is displayed.
@@ -204,7 +220,28 @@ def main(argv: list[str] | None = None) -> int:
     con.commit()
     cur.execute("VACUUM")
     con.commit()
+    con.close()
 
+    # Selection is done; now bound what is left. This is the step whose absence
+    # let the artefact's size be a coincidence rather than a decision.
+    from pmvl_shared.snapshot_retention import (  # noqa: PLC0415
+        SnapshotTooLargeError,
+        apply_retention,
+    )
+
+    selected = TARGET.stat().st_size
+    try:
+        retention = apply_retention(TARGET)
+    except SnapshotTooLargeError as exc:
+        # Fail closed and leave nothing publishable behind. A half-bounded
+        # database sitting at the candidate path is the failure mode the whole
+        # candidate/promote split exists to prevent.
+        print(f"snapshot retention failed: {exc}", file=sys.stderr)
+        MANIFEST.unlink(missing_ok=True)
+        return 1
+
+    con = sqlite3.connect(TARGET)
+    cur = con.cursor()
     counts = {}
     for (table,) in cur.execute(
         "SELECT name FROM sqlite_master WHERE type='table' ORDER BY name"
@@ -213,9 +250,16 @@ def main(argv: list[str] | None = None) -> int:
     con.close()
 
     after = TARGET.stat().st_size
-    _write_manifest(counts, after)
+    _write_manifest(counts, after, retention.as_dict())
 
-    print(f"snapshot: {before/1e6:.1f} MB -> {after/1e6:.1f} MB  ({TARGET})")
+    print(
+        f"snapshot: {before/1e6:.1f} MB -> {selected/1e6:.1f} MB (selection) "
+        f"-> {after/1e6:.1f} MB (retention)  ({TARGET})"
+    )
+    for step in retention.steps:
+        print(f"   retention {step.name:24s} {step.bytes_after/1e6:6.1f} MB  {step.detail}")
+    if not retention.ladder_engaged:
+        print("   retention: market budget not engaged; no market dropped for size")
     for table, n in counts.items():
         if n:
             print(f"   {table:28s} {n:>7,}")
@@ -223,7 +267,9 @@ def main(argv: list[str] | None = None) -> int:
     return 0
 
 
-def _write_manifest(counts: dict[str, int], size: int) -> None:
+def _write_manifest(
+    counts: dict[str, int], size: int, retention: dict | None = None
+) -> None:
     """Record what this artefact is, so a deploy can check rather than assume.
 
     Written with validation_status PENDING and release_status HELD. The validator
@@ -313,6 +359,7 @@ def _write_manifest(counts: dict[str, int], size: int) -> None:
         uncompressed_size_bytes=size,
         schema_revision=str(schema_version),
         source_commit_sha=commit,
+        retention=retention or {},
     )
     manifest.write(MANIFEST)
 

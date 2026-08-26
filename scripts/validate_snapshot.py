@@ -35,8 +35,19 @@ COMPRESSED = ROOT / "data" / "pmvl-snapshot.db.gz"
 PUBLISHED_VALIDATION = True
 FINALIZE_CANDIDATE = False
 
-#: GitHub warns above 50MB and Vercel function bundles are capped well below that.
-MAX_BYTES = 40 * 1024 * 1024
+sys.path.insert(0, str(ROOT / "packages/shared/src"))
+
+from pmvl_shared.snapshot_retention import (  # noqa: E402
+    MAX_SNAPSHOT_BYTES as MAX_BYTES,
+)
+
+#: The ceiling is declared once, in the retention module, and imported here.
+#:
+#: It used to be a literal in this file while the builder had no size policy at
+#: all, so the only thing that knew about the limit was the gate that rejected
+#: artefacts for exceeding it. Now the builder budgets against the same constant
+#: and this remains the fail-closed check. A second copy of the number is exactly
+#: how a "fixed" build starts failing validation again.
 
 
 def has_recorded_job(system_data: object, job_name: str) -> bool:
@@ -453,7 +464,16 @@ def main(argv: list[str] | None = None) -> int:
 
     size = SNAPSHOT.stat().st_size
     if size > MAX_BYTES:
-        problems.append(f"snapshot is {size / 1e6:.1f} MB, above the {MAX_BYTES / 1e6:.0f} MB ceiling")
+        # Reported in MiB, the unit the ceiling is actually expressed in. The
+        # previous message divided a 40 MiB limit by 1e6 and printed "42 MB",
+        # so the number in the failure did not appear anywhere in the source and
+        # a reader looking for it found nothing.
+        problems.append(
+            f"snapshot is {size / 1048576:.1f} MiB, above the "
+            f"{MAX_BYTES / 1048576:.0f} MiB ceiling. The builder's retention "
+            "policy is meant to keep it under; see the manifest's retention "
+            "block for which budgets were applied."
+        )
 
     header = SNAPSHOT.open("rb").read(20)
     if len(header) < 20:
@@ -731,7 +751,10 @@ def main(argv: list[str] | None = None) -> int:
             print(f"   {problem}")
         return 1
 
-    print(f"snapshot OK ({size / 1e6:.1f} MB, rollback journal, serves the API)")
+    print(
+        f"snapshot OK ({size / 1048576:.1f} MiB of {MAX_BYTES / 1048576:.0f} MiB, "
+        "rollback journal, serves the API)"
+    )
     return 0
 
 

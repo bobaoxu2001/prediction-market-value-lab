@@ -36,8 +36,10 @@ order**, so on a 1¢ contract the fee alone is a full cent:
 
 Same contract, same instant, a fourteen-fold spread in premium. Neither venue
 displays this, and it does not depend on any forecast — which is why the cost
-surface covers the categories the models decline: politics, sports and macro all
-have a cost even when they have no opinion.
+surface covers the categories the models decline: politics, most of the sports
+board, and every macro series without a nowcast behind it all have a cost even
+when they have no opinion. (CPI is the exception on macro — it has an independent
+model; see [The models](#the-models).)
 
 **Observed inputs and assumptions are itemised everywhere.** The headline figure
 combines observed ask depth and the venues' published fee schedules and rounding
@@ -156,8 +158,8 @@ prediction-market-value-lab/
   packages/
     shared/                        config, Decimal money core, ORM, schemas
     market-normalization/          providers, matching, pricing, probability,
-                                   arbitrage, backtest, demo seeder
-  tests/                           1,250+ tests + recorded venue fixtures
+                                   arbitrage, backtest, alpha engine, demo seeder
+  tests/                           1,496 tests + recorded venue fixtures
   data/                            SQLite database and scratch data
   docs/
 ```
@@ -334,6 +336,51 @@ with no filter that can hide them.
 
 ---
 
+## The alpha engine (research infrastructure)
+
+Everything above answers one question: **will this contract settle YES?** That is
+a forecast, and a correct forecast is not a trade. Two further questions decide
+whether there is money in it, and PMVL used to skip both:
+
+| | Question | Standard |
+|---|---|---|
+| **A — Outcome** | `P(settles YES \| information at t)` | Calibration |
+| **B — Alpha** | `E[price(t+h) − price(t) \| information at t]` | Realised convergence |
+| **C — Execution** | `P(fill at p \| book, state, t)`, and the edge given a fill | Fill rate, expected vs realised edge |
+
+Model fair 42% against a market at 30% does **not** imply a trade. The market may
+hold information the model does not, and "the market is wrong" and "the market
+will move" are separate claims. `packages/market-normalization/src/pmvl_markets/alpha/`
+keeps the three apart by type, so a probability cannot be typed into the slot
+where an expected price move belongs.
+
+What is built:
+
+- a **point-in-time feature store** where every observation carries four separate
+  timestamps, and only `available_at` decides what a past decision could read;
+- an **alpha factor registry** — 21 versioned factors that refuse with a typed
+  reason rather than returning zero when they have no data;
+- an **execution model** that will not fill a maker order because the quote
+  touched it, requires traded volume through the level, models queue position and
+  partial fills, and prices exits into the **bid**;
+- a **strategy layer** with entry *and* exit policies, so `29c → 43c` can be
+  evaluated before the binary event resolves;
+- **bounded sizing** with an explicit `NO_TRADE`;
+- an **immutable shadow ledger**: decisions frozen and content-hashed before the
+  outcome exists, with outcomes appended rather than merged.
+
+```bash
+pmvl alpha-readiness
+```
+
+**There is no verified economic backtest.** The tables exist and are empty: all
+450 recommendation snapshots in the published artefact carry `provenance=demo`,
+every live backtest run has `n_settled=0`, and no point-in-time source
+observations have been recorded yet. The correct next move is collection, not
+analysis — see [docs/alpha-engine.md](docs/alpha-engine.md).
+
+---
+
 ## Why is the list empty?
 
 An empty live Top-10 is the expected first-run result, for stackable reasons:
@@ -407,11 +454,11 @@ make test-unit         # no database
 make test-integration  # database, pipelines, API
 ```
 
-Over 1,250 Python tests, with no network access - outbound sockets are blocked in
+1,496 Python tests, with no network access - outbound sockets are blocked in
 conftest, so an accidental live call fails loudly instead of flaking. Provider tests
 run against real responses captured from both venues into `tests/fixtures/`, so
 payload-shape regressions are caught without the suite depending on the venues being
-up. The web app adds 241 vitest tests and the extension 111 (conformance, escaping,
+up. The web app adds 267 vitest tests and the extension 117 (conformance, escaping,
 message boundary, race and packaging suites), all executed in CI.
 
 ---
@@ -436,8 +483,12 @@ See `/methodology` for the live list. The significant ones:
   measurement puts the crypto model 0.0025 Brier *worse* than the quote. Nothing
   here should be read as a demonstrated edge.
 - Politics has no independent model, and neither does any sports contract that is
-  not a head-to-head game — which is most of that board. They are covered by
-  `/cost`, which needs no model, but are never ranked as opportunities.
+  not a head-to-head game — which is most of that board. On macro the limitation
+  is narrower than it used to be: **CPI has its own independent model** (the
+  Cleveland Fed nowcast, with dispersion measured from that nowcast's own 158
+  months of past errors), while payrolls, GDP and unemployment have no nowcast
+  here and return no opinion. Everything unmodelled is covered by `/cost`, which
+  needs no model, but is never ranked as an opportunity.
 - The sports model is off by default. Win-loss record ignores lineups, injuries and
   rest, all of which the market prices, so it is expected to lose to the quote until
   measured otherwise.
@@ -449,7 +500,12 @@ See `/methodology` for the live list. The significant ones:
   actual UMA settlement time varies.
 - Slippage beyond measured book impact is a fixed tick pad, not a fitted market-impact
   model.
-- The backtest cannot model queue position or partial fills.
+- The **published** walk-forward backtest cannot model queue position or partial
+  fills: it replays frozen recommendation snapshots and holds every position to
+  settlement. The event-driven research simulator in `pmvl_markets.alpha` models
+  both, and refuses to fill a maker order on a quote touch — but it has no live
+  point-in-time history to run on yet. See
+  [docs/alpha-engine.md](docs/alpha-engine.md).
 - WebSocket streaming is specified but not implemented; orderbooks are polled.
 
 
