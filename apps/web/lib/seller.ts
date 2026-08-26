@@ -33,13 +33,36 @@ export const SELLER_DESCRIPTION = "an individual operator";
 export const SERVICE_NAME = "PMVL Founding Research Pilot";
 
 /**
- * The public mailing address, also the address for formal legal notices.
+ * How formal legal notices reach the seller.
  *
- * One address for both, because two addresses in one agreement is an invitation
- * to serve notice at the wrong one.
+ * Deliberately **not** a postal address, and the absence is the point.
+ *
+ * PMVL is operated by an individual with no company, no registered agent and no
+ * commercial premises (see the module note above). The only postal address that
+ * has ever existed for it is a private home, and this repository is public,
+ * indexed and permanent. Publishing a residence to satisfy a notices clause
+ * trades a real privacy exposure for a formality that a monitored contact
+ * channel already satisfies.
+ *
+ * So notices route through the support address, and a postal address for formal
+ * service is supplied on request to a party that actually needs to serve one.
+ * A reader is told this plainly rather than finding a blank where an address
+ * would be - a visible explanation is not the same thing as a missing term.
+ *
+ * If a company, registered agent or commercial address is ever established,
+ * this constant is where it goes, and the pages that render it need no change.
  */
-export const BUSINESS_MAILING_ADDRESS =
-  "Apt 1201, 444 Washington Blvd, Jersey City, NJ 07310";
+export const LEGAL_NOTICE_METHOD =
+  "PMVL publishes no business postal address: it is operated by an individual with no company, registered agent or business premises, and the only postal address it has is a private home. Formal legal notices are accepted at the contact address below, and a postal address for service is supplied on request to a party that needs to serve one.";
+
+/**
+ * The one-clause form, for a paragraph that has already named the seller.
+ *
+ * Same fact, shorter, so a "who are these terms between" section does not have
+ * to carry the full explanation twice on one page.
+ */
+export const LEGAL_NOTICE_METHOD_SHORT =
+  "No business postal address is published; notices are accepted at the contact address below and a postal address for formal service is supplied on request.";
 
 /** Contracting age. */
 export const MINIMUM_AGE = 18;

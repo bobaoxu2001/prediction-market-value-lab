@@ -10,9 +10,10 @@ import {
   PILOT_PRICE_USD,
 } from "@/lib/pilot";
 import {
-  BUSINESS_MAILING_ADDRESS,
   DISPUTE_VENUE,
   GOVERNING_JURISDICTION,
+  LEGAL_NOTICE_METHOD,
+  LEGAL_NOTICE_METHOD_SHORT,
   MINIMUM_AGE,
   SELLER_DESCRIPTION,
   SELLER_LEGAL_NAME,
@@ -37,8 +38,8 @@ export default function TermsPage() {
         <p>
           These terms are between you and {SELLER_LEGAL_NAME}, {SELLER_DESCRIPTION}{" "}
           offering the Prediction Market Value Lab service (&ldquo;PMVL&rdquo;,
-          &ldquo;we&rdquo;, &ldquo;the service&rdquo;).
-          Business mailing address: {BUSINESS_MAILING_ADDRESS}.
+          &ldquo;we&rdquo;, &ldquo;the service&rdquo;).{" "}
+          {LEGAL_NOTICE_METHOD_SHORT}
         </p>
         <p>
           PMVL is operated by an individual, not by a company. There is no
@@ -261,8 +262,9 @@ export default function TermsPage() {
           >
             {SUPPORT_EMAIL}
           </a>
-          . Legal notices: {SELLER_LEGAL_NAME}, {BUSINESS_MAILING_ADDRESS}.
+          . Legal notices: {SELLER_LEGAL_NAME}, at the same address.
         </p>
+        <p>{LEGAL_NOTICE_METHOD}</p>
         <p>
           The contact address above is confirmed and monitored. This document
           remains a draft that no lawyer has reviewed; no paid offer may rely on

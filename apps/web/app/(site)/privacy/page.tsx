@@ -3,8 +3,8 @@ import Link from "next/link";
 
 import { LegalPage, LegalSection } from "@/components/legal";
 import {
-  BUSINESS_MAILING_ADDRESS,
   DATA_CONTROLLER,
+  LEGAL_NOTICE_METHOD,
 } from "@/lib/seller";
 import { absoluteUrl, SUPPORT_EMAIL } from "@/lib/site";
 
@@ -179,8 +179,8 @@ export default function PrivacyPage() {
           deletion in this release.
         </p>
         <p>
-          The data controller is {DATA_CONTROLLER} Written notices may be sent to{" "}
-          {BUSINESS_MAILING_ADDRESS}. Because the controller is an individual
+          The data controller is {DATA_CONTROLLER} {LEGAL_NOTICE_METHOD}{" "}
+          Because the controller is an individual
           based in the United States rather than a company established in the
           EU or UK, there is no lead EU or UK supervisory authority for this
           service; where local law gives you a right to complain to a data
