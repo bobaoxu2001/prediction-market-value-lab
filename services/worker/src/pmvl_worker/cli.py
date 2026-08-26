@@ -316,6 +316,182 @@ def prune(
     _emit(jobs.job_prune(keep_days=keep_days), as_json=as_json)
 
 
+@app.command("collect-forecasts")
+@_skip_guard
+def collect_forecasts(as_json: bool = typer.Option(False, "--json")) -> None:
+    """Collect NWS gridpoint forecasts. This is the product carrying published_at."""
+    import asyncio
+
+    _emit(asyncio.run(jobs.job_forecast_observations()), as_json=as_json)
+
+
+@app.command("collect-observations")
+@_skip_guard
+def collect_observations(
+    limit_per_station: int = typer.Option(36, help="observations requested per station"),
+    as_json: bool = typer.Option(False, "--json"),
+) -> None:
+    """Collect settlement-station observations. Research collection only."""
+    import asyncio
+
+    _emit(asyncio.run(jobs.job_station_observations(limit_per_station=limit_per_station)),
+          as_json=as_json)
+
+
+@app.command("collect-books")
+@_skip_guard
+def collect_books(
+    max_seconds: int = typer.Option(
+        0, help="bound the in-window capture loop; 0 means until the window ends"
+    ),
+    as_json: bool = typer.Option(False, "--json"),
+) -> None:
+    """Archive weather orderbooks, faster inside an NWS issuance window."""
+    import asyncio
+
+    _emit(asyncio.run(jobs.job_research_books(max_seconds=max_seconds)), as_json=as_json)
+
+
+@app.command("collect-trades")
+@_skip_guard
+def collect_trades(as_json: bool = typer.Option(False, "--json")) -> None:
+    """Archive weather trade prints. Raw archival only; nothing reads them."""
+    import asyncio
+
+    _emit(asyncio.run(jobs.job_research_trades()), as_json=as_json)
+
+
+@app.command("map-stations")
+@_skip_guard
+def map_stations(as_json: bool = typer.Option(False, "--json")) -> None:
+    """Populate markets.settlement_station_id from the venue's settlement rules."""
+    _emit(jobs.job_map_settlement_stations(), as_json=as_json)
+
+
+@app.command("station-audit")
+def station_audit(as_json: bool = typer.Option(False, "--json")) -> None:
+    """Compare the five places a settlement station is described."""
+    from sqlalchemy import select
+
+    from pmvl_shared.db import session_scope
+
+    from pmvl_markets.alpha.station_audit import audit_stations, render, summarise
+    from pmvl_markets.db_models import Market, SourceObservationRow
+    from pmvl_markets.normalize.weather_stations import RESEARCH_SERIES_PREFIX
+    from pmvl_markets.probability.categories.weather import _STATIONS
+
+    with session_scope() as db:
+        rows = [
+            (r.series_ticker or "", r.settlement_station_id or "",
+             r.settlement_rules_raw or "", r.platform_market_id)
+            for r in db.scalars(
+                select(Market).where(
+                    Market.series_ticker.like(f"{RESEARCH_SERIES_PREFIX}%")
+                )
+            ).all()
+        ]
+        gridpoints: dict[str, set[str]] = {}
+        for station, location in db.execute(
+            select(
+                SourceObservationRow.settlement_station_id,
+                SourceObservationRow.source_location,
+            ).distinct()
+        ):
+            if station and location:
+                gridpoints.setdefault(station, set()).add(location)
+
+    report = summarise(
+        audit_stations(
+            model_stations=_STATIONS,
+            market_rows=rows,
+            observed_gridpoints={k: sorted(v) for k, v in gridpoints.items()},
+        )
+    )
+    if as_json:
+        _emit(report, as_json=True)
+        return
+    for line in render(report):
+        console.print(line)
+
+
+@app.command("collection-health")
+def collection_health(
+    days: int = typer.Option(1, help="lookback window in days"),
+    as_json: bool = typer.Option(False, "--json"),
+    persist: bool = typer.Option(False, "--persist", help="append a snapshot"),
+    history: bool = typer.Option(False, "--history", help="show retained snapshots"),
+) -> None:
+    """Daily collection-health report. Reports coverage; computes no returns."""
+    if history:
+        from pmvl_shared.research_archive import ResearchArchive, default_archive_path
+
+        archive = ResearchArchive(default_archive_path("."))
+        with archive.connect() as con:
+            rows = archive.health_history(con, limit=30)
+        if as_json:
+            _emit({"history": rows}, as_json=True)
+            return
+        console.print("[bold]retained collection-health snapshots[/bold]")
+        for row in rows:
+            mark = "PASS" if row["all_gates_passing"] else "FAIL"
+            console.print(
+                f"  {row['snapshot_date']}  [{mark}]  obs/station-day="
+                f"{row['observations_per_station_day']}  books={row['archived_books']}"
+                f"  trades={row['archived_trades']}  best_window={row['best_window_books']}"
+                f"  unmapped={row['unmapped_markets']}"
+            )
+        return
+    if persist:
+        _emit(jobs.job_collection_health(), as_json=as_json)
+        return
+    from pmvl_markets.alpha.collection_health import build_report, render
+
+    from pmvl_shared.db import session_scope
+
+    with session_scope() as db:
+        report = build_report(db, days=days)
+    if as_json:
+        _emit(report, as_json=True)
+        return
+    for line in render(report):
+        console.print(line)
+
+
+@app.command("alpha-readiness")
+def alpha_readiness(as_json: bool = typer.Option(False, "--json")) -> None:
+    """How far the alpha engine is from evaluating a strategy on real history.
+
+    Deliberately a readiness report and not a result. The infrastructure exists;
+    the point-in-time data does not yet. Printing a strategy result computed on
+    what is currently in the database would be printing a number about demo
+    rows, which is the most misleading thing this repository could publish.
+    """
+    from pmvl_shared.db import session_scope
+
+    from pmvl_markets.alpha.readiness import assess_readiness
+
+    with session_scope() as db:
+        report = assess_readiness(db).as_dict()
+
+    if as_json:
+        _emit(report, as_json=True)
+        return
+
+    console.print(f"[bold]{report['verdict']}[/bold]")
+    console.print(report["headline"])
+    console.print("")
+    for name, value in report["counts"].items():
+        console.print(f"  {name:34s} {value}")
+    if report["blockers"]:
+        console.print("\n[yellow]Blockers:[/yellow]")
+        for blocker in report["blockers"]:
+            console.print(f"  - {blocker}")
+    if report["next_steps"]:
+        console.print("\n[cyan]Next:[/cyan]")
+        for step in report["next_steps"]:
+            console.print(f"  - {step}")
+
+
 @app.command()
 def status() -> None:
     """Show job health and row counts."""

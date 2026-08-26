@@ -26,6 +26,11 @@ from pmvl_shared.db.models import (  # noqa: F401
     Recommendation,
     RecommendationSnapshot,
     Settlement,
+    PollAttemptRow,
+    ShadowDecisionRow,
+    ShadowOutcomeRow,
+    SourceObservationRow,
+    StationObservationRow,
     Trade,
 )
 
@@ -33,5 +38,8 @@ __all__ = [
     "ArbitrageOpportunity", "BacktestRun", "BacktestTrade", "Event", "EvidenceItem",
     "JobRun", "Market", "MarketMatch", "MarketRule", "ModelPrediction", "ModelVersion",
     "OrderbookLevel", "OrderbookSnapshot", "Outcome", "PlatformRow", "PriceSnapshot",
-    "Recommendation", "RecommendationSnapshot", "Settlement", "Trade",
+    "MarketRuleVersion",
+    "Recommendation", "RecommendationSnapshot", "Settlement",
+    "PollAttemptRow", "ShadowDecisionRow", "ShadowOutcomeRow",
+    "SourceObservationRow", "StationObservationRow", "Trade",
 ]

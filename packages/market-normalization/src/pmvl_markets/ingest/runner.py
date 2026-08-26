@@ -19,6 +19,7 @@ from pmvl_shared.logging_setup import get_logger
 from pmvl_shared.schemas import NormalizedMarket, OrderBook
 from pmvl_shared.timeutil import horizons_for, utcnow
 
+from ..alpha.issuance import within_window_horizon
 from ..providers.kalshi import KalshiProvider
 from ..providers.polymarket import PolymarketProvider
 from .store import (
@@ -42,6 +43,10 @@ class IngestReport:
     by_platform: dict[str, int] = field(default_factory=dict)
     errors: list[str] = field(default_factory=list)
     provider_stats: dict[str, Any] = field(default_factory=dict)
+    #: What the research archive did, when one was supplied. Empty on the
+    #: product-only path, so an absent archive reads as absent rather than as a
+    #: pass that wrote nothing.
+    archive: dict[str, Any] = field(default_factory=dict)
 
     def as_dict(self) -> dict[str, Any]:
         return {
@@ -53,6 +58,7 @@ class IngestReport:
             "by_platform": self.by_platform,
             "errors": self.errors,
             "provider_stats": self.provider_stats,
+            "archive": self.archive,
         }
 
 
@@ -466,15 +472,33 @@ async def refresh_orderbooks(
     session,  # noqa: ANN001
     *,
     limit: int | None = None,
+    archive=None,  # noqa: ANN001
+    window_anchor: str = "",
+    research_only: bool = False,
+    max_hours_to_resolution: float | None = None,
 ) -> IngestReport:
     """Re-fetch books for already-ingested markets without re-listing markets.
 
     Used by the high-frequency scheduler job: market metadata changes slowly, but
     a quote from five minutes ago is not an executable price.
+
+    ``archive`` is optional so the product path is unchanged when it is absent.
+    When supplied, research-universe books are appended to it with their full
+    ladders - see :mod:`pmvl_markets.alpha.archiving` for why that has to happen
+    here rather than later.
+
+    ``research_only`` narrows the fetch to the research universe. It exists for
+    the 30-second issuance window and is what makes that cadence achievable: a
+    full-board refresh is ~125 Kalshi requests, which at the client's rate limit
+    takes longer than the 30-second period it is supposed to fit inside. The
+    window exists to watch weather books around a forecast publication, so
+    fetching the rest of the board during it costs the cadence and buys nothing.
     """
     from sqlalchemy import select
 
+    from ..alpha.archiving import archive_books
     from ..db_models import Market
+    from ..normalize.weather_stations import is_research_market
 
     settings = get_settings()
     limit = limit or settings.ingest_orderbook_limit
@@ -491,7 +515,18 @@ async def refresh_orderbooks(
     by_platform: dict[Platform, list[NormalizedMarket]] = {}
     for row in rows:
         market = _market_from_row(row)
-        if not horizons_for(market.expected_resolution_time):
+        if research_only:
+            if not is_research_market(market.series_ticker, market.category.value):
+                continue
+            if max_hours_to_resolution is not None and not within_window_horizon(
+                market.expected_resolution_time,
+                horizon_hours=max_hours_to_resolution,
+            ):
+                continue
+        elif not horizons_for(market.expected_resolution_time):
+            # The ranking horizon filter is a product concern. A research market
+            # settling outside it is still one this study wants captured, so the
+            # research path deliberately does not apply it.
             continue
         by_platform.setdefault(market.platform, []).append(market)
 
@@ -505,11 +540,28 @@ async def refresh_orderbooks(
         id_map = load_market_id_map(session)
         share = max(1, limit // max(1, len(providers)))
         for platform, provider in providers.items():
-            targets = select_for_orderbooks(by_platform[platform], share)
+            targets = (
+                by_platform[platform]
+                if research_only
+                else select_for_orderbooks(by_platform[platform], share)
+            )
             if not targets:
                 continue
             try:
                 raw = await provider.get_orderbooks(targets)
+                # Stamped the instant the venue's response is in hand, before
+                # anything is written. This is `poll_completed_at`, and it is the
+                # only thing `available_at` may be derived from.
+                #
+                # Letting it default inside `archive_books` instead made it the
+                # archive-WRITE time, which silently folds the duration of
+                # `store_orderbooks` into every availability timestamp. The
+                # direction is safe - later, never earlier, so it cannot create
+                # look-ahead - but the magnitude is a variable the collector
+                # controls, and it is not reproducible from the poll. Cadence is
+                # measured off these timestamps, so the write duration was being
+                # reported as part of the sampling interval.
+                poll_completed_at = utcnow()
             except Exception as exc:  # noqa: BLE001
                 report.errors.append(f"{platform.value} orderbooks: {exc}")
                 continue
@@ -517,6 +569,45 @@ async def refresh_orderbooks(
             report.orderbooks_written += store_orderbooks(
                 session, books, id_map, max_levels=settings.orderbook_depth
             )
+            # Append research-universe books to the archive at collection time.
+            #
+            # This is the only moment the FULL ladder exists and is not yet
+            # subject to the product prune. `store_orderbooks` truncates to
+            # `orderbook_depth`, and the snapshot builder then deletes every book
+            # except the latest per market - permanently, because the pipeline
+            # re-seeds from the published artefact. A book time series cannot
+            # exist in the product database at all.
+            if archive is not None:
+                by_key = {
+                    f"{platform.value}:{m.platform_market_id}": m
+                    for m in by_platform[platform]
+                }
+                archived = archive_books(
+                    archive,
+                    books,
+                    by_key,
+                    available_at=poll_completed_at,
+                    window_anchor=window_anchor,
+                )
+                # Accumulated, not assigned. The loop runs once per platform and
+                # a bare assignment left the report showing whichever platform
+                # happened to be last - which for a weather-only archive is the
+                # one that wrote nothing, so a working archiver reported zero.
+                previous = report.archive
+                merged = archived.as_dict()
+                if previous:
+                    for key in ("books_archived", "levels_archived",
+                                "books_duplicate", "markets_seen",
+                                "skipped_not_research"):
+                        merged[key] = previous.get(key, 0) + merged.get(key, 0)
+                    merged["errors"] = (
+                        list(previous.get("errors", [])) + merged["errors"]
+                    )[:10]
+                    windows = dict(previous.get("by_window", {}))
+                    for anchor, count in merged["by_window"].items():
+                        windows[anchor] = windows.get(anchor, 0) + count
+                    merged["by_window"] = windows
+                report.archive = merged
             report.provider_stats[platform.value] = provider.stats
     finally:
         await asyncio.gather(

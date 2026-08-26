@@ -108,6 +108,62 @@ PIPELINE: tuple[JobSpec, ...] = (
         depends_on=(),
         required_for_publication=False,
     ),
+    # --- research collection -------------------------------------------------
+    #
+    # `required_for_publication=False` on all of these, deliberately. Research
+    # collection must not gate the product: a failed NWS poll should cost that
+    # hour's observations, not the deployment's snapshot. The converse also
+    # holds - these run after the product jobs so a slow collector cannot delay
+    # publication.
+    #
+    # On the hourly Actions publisher these run once per hour. That satisfies
+    # the station-observation gate (each poll retrieves the recent series, not
+    # one point) and CANNOT satisfy the >=40-books-per-issuance-window gate,
+    # which needs a resident worker. The health report says so rather than
+    # reporting a shortfall without a cause.
+    JobSpec(
+        "map_stations",
+        "Settlement-station mapping from venue rules",
+        depends_on=("ingest",),
+        accepts_partial_from=frozenset({"ingest"}),
+        required_for_publication=False,
+    ),
+    JobSpec(
+        "forecast_observations",
+        "NWS gridpoint forecasts (the product carrying published_at)",
+        depends_on=("map_stations",),
+        required_for_publication=False,
+        may_partially_succeed=True,
+    ),
+    JobSpec(
+        "station_observations",
+        "Settlement-station observations",
+        depends_on=("map_stations",),
+        required_for_publication=False,
+        may_partially_succeed=True,
+    ),
+    JobSpec(
+        "collection_health",
+        "Daily collection-health snapshot",
+        depends_on=("map_stations",),
+        required_for_publication=False,
+    ),
+    JobSpec(
+        "research_trades",
+        "Weather trade-print archiving",
+        depends_on=("ingest", "map_stations"),
+        accepts_partial_from=frozenset({"ingest"}),
+        required_for_publication=False,
+        may_partially_succeed=True,
+    ),
+    JobSpec(
+        "research_books",
+        "Weather orderbook archiving",
+        depends_on=("orderbooks", "map_stations"),
+        accepts_partial_from=frozenset({"orderbooks"}),
+        required_for_publication=False,
+        may_partially_succeed=True,
+    ),
 )
 
 JOB_BY_NAME: dict[str, JobSpec] = {j.name: j for j in PIPELINE}

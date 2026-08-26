@@ -148,8 +148,24 @@ class WeatherThresholdModel(ProbabilityModel):
 
     async def _max_temperature_f(
         self, lat: float, lon: float, target_date: datetime
-    ) -> tuple[float, datetime] | None:
-        """Forecast daily maximum in F for ``target_date``, with its issue time."""
+    ) -> tuple[float, datetime | None, dict[str, object]] | None:
+        """Forecast daily maximum in F for ``target_date``, plus its provenance.
+
+        Returns ``(temperature, published_at, provenance)`` where
+        ``published_at`` is the NWS ``updateTime`` and is **None** when the
+        payload does not carry one.
+
+        It used to be ``parse_ts(updateTime) or utcnow()``. That default made a
+        response with no publication time indistinguishable from one published
+        at the instant we polled - reporting *zero* source-to-market lag for
+        exactly the observations whose lag is unknown, which is a bias toward
+        finding the market slow in the one measurement the source-lag hypothesis
+        turns on. A missing timestamp is now missing.
+
+        ``provenance`` carries the forecast validity window and the grid cell,
+        both of which the caller needs and neither of which is recoverable from
+        the temperature alone.
+        """
         path = await self._resolve_grid(lat, lon)
         if path is None:
             return None
@@ -167,7 +183,17 @@ class WeatherThresholdModel(ProbabilityModel):
         # The API publishes degC under the wmoUnit vocabulary; convert explicitly
         # rather than assuming, since a unit change would silently break every strike.
         is_celsius = "degc" in str(block.get("uom", "")).lower()
-        issued = parse_ts(props.get("updateTime")) or utcnow()
+        # No `or utcnow()`. See the docstring: a fabricated publication time is
+        # worse than an absent one, because it is silently wrong in a direction
+        # that flatters the hypothesis.
+        published_at = parse_ts(props.get("updateTime"))
+        generated_at = parse_ts(props.get("generatedAt"))
+        provenance: dict[str, object] = {
+            "grid_endpoint": path,
+            "published_at": published_at,
+            "source_generated_at": generated_at,
+            "update_time_present": props.get("updateTime") is not None,
+        }
         target_day = target_date.date()
 
         for entry in values:
@@ -183,7 +209,17 @@ class WeatherThresholdModel(ProbabilityModel):
             if raw is None:
                 continue
             temp = float(raw)
-            return (celsius_to_fahrenheit(temp) if is_celsius else temp), issued
+            # The interval the forecast is FOR, distinct from when it was made.
+            # A daily maximum is valid over a local day and that window cannot
+            # be reconstructed from the value or from the issue time.
+            end = parse_ts(valid.split("/")[1]) if "/" in valid else None
+            provenance["forecast_valid_start"] = start
+            provenance["forecast_valid_end"] = end
+            return (
+                (celsius_to_fahrenheit(temp) if is_celsius else temp),
+                published_at,
+                provenance,
+            )
         return None
 
     async def estimate(self, ctx: ModelContext) -> ModelEstimate:
@@ -243,7 +279,7 @@ class WeatherThresholdModel(ProbabilityModel):
         result = await self._max_temperature_f(lat, lon, target)
         if result is None:
             return no_opinion(f"no NWS max-temperature forecast for {token} on {target.date()}")
-        forecast_f, issued = result
+        forecast_f, published_at, source_provenance = result
 
         sigma = forecast_sigma(lead_days)
 
@@ -283,8 +319,17 @@ class WeatherThresholdModel(ProbabilityModel):
         )
 
         confidence = float(self.max_confidence) * max(0.3, 1.0 - 0.11 * lead_days)
-        age_hours = (now - ensure_utc(issued)).total_seconds() / 3600 if issued else 0
-        if age_hours > 6:
+        # Staleness is unknown, not zero, when the source published no time.
+        # Treating "unknown" as "fresh" would apply the confidence haircut to
+        # every observation except the ones we know least about.
+        age_hours = (
+            (now - ensure_utc(published_at)).total_seconds() / 3600
+            if published_at
+            else None
+        )
+        if age_hours is not None and age_hours > 6:
+            confidence *= 0.8
+        elif age_hours is None:
             confidence *= 0.8
 
         return ModelEstimate(
@@ -296,10 +341,33 @@ class WeatherThresholdModel(ProbabilityModel):
                 f"NWS {token}: forecast high {forecast_f:.1f}F vs {strike_label}, "
                 f"lead {lead_days}d, sigma {sigma:.1f}F -> P={probability:.3f}"
             ),
-            data_freshness_seconds=int(age_hours * 3600),
+            data_freshness_seconds=(
+                int(age_hours * 3600) if age_hours is not None else None
+            ),
             data={
                 "station": token,
                 "coordinates": f"{lat:.4f},{lon:.4f}",
+                # Carried through so a collector can persist the point-in-time
+                # provenance rather than re-deriving it from a second request.
+                "published_at": (
+                    published_at.isoformat() if published_at else None
+                ),
+                "source_generated_at": (
+                    source_provenance.get("source_generated_at").isoformat()
+                    if source_provenance.get("source_generated_at")
+                    else None
+                ),
+                "grid_endpoint": source_provenance.get("grid_endpoint", ""),
+                "forecast_valid_start": (
+                    source_provenance["forecast_valid_start"].isoformat()
+                    if source_provenance.get("forecast_valid_start")
+                    else None
+                ),
+                "forecast_valid_end": (
+                    source_provenance["forecast_valid_end"].isoformat()
+                    if source_provenance.get("forecast_valid_end")
+                    else None
+                ),
                 "forecast_high_f": f"{forecast_f:.2f}",
                 "strike": strike_label,
                 "lead_days": lead_days,

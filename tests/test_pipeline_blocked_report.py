@@ -34,6 +34,8 @@ from run_automated_snapshot_pipeline import (  # noqa: E402
     PipelineError,
 )
 
+from pmvl_shared.pipeline_dag import PIPELINE  # noqa: E402
+
 CEILING_FAILURE = (
     "candidate failed validation:    quote coherence: 120 markets consistent\n"
     "   manifest: failed / held\n"
@@ -48,7 +50,7 @@ def blocked_run(tmp_path, monkeypatch):  # noqa: ANN001, ANN201
     report = tmp_path / "run-report.json"
 
     def all_jobs_succeed(scope, outcome):  # noqa: ANN001, ANN202
-        from pmvl_shared.pipeline_dag import PIPELINE
+        from pmvl_shared.pipeline_dag import PIPELINE,  PIPELINE
 
         for spec in PIPELINE:
             outcome.statuses[spec.name] = pipeline.JobStatus.SUCCESS
@@ -99,7 +101,11 @@ class TestBlockedCandidateReporting:
         _, report = blocked_run
         payload = json.loads(report.read_text())
         assert set(payload["statuses"].values()) == {"success"}
-        assert len(payload["statuses"]) == 9
+        # Derived from the DAG, not hardcoded. A literal count here is a second
+        # copy of the pipeline's size that drifts the moment a job is added -
+        # and it fails as a mysterious `13 == 9` rather than as anything a
+        # reader can act on.
+        assert len(payload["statuses"]) == len(PIPELINE)
 
     def test_the_candidate_remains_blocked(self, blocked_run) -> None:  # noqa: ANN001
         _, report = blocked_run

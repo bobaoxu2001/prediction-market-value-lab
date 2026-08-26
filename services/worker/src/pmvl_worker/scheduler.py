@@ -159,6 +159,71 @@ def build_scheduler() -> BlockingScheduler:
         name="orderbook retention",
     )
 
+    # --- research collection -------------------------------------------------
+    #
+    # `max_instances=1` and `coalesce=True` come from the defaults above and
+    # matter more here than anywhere else: `research_books` holds its slot for
+    # the length of an issuance window, and a second concurrent invocation would
+    # double the venue load and write duplicate captures at the same instant.
+    # The archive's uniqueness constraint makes a duplicate harmless, but the
+    # request would still have been made.
+    scheduler.add_job(
+        _sync(jobs.job_forecast_observations),
+        IntervalTrigger(
+            seconds=CADENCE_BY_JOB["forecast_observations"].interval_seconds
+        ),
+        id="forecast_observations",
+        name="NWS gridpoint forecasts",
+        misfire_grace_time=300,
+    )
+
+    scheduler.add_job(
+        _sync(jobs.job_station_observations),
+        IntervalTrigger(
+            seconds=CADENCE_BY_JOB["station_observations"].interval_seconds
+        ),
+        id="station_observations",
+        name="settlement-station observations",
+        # An observation missed is an observation lost; a late run is still
+        # worth making, so the grace is generous.
+        misfire_grace_time=900,
+    )
+
+    scheduler.add_job(
+        _sync(jobs.job_research_books),
+        IntervalTrigger(
+            seconds=CADENCE_BY_JOB["research_books"].interval_seconds
+        ),
+        id="research_books",
+        name="weather orderbook archiving",
+        # Short grace: this job is about capturing a specific minute. A run that
+        # fires five minutes late has missed the thing it exists to observe, and
+        # queueing it would only add load.
+        misfire_grace_time=30,
+    )
+
+    scheduler.add_job(
+        _sync(jobs.job_research_trades),
+        IntervalTrigger(seconds=CADENCE_BY_JOB["research_trades"].interval_seconds),
+        id="research_trades",
+        name="weather trade prints",
+        misfire_grace_time=300,
+    )
+
+    scheduler.add_job(
+        _guard(jobs.job_collection_health),
+        CronTrigger(hour=23, minute=50),
+        id="collection_health",
+        name="collection-health snapshot",
+    )
+
+    scheduler.add_job(
+        _guard(jobs.job_map_settlement_stations),
+        CronTrigger(hour=5, minute=0),
+        id="map_stations",
+        name="settlement-station mapping",
+    )
+
     return scheduler
 
 
