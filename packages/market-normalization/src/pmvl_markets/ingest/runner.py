@@ -566,9 +566,29 @@ async def refresh_orderbooks(
                 report.errors.append(f"{platform.value} orderbooks: {exc}")
                 continue
             books = {f"{platform.value}:{t}": b for t, b in raw.items()}
-            report.orderbooks_written += store_orderbooks(
-                session, books, id_map, max_levels=settings.orderbook_depth
-            )
+            if not research_only:
+                # A research-only pass archives; it does not write the product
+                # store.
+                #
+                # It used to do both, and at window cadence that is 30s x 84
+                # markets = ~2,900 captures a day, each ~24 levels: about 5.8M
+                # product rows a day, none of which the product can use. The
+                # snapshot builder keeps only the LATEST book per market, so
+                # every earlier row is written, retained at a 30-day policy, and
+                # then discarded at build time.
+                #
+                # Measured consequence: the operational database reached 664 MiB
+                # with 6.0M orderbook_levels rows, writes began blocking past
+                # the 30s busy timeout, and collection stalled for nearly two
+                # hours behind `database is locked`. The archive is unaffected -
+                # it holds the full ladder for every capture, permanently, which
+                # is the copy research actually reads.
+                #
+                # The product store keeps getting its current book from the
+                # regular orderbook refresh on its own cadence.
+                report.orderbooks_written += store_orderbooks(
+                    session, books, id_map, max_levels=settings.orderbook_depth
+                )
             # Append research-universe books to the archive at collection time.
             #
             # This is the only moment the FULL ladder exists and is not yet
