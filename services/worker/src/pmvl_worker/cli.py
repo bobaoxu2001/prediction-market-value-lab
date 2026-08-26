@@ -616,3 +616,38 @@ def schedule() -> None:
 
 if __name__ == "__main__":
     app()
+
+
+@app.command("model-vs-market-readiness")
+def model_vs_market_readiness(
+    as_json: bool = typer.Option(False, "--json"),
+    data_dir: str = typer.Option("data", help="directory holding the two stores"),
+) -> None:
+    """Whether a Model-vs-Market dataset can be built, and what blocks it.
+
+    Read-only against both stores. Reports evidence and exclusion counts rather
+    than a bare verdict, and separates defect-class exclusions (a bug) from
+    shortfall-class ones (data has not arrived) - they look identical from a row
+    count and need opposite responses.
+
+    Computes no returns, no PnL and no alpha claim.
+    """
+    import subprocess
+    from pathlib import Path
+
+    from pmvl_markets.research.dataset import build_report, render
+
+    commit = ""
+    try:
+        commit = subprocess.run(
+            ["git", "rev-parse", "--short", "HEAD"],
+            capture_output=True, text=True, check=False,
+        ).stdout.strip()
+    except OSError:
+        pass
+
+    report = build_report(data_dir=Path(data_dir), code_commit=commit)
+    if as_json:
+        _emit(report.as_dict(), as_json=True)
+        return
+    console.print(render(report))
