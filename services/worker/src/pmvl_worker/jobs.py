@@ -1173,3 +1173,143 @@ def job_collection_health() -> dict[str, Any]:
             }
         )
         return dict(details)
+
+
+async def job_daily_climate(*, limit_per_station: int = 4) -> dict[str, Any]:
+    """Archive the daily CLI maximum every weather contract settles on.
+
+    This is the job that removes SETTLEMENT_MISMATCH. Until it runs, the
+    repository holds hourly observations and the settled quantity has never been
+    observed - a gap no amount of modelling can close, because the label itself
+    is absent.
+
+    Append-only and idempotent on ``(station, date, payload hash, available_at)``:
+    a re-poll of an unchanged bulletin writes nothing, while a genuine revision
+    lands as a new row beside the original rather than replacing it. A label must
+    be reconstructable as it stood at any past instant, which an in-place update
+    destroys.
+
+    Preliminary bulletins are stored, not discarded. The afternoon issuance is a
+    real observation of the day so far and is useful for intraday work; it is
+    marked ``is_final=False`` so a settlement label can refuse it.
+    """
+    from pmvl_shared.payload_store import PayloadStore
+    from pmvl_shared.timeutil import utcnow
+
+    from pmvl_markets.normalize.weather_stations import research_station_ids
+    from pmvl_markets.providers.nws_cli import (
+        COLLECTOR_VERSION,
+        PARSER_VERSION,
+        NwsCliProvider,
+    )
+
+    store = PayloadStore(_research_data_dir() / "payloads")
+    provider = NwsCliProvider()
+    written = duplicates = finals = preliminary = 0
+    per_station: dict[str, int] = {}
+    errors: list[str] = []
+    unmapped: list[str] = []
+
+    with job_run("daily_climate") as details:
+        try:
+            for station_id in research_station_ids():
+                try:
+                    fetches, report = await provider.fetch_recent(
+                        station_id, limit=limit_per_station
+                    )
+                except Exception as exc:  # noqa: BLE001
+                    # One station's outage costs that station's coverage, never
+                    # the whole sweep.
+                    errors.append(f"{station_id}: {type(exc).__name__}: {exc}")
+                    continue
+                errors.extend(report.errors)
+                errors.extend(report.parse_failures)
+                unmapped.extend(report.unmapped_stations)
+
+                for fetch in fetches:
+                    try:
+                        ref = store.put(fetch.raw_text.encode("utf-8")).ref
+                    except Exception:  # noqa: BLE001
+                        ref = ""
+                    if _record_daily_climate(fetch, raw_payload_ref=ref,
+                                             collector_version=COLLECTOR_VERSION,
+                                             parser_version=PARSER_VERSION):
+                        written += 1
+                        per_station[station_id] = per_station.get(station_id, 0) + 1
+                        if fetch.climate.is_final:
+                            finals += 1
+                        else:
+                            preliminary += 1
+                    else:
+                        duplicates += 1
+                details["heartbeat"]()
+        finally:
+            await provider.aclose()
+
+        result = {
+            "rows_written": written,
+            "duplicates_skipped": duplicates,
+            "final_reports": finals,
+            "preliminary_reports": preliminary,
+            "per_station": dict(sorted(per_station.items())),
+            "unmapped_stations": sorted(set(unmapped)),
+            "cache_hits": provider.cache_hits,
+            "errors": errors[:10],
+        }
+        details.update(result)
+        details["records_written"] = written
+        return result
+
+
+def _record_daily_climate(
+    fetch: Any, *, raw_payload_ref: str, collector_version: str, parser_version: str
+) -> bool:
+    """Insert one bulletin, or report that it was already known.
+
+    Returns False for an exact re-read. Identity is the payload hash together
+    with the availability instant, so an unchanged bulletin polled twice is one
+    row while a corrected one is two.
+    """
+    from pmvl_shared.db.models import DailyClimateObservationRow
+    from pmvl_shared.timeutil import utcnow
+
+    with session_scope() as db:
+        existing = db.scalar(
+            select(DailyClimateObservationRow).where(
+                DailyClimateObservationRow.station_id == fetch.station_id,
+                DailyClimateObservationRow.observation_date
+                == fetch.climate.observation_date.isoformat(),
+                DailyClimateObservationRow.raw_payload_hash == fetch.raw_payload_hash,
+            )
+        )
+        if existing is not None:
+            return False
+        db.add(
+            DailyClimateObservationRow(
+                station_id=fetch.station_id,
+                product_code=fetch.climate.product_code,
+                observation_date=fetch.climate.observation_date.isoformat(),
+                daily_max_f=(
+                    float(fetch.climate.daily_max_f)
+                    if fetch.climate.daily_max_f is not None else None
+                ),
+                daily_min_f=(
+                    float(fetch.climate.daily_min_f)
+                    if fetch.climate.daily_min_f is not None else None
+                ),
+                is_final=fetch.climate.is_final,
+                valid_as_of=fetch.climate.valid_as_of,
+                published_at=fetch.published_at,
+                available_at=fetch.available_at,
+                ingested_at=utcnow(),
+                is_backfill=fetch.is_backfill,
+                source_product_id=fetch.source_product_id,
+                source_endpoint=fetch.source_endpoint,
+                raw_payload_hash=fetch.raw_payload_hash,
+                raw_payload_ref=raw_payload_ref,
+                collector_version=collector_version,
+                parser_version=parser_version,
+                provenance="live",
+            )
+        )
+        return True

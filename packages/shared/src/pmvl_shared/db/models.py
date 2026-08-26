@@ -944,6 +944,79 @@ class SourceObservationRow(Base):
     timestamp_absence: Mapped[dict | None] = mapped_column(JSONColumn, nullable=True)
 
 
+class DailyClimateObservationRow(Base):
+    """The daily maximum these contracts actually settle on.
+
+    Distinct from ``station_observations``, which holds hourly readings. The
+    hourly maximum and the CLI daily maximum are usually equal and are not the
+    same quantity: CLI applies its own quality control, uses the local calendar
+    day, and can be corrected after publication. Deriving a settlement label
+    from hourly data because CLI is missing is the exact substitution this table
+    exists to make unnecessary.
+
+    Two fields carry most of the weight.
+
+    ``is_final`` - a CLI is issued twice daily and only the early-morning one
+    covers a completed day. The afternoon issuance reports the maximum *so far*
+    and says so. A preliminary maximum used as a label biases every outcome
+    downward, worst on hot afternoons, which is exactly when a threshold
+    contract sits near its strike.
+
+    ``observation_date`` - read from the product's own summary line, never from
+    its issuance time. The bulletin issued at 06:14 UTC on the 26th summarises
+    the 25th, and reading issuance as observation date shifts every label by a
+    day: invisible in aggregate, fatal to a per-day join.
+
+    Append-only. A revised report is a new row with a later ``available_at``;
+    nothing is ever overwritten, so a label can be reconstructed as it stood at
+    any past instant.
+    """
+
+    __tablename__ = "daily_climate_observations"
+    __table_args__ = (
+        # One row per (station, day, report-version, availability). A re-poll of
+        # an unchanged bulletin must not create a second row, and a genuine
+        # revision must not replace the first.
+        UniqueConstraint(
+            "station_id", "observation_date", "raw_payload_hash", "available_at",
+            name="uq_daily_climate_identity",
+        ),
+        Index("ix_dailyclimate_station_date", "station_id", "observation_date"),
+        Index("ix_dailyclimate_available", "available_at"),
+    )
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    station_id: Mapped[str] = mapped_column(String(16), nullable=False)
+    #: CLIPHL, CLINYC, ... The settlement product, recorded so a label can be
+    #: traced to the exact bulletin a contract's rules name.
+    product_code: Mapped[str] = mapped_column(String(16), nullable=False)
+    #: Local calendar day summarised, from the product's own summary line.
+    observation_date: Mapped[str] = mapped_column(String(10), nullable=False)
+    daily_max_f: Mapped[float | None] = mapped_column(Float, nullable=True)
+    daily_min_f: Mapped[float | None] = mapped_column(Float, nullable=True)
+    #: False for the afternoon partial-day issuance. Only final rows may label.
+    is_final: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
+    #: Verbatim "as of" text when preliminary, for the audit trail.
+    valid_as_of: Mapped[str] = mapped_column(String(64), nullable=False, default="")
+    #: When the office issued the bulletin.
+    published_at: Mapped[datetime | None] = _utc_col(nullable=True)
+    #: When THIS system finished the poll that returned it. The only timestamp
+    #: that may gate admissibility.
+    available_at: Mapped[datetime] = _utc_col(nullable=False)
+    ingested_at: Mapped[datetime | None] = _utc_col(nullable=True)
+    #: True when the row came from an archival sweep rather than live polling.
+    #: A backfilled bulletin is valid settlement truth and is NOT evidence that
+    #: the value was available to us at the historical instant it describes.
+    is_backfill: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
+    source_product_id: Mapped[str] = mapped_column(String(64), nullable=False, default="")
+    source_endpoint: Mapped[str] = mapped_column(String(255), nullable=False, default="")
+    raw_payload_hash: Mapped[str] = mapped_column(String(64), nullable=False, default="")
+    raw_payload_ref: Mapped[str] = mapped_column(String(255), nullable=False, default="")
+    collector_version: Mapped[str] = mapped_column(String(32), nullable=False, default="")
+    parser_version: Mapped[str] = mapped_column(String(32), nullable=False, default="")
+    provenance: Mapped[str] = mapped_column(String(16), nullable=False, default="live")
+
+
 class StationObservationRow(Base):
     """Actual observed conditions at a contract's settlement station.
 

@@ -622,6 +622,11 @@ if __name__ == "__main__":
 def model_vs_market_readiness(
     as_json: bool = typer.Option(False, "--json"),
     data_dir: str = typer.Option("data", help="directory holding the two stores"),
+    allow_approximation: bool = typer.Option(
+        False,
+        "--allow-approximation",
+        help="admit MODELLING_APPROXIMATION parity (requires explicit policy)",
+    ),
 ) -> None:
     """Whether a Model-vs-Market dataset can be built, and what blocks it.
 
@@ -646,8 +651,68 @@ def model_vs_market_readiness(
     except OSError:
         pass
 
-    report = build_report(data_dir=Path(data_dir), code_commit=commit)
+    from pmvl_markets.research.build import build_cohort, target_dates_with_labels
+    from pmvl_markets.research.dataset import MIN_EVENTS_FOR_CALIBRATION, cohort_gates
+
+    root = Path(data_dir)
+    report = build_report(data_dir=root, code_commit=commit)
+
+    # Assemble every day for which a FINAL settlement bulletin exists.
+    merged: dict[str, Any] = {}
+    totals = {"contract_observations": 0, "unique_markets": 0}
+    events: set[str] = set()
+    adm_events: set[str] = set()
+    adm_rows = 0
+    parity: dict[str, int] = {}
+    exclusions: dict[str, int] = {}
+    for day in target_dates_with_labels(root):
+        cohort = build_cohort(data_dir=root, target_date=day)
+        summary = cohort.summary(allow_approximation=allow_approximation)
+        totals["contract_observations"] += summary["contract_observations"]
+        totals["unique_markets"] += summary["unique_markets"]
+        events.update(o.event_key for o in cohort.observations)
+        for observation in cohort.admissible(allow_approximation):
+            adm_events.add(observation.event_key)
+            adm_rows += 1
+        for key, n in summary["by_parity"].items():
+            parity[key] = parity.get(key, 0) + n
+        for key, n in summary["exclusions"].items():
+            exclusions[key] = exclusions.get(key, 0) + n
+    merged = {
+        **totals,
+        "independent_settlement_events": len(events),
+        "admissible_contract_observations": adm_rows,
+        "admissible_independent_events": len(adm_events),
+        "by_parity": dict(sorted(parity.items())),
+        "exclusions": dict(sorted(exclusions.items(), key=lambda kv: -kv[1])),
+    }
+    gates = cohort_gates(merged, allow_approximation=allow_approximation)
+    authorized = all(ok for _, ok, _ in gates)
+
+    payload = report.as_dict()
+    payload["cohort"] = merged
+    payload["gates"] = [
+        {"gate": name, "passing": ok, "evidence": why} for name, ok, why in gates
+    ]
+    payload["phase_4c1_authorized"] = authorized
     if as_json:
-        _emit(report.as_dict(), as_json=True)
+        _emit(payload, as_json=True)
         return
-    console.print(render(report))
+
+    console.print(render(report, with_verdict=False))
+    console.print("--- FIRST ADMISSIBLE COHORT ---")
+    console.print(f"  contract observations           {merged['contract_observations']:>6}")
+    console.print(f"  unique markets                  {merged['unique_markets']:>6}")
+    console.print(f"  independent settlement events   {merged['independent_settlement_events']:>6}   <- inferential N")
+    console.print(f"  admissible contract rows        {adm_rows:>6}")
+    console.print(f"  admissible independent events   {len(adm_events):>6}")
+    console.print(f"  parity                          {merged['by_parity']}")
+    console.print(f"  exclusions                      {merged['exclusions']}")
+    console.print("")
+    console.print("--- PHASE 4C1 GATES ---")
+    for name, ok, why in gates:
+        console.print(f"  [{'PASS' if ok else 'FAIL'}] {name:<46} {why}")
+    console.print("")
+    console.print(
+        "PHASE 4C1 AUTHORIZED" if authorized else "PHASE 4C1 NOT AUTHORIZED"
+    )

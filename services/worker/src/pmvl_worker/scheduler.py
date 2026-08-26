@@ -211,6 +211,17 @@ def build_scheduler() -> BlockingScheduler:
     )
 
     scheduler.add_job(
+        _sync(jobs.job_daily_climate),
+        IntervalTrigger(seconds=CADENCE_BY_JOB["daily_climate"].interval_seconds),
+        id="daily_climate",
+        name="CLI daily climate (settlement label)",
+        # Generous. The bulletin is published on the office's schedule, not
+        # ours, and a late run still collects the same completed-day value - so
+        # a misfire should be caught up rather than dropped.
+        misfire_grace_time=1800,
+    )
+
+    scheduler.add_job(
         _guard(jobs.job_collection_health),
         CronTrigger(hour=23, minute=50),
         id="collection_health",

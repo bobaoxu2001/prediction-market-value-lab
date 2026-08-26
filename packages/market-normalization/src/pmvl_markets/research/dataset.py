@@ -220,10 +220,45 @@ def build_report(*, data_dir: Path, code_commit: str = "") -> BuildReport:
     return report
 
 
-#: Minimum independent settlement events before calibration is meaningful. Well
-#: below anything that would support an alpha claim; this is the threshold for
-#: "a calibration curve is worth drawing at all".
+#: Minimum INDEPENDENT settlement events - distinct station-days - before the
+#: next phase may begin. Not contract rows: a ladder of 42 contracts over one
+#: station-day resolves from a single daily maximum, so counting rows would
+#: multiply the apparent sample by the ladder width while adding nothing.
 MIN_EVENTS_FOR_CALIBRATION = 30
+
+
+def cohort_gates(
+    summary: dict[str, Any], *, allow_approximation: bool = False
+) -> list[tuple[str, bool, str]]:
+    """Each mandatory gate, its verdict, and the evidence behind it."""
+    events = int(summary.get("admissible_independent_events", 0))
+    rows = int(summary.get("admissible_contract_observations", 0))
+    by_parity = summary.get("by_parity", {})
+    exact = int(by_parity.get("EXACT_MATCH", 0))
+    approx = int(by_parity.get("MODELLING_APPROXIMATION", 0))
+    mismatch = int(by_parity.get("SETTLEMENT_MISMATCH", 0))
+    defects = sum(
+        n for code, n in summary.get("exclusions", {}).items()
+        if Exclusion(code) in DEFECT_CODES
+    )
+    return [
+        (
+            "defect-class exclusions = 0",
+            defects == 0,
+            f"{defects} defect-class exclusions",
+        ),
+        (
+            "settlement parity admissible",
+            mismatch == 0 and (exact > 0 or (approx > 0 and allow_approximation)),
+            f"EXACT={exact} APPROXIMATION={approx} MISMATCH={mismatch}"
+            + ("" if allow_approximation else "; approximation not authorised"),
+        ),
+        (
+            f">= {MIN_EVENTS_FOR_CALIBRATION} independent settlement events",
+            events >= MIN_EVENTS_FOR_CALIBRATION,
+            f"{events} independent station-days ({rows} contract rows)",
+        ),
+    ]
 
 
 def readiness_verdict(report: BuildReport) -> tuple[str, list[str]]:
@@ -255,7 +290,14 @@ def readiness_verdict(report: BuildReport) -> tuple[str, list[str]]:
     return "MODEL-VS-MARKET FOUNDATION READY", reasons
 
 
-def render(report: BuildReport) -> str:
+def render(report: BuildReport, *, with_verdict: bool = True) -> str:
+    """Render the source inventory.
+
+    ``with_verdict`` is off when a caller has assembled the cohort itself. This
+    function's verdict counts only venue-reported settlements, which understates
+    the dataset once labels are taken from the archived CLI bulletin - and two
+    contradictory verdicts in one report is worse than one.
+    """
     verdict, reasons = readiness_verdict(report)
     d = report.as_dict()
     lines = [
@@ -286,8 +328,9 @@ def render(report: BuildReport) -> str:
     lines += ["", f"  defect-class    {report.defects}", f"  shortfall-class {report.shortfalls}", ""]
     for note in d["notes"]:
         lines.append(f"  note: {note}")
-    lines += ["", f"VERDICT: {verdict}"]
-    lines += [f"  because: {r}" for r in reasons]
+    if with_verdict:
+        lines += ["", f"VERDICT: {verdict}"]
+        lines += [f"  because: {r}" for r in reasons]
     lines.append("")
     return "\n".join(lines)
 

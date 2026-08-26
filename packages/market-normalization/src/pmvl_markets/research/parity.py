@@ -44,6 +44,7 @@ def classify(
     settlement_product_code: str | None,
     archived_observation_product: str | None,
     has_daily_summary: bool,
+    archived_product_code: str | None = None,
 ) -> tuple[Parity, str]:
     """Classify one contract's parity, with the reason attached.
 
@@ -65,10 +66,31 @@ def classify(
         )
 
     if settlement_vendor and settlement_vendor != "national_weather_service":
+        # A relay of the SAME product is a different claim from a different
+        # product, and collapsing them loses the distinction that decides how
+        # much work remains. The Weather Company redistributes the NWS CLI
+        # bulletin the contract names; what is unknown is whether it relays the
+        # value unchanged and how it handles a later NWS correction.
+        if archived_product_code and archived_product_code == settlement_product_code:
+            return (
+                Parity.MODELLING_APPROXIMATION,
+                f"settles via {settlement_vendor}'s relay of "
+                f"{settlement_product_code}, which is the product archived here; "
+                "the value should be identical but relay timing and revision "
+                "handling are UNMEASURED, so this is an approximation and not "
+                "parity",
+            )
         return (
             Parity.SETTLEMENT_MISMATCH,
-            f"settles via {settlement_vendor}, archive holds National Weather "
-            "Service data; relay timing and revision behaviour are unmeasured",
+            f"settles via {settlement_vendor} on {settlement_product_code}, "
+            f"archive holds {archived_product_code or 'a different product'}",
+        )
+
+    if archived_product_code and archived_product_code != settlement_product_code:
+        return (
+            Parity.SETTLEMENT_MISMATCH,
+            f"settles on {settlement_product_code}, archive holds "
+            f"{archived_product_code}",
         )
 
     return Parity.EXACT_MATCH, "same station, product and day definition"

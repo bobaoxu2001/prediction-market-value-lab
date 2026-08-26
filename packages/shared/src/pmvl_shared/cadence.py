@@ -248,6 +248,15 @@ CADENCES: tuple[Cadence, ...] = (
         interval_seconds=600,
     ),
     Cadence(
+        "daily_climate",
+        "NWS Climatological Report (CLI) daily maximum - the settlement label",
+        # Hourly. The bulletin is issued twice a day, but the final one for a
+        # completed day lands in the early local morning and can be revised, so
+        # polling hourly picks up a correction the same day rather than the next.
+        interval_seconds=3600,
+        stall_after_seconds=3 * 3600,
+    ),
+    Cadence(
         "collection_health",
         "Daily collection-health snapshot",
         cron="daily at 23:50 UTC",

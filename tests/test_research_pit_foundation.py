@@ -420,12 +420,28 @@ class TestSettlementParity:
         assert parity not in ADMISSIBLE
         assert "daily summary" in why
 
-    def test_a_vendor_relay_is_not_assumed_equivalent(self) -> None:
+    def test_a_vendor_relay_over_an_unknown_product_is_a_mismatch(self) -> None:
+        """With no archived product to compare, a relay is not admissible.
+
+        Refined in 4C0.5: once the SAME product is archived, the relay becomes a
+        MODELLING_APPROXIMATION - the value should be identical, but relay
+        timing and revision handling stay unmeasured. Without the archived
+        product there is nothing to make even that claim against.
+        """
+        from pmvl_markets.research.parity import ADMISSIBLE, Parity
+
+        parity, _ = self._classify(settlement_vendor="the_weather_company")
+        assert parity is Parity.SETTLEMENT_MISMATCH
+        assert parity not in ADMISSIBLE
+
+    def test_a_relay_of_the_archived_product_is_an_approximation(self) -> None:
         from pmvl_markets.research.parity import Parity
 
-        parity, why = self._classify(settlement_vendor="the_weather_company")
-        assert parity is Parity.SETTLEMENT_MISMATCH
-        assert "unmeasured" in why
+        parity, why = self._classify(
+            settlement_vendor="the_weather_company", archived_product_code="CLIPHL"
+        )
+        assert parity is Parity.MODELLING_APPROXIMATION
+        assert "UNMEASURED" in why
 
     def test_matching_source_and_product_is_exact(self) -> None:
         from pmvl_markets.research.parity import ADMISSIBLE, Parity
