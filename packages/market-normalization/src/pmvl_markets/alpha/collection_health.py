@@ -19,7 +19,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 from datetime import datetime, timedelta
-from typing import Any, Iterable
+from typing import Any, Iterable, Mapping
 
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
@@ -74,6 +74,12 @@ class Gate:
             "actual": self.actual,
             "expected": self.expected,
             "passing": self.passing,
+            # Carried, not inferred. The renderer used to decide the comparison
+            # direction from a hardcoded set of gate NAMES, so any gate added
+            # without also editing that set printed the wrong operator - which
+            # is how a lower-is-better staleness gate came to read
+            # "0.9 (expect >= 20)" while passing correctly.
+            "higher_is_better": self.higher_is_better,
             "detail": self.detail,
         }
 
@@ -82,6 +88,20 @@ class Gate:
 MIN_OBSERVATIONS_PER_STATION_DAY = 20
 MIN_SOURCE_COVERAGE = 0.95
 MIN_BOOKS_PER_ISSUANCE_WINDOW = 40
+
+#: How stale the newest archived book may be before collection is considered
+#: stopped, in minutes.
+#:
+#: Every other gate is retrospective: they read a lookback window or the best
+#: COMPLETED issuance window, so they keep passing on yesterday's evidence. On
+#: 2026-08-26 the collector wrote nothing for 76 minutes while the worker
+#: process stayed alive and the scheduler kept firing - and every gate still
+#: reported passing, because none of them asked the only question that would
+#: have caught it: is data still arriving *now*.
+#:
+#: Generous on purpose. Baseline cadence is 180s, and a gate that fires on a
+#: single slow cycle trains an operator to ignore it.
+MAX_ARCHIVE_STALENESS_MINUTES = 20
 
 
 def best_completed_window(
@@ -216,6 +236,13 @@ def build_report(session: Session, *, days: int = 1, now: datetime | None = None
             actual=mapping["payload_failures"],
             expected=0,
             higher_is_better=False,
+        ),
+        Gate(
+            "archive staleness (minutes)",
+            actual=archive_staleness_minutes(archive_stats, now=now),
+            expected=MAX_ARCHIVE_STALENESS_MINUTES,
+            higher_is_better=False,
+            detail="a live worker with a frozen archive passes every other gate",
         ),
     ]
 
@@ -381,6 +408,31 @@ def _archive_report(
     return stats, per_market, window_counts, completed
 
 
+def archive_staleness_minutes(
+    stats: Mapping[str, Any], *, now: datetime | None = None
+) -> float:
+    """Minutes since the newest archived book became available.
+
+    The one present-tense question in the health report. Everything else can be
+    satisfied by history, which is how a 76-minute outage went unreported while
+    the worker was alive and scheduling.
+
+    An empty archive returns infinity rather than zero: "nothing has ever been
+    collected" is not freshness.
+    """
+    latest = stats.get("latest")
+    if not latest:
+        return float("inf")
+    try:
+        stamp = ensure_utc(
+            latest if isinstance(latest, datetime) else datetime.fromisoformat(str(latest))
+        )
+    except (TypeError, ValueError):
+        return float("inf")
+    delta = (ensure_utc(now or utcnow()) - stamp).total_seconds() / 60.0
+    return max(0.0, round(delta, 1))
+
+
 def archive_freshness_line(stats: dict[str, Any]) -> str:
     from pmvl_shared.research_archive import ArchiveStats
 
@@ -473,7 +525,7 @@ def render(report: dict[str, Any]) -> list[str]:
         mark = "PASS" if gate["passing"] else "FAIL"
         lines.append(
             f"  [{mark}] {gate['name']:38s} {gate['actual']} "
-            f"(expect {'>=' if gate['name'] not in _ZERO_GATES else '<='} "
+            f"(expect {'>=' if gate.get('higher_is_better', True) else '<='} "
             f"{gate['expected']})  {gate['detail']}"
         )
     lines.append("")
@@ -483,8 +535,3 @@ def render(report: dict[str, Any]) -> list[str]:
     return lines
 
 
-_ZERO_GATES = {
-    "research cache hits",
-    "unmapped settlement stations",
-    "payload integrity failures",
-}

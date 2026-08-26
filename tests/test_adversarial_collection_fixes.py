@@ -614,3 +614,83 @@ class TestResearchCollectionNeverWritesTheProductStore:
         guard = body.index("if not research_only")
         archive = body.index("archive_books(")
         assert archive > guard, "archiving moved inside the product-write guard"
+
+
+class TestHealthDetectsADeadDataPlane:
+    """Every other gate is retrospective, so a live worker with a frozen archive
+    passed all of them.
+
+    Observed 2026-08-26: nothing was archived for 76 minutes while the process
+    stayed alive and the scheduler kept firing, and the health report said ALL
+    GATES PASSING throughout - because no gate asked whether data is arriving
+    now, only whether it once did.
+    """
+
+    @staticmethod
+    def _stale(minutes: float | None):  # noqa: ANN205
+        from pmvl_markets.alpha.collection_health import archive_staleness_minutes
+
+        now = utcnow()
+        stats = (
+            {}
+            if minutes is None
+            else {"latest": (now - timedelta(minutes=minutes)).isoformat()}
+        )
+        return archive_staleness_minutes(stats, now=now)
+
+    def test_a_frozen_archive_is_detected(self) -> None:
+        from pmvl_markets.alpha.collection_health import (
+            MAX_ARCHIVE_STALENESS_MINUTES,
+        )
+
+        assert self._stale(76) > MAX_ARCHIVE_STALENESS_MINUTES
+
+    def test_a_live_archive_passes(self) -> None:
+        from pmvl_markets.alpha.collection_health import (
+            MAX_ARCHIVE_STALENESS_MINUTES,
+        )
+
+        assert self._stale(1) <= MAX_ARCHIVE_STALENESS_MINUTES
+
+    def test_an_empty_archive_is_not_treated_as_fresh(self) -> None:
+        """"Nothing has ever been collected" is not freshness."""
+        assert self._stale(None) == float("inf")
+
+    def test_the_bound_tolerates_one_slow_baseline_cycle(self) -> None:
+        """A gate that fires on a single slow cycle trains operators to ignore it."""
+        from pmvl_markets.alpha.collection_health import (
+            MAX_ARCHIVE_STALENESS_MINUTES,
+        )
+        from pmvl_markets.alpha.issuance import BASELINE_CADENCE_SECONDS
+
+        assert MAX_ARCHIVE_STALENESS_MINUTES * 60 >= 3 * BASELINE_CADENCE_SECONDS
+
+    def test_the_staleness_gate_is_actually_wired_into_the_gate_list(self) -> None:
+        source = Path(
+            "packages/market-normalization/src/pmvl_markets/alpha/"
+            "collection_health.py"
+        ).read_text()
+        assert '"archive staleness (minutes)"' in source
+        assert "archive_staleness_minutes(archive_stats" in source
+
+
+class TestGateDirectionIsCarriedNotInferred:
+    def test_a_lower_is_better_gate_reports_the_right_operator(self) -> None:
+        """It read "0.9 (expect >= 20)" while passing, because the renderer
+        decided direction from a hardcoded set of gate names."""
+        from pmvl_markets.alpha.collection_health import Gate
+
+        g = Gate("archive staleness (minutes)", actual=0.9, expected=20,
+                 higher_is_better=False)
+        assert g.passing
+        assert g.as_dict()["higher_is_better"] is False
+
+    def test_direction_is_not_decided_by_a_name_list(self) -> None:
+        source = Path(
+            "packages/market-normalization/src/pmvl_markets/alpha/"
+            "collection_health.py"
+        ).read_text()
+        assert "_ZERO_GATES" not in source, (
+            "gate direction is inferred from names again, so a new gate will "
+            "print the wrong operator until someone edits the list"
+        )
