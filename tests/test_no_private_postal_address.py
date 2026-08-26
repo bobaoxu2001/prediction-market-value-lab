@@ -30,6 +30,9 @@ ROOT = Path(__file__).resolve().parents[1]
 #: A house number followed by a street type. The leading number is required, so
 #: "Washington" as a jurisdiction and "Park Avenue Partners" as a name do not
 #: match - only something shaped like a place mail is delivered to.
+#: This file's own resolved path; see the exemption in the scan below.
+SELF = Path(__file__).resolve()
+
 STREET_LINE = re.compile(
     r"\b\d{1,6}\s+[A-Za-z][A-Za-z.'-]*(?:\s+[A-Za-z][A-Za-z.'-]*){0,4}\s+"
     r"(?:Street|St|Avenue|Ave|Boulevard|Blvd|Road|Rd|Drive|Dr|Lane|Ln|Court|Ct"
@@ -104,6 +107,22 @@ def address_signals(text: str) -> list[str]:
     return found
 
 
+def test_exactly_one_file_is_exempt_from_the_scan() -> None:
+    """The exemption is a single file, and it is this one.
+
+    An exemption that can grow is not an exemption, it is a bypass.
+    """
+    exempt = [p for p in tracked_text_files() if p.resolve() == SELF]
+    assert len(exempt) == 1
+    assert exempt[0].name == "test_no_private_postal_address.py"
+
+
+def test_the_detector_still_fires_on_a_real_looking_address() -> None:
+    """Guard the exemption: the scanner must not have been declawed."""
+    sample = "12 Example Ave\nApt 4B\nSomewhere, NJ 07030\n"
+    assert len(address_signals(sample)) >= 2
+
+
 def test_git_tracks_at_least_one_text_file() -> None:
     """Guard the guard. An empty file list would make every assertion vacuous."""
     assert len(tracked_text_files()) > 100
@@ -120,6 +139,17 @@ def test_no_tracked_file_contains_a_mailing_address() -> None:
     """
     offenders: list[str] = []
     for path in tracked_text_files():
+        if path.resolve() == SELF:
+            # A detector has to contain samples of what it detects. This file
+            # carries an illustrative "Suite <n>" in a docstring and a
+            # "<state> <ZIP>" in a comment explaining why a bare state name is
+            # not enough - so it matches itself, and only itself, for reasons
+            # that are the point rather than a leak.
+            #
+            # Exempted by exact resolved path, never by pattern, and pinned
+            # below to exactly one file so this cannot quietly become a
+            # directory-wide hole.
+            continue
         try:
             text = path.read_text(encoding="utf-8")
         except (UnicodeDecodeError, OSError):
