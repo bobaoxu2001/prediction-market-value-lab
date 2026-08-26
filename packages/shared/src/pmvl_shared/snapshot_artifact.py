@@ -57,7 +57,7 @@ MAX_COMPRESSED_SIZE_BYTES = 128 * 1024 * 1024
 MAX_UNCOMPRESSED_SIZE_BYTES = 512 * 1024 * 1024
 # Must match the alembic head in db/migrations/versions; the publication
 # gate rejects any snapshot built at a different revision.
-CURRENT_SNAPSHOT_SCHEMA_REVISION = "f1a2b3c4d5e6"
+CURRENT_SNAPSHOT_SCHEMA_REVISION = "8c41f0d7ab29"
 
 ManifestInput: TypeAlias = Mapping[str, Any] | str | os.PathLike[str]
 
@@ -423,8 +423,15 @@ def _sqlite_integrity_problems(path: Path) -> list[str]:
 def _sqlite_manifest_contract_problems(
     path: Path,
     manifest: Mapping[str, Any],
+    *,
+    accepted_revisions: tuple[str, ...] = (CURRENT_SNAPSHOT_SCHEMA_REVISION,),
 ) -> list[str]:
-    """Bind manifest schema and terminal job claims to the verified SQLite bytes."""
+    """Bind manifest schema and terminal job claims to the verified SQLite bytes.
+
+    ``accepted_revisions`` exists for exactly one caller: the publication
+    pipeline seeding a run from the previously published parent. Everything else
+    must fail closed on the single current revision, and does by default.
+    """
 
     encoded_path = quote(str(path.resolve()), safe="/")
     uri = f"file:{encoded_path}?mode=ro&immutable=1"
@@ -464,10 +471,10 @@ def _sqlite_manifest_contract_problems(
         return [f"SQLite manifest contract could not be checked: {exc}"]
 
     problems: list[str] = []
-    if schema_rows != [CURRENT_SNAPSHOT_SCHEMA_REVISION]:
+    if len(schema_rows) != 1 or schema_rows[0] not in accepted_revisions:
         problems.append(
             "SQLite schema revision is unsupported: "
-            f"{schema_rows!r}; expected [{CURRENT_SNAPSHOT_SCHEMA_REVISION!r}]"
+            f"{schema_rows!r}; expected {list(accepted_revisions)!r}"
         )
     manifest_revision = manifest.get("schema_revision")
     if schema_rows and manifest_revision != schema_rows[0]:
@@ -817,6 +824,8 @@ def resolve_snapshot_path(
     legacy_raw_path: str | os.PathLike[str],
     compressed_path: str | os.PathLike[str] | None = None,
     temp_root: str | os.PathLike[str] | None = None,
+    *,
+    accept_parent_revision: bool = False,
 ) -> Path:
     """Resolve a published Snapshot to a verified read-only SQLite path.
 
@@ -824,11 +833,33 @@ def resolve_snapshot_path(
     decompressed to ``<temp_root>/<uncompressed_sha256>.db`` through a unique staging
     file, integrity-checked read-only, and atomically installed.  Concurrent cold
     starts may do duplicate work, but no caller can observe a partial final file.
+
+    ``accept_parent_revision`` additionally accepts a snapshot whose schema
+    revision is the one its own manifest declares, rather than the revision this
+    code expects. It exists for the publication pipeline, which seeds each run
+    from the last published artefact and then runs ``alembic upgrade head`` on
+    the copy before doing anything else.
+
+    Without it every migration deadlocks publication: the published parent is at
+    revision N, the code expects N+1, seeding rejects the parent, and the only
+    component that can publish an artefact at N+1 is the pipeline that just
+    refused to start. Serving paths must NOT pass this - a snapshot at the wrong
+    revision is genuinely unservable, and that check is why this defaults to
+    False.
     """
 
     manifest_file = _path(manifest_path)
     legacy_path = _path(legacy_raw_path)
     data = _load_manifest(manifest_file)
+
+    accepted: tuple[str, ...] = (CURRENT_SNAPSHOT_SCHEMA_REVISION,)
+    if accept_parent_revision:
+        declared = data.get("schema_revision") or data.get("schema_version")
+        if isinstance(declared, str) and declared:
+            # The parent's own declaration, not a wildcard. The manifest and the
+            # SQLite bytes must still agree with each other - only the identity
+            # of that agreed revision is allowed to lag this code.
+            accepted = (CURRENT_SNAPSHOT_SCHEMA_REVISION, declared)
 
     if not _manifest_declares_gzip(data):
         problems = _legacy_manifest_problems(data, require_published=True)
@@ -900,7 +931,9 @@ def resolve_snapshot_path(
             )
             existing_problems.extend(_sqlite_integrity_problems(candidate))
             existing_problems.extend(
-                _sqlite_manifest_contract_problems(candidate, data)
+                _sqlite_manifest_contract_problems(
+                    candidate, data, accepted_revisions=accepted
+                )
             )
             if not existing_problems:
                 os.chmod(candidate, 0o400)
@@ -923,7 +956,9 @@ def resolve_snapshot_path(
             )
             integrity_problems = _sqlite_integrity_problems(staging)
             integrity_problems.extend(
-                _sqlite_manifest_contract_problems(staging, data)
+                _sqlite_manifest_contract_problems(
+                    staging, data, accepted_revisions=accepted
+                )
             )
             _raise_for(
                 integrity_problems,

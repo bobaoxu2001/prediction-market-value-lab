@@ -190,6 +190,9 @@ class RunOutcome:
     statuses: dict[str, JobStatus] = field(default_factory=dict)
     skipped: dict[str, str] = field(default_factory=dict)
     parent_snapshot_id: str | None = None
+    #: The revision the parent was published at. Recorded because a run that
+    #: carried its parent across a migration should say so in its own report.
+    parent_schema_revision: str | None = None
     parent_snapshot_sha256: str | None = None
     operational_init_source: str = ""
     migration_start_revision: str | None = None
@@ -332,6 +335,23 @@ def initialise_operational_db(work_dir: Path, outcome: RunOutcome) -> Path:
             published = resolve_snapshot_path(
                 PUBLISHED_MANIFEST,
                 PUBLISHED_DB,
+                # The parent may be a schema revision behind this code, and that
+                # is normal rather than exceptional: a migration lands, and the
+                # last published artefact necessarily predates it.
+                #
+                # Rejecting it here deadlocked publication outright. Seeding
+                # refused the parent at revision N because the code expected
+                # N+1, and the only component that can publish an artefact at
+                # N+1 is this pipeline - which had just refused to start. Every
+                # migration bricked the automated snapshot until someone
+                # hand-built a snapshot outside the pipeline.
+                #
+                # Safe here specifically because `migrate()` runs on the copy
+                # immediately below, before any job reads or writes it, and the
+                # resulting candidate is then validated in full against the
+                # current revision. The parent is a starting point, not the
+                # artefact being published.
+                accept_parent_revision=True,
             )
         except SnapshotArtifactError as exc:
             # A corrupt parent is not something to work around silently: every
@@ -348,6 +368,9 @@ def initialise_operational_db(work_dir: Path, outcome: RunOutcome) -> Path:
         )
         outcome.parent_resolved_path = str(published)
         outcome.operational_init_source = "published_snapshot"
+        outcome.parent_schema_revision = (
+            manifest.get("schema_revision") or manifest.get("schema_version")
+        )
         # The resolved cache is deliberately read-only.  A pipeline run needs its
         # own writable operational copy, so do not preserve cache permissions.
         shutil.copyfile(published, operational)
@@ -450,6 +473,21 @@ async def _invoke(name: str, scope: Scope) -> None:
         jobs.job_backtest()
     elif name == "prune":
         jobs.job_prune()
+    elif name == "map_stations":
+        jobs.job_map_settlement_stations()
+    elif name == "forecast_observations":
+        await jobs.job_forecast_observations()
+    elif name == "station_observations":
+        await jobs.job_station_observations()
+    elif name == "collection_health":
+        jobs.job_collection_health()
+    elif name == "research_trades":
+        await jobs.job_research_trades()
+    elif name == "research_books":
+        # Bounded so a batch invocation cannot outlive its workflow slot. On the
+        # hourly publisher this is a single capture; a resident worker passes 0
+        # and holds the slot for the whole issuance window.
+        await jobs.job_research_books(max_seconds=120)
     else:  # pragma: no cover - the DAG and this function are asserted equal
         raise PipelineError(f"no implementation for job {name!r}")
 
