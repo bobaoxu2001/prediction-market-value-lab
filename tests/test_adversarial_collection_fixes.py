@@ -494,3 +494,65 @@ class TestAcceptanceGateUnderRealisticWindowMixes:
         )
 
         assert MIN_BOOKS_PER_ISSUANCE_WINDOW >= 40
+
+
+class TestEveryJobReportsLivenessNotJustTheMeasuredOne:
+    """Fixing the deadlock for one job left it in place for all the others.
+
+    Observed on 2026-08-26: after a restart, research_books resumed within a
+    tick while ingest, orderbooks and research_trades sat blocked behind their
+    own orphaned rows for two hours, because only research_books heartbeat.
+    """
+
+    def test_a_plain_job_records_a_heartbeat_without_asking(
+        self, clean_db, key  # noqa: ANN001
+    ) -> None:
+        with job_run("ingest", cutoff=None, params=dict(KEY_PARAMS)):
+            clean_db.expire_all()
+            row = clean_db.query(JobRun).filter(
+                JobRun.status == JobStatus.RUNNING.value
+            ).one()
+            assert row.heartbeat_at is not None, (
+                "a job that does not opt in still has to be reclaimable in "
+                "minutes, or the restart deadlock survives for every job but one"
+            )
+
+    def test_liveness_is_claimed_before_the_body_runs(
+        self, clean_db, key  # noqa: ANN001
+    ) -> None:
+        """A job killed during its first action must still be detectable."""
+        seen: list[object] = []
+        with job_run("ingest", cutoff=None, params=dict(KEY_PARAMS)):
+            clean_db.expire_all()
+            seen.append(
+                clean_db.query(JobRun)
+                .filter(JobRun.status == JobStatus.RUNNING.value)
+                .one()
+                .heartbeat_at
+            )
+        assert seen[0] is not None
+
+    def test_the_beater_stops_before_the_run_is_closed_out(
+        self, clean_db, key  # noqa: ANN001
+    ) -> None:
+        """A late beat must not resurrect heartbeat_at on a finished row."""
+        from pmvl_worker import jobs
+
+        body = ast.unparse(ast.parse(inspect.getsource(jobs.job_run)))
+        assert body.index("stop_beating.set()") < body.index("row.status = status")
+
+    def test_the_interval_is_comfortably_inside_the_stale_bound(self) -> None:
+        from pmvl_worker.jobs import HEARTBEAT_INTERVAL
+
+        assert HEARTBEAT_INTERVAL * 3 <= HEARTBEAT_STALE_AFTER
+
+    def test_no_thread_is_left_running_after_the_job(
+        self, clean_db, key  # noqa: ANN001
+    ) -> None:
+        import threading as _t
+
+        before = {t.name for t in _t.enumerate()}
+        with job_run("ingest", cutoff=None, params=dict(KEY_PARAMS)):
+            pass
+        after = {t.name for t in _t.enumerate()}
+        assert not [n for n in after - before if n.startswith("heartbeat-")]

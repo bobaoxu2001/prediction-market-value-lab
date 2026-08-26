@@ -7,6 +7,7 @@ running is visible rather than being mistaken for "no opportunities today".
 
 from __future__ import annotations
 
+import threading
 import time
 import uuid
 import traceback
@@ -46,6 +47,11 @@ ACTIVE_RUN_STALE_AFTER = timedelta(hours=2)
 #: most of the next. Observed on 2026-08-25 19:45 UTC, where a deliberate
 #: restart produced exactly that and needed a manual database write to clear.
 HEARTBEAT_STALE_AFTER = timedelta(minutes=5)
+
+#: How often a running job proves it is alive. Comfortably inside
+#: HEARTBEAT_STALE_AFTER so an ordinary scheduling hiccup cannot make a healthy
+#: job look dead, and cheap enough to run for every job rather than a chosen few.
+HEARTBEAT_INTERVAL = timedelta(seconds=45)
 
 
 class JobSkipped(RuntimeError):
@@ -236,6 +242,30 @@ def job_run(
 
     details["heartbeat"] = heartbeat
 
+    # Every job reports liveness, automatically, for as long as it runs.
+    #
+    # Wiring the heartbeat into one job's loop fixed one job. Observed directly:
+    # after a restart, `research_books` resumed immediately while `ingest`,
+    # `orderbooks` and `research_trades` sat blocked behind their own orphaned
+    # rows, because those never heartbeat and so fell back to the two-hour age
+    # bound. Fixing the deadlock for the job being measured and leaving it in
+    # place for the rest is not a fix, it is a narrower bug.
+    #
+    # A daemon thread avoids asking each job to remember. It stamps on entry and
+    # then periodically, so liveness does not depend on a job's internal shape -
+    # a tight loop, one long request, or no loop at all all behave the same.
+    heartbeat()
+    stop_beating = threading.Event()
+
+    def _beat() -> None:
+        while not stop_beating.wait(HEARTBEAT_INTERVAL.total_seconds()):
+            heartbeat()
+
+    beater = threading.Thread(
+        target=_beat, name=f"heartbeat-{job_name}", daemon=True
+    )
+    beater.start()
+
     status = JobStatus.SUCCESS
     error = ""
     try:
@@ -246,6 +276,10 @@ def job_run(
         log.error("job %s failed: %s", job_name, exc)
         raise
     finally:
+        # Stop before the terminal write, so a beat cannot resurrect
+        # heartbeat_at on a row that has already been closed out.
+        stop_beating.set()
+        beater.join(timeout=5.0)
         duration = time.monotonic() - monotonic
         with session_scope() as db:
             row = db.get(JobRun, record_id)
