@@ -325,4 +325,33 @@ describe("replay and ordering", () => {
     );
     expect(response.status).toBe(500);
   });
+
+  it.each(["failed", "conflict"] as const)(
+    "asks Stripe to redeliver when the write did not stick (%s)",
+    async (outcome) => {
+      // The cache now disagrees with Stripe: either the write never landed, or
+      // it landed and a concurrent older event overwrote it. Acknowledging with
+      // 200 would tell Stripe the matter is closed and nothing would ever
+      // correct it - the redelivery IS the reconciliation mechanism, because the
+      // handler re-reads the subscription from Stripe on every attempt.
+      applyEntitlement.mockResolvedValue(outcome);
+      const response = await POST(
+        signedRequest(event("customer.subscription.updated", SUBSCRIPTION)),
+      );
+      expect(response.status).toBe(503);
+      expect(await response.json()).toMatchObject({ outcome, retry: true });
+    },
+  );
+
+  it("does not ask for redelivery on outcomes that are already correct", async () => {
+    // A retry loop that never terminates is its own outage. `duplicate` and
+    // `stale` both mean the stored state is right.
+    for (const outcome of ["applied", "duplicate", "stale"] as const) {
+      applyEntitlement.mockResolvedValue(outcome);
+      const response = await POST(
+        signedRequest(event("customer.subscription.updated", SUBSCRIPTION)),
+      );
+      expect(response.status, outcome).toBe(200);
+    }
+  });
 });

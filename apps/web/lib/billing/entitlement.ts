@@ -45,7 +45,38 @@ export type EntitlementState = (typeof ENTITLEMENT_STATES)[number];
 /** Key under which the billing cache lives in Clerk private metadata. */
 export const BILLING_METADATA_KEY = "billing";
 
+/**
+ * Where the Stripe customer ID lives, on its own, away from the billing cache.
+ *
+ * This separation is the concurrency fix, and it is structural rather than
+ * hopeful. Two different writers touch a user's billing metadata:
+ *
+ *   - the **webhook**, which writes entitlement state through
+ *     `applyEntitlement` and is guarded on event ID and event ordering;
+ *   - the **checkout route**, which writes the customer ID through
+ *     `rememberStripeCustomerId` and is guarded on nothing, because there is
+ *     nothing to order - a user has one Stripe customer and it never changes.
+ *
+ * While both wrote the single `billing` key, the second was a read-modify-write
+ * of the whole object: it read the cache, spliced in a customer ID, and wrote
+ * the result back. A checkout that overlapped a webhook therefore reverted the
+ * subscription status to whatever it had read a moment earlier - an unguarded
+ * write silently undoing a guarded one.
+ *
+ * Clerk's `updateUserMetadata` shallow-merges at the top level, so two top-level
+ * keys are genuinely independent: a write to one cannot revert the other. The
+ * customer ID moves here, `billing` is written only by the ordering-guarded
+ * path, and the remaining overlap - both writers may set this key - is harmless
+ * because the value is the same constant either way.
+ */
+export const BILLING_CUSTOMER_METADATA_KEY = "billingCustomer";
+
 export interface BillingCache {
+  /**
+   * @deprecated Read through `getCurrentEntitlement`/`getBillingCache`, which
+   * resolve the dedicated key first. Still populated on read for accounts whose
+   * metadata was written before the split, and never written back here.
+   */
   stripeCustomerId?: string;
   stripeSubscriptionId?: string;
   /** Stripe's own subscription status string, stored verbatim. */
@@ -188,6 +219,22 @@ function readCache(metadata: Record<string, unknown>): BillingCache {
   };
 }
 
+/**
+ * The user's Stripe customer ID, from the dedicated key or the legacy location.
+ *
+ * The fallback is not optional. Accounts written before the key split carry the
+ * ID inside `billing` and nothing migrates them; dropping the fallback would
+ * take the Customer Portal away from exactly the users who already paid.
+ */
+function readCustomerId(metadata: Record<string, unknown>): string | undefined {
+  const dedicated = metadata[BILLING_CUSTOMER_METADATA_KEY];
+  if (dedicated && typeof dedicated === "object" && !Array.isArray(dedicated)) {
+    const value = (dedicated as Record<string, unknown>).stripeCustomerId;
+    if (typeof value === "string" && value) return value;
+  }
+  return readCache(metadata).stripeCustomerId;
+}
+
 /** Resolve the plan a stored price ID corresponds to, if it is still allowlisted. */
 function planForPriceId(priceId: string | undefined): PlanId | null {
   if (!priceId) return null;
@@ -232,7 +279,8 @@ export async function getCurrentEntitlement(): Promise<Entitlement> {
     };
   }
 
-  const cache = readCache(await getPrivateMetadata(user.id));
+  const metadata = await getPrivateMetadata(user.id);
+  const cache = readCache(metadata);
   const cancelAtPeriodEnd = cache.cancelAtPeriodEnd === true;
   const state = stateFromStripeStatus(cache.subscriptionStatus, cancelAtPeriodEnd);
 
@@ -241,7 +289,7 @@ export async function getCurrentEntitlement(): Promise<Entitlement> {
     state,
     isPro: stateGrantsPro(state),
     plan: planForPriceId(cache.priceId),
-    stripeCustomerId: cache.stripeCustomerId ?? null,
+    stripeCustomerId: readCustomerId(metadata) ?? null,
     stripeSubscriptionId: cache.stripeSubscriptionId ?? null,
     currentPeriodEnd: cache.currentPeriodEnd ?? null,
     cancelAtPeriodEnd,
@@ -263,7 +311,31 @@ export async function requireActiveSubscription(): Promise<Entitlement | null> {
 /** The signed-in user's ID, or null. Re-exported so callers need one import. */
 export { getCurrentUserId };
 
-export type ApplyOutcome = "applied" | "duplicate" | "stale" | "failed";
+export type ApplyOutcome =
+  | "applied"
+  | "duplicate"
+  | "stale"
+  | "failed"
+  /**
+   * A concurrent writer overwrote this event's effect with an OLDER one.
+   *
+   * Distinct from `failed` (the write did not land) and from `stale` (this
+   * event was older and was correctly dropped). The write landed and was then
+   * lost, so the cache is now behind Stripe and the caller must not report
+   * success - see the note on `applyEntitlement` about why this is the honest
+   * outcome rather than a retry loop that pretends to be atomic.
+   */
+  | "conflict";
+
+/**
+ * How many times a lost update is re-applied before giving up and reporting it.
+ *
+ * Small on purpose. This is not a lock and more attempts do not make it one;
+ * it exists so that the overwhelmingly common case - two events arriving close
+ * together, one landing a moment late - resolves inside the request instead of
+ * costing a Stripe redelivery.
+ */
+const LOST_UPDATE_ATTEMPTS = 3;
 
 /**
  * Write a confirmed billing state into the entitlement cache.
@@ -281,52 +353,137 @@ export type ApplyOutcome = "applied" | "duplicate" | "stale" | "failed";
  *
  * The pair is deliberately stored in the same write as the state it justifies,
  * so the cache can never claim to have applied an event whose effect is missing.
+ *
+ * ## What this is NOT, and why
+ *
+ * This is **not** a compare-and-set, and the code deliberately does not pretend
+ * otherwise. Both guards read the current metadata and then write, and the two
+ * are separate network calls to Clerk. Two webhook invocations for the same user
+ * can therefore both read the same "before" state, both pass the guards, and
+ * both write - and the *later write* wins regardless of which event was newer.
+ *
+ * The fix a database would allow is `UPDATE ... WHERE last_event_created < ?`,
+ * decided by the store in one round trip. Clerk's Backend API offers no such
+ * primitive for user metadata: `updateUserMetadata` takes a patch and nothing
+ * else. There is no ETag, no `If-Match`, no version token, and no conditional
+ * update in `@clerk/backend`. Faking one - a "lock" key written before the real
+ * write, say - would be two racy writes wearing a mutex's clothes, and the
+ * failure it hides is silent entitlement corruption. That is the wrong trade,
+ * so the blocker is stated rather than papered over. See
+ * `docs/stripe-entitlement-concurrency.md`.
+ *
+ * What is done instead, and what it genuinely buys:
+ *
+ *   1. **The unguarded writer no longer shares this key.** The checkout route's
+ *      customer-ID write moved to `BILLING_CUSTOMER_METADATA_KEY`, so the one
+ *      overlap that could revert a *correct* state with a *stale* one - and did
+ *      so without any race between webhooks - is structurally gone.
+ *   2. **A lost update is detected rather than assumed away.** After writing,
+ *      the state is read back. If a newer event won, that is the right answer
+ *      and this reports success. If an *older* one won, the write was lost and
+ *      this re-applies, up to `LOST_UPDATE_ATTEMPTS`.
+ *   3. **Exhausting those attempts reports `conflict`, not success.** The
+ *      webhook turns that into a 500, Stripe redelivers, and the redelivery
+ *      re-reads the subscription from Stripe - so the system converges on the
+ *      truth through the retry path that already exists, instead of quietly
+ *      leaving a cache that disagrees with the venue of record.
+ *
+ * The honest summary: writes are **eventually correct via Stripe redelivery**,
+ * not atomic. Authoritative reconciliation against Stripe remains available and
+ * remains the thing that makes this safe.
  */
 export async function applyEntitlement(
   userId: string,
   next: Omit<BillingCache, "lastStripeEventId" | "lastStripeEventCreated">,
   event: { id: string; created: number },
 ): Promise<ApplyOutcome> {
-  const current = readCache(await getPrivateMetadata(userId));
+  for (let attempt = 0; attempt < LOST_UPDATE_ATTEMPTS; attempt += 1) {
+    const current = readCache(await getPrivateMetadata(userId));
 
-  if (current.lastStripeEventId && current.lastStripeEventId === event.id) {
-    return "duplicate";
+    if (current.lastStripeEventId && current.lastStripeEventId === event.id) {
+      // On the first pass this is an ordinary Stripe redelivery. On a later
+      // pass it means our own write did land after all and we are reading it
+      // back, which is success, not a duplicate to report upward.
+      return attempt === 0 ? "duplicate" : "applied";
+    }
+    if (
+      typeof current.lastStripeEventCreated === "number" &&
+      event.created < current.lastStripeEventCreated
+    ) {
+      // A newer event is already recorded. On the first pass this event was
+      // late and is correctly dropped; on a later pass a concurrent newer event
+      // superseded ours, which is exactly the outcome we want and requires no
+      // retry from Stripe.
+      return attempt === 0 ? "stale" : "applied";
+    }
+
+    const merged: BillingCache = {
+      ...current,
+      ...next,
+      // The customer ID lives under its own key now. Leaving a copy here would
+      // recreate the two-writers-one-key problem the split exists to remove,
+      // and the two copies would disagree the first time one write was lost.
+      stripeCustomerId: undefined,
+      lastStripeEventId: event.id,
+      lastStripeEventCreated: event.created,
+    };
+    delete merged.stripeCustomerId;
+
+    const patch: Record<string, unknown> = { [BILLING_METADATA_KEY]: merged };
+    if (next.stripeCustomerId) {
+      // Same request, different top-level key. Clerk merges top-level keys, so
+      // this is one round trip and the customer ID cannot be lost by a
+      // concurrent write to the billing cache.
+      patch[BILLING_CUSTOMER_METADATA_KEY] = {
+        stripeCustomerId: next.stripeCustomerId,
+      };
+    }
+
+    if (!(await mergePrivateMetadata(userId, patch))) return "failed";
+
+    // Read back. Without this the function reports "applied" for a write that a
+    // concurrent, older event overwrote a millisecond later - which is the
+    // failure mode that has no symptom until a customer notices.
+    const landed = readCache(await getPrivateMetadata(userId));
+    if (landed.lastStripeEventId === event.id) return "applied";
+    if (
+      typeof landed.lastStripeEventCreated === "number" &&
+      landed.lastStripeEventCreated > event.created
+    ) {
+      return "applied";
+    }
+    // An older event is now on record. Our write was lost; go round again.
   }
-  if (
-    typeof current.lastStripeEventCreated === "number" &&
-    event.created < current.lastStripeEventCreated
-  ) {
-    return "stale";
-  }
-
-  const merged: BillingCache = {
-    // Keep the customer ID if the incoming event does not restate it: it is the
-    // handle used to open the Customer Portal and must survive a partial update.
-    ...current,
-    ...next,
-    lastStripeEventId: event.id,
-    lastStripeEventCreated: event.created,
-  };
-
-  const ok = await mergePrivateMetadata(userId, { [BILLING_METADATA_KEY]: merged });
-  return ok ? "applied" : "failed";
+  return "conflict";
 }
 
-/** Store the Stripe customer ID for a user, outside the event-ordering guards. */
+/**
+ * Store the Stripe customer ID for a user.
+ *
+ * Writes only `BILLING_CUSTOMER_METADATA_KEY`, and that is the entire point:
+ * this path has no event to order and no state to preserve, so it must not
+ * touch the object the ordering-guarded path owns. Previously it read the
+ * billing cache, spliced the ID in, and wrote the whole thing back - so a
+ * checkout overlapping a webhook reverted the subscription status by accident.
+ *
+ * Idempotent by nature: a Clerk user maps to one Stripe customer, so a
+ * concurrent write of this key writes the same value.
+ */
 export async function rememberStripeCustomerId(
   userId: string,
   stripeCustomerId: string,
 ): Promise<boolean> {
-  const current = readCache(await getPrivateMetadata(userId));
-  if (current.stripeCustomerId === stripeCustomerId) return true;
+  const metadata = await getPrivateMetadata(userId);
+  if (readCustomerId(metadata) === stripeCustomerId) return true;
   return mergePrivateMetadata(userId, {
-    [BILLING_METADATA_KEY]: { ...current, stripeCustomerId },
+    [BILLING_CUSTOMER_METADATA_KEY]: { stripeCustomerId },
   });
 }
 
 /** Read the cached billing record for a user. Server-side callers only. */
 export async function getBillingCache(userId: string): Promise<BillingCache> {
-  return readCache(await getPrivateMetadata(userId));
+  const metadata = await getPrivateMetadata(userId);
+  return { ...readCache(metadata), stripeCustomerId: readCustomerId(metadata) };
 }
 
 /**

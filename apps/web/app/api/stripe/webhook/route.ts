@@ -36,6 +36,15 @@ export const dynamic = "force-dynamic";
  *     than taken from the event payload wherever the payload could be stale.
  */
 
+/**
+ * Outcomes that mean the cache does not yet reflect this event.
+ *
+ * Deliberately narrow. `duplicate` and `stale` are *correct* no-ops - the state
+ * is already right, or this event was superseded - and asking Stripe to redeliver
+ * either one would be a retry loop that never terminates.
+ */
+const NEEDS_REDELIVERY = new Set<HandleResult["outcome"]>(["failed", "conflict"]);
+
 /** Events that can change an entitlement. Everything else is acknowledged and ignored. */
 const HANDLED = new Set<Stripe.Event["type"]>([
   "checkout.session.completed",
@@ -106,6 +115,24 @@ export async function POST(request: NextRequest) {
       userId: outcome.userId,
       reason: outcome.reason,
     });
+    if (NEEDS_REDELIVERY.has(outcome.outcome)) {
+      // A 200 here is the quiet version of losing the event.
+      //
+      // `failed` means the metadata write did not land; `conflict` means it
+      // landed and a concurrent, older event overwrote it. In both cases the
+      // cache now disagrees with Stripe, and acknowledging with 200 tells
+      // Stripe the matter is closed - so nothing ever corrects it.
+      //
+      // A non-2xx asks for redelivery, and redelivery is safe: the handler
+      // re-reads the subscription from Stripe rather than trusting the payload,
+      // and the idempotency guard makes a genuine duplicate a no-op. This is
+      // the mechanism that makes "eventually correct" true rather than hopeful;
+      // see the note on `applyEntitlement`.
+      return NextResponse.json(
+        { received: true, outcome: outcome.outcome, retry: true },
+        { status: 503 },
+      );
+    }
     return NextResponse.json({ received: true, outcome: outcome.outcome });
   } catch (error) {
     // A 500 asks Stripe to retry, which is right for a transient fault. The
