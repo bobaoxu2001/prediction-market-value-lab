@@ -315,3 +315,77 @@ class TestLabelsUseFinalReportsOnly:
         from pmvl_markets.research.build import DEFAULT_DECISION_OFFSET_HOURS
 
         assert isinstance(DEFAULT_DECISION_OFFSET_HOURS, float)
+
+
+class TestForecastDayAlignment:
+    """A forecast row must describe the day it claims to describe.
+
+    The job looked the value up by ``expected_resolution_time`` - the payout
+    instant, which for these contracts is the morning AFTER the measured day -
+    and then stored it against the nearest gridpoint day. Every row's value
+    therefore described the day after the day it was labelled.
+
+    Verified against the live gridpoint on 2026-08-26: KNYC forecast 82F for the
+    26th and 81F for the 27th, and the row labelled 2026-08-26 contained 81.
+
+    A one-day shift is invisible in aggregate - both values are plausible
+    temperatures - and silently destroys every forecast-to-outcome join.
+    """
+
+    def test_the_weather_day_comes_from_the_ticker(self) -> None:
+        from pmvl_worker.jobs import _weather_day_for
+
+        class M:
+            platform_market_id = "KXHIGHNY-26AUG26-T87"
+
+        assert _weather_day_for(M()) == "2026-08-26"
+
+    def test_the_weather_day_is_not_the_resolution_day(self) -> None:
+        """The exact confusion that caused the bug."""
+        from datetime import datetime
+
+        from pmvl_worker.jobs import _weather_day_for
+
+        class M:
+            platform_market_id = "KXHIGHNY-26AUG26-T87"
+            # Kalshi pays out the following morning.
+            expected_resolution_time = datetime(2026, 8, 27, 19, 0)
+
+        assert _weather_day_for(M()) != M.expected_resolution_time.date().isoformat()
+        assert _weather_day_for(M()) == "2026-08-26"
+
+    def test_a_malformed_ticker_yields_no_day_rather_than_a_guess(self) -> None:
+        from pmvl_worker.jobs import _weather_day_for
+
+        class M:
+            platform_market_id = "not-a-ticker"
+
+        assert _weather_day_for(M()) is None
+
+    def test_the_job_no_longer_keys_on_expected_resolution_time(self) -> None:
+        import ast
+        import inspect
+
+        from pmvl_worker import jobs
+
+        body = ast.unparse(ast.parse(inspect.getsource(jobs.job_forecast_observations)))
+        assert "target_day = _weather_day_for(market)" in body
+        assert "expected_resolution_time.date()" not in body
+
+    def test_valid_start_describes_the_same_day_as_the_value(self) -> None:
+        """A row whose value and validity window disagree joins cleanly and is
+        wrong, which is worse than a missing row."""
+        from datetime import timezone
+
+        from pmvl_worker.jobs import _day_start
+
+        got = _day_start("2026-08-26", None)
+        assert got.date().isoformat() == "2026-08-26"
+        assert got.tzinfo is timezone.utc
+
+    def test_an_unparseable_day_falls_back_rather_than_inventing(self) -> None:
+        from pmvl_worker.jobs import _day_start
+
+        sentinel = object()
+        assert _day_start("garbage", sentinel) is sentinel
+        assert _day_start(None, sentinel) is sentinel

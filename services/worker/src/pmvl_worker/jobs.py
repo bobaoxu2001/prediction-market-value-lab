@@ -919,6 +919,38 @@ def _observed_publication_times() -> list[datetime]:
         return []
 
 
+def _day_start(day: str | None, fallback: Any) -> Any:
+    """Midnight UTC of ``day``, or the fallback when it cannot be parsed."""
+    from datetime import datetime as _dt
+    from datetime import timezone as _tz
+
+    if not day:
+        return fallback
+    try:
+        return _dt.strptime(day, "%Y-%m-%d").replace(tzinfo=_tz.utc)
+    except ValueError:
+        return fallback
+
+
+def _weather_day_for(market: Any) -> str | None:
+    """The local calendar day a weather contract measures, from its ticker.
+
+    Kalshi encodes it as ``KXHIGHNY-26AUG26-T87`` -> 2026-08-26. Parsed rather
+    than derived from ``expected_resolution_time``, which is the payout instant
+    and lands on the following morning.
+    """
+    from datetime import datetime as _dt
+
+    ticker = getattr(market, "platform_market_id", "") or ""
+    parts = ticker.split("-")
+    if len(parts) < 2:
+        return None
+    try:
+        return _dt.strptime(parts[1], "%y%b%d").date().isoformat()
+    except ValueError:
+        return None
+
+
 async def job_forecast_observations() -> dict[str, Any]:
     """Collect NWS gridpoint forecasts for every settlement station.
 
@@ -1005,11 +1037,22 @@ async def job_forecast_observations() -> dict[str, Any]:
                         )
                     ).all()
                     for market in markets:
-                        target_day = (
-                            market.expected_resolution_time.date().isoformat()
-                            if market.expected_resolution_time
-                            else None
-                        )
+                        # The WEATHER day, from the ticker - not the resolution
+                        # day.
+                        #
+                        # `expected_resolution_time` is when the contract pays,
+                        # which for these markets is the morning AFTER the day
+                        # being measured. Using it looked up tomorrow's forecast
+                        # and then stored it against today's validity window, so
+                        # every row's value described the day after the day it
+                        # claimed. Verified against the live gridpoint on
+                        # 2026-08-26: KNYC forecast 82F for the 26th and 81F for
+                        # the 27th, and the row labelled 2026-08-26 held 81.
+                        #
+                        # A one-day shift is invisible in any aggregate - the
+                        # values are plausible temperatures either way - and
+                        # silently destroys every forecast-to-outcome join.
+                        target_day = _weather_day_for(market)
                         value = (
                             fetch.max_temperature_f.get(target_day)
                             if target_day
@@ -1033,7 +1076,15 @@ async def job_forecast_observations() -> dict[str, Any]:
                             poll=poll,
                             published_at=fetch.published_at,
                             source_generated_at=fetch.source_generated_at,
-                            forecast_valid_start=fetch.forecast_valid_start,
+                            # The day THIS value describes, not the first day
+                            # in the gridpoint payload. They differ whenever a
+                            # market's weather day is not the nearest forecast
+                            # day, and a row whose value and validity window
+                            # disagree is worse than a missing row: it joins
+                            # cleanly and is wrong.
+                            forecast_valid_start=_day_start(
+                                target_day, fetch.forecast_valid_start
+                            ),
                             forecast_valid_end=fetch.forecast_valid_end,
                             # The grid cell the forecast covers, kept apart from
                             # the station the contract settles on. Conflating
