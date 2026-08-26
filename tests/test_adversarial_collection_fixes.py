@@ -556,3 +556,61 @@ class TestEveryJobReportsLivenessNotJustTheMeasuredOne:
             pass
         after = {t.name for t in _t.enumerate()}
         assert not [n for n in after - before if n.startswith("heartbeat-")]
+
+
+class TestResearchCollectionNeverWritesTheProductStore:
+    """Write amplification stalled collection once; it must not return.
+
+    The in-window path was fixed first, and the out-of-window path then kept
+    doing exactly the same thing: `research_only=window is not None` meant that
+    outside a window the job fetched the whole board and wrote the product
+    orderbook tables, duplicating job_orderbooks. Measured out of window and
+    after the first fix: +233,684 orderbook_levels rows in 23 minutes.
+    """
+
+    def test_the_research_job_is_research_only_in_and_out_of_a_window(self) -> None:
+        from pmvl_worker import jobs
+
+        kw = next(
+            k
+            for n in ast.walk(ast.parse(inspect.getsource(jobs.job_research_books)))
+            if isinstance(n, ast.Call)
+            for k in n.keywords
+            if k.arg == "research_only"
+        )
+        assert isinstance(kw.value, ast.Constant) and kw.value.value is True, (
+            "research collection is conditionally research-only again, so one "
+            "side of the window boundary writes the product store"
+        )
+
+    def test_a_research_only_pass_skips_the_product_write(self) -> None:
+        from pmvl_markets.ingest import runner
+
+        fn = next(
+            n
+            for n in ast.walk(ast.parse(inspect.getsource(runner.refresh_orderbooks)))
+            if isinstance(n, ast.If)
+            and isinstance(n.test, ast.UnaryOp)
+            and isinstance(n.test.operand, ast.Name)
+            and n.test.operand.id == "research_only"
+        )
+        assert "store_orderbooks" in ast.unparse(fn), (
+            "the product write is no longer guarded by `not research_only`"
+        )
+
+    def test_the_product_path_still_owns_the_product_store(self) -> None:
+        """Removing the duplicate write must not remove the real one."""
+        from pmvl_worker import jobs
+
+        body = ast.unparse(ast.parse(inspect.getsource(jobs.job_orderbooks)))
+        assert "refresh_orderbooks" in body
+        assert "research_only" not in body
+
+    def test_archiving_is_independent_of_the_product_write(self) -> None:
+        """Archive coverage must not be collateral damage of the fix."""
+        from pmvl_markets.ingest import runner
+
+        body = ast.unparse(ast.parse(inspect.getsource(runner.refresh_orderbooks)))
+        guard = body.index("if not research_only")
+        archive = body.index("archive_books(")
+        assert archive > guard, "archiving moved inside the product-write guard"

@@ -705,12 +705,28 @@ async def job_research_books(*, max_seconds: int = 0) -> dict[str, Any]:
                         db,
                         archive=archive,
                         window_anchor=anchor,
-                        # Inside a window, fetch only the research universe, and
-                        # only its near-dated markets: 252 markets at the
-                        # client's rate limit takes ~28s of the 30s period, and
-                        # measured 58s under contention. The far-dated markets
-                        # keep their baseline-cadence captures.
-                        research_only=window is not None,
+                        # Always the research universe, in or out of a window.
+                        #
+                        # This was `window is not None`, so outside a window the
+                        # job fetched the FULL board and wrote the product
+                        # orderbook tables - duplicating job_orderbooks, which
+                        # already owns that store. archive_books only keeps
+                        # research markets, so it was fetching ~2,000 markets to
+                        # archive 252, and writing every one of them to a
+                        # product table the snapshot builder discards all but
+                        # the latest row of.
+                        #
+                        # Measured at 05:36-05:59 on 2026-08-26, out of window
+                        # and after the in-window fix: +233,684 orderbook_levels
+                        # rows in 23 minutes, about 395 MiB of database growth a
+                        # day. That is the same write amplification that stalled
+                        # collection for two hours, just on the other side of
+                        # the window boundary.
+                        #
+                        # Inside a window the horizon below narrows this further
+                        # to the near-dated markets, for cadence rather than for
+                        # write volume.
+                        research_only=True,
                         max_hours_to_resolution=(
                             WINDOW_HORIZON_HOURS if window is not None else None
                         ),
