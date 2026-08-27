@@ -248,3 +248,56 @@ class TestLeakageAfterAuthoritySplit:
 
         body = ast.unparse(ast.parse(inspect.getsource(build.build_cohort)))
         assert body.index("contract_probability(") < body.index("outcome_yes=")
+
+
+class TestStationDayConversion:
+    """The deficit must say which lifecycle stage is holding, not just its size."""
+
+    def _row(self, **kw):  # noqa: ANN003, ANN202
+        from pmvl_markets.research.coverage import StationDay
+
+        base = dict(
+            target_date=date(2026, 8, 26), station="KNYC",
+            has_forecast=True, has_orderbook=True,
+            has_cli_final=True, has_venue_terminal=True,
+        )
+        base.update(kw)
+        return StationDay(**base)
+
+    def test_all_ingredients_present_is_clean(self) -> None:
+        from pmvl_markets.research.coverage import ConversionBlocker
+
+        r = self._row()
+        assert r.clean and r.blocker is ConversionBlocker.NONE
+
+    def test_the_blocker_is_the_first_missing_stage(self) -> None:
+        """Reporting whichever check ran last would point at the wrong stage."""
+        from pmvl_markets.research.coverage import ConversionBlocker
+
+        r = self._row(has_orderbook=False, has_forecast=False, has_cli_final=False)
+        assert r.blocker is ConversionBlocker.ORDERBOOK_MISSING
+
+    def test_cli_pending_is_distinguished_from_venue_pending(self) -> None:
+        """They need different waits and different diagnoses."""
+        from pmvl_markets.research.coverage import ConversionBlocker
+
+        assert self._row(has_cli_final=False).blocker is (
+            ConversionBlocker.CLI_FINAL_PENDING
+        )
+        assert self._row(has_venue_terminal=False).blocker is (
+            ConversionBlocker.VENUE_TERMINAL_PENDING
+        )
+
+    def test_a_missing_ingredient_is_never_clean(self) -> None:
+        for field in (
+            "has_forecast", "has_orderbook", "has_cli_final", "has_venue_terminal",
+        ):
+            assert not self._row(**{field: False}).clean
+
+    def test_ingredient_complete_is_not_claimed_to_be_sufficient(self) -> None:
+        """The cohort also needs a book within tolerance AT the decision instant;
+        KDEN on 2026-08-25 had every ingredient and still failed on staleness."""
+        from pmvl_markets.research.coverage import render_conversions
+
+        text = render_conversions([self._row()])
+        assert "necessary, not sufficient" in text

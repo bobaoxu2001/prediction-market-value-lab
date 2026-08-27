@@ -149,3 +149,158 @@ def render_coverage(rows: list[StationCoverage]) -> str:
         + ("" if not bad else "   (gaps are source availability, not defects)")
     )
     return "\n".join(lines)
+
+
+class ConversionBlocker(str, Enum):
+    """Why a candidate station-day is not yet a clean settled event.
+
+    Ordered by where the lifecycle actually stops, so the reported blocker is
+    the first missing ingredient rather than whichever check happened to run
+    last. A deficit is only actionable if it says which stage is holding.
+    """
+
+    NONE = ""
+    ORDERBOOK_MISSING = "ORDERBOOK_MISSING"
+    FORECAST_MISSING = "FORECAST_MISSING"
+    CLI_FINAL_PENDING = "CLI_FINAL_PENDING"
+    VENUE_TERMINAL_PENDING = "VENUE_TERMINAL_PENDING"
+
+
+@dataclass(frozen=True)
+class StationDay:
+    """One candidate station-day and the state of each required ingredient."""
+
+    target_date: date
+    station: str
+    has_forecast: bool
+    has_orderbook: bool
+    has_cli_final: bool
+    has_venue_terminal: bool
+
+    @property
+    def clean(self) -> bool:
+        return (
+            self.has_forecast
+            and self.has_orderbook
+            and self.has_cli_final
+            and self.has_venue_terminal
+        )
+
+    @property
+    def blocker(self) -> ConversionBlocker:
+        if self.clean:
+            return ConversionBlocker.NONE
+        if not self.has_orderbook:
+            return ConversionBlocker.ORDERBOOK_MISSING
+        if not self.has_forecast:
+            return ConversionBlocker.FORECAST_MISSING
+        if not self.has_cli_final:
+            return ConversionBlocker.CLI_FINAL_PENDING
+        return ConversionBlocker.VENUE_TERMINAL_PENDING
+
+
+def _ticker_day(market_id: str) -> date | None:
+    parts = market_id.split("-")
+    if len(parts) < 2:
+        return None
+    try:
+        return datetime.strptime(parts[1], "%y%b%d").date()
+    except ValueError:
+        return None
+
+
+def station_day_conversions(*, data_dir: Path) -> list[StationDay]:
+    """Every candidate station-day, with each ingredient resolved independently.
+
+    A candidate is any station-day for which at least one archived orderbook
+    exists. Station-days with no book at all are not listed: they were never
+    candidates, and padding the table with them would hide the real blockers
+    behind rows nothing can be done about.
+    """
+    op_path, ar_path = data_dir / "pmvl.db", data_dir / "research-archive.db"
+    if not op_path.exists() or not ar_path.exists():
+        return []
+
+    op = sqlite3.connect(f"file:{op_path}?mode=ro", uri=True)
+    ar = sqlite3.connect(f"file:{ar_path}?mode=ro", uri=True)
+    try:
+        candidates: set[tuple[date, str]] = set()
+        for market_id, station in ar.execute(
+            "SELECT DISTINCT platform_market_id, settlement_station_id "
+            "FROM archived_books WHERE settlement_station_id != ''"
+        ):
+            day = _ticker_day(market_id)
+            if day is not None:
+                candidates.add((day, station))
+
+        cli = {
+            (date.fromisoformat(d), s)
+            for d, s in op.execute(
+                "SELECT observation_date, station_id FROM daily_climate_observations "
+                "WHERE is_final = 1"
+            )
+        }
+        forecasts = {
+            (date.fromisoformat(d), s)
+            for d, s in op.execute(
+                "SELECT DISTINCT date(forecast_valid_start), settlement_station_id "
+                "FROM source_observations WHERE research_eligible = 1 "
+                "AND settlement_station_id != ''"
+            )
+            if d
+        }
+        venue: set[tuple[date, str]] = set()
+        for market_id, station in op.execute(
+            "SELECT m.platform_market_id, m.settlement_station_id "
+            "FROM settlements s JOIN markets m ON m.id = s.market_id "
+            "WHERE m.series_ticker LIKE 'KXHIGH%' AND s.result IN ('yes','no')"
+        ):
+            day = _ticker_day(market_id)
+            if day is not None and station:
+                venue.add((day, station))
+    finally:
+        op.close()
+        ar.close()
+
+    return [
+        StationDay(
+            target_date=day,
+            station=station,
+            has_forecast=(day, station) in forecasts,
+            has_orderbook=True,
+            has_cli_final=(day, station) in cli,
+            has_venue_terminal=(day, station) in venue,
+        )
+        for day, station in sorted(candidates)
+    ]
+
+
+def render_conversions(rows: list[StationDay]) -> str:
+    lines = [
+        "",
+        "--- STATION-DAY CONVERSION ---",
+        f"  {'date':<12}{'stn':<7}{'fcst':<6}{'book':<6}{'CLI':<6}{'venue':<7}"
+        f"{'clean':<7}blocker",
+    ]
+    blockers: dict[str, int] = {}
+    clean = 0
+    for r in rows:
+        yn = lambda b: "YES" if b else "NO"  # noqa: E731
+        if r.clean:
+            clean += 1
+        else:
+            blockers[r.blocker.value] = blockers.get(r.blocker.value, 0) + 1
+        lines.append(
+            f"  {r.target_date.isoformat():<12}{r.station:<7}"
+            f"{yn(r.has_forecast):<6}{yn(r.has_orderbook):<6}"
+            f"{yn(r.has_cli_final):<6}{yn(r.has_venue_terminal):<7}"
+            f"{yn(r.clean):<7}{r.blocker.value}"
+        )
+    lines.append(f"  candidate station-days: {len(rows)}   ingredient-complete: {clean}")
+    for name, n in sorted(blockers.items(), key=lambda kv: -kv[1]):
+        lines.append(f"    {name:<26} {n}")
+    lines.append(
+        "  note: ingredient-complete is necessary, not sufficient - the cohort "
+        "also requires a book within staleness tolerance AT the decision instant."
+    )
+    return "\n".join(lines)

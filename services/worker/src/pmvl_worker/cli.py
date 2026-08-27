@@ -776,6 +776,13 @@ def model_vs_market_readiness(
     from pmvl_markets.research.coverage import forecast_coverage, render_coverage
 
     console.print(render_coverage(forecast_coverage(data_dir=root)))
+
+    from pmvl_markets.research.coverage import (
+        render_conversions,
+        station_day_conversions,
+    )
+
+    console.print(render_conversions(station_day_conversions(data_dir=root)))
     console.print("")
     console.print(
         f"CLEAN INDEPENDENT SETTLED EVENTS = {len(adm_events)} / "
