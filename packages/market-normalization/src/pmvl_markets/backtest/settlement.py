@@ -17,6 +17,7 @@ from __future__ import annotations
 
 import asyncio
 from dataclasses import dataclass, field
+import random
 from datetime import datetime, timedelta
 from decimal import Decimal
 from typing import Any, Sequence
@@ -53,11 +54,39 @@ class SettlementReport:
     snapshots_graded: int = 0
     states_updated: int = 0
     errors: list[str] = field(default_factory=list)
+    # -- diagnostics ------------------------------------------------------
+    #
+    # "400 checked, 0 settled" was true and told nobody anything. It did not
+    # distinguish "the venue says these are not final" from "we never looked at
+    # the markets that are", and the second is what was actually happening for
+    # months of research data.
+    known_due: int = 0
+    unresolved_due: int = 0
+    #: Unresolved due markets in the weather research universe. Reserved a slot
+    #: ahead of the rest, because these are what a cohort blocks on.
+    research_due: int = 0
+    venue_finalized: int = 0
+    venue_not_final: int = 0
+    venue_lookup_failed: int = 0
+    settlements_already_present: int = 0
+
+    @property
+    def remaining_unresolved(self) -> int:
+        return max(0, self.unresolved_due - self.settlements_written)
 
     def as_dict(self) -> dict[str, Any]:
         return {
+            "known_due": self.known_due,
+            "unresolved_due": self.unresolved_due,
+            "research_due": self.research_due,
+            "candidates_selected": self.markets_checked,
             "markets_checked": self.markets_checked,
+            "venue_finalized": self.venue_finalized,
+            "venue_not_final": self.venue_not_final,
+            "venue_lookup_failed": self.venue_lookup_failed,
             "settlements_written": self.settlements_written,
+            "settlements_already_present": self.settlements_already_present,
+            "remaining_unresolved": self.remaining_unresolved,
             "recommendations_graded": self.recommendations_graded,
             "snapshots_graded": self.snapshots_graded,
             "states_updated": self.states_updated,
@@ -109,10 +138,71 @@ async def sync_settlements(
             Market.expected_resolution_time > cutoff,
         )
     ).all()
-    pending = [
+    unresolved = [
         row for row in rows
         if (row.platform, row.platform_market_id) not in already_settled
-    ][:limit]
+    ]
+    report.known_due = len(rows)
+    report.unresolved_due = len(unresolved)
+    report.settlements_already_present = len(rows) - len(unresolved)
+
+    # Fair selection. The cap alone starves.
+    #
+    # This query has no ORDER BY, so the planner returns rows in
+    # expected_resolution_time index order - oldest first - and the head of that
+    # queue is a block of seed markets from July that can never settle. With a
+    # fixed cap, every run re-checked the same first 400 and never reached
+    # anything newer. Measured on 2026-08-27: 20,084 unresolved due markets, and
+    # the 42 weather markets a research cohort needs sat at positions
+    # 15,925-15,966. They were candidates on paper and unreachable in practice.
+    #
+    # So the budget is split. Most of it goes to the newest due markets, which is
+    # what research actually waits on and which settle promptly once asked. The
+    # remainder is sampled at random from the rest, so no market can be starved
+    # indefinitely by position - a rotating cursor would do the same job but
+    # needs state, and randomness converges without any.
+    from ..normalize.weather_stations import is_research_market
+
+    # The research universe goes first, unconditionally.
+    #
+    # Ordering alone does not rescue it. The venue settles thousands of markets a
+    # day - baseball games, index strikes - so even newest-first the weather
+    # markets a cohort depends on sat at positions 3,815-3,856 behind a 400 cap.
+    # Any global ordering leaves them competing with the whole exchange for a
+    # fixed budget they will keep losing.
+    #
+    # They are also few: 42 on the day this was diagnosed. Reserving them costs
+    # almost nothing and removes the only case where starvation silently blocks
+    # research rather than merely delaying an operational backfill.
+    research = [
+        row for row in unresolved
+        if is_research_market(row.series_ticker, getattr(row, "category", None))
+    ]
+    others = [
+        row for row in unresolved
+        if not is_research_market(row.series_ticker, getattr(row, "category", None))
+    ]
+    report.research_due = len(research)
+
+    pending = research[:limit]
+    budget_left = limit - len(pending)
+
+    # Then the newest of everything else, which is what an operator waits on...
+    recent_budget = max(0, (budget_left * 3) // 4)
+    by_recent = sorted(
+        others, key=lambda r: r.expected_resolution_time, reverse=True
+    )
+    pending = pending + by_recent[:recent_budget]
+
+    # ...and a random sample of the long tail, so nothing is starved by position
+    # forever. A rotating cursor would do the same job but needs state;
+    # randomness converges without any.
+    remainder = by_recent[recent_budget:]
+    tail_budget = limit - len(pending)
+    if remainder and tail_budget > 0:
+        pending = pending + random.sample(
+            remainder, min(tail_budget, len(remainder))
+        )
     report.markets_checked = len(pending)
 
     if pending:
@@ -130,11 +220,20 @@ async def sync_settlements(
                 try:
                     return row, await provider.get_resolution(_market_from_row(row))
                 except Exception as exc:  # noqa: BLE001 - one market must not stop the sync
+                    # A failed lookup leaves the market unresolved. It must never
+                    # become a fabricated terminal outcome - a transient network
+                    # error and a genuine "not final yet" look identical from the
+                    # outside, and only one of them is safe to record.
+                    report.venue_lookup_failed += 1
                     report.errors.append(f"{row.platform_market_id}: {exc}")
                     return row, None
 
             results = await asyncio.gather(*(resolve(r) for r in pending))
             for row, info in results:
+                if info is not None and info.resolved:
+                    report.venue_finalized += 1
+                elif info is not None:
+                    report.venue_not_final += 1
                 if info is None or not info.resolved:
                     continue
                 _write_settlement(session, row, info, now=now)

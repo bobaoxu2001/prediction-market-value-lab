@@ -1364,3 +1364,34 @@ def _record_daily_climate(
             )
         )
         return True
+
+
+async def job_forecast_validity() -> dict[str, Any]:
+    """Audit newly collected forecasts against their own immutable raw payloads.
+
+    Runs continuously, not once. Every new forecast row lands with
+    ``validity_status='UNKNOWN'`` and ``research_eligible=0`` because the column
+    fails closed, so without this job the eligible set silently stops growing
+    while collection appears healthy - the archive fills up and no new
+    observation ever becomes usable.
+
+    Verifying rather than trusting is deliberate. The collector now writes the
+    correct target day, so new rows *should* be correct by construction - but
+    "correct by construction" is precisely the assumption that produced 3,102
+    misaligned rows, and the payload is right there to check against.
+
+    Idempotent: rows already audited are re-checked cheaply and corrections are
+    never duplicated.
+    """
+    from pmvl_shared.payload_store import PayloadStore
+
+    from pmvl_markets.research.rederive import classify_and_rederive
+
+    with job_run("forecast_validity") as details:
+        store = PayloadStore(_research_data_dir() / "payloads")
+        with session_scope() as db:
+            report = classify_and_rederive(db, store)
+        payload = report.as_dict()
+        details.update(payload)
+        details["records_written"] = report.rederived
+        return payload

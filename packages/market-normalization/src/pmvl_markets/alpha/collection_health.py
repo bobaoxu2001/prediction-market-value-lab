@@ -127,8 +127,22 @@ def best_completed_window(
     return max((window_counts[a] for a in completed if a in window_counts), default=0)
 
 
-def build_report(session: Session, *, days: int = 1, now: datetime | None = None) -> dict[str, Any]:
-    """The full report as plain data. JSON-serialisable, deterministic."""
+def build_report(
+    session: Session,
+    *,
+    days: int = 1,
+    now: datetime | None = None,
+    archive_root: Any = None,
+) -> dict[str, Any]:
+    """The full report as plain data. JSON-serialisable, deterministic.
+
+    ``archive_root`` makes the research archive an explicit input rather than a
+    module-level default. It was an implicit read of a file on disk, so the
+    "deterministic" claim held only while nothing was writing to that file - and
+    a live collector is exactly what writes to it. Two calls a second apart
+    returned different reports, and the determinism test could only fail when
+    collection was actually running, which is when it matters.
+    """
     now = ensure_utc(now or utcnow())
     since = now - timedelta(days=days)
 
@@ -189,6 +203,7 @@ def build_report(session: Session, *, days: int = 1, now: datetime | None = None
 
     # --- research archive ----------------------------------------------------
     archive_stats, per_market, window_counts, completed_windows = _archive_report(
+        archive_root=archive_root,
         since=since, now=now,
         observed_published=[s.published_at for s in with_published],
     )
@@ -359,15 +374,24 @@ def _payload_failures() -> int:
 
 
 def _archive_report(
-    *, since: datetime, now: datetime, observed_published: Iterable[datetime]
+    *,
+    since: datetime,
+    now: datetime,
+    observed_published: Iterable[datetime],
+    archive_root: Any = None,
 ) -> tuple[dict[str, Any], dict[str, int], dict[str, int]]:
     """Archive growth, books per market, and books per issuance window."""
     from pmvl_shared.config import DEFAULT_SQLITE_PATH
 
-    archive = ResearchArchive(default_archive_path(DEFAULT_SQLITE_PATH.parent.parent))
+    root = archive_root if archive_root is not None else DEFAULT_SQLITE_PATH.parent.parent
+    archive = ResearchArchive(default_archive_path(root))
     stats = archive.stats().as_dict()
     if not archive.path.exists():
-        return stats, {}, {}
+        # Four values, matching every other return. This returned three, so an
+        # absent archive raised a ValueError on unpack instead of reporting an
+        # empty archive - unreachable while the real file always existed, and
+        # immediately fatal the first time a caller pointed somewhere else.
+        return stats, {}, {}, set()
 
     published = [p for p in observed_published if p is not None]
     windows = windows_between(since, now, observed_published_at=published)

@@ -222,6 +222,14 @@ def build_scheduler() -> BlockingScheduler:
     )
 
     scheduler.add_job(
+        _sync(jobs.job_forecast_validity),
+        IntervalTrigger(seconds=CADENCE_BY_JOB["forecast_validity"].interval_seconds),
+        id="forecast_validity",
+        name="forecast validity audit",
+        misfire_grace_time=600,
+    )
+
+    scheduler.add_job(
         _guard(jobs.job_collection_health),
         CronTrigger(hour=23, minute=50),
         id="collection_health",

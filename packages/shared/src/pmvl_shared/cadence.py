@@ -257,6 +257,14 @@ CADENCES: tuple[Cadence, ...] = (
         stall_after_seconds=3 * 3600,
     ),
     Cadence(
+        "forecast_validity",
+        "Audit new forecasts against their raw payloads; re-derive corrections",
+        # Every 30 minutes. New rows are ineligible until audited, so a long
+        # interval stalls the research cohort while collection looks healthy.
+        interval_seconds=1800,
+        stall_after_seconds=3 * 3600,
+    ),
+    Cadence(
         "collection_health",
         "Daily collection-health snapshot",
         cron="daily at 23:50 UTC",

@@ -618,12 +618,18 @@ class TestObservationParsing:
 
 class TestCollectionHealthIsDeterministic:
     @pytest.mark.integration
-    def test_the_same_database_gives_the_same_report(self, clean_db) -> None:  # noqa: ANN001
+    def test_the_same_database_gives_the_same_report(self, clean_db, tmp_path) -> None:  # noqa: ANN001
+        """Hermetic on purpose.
+
+        This read the real research archive on disk, so it was deterministic
+        only while nothing was writing to that file - and it failed the moment a
+        live collector was running, which is the one time the property matters.
+        """
         from pmvl_markets.alpha.collection_health import build_report
 
         fixed = datetime(2026, 8, 25, 18, 0, tzinfo=timezone.utc)
-        first = build_report(clean_db, days=1, now=fixed)
-        second = build_report(clean_db, days=1, now=fixed)
+        first = build_report(clean_db, days=1, now=fixed, archive_root=tmp_path)
+        second = build_report(clean_db, days=1, now=fixed, archive_root=tmp_path)
         assert first == second
 
     @pytest.mark.integration

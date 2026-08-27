@@ -687,6 +687,66 @@ def model_vs_market_readiness(
         "exclusions": dict(sorted(exclusions.items(), key=lambda kv: -kv[1])),
     }
     gates = cohort_gates(merged, allow_approximation=allow_approximation)
+
+    # Gates added in 4C0.6. Each pins something that actually went wrong.
+    from pmvl_markets.research.protocol import FROZEN_PROTOCOL
+
+    import sqlite3 as _sq
+
+    con = _sq.connect(f"file:{root / 'pmvl.db'}?mode=ro", uri=True)
+    try:
+        ineligible = con.execute(
+            "SELECT COUNT(*) FROM source_observations WHERE research_eligible = 0"
+        ).fetchone()[0]
+        unknown = con.execute(
+            "SELECT COUNT(*) FROM source_observations "
+            "WHERE validity_status = 'UNKNOWN'"
+        ).fetchone()[0]
+        venue_labels = con.execute(
+            "SELECT COUNT(*) FROM settlements s JOIN markets m ON m.id = s.market_id "
+            "WHERE m.series_ticker LIKE 'KXHIGH%' AND s.result IN ('yes','no')"
+        ).fetchone()[0]
+        physical = con.execute(
+            "SELECT COUNT(*) FROM daily_climate_observations WHERE is_final = 1"
+        ).fetchone()[0]
+        unresolved_weather = con.execute(
+            "SELECT COUNT(*) FROM markets m WHERE m.series_ticker LIKE 'KXHIGH%' "
+            "AND m.expected_resolution_time < datetime('now') "
+            "AND NOT EXISTS (SELECT 1 FROM settlements s WHERE s.market_id = m.id)"
+        ).fetchone()[0]
+    finally:
+        con.close()
+
+    gates = gates + [
+        (
+            "forecast defects quarantined (UNKNOWN = 0)",
+            unknown == 0,
+            f"{unknown} UNKNOWN, {ineligible} ineligible excluded from cohorts",
+        ),
+        (
+            "venue terminal settlement coverage",
+            unresolved_weather == 0,
+            f"{venue_labels} venue labels, {unresolved_weather} weather markets "
+            "still unresolved",
+        ),
+        (
+            "physical quantity archived",
+            physical > 0,
+            f"{physical} final CLI daily maxima",
+        ),
+        (
+            "evaluation protocol frozen",
+            True,
+            f"{FROZEN_PROTOCOL.version} hash={FROZEN_PROTOCOL.content_hash()} "
+            f"offset=T-{FROZEN_PROTOCOL.decision_offset_hours}h "
+            f"sigma_fitted={FROZEN_PROTOCOL.sigma_fitted}",
+        ),
+        (
+            "independent unit = station-day",
+            FROZEN_PROTOCOL.independent_unit == "station_day",
+            FROZEN_PROTOCOL.independent_unit,
+        ),
+    ]
     authorized = all(ok for _, ok, _ in gates)
 
     payload = report.as_dict()
@@ -712,6 +772,15 @@ def model_vs_market_readiness(
     console.print("--- PHASE 4C1 GATES ---")
     for name, ok, why in gates:
         console.print(f"  [{'PASS' if ok else 'FAIL'}] {name:<46} {why}")
+    console.print("")
+    from pmvl_markets.research.coverage import forecast_coverage, render_coverage
+
+    console.print(render_coverage(forecast_coverage(data_dir=root)))
+    console.print("")
+    console.print(
+        f"CLEAN INDEPENDENT SETTLED EVENTS = {len(adm_events)} / "
+        f"{FROZEN_PROTOCOL.minimum_independent_events}"
+    )
     console.print("")
     console.print(
         "PHASE 4C1 AUTHORIZED" if authorized else "PHASE 4C1 NOT AUTHORIZED"

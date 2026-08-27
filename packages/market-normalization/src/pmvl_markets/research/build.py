@@ -70,7 +70,8 @@ def build_cohort(
         # Settlement labels come from FINAL CLI bulletins only. A preliminary
         # report carries the maximum so far and would bias every label downward,
         # worst on the hot afternoons where a threshold sits near its strike.
-        labels: dict[str, tuple[Decimal, datetime, str]] = {}
+        # The independent PHYSICAL quantity - audit evidence, not the label.
+        physical: dict[str, tuple[Decimal, datetime, str]] = {}
         for row in op.execute(
             "SELECT station_id, daily_max_f, available_at, product_code "
             "FROM daily_climate_observations "
@@ -80,9 +81,26 @@ def build_cohort(
         ):
             value = _dec(row["daily_max_f"])
             if value is not None:
-                labels.setdefault(
+                physical.setdefault(
                     row["station_id"], (value, _utc(row["available_at"]), row["product_code"])
                 )
+
+        # The LABEL is the venue's own terminal result.
+        #
+        # Which side paid is a fact about the contract, and the venue is the only
+        # authority on it. Deriving it from the archived CLI maximum instead
+        # would make the label depend on a source the contract does not settle
+        # on, and would quietly convert an independent audit measurement into the
+        # thing it is supposed to audit.
+        venue: dict[str, tuple[str, datetime]] = {}
+        for row in op.execute(
+            "SELECT m.platform_market_id, s.result, s.settled_at "
+            "FROM settlements s JOIN markets m ON m.id = s.market_id "
+            "WHERE m.series_ticker LIKE 'KXHIGH%' AND s.result IN ('yes','no')"
+        ):
+            venue[row["platform_market_id"]] = (
+                row["result"], _utc(row["settled_at"])
+            )
 
         stamp = target_date.strftime("%y%b%d").upper()
         markets = [
@@ -109,13 +127,21 @@ def build_cohort(
                 cohort.exclude(Exclusion.CONTRACT_PARSE_FAILED)
                 continue
 
-            label = labels.get(station)
-            if label is None:
-                # The market may well have resolved at the venue; what is
-                # missing is OUR archived copy of the product it resolved from.
+            terminal = venue.get(market["platform_market_id"])
+            if terminal is None:
                 cohort.exclude(Exclusion.NO_SETTLEMENT)
                 continue
-            settled_value, settled_available_at, product = label
+            venue_result, settled_available_at = terminal
+
+            measured = physical.get(station)
+            if measured is None:
+                # No independent physical observation to audit against. The
+                # venue label alone is enough to score a contract, but a
+                # station-day without it cannot support parity work, so it is
+                # refused rather than admitted half-provenanced.
+                cohort.exclude(Exclusion.NO_SETTLEMENT)
+                continue
+            settled_value, _physical_available_at, product = measured
 
             if not market["close_time"]:
                 cohort.exclude(Exclusion.TARGET_DATE_MISMATCH)
@@ -140,8 +166,13 @@ def build_cohort(
             forecasts = [
                 _Rec(r)
                 for r in op.execute(
+                    # research_eligible only: excludes both the superseded
+                    # originals of the target-day defect and anything whose
+                    # eligibility was never established (which defaults to 0, so
+                    # an unaudited row is refused rather than assumed fine).
                     "SELECT * FROM source_observations WHERE settlement_station_id = ? "
-                    "AND date(forecast_valid_start) = ? ORDER BY available_at",
+                    "AND date(forecast_valid_start) = ? AND research_eligible = 1 "
+                    "ORDER BY available_at",
                     (station, target_date.isoformat()),
                 )
             ]
@@ -206,7 +237,8 @@ def build_cohort(
                     settlement_value_f=settled_value,
                     settlement_product=product,
                     settlement_available_at=settled_available_at,
-                    outcome_yes=spec.contains(settled_value),
+                    # From the venue, never derived from the physical quantity.
+                    outcome_yes=(venue_result == "yes"),
                     parity=parity,
                 )
             )
