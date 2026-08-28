@@ -521,3 +521,97 @@
 10:15:26 INFO    pmvl_markets.arbitrage.pipeline    cross-platform matching: No pair reached IDENTICAL, and 95% of demotions are genuine contradictions. On this sample the two venues do not list contracts with identical settlement terms. The candidate generator retrieved 3/3 known equivalent examples from 12 manually reviewed pairs, so on the cases reviewed so far this is a result about the venues rather than about the generator - on a benchmark too small to generalise from.
 10:15:26 INFO    pmvl_markets.arbitrage.pipeline    arbitrage scan: 409 markets, 0 matches, 0 opportunities {}
 10:15:27 INFO    apscheduler.executors.default      Job "arbitrage scan (trigger: interval[0:01:00], next run at: 2026-08-28 10:15:36 CST)" executed successfully
+10:15:36 WARNING apscheduler.scheduler              Execution of job "weather orderbook archiving (trigger: interval[0:01:00], next run at: 2026-08-28 10:15:36 CST)" skipped: maximum number of running instances reached (1)
+10:15:36 INFO    apscheduler.executors.default      Running job "arbitrage scan (trigger: interval[0:01:00], next run at: 2026-08-28 10:16:36 CST)" (scheduled at 2026-08-28 10:15:36.793994+08:00)
+10:16:11 INFO    pmvl_markets.matching.candidates   generated 1755 cross-platform candidate pairs from 3251 x 782 markets
+10:16:13 INFO    pmvl_markets.arbitrage.pipeline    verified 0 cross-platform matches (0 identical)
+10:16:13 INFO    pmvl_markets.arbitrage.pipeline    cross-platform matching: No pair reached IDENTICAL, and 95% of demotions are genuine contradictions. On this sample the two venues do not list contracts with identical settlement terms. The candidate generator retrieved 3/3 known equivalent examples from 12 manually reviewed pairs, so on the cases reviewed so far this is a result about the venues rather than about the generator - on a benchmark too small to generalise from.
+10:16:13 INFO    pmvl_markets.arbitrage.pipeline    arbitrage scan: 409 markets, 0 matches, 0 opportunities {}
+10:16:13 INFO    apscheduler.executors.default      Job "arbitrage scan (trigger: interval[0:01:00], next run at: 2026-08-28 10:16:36 CST)" executed successfully
+10:16:36 WARNING apscheduler.scheduler              Execution of job "weather orderbook archiving (trigger: interval[0:01:00], next run at: 2026-08-28 10:16:36 CST)" skipped: maximum number of running instances reached (1)
+10:16:36 INFO    apscheduler.executors.default      Running job "market discovery + orderbooks (trigger: interval[0:10:00], next run at: 2026-08-28 10:26:36 CST)" (scheduled at 2026-08-28 10:16:36.793494+08:00)
+10:16:36 INFO    apscheduler.executors.default      Running job "orderbook refresh (trigger: interval[0:03:00], next run at: 2026-08-28 10:19:36 CST)" (scheduled at 2026-08-28 10:16:36.793918+08:00)
+10:16:36 INFO    apscheduler.executors.default      Running job "arbitrage scan (trigger: interval[0:01:00], next run at: 2026-08-28 10:17:36 CST)" (scheduled at 2026-08-28 10:16:36.793994+08:00)
+10:16:36 INFO    apscheduler.executors.default      Running job "ranking + recommendations (trigger: interval[1:00:00], next run at: 2026-08-28 11:16:36 CST)" (scheduled at 2026-08-28 10:16:36.794105+08:00)
+10:16:36 INFO    apscheduler.executors.default      Running job "settlement sync + grading (trigger: interval[0:30:00], next run at: 2026-08-28 10:46:36 CST)" (scheduled at 2026-08-28 10:16:36.794153+08:00)
+10:16:36 INFO    apscheduler.executors.default      Running job "NWS gridpoint forecasts (trigger: interval[0:15:00], next run at: 2026-08-28 10:31:36 CST)" (scheduled at 2026-08-28 10:16:36.794631+08:00)
+10:16:36 INFO    apscheduler.executors.default      Running job "settlement-station observations (trigger: interval[0:30:00], next run at: 2026-08-28 10:46:36 CST)" (scheduled at 2026-08-28 10:16:36.794679+08:00)
+10:16:36 INFO    apscheduler.executors.default      Running job "weather trade prints (trigger: interval[0:10:00], next run at: 2026-08-28 10:26:36 CST)" (scheduled at 2026-08-28 10:16:36.794773+08:00)
+10:16:36 INFO    apscheduler.executors.default      Running job "CLI daily climate (settlement label) (trigger: interval[1:00:00], next run at: 2026-08-28 11:16:36 CST)" (scheduled at 2026-08-28 10:16:36.794816+08:00)
+10:16:43 INFO    apscheduler.executors.default      Job "settlement-station observations (trigger: interval[0:30:00], next run at: 2026-08-28 10:46:36 CST)" executed successfully
+10:16:43 INFO    apscheduler.executors.default      Running job "forecast validity audit (trigger: interval[0:30:00], next run at: 2026-08-28 10:46:36 CST)" (scheduled at 2026-08-28 10:16:36.794858+08:00)
+10:16:46 INFO    apscheduler.executors.default      Job "NWS gridpoint forecasts (trigger: interval[0:15:00], next run at: 2026-08-28 10:31:36 CST)" executed successfully
+10:16:55 INFO    apscheduler.executors.default      Job "forecast validity audit (trigger: interval[0:30:00], next run at: 2026-08-28 10:46:36 CST)" executed successfully
+10:16:56 INFO    apscheduler.executors.default      Job "CLI daily climate (settlement label) (trigger: interval[1:00:00], next run at: 2026-08-28 11:16:36 CST)" executed successfully
+10:17:38 WARNING apscheduler.scheduler              Execution of job "arbitrage scan (trigger: interval[0:01:00], next run at: 2026-08-28 10:17:36 CST)" skipped: maximum number of running instances reached (1)
+10:17:39 WARNING apscheduler.scheduler              Execution of job "weather orderbook archiving (trigger: interval[0:01:00], next run at: 2026-08-28 10:17:36 CST)" skipped: maximum number of running instances reached (1)
+10:18:37 WARNING apscheduler.scheduler              Execution of job "arbitrage scan (trigger: interval[0:01:00], next run at: 2026-08-28 10:18:36 CST)" skipped: maximum number of running instances reached (1)
+10:18:37 WARNING apscheduler.scheduler              Execution of job "weather orderbook archiving (trigger: interval[0:01:00], next run at: 2026-08-28 10:18:36 CST)" skipped: maximum number of running instances reached (1)
+10:18:43 INFO    pmvl_markets.matching.candidates   generated 1755 cross-platform candidate pairs from 3251 x 782 markets
+10:18:45 INFO    pmvl_markets.arbitrage.pipeline    verified 0 cross-platform matches (0 identical)
+10:18:45 INFO    pmvl_markets.arbitrage.pipeline    cross-platform matching: No pair reached IDENTICAL, and 95% of demotions are genuine contradictions. On this sample the two venues do not list contracts with identical settlement terms. The candidate generator retrieved 3/3 known equivalent examples from 12 manually reviewed pairs, so on the cases reviewed so far this is a result about the venues rather than about the generator - on a benchmark too small to generalise from.
+10:18:45 INFO    pmvl_markets.arbitrage.pipeline    arbitrage scan: 409 markets, 0 matches, 0 opportunities {}
+10:19:05 WARNING pmvl_worker.jobs                   heartbeat failed for rank: (sqlite3.OperationalError) database is locked
+[SQL: UPDATE job_runs SET heartbeat_at=? WHERE job_runs.id = ?]
+[parameters: ('2026-08-28 02:18:12.316341', 3468)]
+(Background on this error at: https://sqlalche.me/e/20/e3q8)
+10:19:05 INFO    pmvl_markets.value.pipeline        ranking complete: 409 scored, 671 candidates, 0 recommendations {'24h': 0, '7d': 0, '30d': 0}
+10:19:05 INFO    apscheduler.executors.default      Job "ranking + recommendations (trigger: interval[1:00:00], next run at: 2026-08-28 11:16:36 CST)" executed successfully
+10:19:06 INFO    apscheduler.executors.default      Job "weather trade prints (trigger: interval[0:10:00], next run at: 2026-08-28 10:26:36 CST)" executed successfully
+10:19:07 WARNING pmvl_worker.jobs                   heartbeat failed for research_books: (sqlite3.OperationalError) database is locked
+[SQL: UPDATE job_runs SET heartbeat_at=? WHERE job_runs.id = ?]
+[parameters: ('2026-08-28 02:18:12.312505', 3397)]
+(Background on this error at: https://sqlalche.me/e/20/e3q8)
+10:19:08 INFO    apscheduler.executors.default      Job "arbitrage scan (trigger: interval[0:01:00], next run at: 2026-08-28 10:19:36 CST)" executed successfully
+10:19:36 WARNING apscheduler.scheduler              Execution of job "orderbook refresh (trigger: interval[0:03:00], next run at: 2026-08-28 10:19:36 CST)" skipped: maximum number of running instances reached (1)
+10:19:36 WARNING apscheduler.scheduler              Execution of job "weather orderbook archiving (trigger: interval[0:01:00], next run at: 2026-08-28 10:19:36 CST)" skipped: maximum number of running instances reached (1)
+10:19:36 INFO    apscheduler.executors.default      Running job "arbitrage scan (trigger: interval[0:01:00], next run at: 2026-08-28 10:20:36 CST)" (scheduled at 2026-08-28 10:19:36.793994+08:00)
+10:20:03 INFO    apscheduler.executors.default      Job "orderbook refresh (trigger: interval[0:03:00], next run at: 2026-08-28 10:22:36 CST)" executed successfully
+10:20:07 INFO    pmvl_markets.backtest.settlement   settlement sync: 400 checked, 395 settled, 0 recommendations graded
+10:20:30 ERROR   pmvl_worker.scheduler              scheduled job failed: (sqlite3.OperationalError) database is locked
+[SQL: INSERT INTO job_runs (job_name, status, idempotency_key, started_at, records_written, error) VALUES (?, ?, ?, ?, ?, ?) ON CONFLICT (idempotency_key) WHERE status = 'running' AND idempotency_key IS NOT NULL DO NOTHING RETURNING id]
+[parameters: ('arbitrage', 'running', '4e9b6584b81564bf22d1c8db7a3e2512', '2026-08-28 02:19:36.870458', 0, '')]
+(Background on this error at: https://sqlalche.me/e/20/e3q8)
+10:20:30 INFO    apscheduler.executors.default      Job "arbitrage scan (trigger: interval[0:01:00], next run at: 2026-08-28 10:20:36 CST)" executed successfully
+10:20:36 WARNING apscheduler.scheduler              Execution of job "weather orderbook archiving (trigger: interval[0:01:00], next run at: 2026-08-28 10:20:36 CST)" skipped: maximum number of running instances reached (1)
+10:20:36 INFO    apscheduler.executors.default      Running job "arbitrage scan (trigger: interval[0:01:00], next run at: 2026-08-28 10:21:36 CST)" (scheduled at 2026-08-28 10:20:36.793994+08:00)
+10:20:44 WARNING pmvl_worker.jobs                   heartbeat failed for settle: (sqlite3.OperationalError) database is locked
+[SQL: UPDATE job_runs SET heartbeat_at=? WHERE job_runs.id = ?]
+[parameters: ('2026-08-28 02:19:50.701630', 3462)]
+(Background on this error at: https://sqlalche.me/e/20/e3q8)
+10:20:45 WARNING pmvl_worker.jobs                   heartbeat failed for ingest: (sqlite3.OperationalError) database is locked
+[SQL: UPDATE job_runs SET heartbeat_at=? WHERE job_runs.id = ?]
+[parameters: ('2026-08-28 02:19:52.546342', 3460)]
+(Background on this error at: https://sqlalche.me/e/20/e3q8)
+10:20:46 WARNING pmvl_worker.jobs                   heartbeat failed for research_books: (sqlite3.OperationalError) database is locked
+[SQL: UPDATE job_runs SET heartbeat_at=? WHERE job_runs.id = ?]
+[parameters: ('2026-08-28 02:19:52.386646', 3397)]
+(Background on this error at: https://sqlalche.me/e/20/e3q8)
+10:21:02 INFO    pmvl_markets.ingest.runner         ingest complete: 7197 markets, 249 orderbooks, 923 trades, 0 errors
+10:21:03 INFO    apscheduler.executors.default      Job "settlement sync + grading (trigger: interval[0:30:00], next run at: 2026-08-28 10:46:36 CST)" executed successfully
+10:21:03 INFO    apscheduler.executors.default      Job "market discovery + orderbooks (trigger: interval[0:10:00], next run at: 2026-08-28 10:26:36 CST)" executed successfully
+10:21:35 INFO    pmvl_markets.matching.candidates   generated 1765 cross-platform candidate pairs from 3251 x 785 markets
+10:21:36 INFO    pmvl_markets.arbitrage.pipeline    verified 0 cross-platform matches (0 identical)
+10:21:36 INFO    pmvl_markets.arbitrage.pipeline    cross-platform matching: No pair reached IDENTICAL, and 95% of demotions are genuine contradictions. On this sample the two venues do not list contracts with identical settlement terms. The candidate generator retrieved 3/3 known equivalent examples from 12 manually reviewed pairs, so on the cases reviewed so far this is a result about the venues rather than about the generator - on a benchmark too small to generalise from.
+10:21:36 WARNING apscheduler.scheduler              Execution of job "arbitrage scan (trigger: interval[0:01:00], next run at: 2026-08-28 10:21:36 CST)" skipped: maximum number of running instances reached (1)
+10:21:36 WARNING apscheduler.scheduler              Execution of job "weather orderbook archiving (trigger: interval[0:01:00], next run at: 2026-08-28 10:21:36 CST)" skipped: maximum number of running instances reached (1)
+10:21:36 INFO    pmvl_markets.arbitrage.pipeline    arbitrage scan: 418 markets, 0 matches, 0 opportunities {}
+10:21:36 INFO    apscheduler.executors.default      Job "arbitrage scan (trigger: interval[0:01:00], next run at: 2026-08-28 10:22:36 CST)" executed successfully
+10:22:36 WARNING apscheduler.scheduler              Execution of job "weather orderbook archiving (trigger: interval[0:01:00], next run at: 2026-08-28 10:22:36 CST)" skipped: maximum number of running instances reached (1)
+10:22:36 INFO    apscheduler.executors.default      Running job "orderbook refresh (trigger: interval[0:03:00], next run at: 2026-08-28 10:25:36 CST)" (scheduled at 2026-08-28 10:22:36.793918+08:00)
+10:22:36 INFO    apscheduler.executors.default      Running job "arbitrage scan (trigger: interval[0:01:00], next run at: 2026-08-28 10:23:36 CST)" (scheduled at 2026-08-28 10:22:36.793994+08:00)
+10:23:36 WARNING apscheduler.scheduler              Execution of job "arbitrage scan (trigger: interval[0:01:00], next run at: 2026-08-28 10:23:36 CST)" skipped: maximum number of running instances reached (1)
+10:23:37 WARNING apscheduler.scheduler              Execution of job "weather orderbook archiving (trigger: interval[0:01:00], next run at: 2026-08-28 10:23:36 CST)" skipped: maximum number of running instances reached (1)
+10:23:38 INFO    pmvl_markets.matching.candidates   generated 1765 cross-platform candidate pairs from 3251 x 785 markets
+10:23:40 INFO    pmvl_markets.arbitrage.pipeline    verified 0 cross-platform matches (0 identical)
+10:23:40 INFO    pmvl_markets.arbitrage.pipeline    cross-platform matching: No pair reached IDENTICAL, and 95% of demotions are genuine contradictions. On this sample the two venues do not list contracts with identical settlement terms. The candidate generator retrieved 3/3 known equivalent examples from 12 manually reviewed pairs, so on the cases reviewed so far this is a result about the venues rather than about the generator - on a benchmark too small to generalise from.
+10:23:40 INFO    pmvl_markets.arbitrage.pipeline    arbitrage scan: 418 markets, 0 matches, 0 opportunities {}
+10:23:40 INFO    apscheduler.executors.default      Job "arbitrage scan (trigger: interval[0:01:00], next run at: 2026-08-28 10:24:36 CST)" executed successfully
+10:24:31 INFO    apscheduler.executors.default      Job "orderbook refresh (trigger: interval[0:03:00], next run at: 2026-08-28 10:25:36 CST)" executed successfully
+10:24:36 WARNING apscheduler.scheduler              Execution of job "weather orderbook archiving (trigger: interval[0:01:00], next run at: 2026-08-28 10:24:36 CST)" skipped: maximum number of running instances reached (1)
+10:24:36 INFO    apscheduler.executors.default      Running job "arbitrage scan (trigger: interval[0:01:00], next run at: 2026-08-28 10:25:36 CST)" (scheduled at 2026-08-28 10:24:36.793994+08:00)
+10:24:55 INFO    pmvl_markets.matching.candidates   generated 1765 cross-platform candidate pairs from 3251 x 785 markets
+10:24:57 INFO    pmvl_markets.arbitrage.pipeline    verified 0 cross-platform matches (0 identical)
+10:24:57 INFO    pmvl_markets.arbitrage.pipeline    cross-platform matching: No pair reached IDENTICAL, and 95% of demotions are genuine contradictions. On this sample the two venues do not list contracts with identical settlement terms. The candidate generator retrieved 3/3 known equivalent examples from 12 manually reviewed pairs, so on the cases reviewed so far this is a result about the venues rather than about the generator - on a benchmark too small to generalise from.
+10:24:57 INFO    pmvl_markets.arbitrage.pipeline    arbitrage scan: 417 markets, 0 matches, 0 opportunities {}
+10:24:57 INFO    apscheduler.executors.default      Job "arbitrage scan (trigger: interval[0:01:00], next run at: 2026-08-28 10:25:36 CST)" executed successfully

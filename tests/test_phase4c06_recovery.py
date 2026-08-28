@@ -497,3 +497,36 @@ class TestReachability:
 
         assert "frozen decision instant fell after this" in UNATTENDED_DEFINITION
         assert "not itself an intervention" in UNATTENDED_DEFINITION
+
+
+class TestWatchSeesUnmappedMarkets:
+    """The monitor must see the decision instants it exists to protect.
+
+    `map_stations` runs daily, so a market listed after its last run carries an
+    empty settlement_station_id for up to a day - while the archiver, which
+    derives the station from settlement rules directly, is already capturing its
+    books. Reading only the column reported 42 Aug-28 markets with 1,932
+    archived books as zero upcoming instants.
+    """
+
+    def test_the_watch_falls_back_to_archive_attribution(self) -> None:
+        source = Path(
+            "packages/market-normalization/src/pmvl_markets/research/supervision.py"
+        ).read_text()
+        assert "archive_station" in source
+        assert "station = station or archive_station.get(market_id" in source
+
+    def test_the_watch_query_does_not_require_a_mapped_column(self) -> None:
+        source = Path(
+            "packages/market-normalization/src/pmvl_markets/research/supervision.py"
+        ).read_text()
+        block = source[source.index("def decision_watch"):]
+        assert "AND settlement_station_id != '' AND close_time" not in block
+
+    def test_a_market_with_no_station_anywhere_is_still_skipped(self) -> None:
+        """Fail closed: unattributable markets are not invented into the watch."""
+        source = Path(
+            "packages/market-normalization/src/pmvl_markets/research/supervision.py"
+        ).read_text()
+        block = source[source.index("def decision_watch"):]
+        assert "if not station:" in block and "continue" in block

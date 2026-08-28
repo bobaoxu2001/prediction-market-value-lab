@@ -211,13 +211,35 @@ def decision_watch(
     ar = sqlite3.connect(f"file:{ar_path}?mode=ro", uri=True)
     out: list[DecisionWatch] = []
     try:
+        # Station attribution falls back to the archive when the market row has
+        # not been mapped yet.
+        #
+        # `map_stations` runs daily, so a market listed after it last ran has an
+        # empty settlement_station_id for up to a day - while the archiver, which
+        # derives the station from the settlement rules directly, is already
+        # capturing its books. Reading only the column made this view blind to
+        # precisely the upcoming decision instants it exists to protect: 42
+        # Aug-28 markets with 1,932 archived books reported as zero upcoming
+        # instants. A monitor that cannot see the next failure is how the last
+        # one went unnoticed for 18 hours.
+        archive_station: dict[str, str] = {
+            market_id: station
+            for market_id, station in ar.execute(
+                "SELECT platform_market_id, settlement_station_id "
+                "FROM archived_books WHERE settlement_station_id != '' "
+                "GROUP BY platform_market_id"
+            )
+        }
+
         seen: set[tuple[date, str]] = set()
         for market_id, station, close_time in op.execute(
             "SELECT platform_market_id, settlement_station_id, close_time "
             "FROM markets WHERE series_ticker LIKE 'KXHIGH%' "
-            "AND settlement_station_id != '' AND close_time IS NOT NULL "
-            "ORDER BY close_time"
+            "AND close_time IS NOT NULL ORDER BY close_time"
         ):
+            station = station or archive_station.get(market_id, "")
+            if not station:
+                continue
             parts = market_id.split("-")
             if len(parts) < 2:
                 continue
