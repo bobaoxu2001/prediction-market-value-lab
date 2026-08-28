@@ -670,3 +670,35 @@ class TestLifecycleHealthCatchesUnmappedMarkets:
 
         body = inspect.getsource(supervision.lifecycle_health)
         assert "if decision <= now:" in body and "continue" in body
+
+
+class TestConnectionPoolSizedForTheWorker:
+    """Pool exhaustion cost 46 minutes of capture on 2026-08-28.
+
+    SQLite fell through to SQLAlchemy's default QueuePool (5 + 10 overflow),
+    which is ample for the API and far too small for the resident worker: ~10
+    concurrent jobs each hold a session, and each running job's heartbeat opens
+    a second. Exhaustion made heartbeats fail with "database is locked", so a
+    healthy research_books run could not prove liveness and was superseded as
+    dead after 44 minutes.
+    """
+
+    def test_sqlite_gets_an_explicit_pool(self) -> None:
+        source = Path("packages/shared/src/pmvl_shared/db/base.py").read_text()
+        block = source[source.index('if url.startswith("sqlite"):'):]
+        block = block[: block.index("else:")]
+        assert "pool_size=" in block, "sqlite still inherits the default QueuePool"
+
+    def test_the_pool_exceeds_the_scheduled_job_count(self) -> None:
+        """Every concurrent job needs a session and a heartbeat connection."""
+        from pmvl_shared.cadence import CADENCES
+
+        source = Path("packages/shared/src/pmvl_shared/db/base.py").read_text()
+        block = source[source.index('if url.startswith("sqlite"):'):]
+        block = block[: block.index("else:")]
+        size = int(block.split("pool_size=")[1].split(",")[0])
+        overflow = int(block.split("max_overflow=")[1].split(",")[0])
+        assert size + overflow >= 2 * len(CADENCES), (
+            f"pool {size}+{overflow} cannot serve {len(CADENCES)} jobs plus their "
+            "heartbeats"
+        )

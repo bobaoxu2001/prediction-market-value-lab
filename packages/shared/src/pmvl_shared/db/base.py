@@ -175,6 +175,24 @@ def _build_engine(url: str | None = None) -> Engine:
     if url.startswith("sqlite"):
         # check_same_thread=False lets the FastAPI threadpool share the connection.
         kwargs["connect_args"] = {"check_same_thread": False, "timeout": 30}
+        # SQLite needs an explicit pool too.
+        #
+        # It previously fell through to SQLAlchemy's default QueuePool - 5
+        # connections plus 10 overflow - which is ample for the API and far too
+        # small for the resident worker: roughly ten jobs run concurrently, each
+        # holding a session, and each running job's heartbeat opens a second
+        # short-lived one. Measured on 2026-08-28: "QueuePool limit of size 5
+        # overflow 10 reached, connection timed out", heartbeats then failing
+        # with "database is locked", and a healthy research_books run superseded
+        # as dead after 44 minutes because it could not prove liveness. Cost was
+        # 46 minutes of capture, which for a frozen decision instant is
+        # unrecoverable.
+        #
+        # A SQLite connection is a file handle, not a server session, so a
+        # generous pool is cheap. WAL already allows many concurrent readers and
+        # serialises writers, and the 30s busy timeout above still bounds any
+        # single writer's wait.
+        kwargs.update(pool_size=20, max_overflow=30, pool_timeout=30)
     else:
         kwargs.update(pool_size=10, max_overflow=20)
     engine = create_engine(url, **kwargs)
