@@ -37,6 +37,11 @@ class CoverageStatus(str, Enum):
 #: set. NWS gridpoints refresh roughly every 6 hours; 12 tolerates one miss.
 MAX_FORECAST_AGE = timedelta(hours=12)
 
+#: Mirrors the frozen protocol's decision offset. Read here only to locate the
+#: instant whose coverage is being reported; changing it would not change the
+#: experiment, but it would make this table describe a different one.
+DECISION_OFFSET_HOURS = 6.0
+
 
 @dataclass(frozen=True)
 class StationCoverage:
@@ -161,6 +166,11 @@ class ConversionBlocker(str, Enum):
 
     NONE = ""
     ORDERBOOK_MISSING = "ORDERBOOK_MISSING"
+    #: Books exist for the station-day, but none within tolerance AT the frozen
+    #: decision instant. Distinct from ORDERBOOK_MISSING because it is not fixed
+    #: by collecting more later - the instant has passed, and filling it from a
+    #: newer book is exactly the look-ahead the protocol forbids.
+    ORDERBOOK_STALE_AT_DECISION = "ORDERBOOK_STALE_AT_DECISION"
     FORECAST_MISSING = "FORECAST_MISSING"
     CLI_FINAL_PENDING = "CLI_FINAL_PENDING"
     VENUE_TERMINAL_PENDING = "VENUE_TERMINAL_PENDING"
@@ -176,12 +186,17 @@ class StationDay:
     has_orderbook: bool
     has_cli_final: bool
     has_venue_terminal: bool
+    #: A book within tolerance at the frozen decision instant. None when the
+    #: decision instant has not yet passed, so a future station-day is never
+    #: reported as already failed.
+    book_at_decision: bool | None = None
 
     @property
     def clean(self) -> bool:
         return (
             self.has_forecast
             and self.has_orderbook
+            and self.book_at_decision is not False
             and self.has_cli_final
             and self.has_venue_terminal
         )
@@ -192,6 +207,11 @@ class StationDay:
             return ConversionBlocker.NONE
         if not self.has_orderbook:
             return ConversionBlocker.ORDERBOOK_MISSING
+        if self.book_at_decision is False:
+            # Reported ahead of the label blockers: waiting for a CLI final on a
+            # station-day whose decision instant can never be covered is waiting
+            # for something that will not help.
+            return ConversionBlocker.ORDERBOOK_STALE_AT_DECISION
         if not self.has_forecast:
             return ConversionBlocker.FORECAST_MISSING
         if not self.has_cli_final:
@@ -233,6 +253,46 @@ def station_day_conversions(*, data_dir: Path) -> list[StationDay]:
             if day is not None:
                 candidates.add((day, station))
 
+        # Decision-instant coverage, evaluated with the SAME tolerance the cohort
+        # builder uses. Without this the table reports "book: YES" for a
+        # station-day whose decision instant was never covered, which is how an
+        # 18-hour outage looked survivable.
+        from .pit import MAX_ORDERBOOK_AGE
+
+        closes: dict[tuple[date, str], datetime] = {}
+        for market_id, station, close_time in op.execute(
+            "SELECT platform_market_id, settlement_station_id, close_time "
+            "FROM markets WHERE series_ticker LIKE 'KXHIGH%' "
+            "AND settlement_station_id != '' AND close_time IS NOT NULL"
+        ):
+            day = _ticker_day(market_id)
+            if day is None or (day, station) in closes:
+                continue
+            stamp = datetime.fromisoformat(str(close_time).replace(" ", "T"))
+            closes[(day, station)] = (
+                stamp if stamp.tzinfo else stamp.replace(tzinfo=timezone.utc)
+            )
+
+        decision_ok: dict[tuple[date, str], bool | None] = {}
+        now_utc = datetime.now(timezone.utc)
+        for key, close in closes.items():
+            if key not in candidates:
+                continue
+            decision = close - timedelta(hours=DECISION_OFFSET_HOURS)
+            if decision > now_utc:
+                decision_ok[key] = None  # not yet due; not a failure
+                continue
+            newest = ar.execute(
+                "SELECT MAX(available_at) FROM archived_books "
+                "WHERE settlement_station_id = ? AND available_at <= ?",
+                (key[1], decision.isoformat()),
+            ).fetchone()[0]
+            if newest is None:
+                decision_ok[key] = False
+                continue
+            age = (decision - datetime.fromisoformat(newest)).total_seconds()
+            decision_ok[key] = age <= MAX_ORDERBOOK_AGE.total_seconds()
+
         cli = {
             (date.fromisoformat(d), s)
             for d, s in op.execute(
@@ -270,6 +330,7 @@ def station_day_conversions(*, data_dir: Path) -> list[StationDay]:
             has_orderbook=True,
             has_cli_final=(day, station) in cli,
             has_venue_terminal=(day, station) in venue,
+            book_at_decision=decision_ok.get((day, station)),
         )
         for day, station in sorted(candidates)
     ]
@@ -280,12 +341,15 @@ def render_conversions(rows: list[StationDay]) -> str:
         "",
         "--- STATION-DAY CONVERSION ---",
         f"  {'date':<12}{'stn':<7}{'fcst':<6}{'book':<6}{'CLI':<6}{'venue':<7}"
-        f"{'clean':<7}blocker",
+        f"{'dec':<5}{'clean':<7}blocker",
     ]
     blockers: dict[str, int] = {}
     clean = 0
     for r in rows:
         yn = lambda b: "YES" if b else "NO"  # noqa: E731
+        dec = (
+            "-" if r.book_at_decision is None else yn(r.book_at_decision)
+        )
         if r.clean:
             clean += 1
         else:
@@ -294,7 +358,7 @@ def render_conversions(rows: list[StationDay]) -> str:
             f"  {r.target_date.isoformat():<12}{r.station:<7}"
             f"{yn(r.has_forecast):<6}{yn(r.has_orderbook):<6}"
             f"{yn(r.has_cli_final):<6}{yn(r.has_venue_terminal):<7}"
-            f"{yn(r.clean):<7}{r.blocker.value}"
+            f"{dec:<5}{yn(r.clean):<7}{r.blocker.value}"
         )
     lines.append(f"  candidate station-days: {len(rows)}   ingredient-complete: {clean}")
     for name, n in sorted(blockers.items(), key=lambda kv: -kv[1]):

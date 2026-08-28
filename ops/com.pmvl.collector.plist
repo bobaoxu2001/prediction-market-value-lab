@@ -1,0 +1,21 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+  <key>Label</key><string>com.pmvl.collector</string>
+  <key>ProgramArguments</key>
+  <array>
+    <string>/usr/bin/caffeinate</string>
+    <string>-i</string>
+    <string>/Users/xuao/Projects/prediction-market-value-lab/.venv/bin/pmvl</string>
+    <string>schedule</string>
+  </array>
+  <key>WorkingDirectory</key><string>/Users/xuao/Projects/prediction-market-value-lab</string>
+  <key>RunAtLoad</key><true/>
+  <key>KeepAlive</key><true/>
+  <key>ThrottleInterval</key><integer>30</integer>
+  <key>StandardOutPath</key><string>/Users/xuao/Projects/prediction-market-value-lab/logs/collector.log</string>
+  <key>StandardErrorPath</key><string>/Users/xuao/Projects/prediction-market-value-lab/logs/collector.err</string>
+  <key>ProcessType</key><string>Background</string>
+</dict>
+</plist>

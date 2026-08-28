@@ -301,3 +301,61 @@ class TestStationDayConversion:
 
         text = render_conversions([self._row()])
         assert "necessary, not sufficient" in text
+
+
+class TestDecisionInstantStaleness:
+    """A station-day can hold every ingredient and still be unconvertible.
+
+    An 18-hour collection outage on 2026-08-27 left books present for the
+    station-day but none within tolerance at the frozen decision instant. The
+    table reported "book: YES" and the outage looked survivable; the cohort
+    disagreed, and the cohort was right.
+    """
+
+    def _row(self, **kw):  # noqa: ANN003, ANN202
+        from pmvl_markets.research.coverage import StationDay
+
+        base = dict(
+            target_date=date(2026, 8, 27), station="KNYC",
+            has_forecast=True, has_orderbook=True,
+            has_cli_final=True, has_venue_terminal=True,
+            book_at_decision=True,
+        )
+        base.update(kw)
+        return StationDay(**base)
+
+    def test_a_stale_decision_instant_is_not_clean(self) -> None:
+        from pmvl_markets.research.coverage import ConversionBlocker
+
+        r = self._row(book_at_decision=False)
+        assert not r.clean
+        assert r.blocker is ConversionBlocker.ORDERBOOK_STALE_AT_DECISION
+
+    def test_staleness_outranks_the_label_blockers(self) -> None:
+        """Waiting on a CLI final for a station-day whose decision instant can
+        never be covered is waiting for something that will not help."""
+        from pmvl_markets.research.coverage import ConversionBlocker
+
+        r = self._row(book_at_decision=False, has_cli_final=False,
+                      has_venue_terminal=False)
+        assert r.blocker is ConversionBlocker.ORDERBOOK_STALE_AT_DECISION
+
+    def test_a_future_decision_instant_is_not_reported_as_failed(self) -> None:
+        """None means 'not yet due'. Marking it failed would write off
+        station-days that are still perfectly recoverable."""
+        r = self._row(book_at_decision=None, has_cli_final=False,
+                      has_venue_terminal=False)
+        from pmvl_markets.research.coverage import ConversionBlocker
+
+        assert r.blocker is ConversionBlocker.CLI_FINAL_PENDING
+
+    def test_a_covered_decision_instant_with_all_labels_is_clean(self) -> None:
+        assert self._row().clean
+
+    def test_the_table_uses_the_cohort_tolerance_not_its_own(self) -> None:
+        """Two different tolerances would let the table and the cohort disagree."""
+        source = Path(
+            "packages/market-normalization/src/pmvl_markets/research/coverage.py"
+        ).read_text()
+        assert "from .pit import MAX_ORDERBOOK_AGE" in source
+        assert "MAX_ORDERBOOK_AGE.total_seconds()" in source
