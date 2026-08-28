@@ -359,3 +359,141 @@ class TestDecisionInstantStaleness:
         ).read_text()
         assert "from .pit import MAX_ORDERBOOK_AGE" in source
         assert "MAX_ORDERBOOK_AGE.total_seconds()" in source
+
+
+class TestSupervisionLiveness:
+    """A PID is not a liveness signal. Four silent deaths established that."""
+
+    def _health(self, age_seconds: float):  # noqa: ANN202
+        from pmvl_markets.research.supervision import Liveness
+
+        return Liveness
+
+    def test_thresholds_are_tighter_than_the_protocol_tolerance(self) -> None:
+        """Monitoring must alert while an instant can still be saved.
+
+        Alerting only at the protocol's 300s tolerance would fire exactly when
+        the decision instant is already lost.
+        """
+        from pmvl_markets.research.pit import MAX_ORDERBOOK_AGE
+        from pmvl_markets.research.supervision import (
+            DEGRADED_CAPTURE_AGE,
+            HEALTHY_CAPTURE_AGE,
+        )
+
+        assert HEALTHY_CAPTURE_AGE < DEGRADED_CAPTURE_AGE < MAX_ORDERBOOK_AGE
+
+    def test_monitoring_does_not_define_its_own_experimental_tolerance(self) -> None:
+        """Two tolerances would drift, and the table would disagree with the
+        cohort about which events exist."""
+        source = Path(
+            "packages/market-normalization/src/pmvl_markets/research/supervision.py"
+        ).read_text()
+        assert "from .pit import MAX_ORDERBOOK_AGE" in source
+        assert "MAX_ORDERBOOK_AGE.total_seconds()" in source
+
+    def test_liveness_reads_capture_time_not_process_state(self) -> None:
+        """Checked against the code, not the prose.
+
+        The docstring names PIDs deliberately - to say they are not the signal -
+        so a substring scan over the whole source would fail on the explanation
+        rather than on the behaviour.
+        """
+        import ast
+        import inspect
+
+        from pmvl_markets.research import supervision
+
+        fn = ast.parse(inspect.getsource(supervision.collector_health)).body[0]
+        body = ast.unparse(
+            ast.Module(body=[n for n in fn.body if not (
+                isinstance(n, ast.Expr) and isinstance(n.value, ast.Constant)
+            )], type_ignores=[])
+        )
+        assert "MAX(available_at)" in body
+        for banned in ("pgrep", "psutil", "launchctl", "getpid"):
+            assert banned not in body.lower()
+
+
+class TestGapDetection:
+    def test_a_gap_is_derived_from_captures_not_uptime(self) -> None:
+        """A suspended host keeps its uptime counter and collects nothing.
+
+        Asserted against the code body; the docstring says "uptime" on purpose.
+        """
+        import ast
+        import inspect
+
+        from pmvl_markets.research import supervision
+
+        fn = ast.parse(inspect.getsource(supervision.detect_gaps)).body[0]
+        body = ast.unparse(
+            ast.Module(body=[n for n in fn.body if not (
+                isinstance(n, ast.Expr) and isinstance(n.value, ast.Constant)
+            )], type_ignores=[])
+        )
+        assert "archived_books" in body
+        assert "uptime" not in body.lower()
+
+    def test_a_gap_covers_instants_strictly_between_its_edges(self) -> None:
+        from pmvl_markets.research.supervision import CollectionGap
+
+        g = CollectionGap(
+            datetime(2026, 8, 27, 7, 6, tzinfo=timezone.utc),
+            datetime(2026, 8, 28, 1, 18, tzinfo=timezone.utc),
+            65520.0,
+        )
+        assert g.covers(datetime(2026, 8, 28, 0, 0, tzinfo=timezone.utc))
+        assert not g.covers(datetime(2026, 8, 26, 23, 0, tzinfo=timezone.utc))
+        assert not g.covers(datetime(2026, 8, 28, 2, 0, tzinfo=timezone.utc))
+
+
+class TestReachability:
+    def _watch(self, status: str, until: float = -1.0):  # noqa: ANN202
+        from pmvl_markets.research.supervision import DecisionWatch
+
+        return DecisionWatch(
+            target_date=date(2026, 8, 27), station="KLAX",
+            decision_at=datetime(2026, 8, 28, 2, tzinfo=timezone.utc),
+            qualifying_book_at=None, book_age_seconds=None,
+            status=status, seconds_until=until,
+        )
+
+    def test_an_uncovered_past_instant_is_permanently_unreachable(self) -> None:
+        """A later book cannot fix it, and using one would be look-ahead."""
+        from pmvl_markets.research.supervision import (
+            Reachability,
+            classify_reachability,
+        )
+
+        got = classify_reachability(
+            self._watch("ORDERBOOK_STALE_AT_DECISION"), clean=False
+        )
+        assert got is Reachability.PERMANENTLY_UNREACHABLE
+
+    def test_a_covered_instant_awaiting_labels_is_pending(self) -> None:
+        from pmvl_markets.research.supervision import (
+            Reachability,
+            classify_reachability,
+        )
+
+        assert classify_reachability(
+            self._watch("DECISION_COVERED"), clean=False
+        ) is Reachability.CURRENTLY_PENDING
+
+    def test_a_future_instant_is_prospectively_reachable(self) -> None:
+        from pmvl_markets.research.supervision import (
+            Reachability,
+            classify_reachability,
+        )
+
+        assert classify_reachability(
+            self._watch("UPCOMING", until=3600.0), clean=False
+        ) is Reachability.PROSPECTIVELY_REACHABLE
+
+    def test_the_unattended_definition_is_persisted_verbatim(self) -> None:
+        """An epoch without its rule invites reinterpretation later."""
+        from pmvl_markets.research.supervision import UNATTENDED_DEFINITION
+
+        assert "frozen decision instant fell after this" in UNATTENDED_DEFINITION
+        assert "not itself an intervention" in UNATTENDED_DEFINITION

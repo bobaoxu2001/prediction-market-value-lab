@@ -131,6 +131,28 @@ CREATE INDEX IF NOT EXISTS ix_trades_market_time
 -- result turns out to rest on a week with a silent gap. A later good day must
 -- not be able to erase the evidence of an earlier bad one, so this is INSERT
 -- only: a second snapshot for the same day is a new row, and both survive.
+CREATE TABLE IF NOT EXISTS supervision_epochs (
+    id             INTEGER PRIMARY KEY,
+    started_at     TEXT NOT NULL UNIQUE,
+    mechanism      TEXT NOT NULL,
+    -- The classification rule, stored verbatim beside the epoch it governs.
+    -- An epoch without its definition is an invitation to reinterpret it later
+    -- as whatever the current question needs.
+    definition     TEXT NOT NULL,
+    note           TEXT NOT NULL DEFAULT '',
+    recorded_at    TEXT NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS collection_gaps (
+    id                 INTEGER PRIMARY KEY,
+    last_good_capture  TEXT NOT NULL,
+    first_good_capture TEXT NOT NULL,
+    duration_seconds   REAL NOT NULL,
+    detected_at        TEXT NOT NULL,
+    evidence           TEXT NOT NULL DEFAULT '',
+    UNIQUE (last_good_capture, first_good_capture)
+);
+
 CREATE TABLE IF NOT EXISTS health_snapshots (
     id            INTEGER PRIMARY KEY,
     snapshot_date TEXT NOT NULL,

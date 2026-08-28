@@ -783,6 +783,50 @@ def model_vs_market_readiness(
     )
 
     console.print(render_conversions(station_day_conversions(data_dir=root)))
+
+    from datetime import datetime, timezone
+
+    from pmvl_markets.research.supervision import (
+        collector_health,
+        decision_watch,
+        detect_gaps,
+    )
+
+    health = collector_health(data_dir=root)
+    console.print("")
+    console.print("--- SUPERVISION ---")
+    console.print(
+        f"  collector liveness            {health.state.value} "
+        f"(capture age {health.capture_age_seconds}s)"
+    )
+    epoch = None
+    try:
+        from pmvl_shared.research_archive import ResearchArchive, default_archive_path
+
+        archive = ResearchArchive(default_archive_path("."))
+        with archive.connect() as con:
+            row = con.execute(
+                "SELECT started_at FROM supervision_epochs ORDER BY started_at DESC "
+                "LIMIT 1"
+            ).fetchone()
+        if row:
+            epoch = datetime.fromisoformat(row[0])
+    except Exception:  # noqa: BLE001
+        epoch = None
+
+    gaps = detect_gaps(data_dir=root)
+    # Attributed by where a gap STARTS. The outage that the epoch resolved ends
+    # after it and is not a failure of the supervised era.
+    new_gaps = [g for g in gaps if epoch and g.last_good_capture >= epoch]
+    console.print(f"  supervision epoch             {epoch.isoformat() if epoch else 'none'}")
+    console.print(f"  collection gaps (all history) {len(gaps)}")
+    console.print(f"  gaps started since epoch      {len(new_gaps)}   (must be 0)")
+
+    watch = decision_watch(data_dir=root)
+    covered = [w for w in watch if w.status == "DECISION_COVERED"]
+    post = [w for w in covered if epoch and w.decision_at >= epoch]
+    console.print(f"  decision instants covered     {len(covered)} of {len(watch)}")
+    console.print(f"  covered since epoch           {len(post)}")
     console.print("")
     console.print(
         f"CLEAN INDEPENDENT SETTLED EVENTS = {len(adm_events)} / "
