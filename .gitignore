@@ -105,3 +105,8 @@ apps/extension/vitest.config.ts.timestamp-*.mjs
 # platform-specific). The harness uses CHROME_PATH or the system Chrome; a
 # pinned Chrome-for-Testing archive stays a local download.
 apps/extension/chrome/
+
+# Runtime collector logs written by the launchd agent. Tracked by mistake in
+# the 4C0.9 commit; they churn the working tree on every capture and would
+# make "working tree clean" meaningless as a verification signal.
+logs/
