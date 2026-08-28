@@ -273,8 +273,19 @@ CADENCES: tuple[Cadence, ...] = (
     Cadence(
         "map_stations",
         "Settlement-station mapping refresh",
-        cron="daily at 05:00 UTC",
-        stall_after_seconds=26 * 3600,
+        # Every 15 minutes, not daily.
+        #
+        # Mapping is deterministic and re-runnable, so repetition costs a cheap
+        # no-op scan. A daily cadence made every newly listed market wait up to
+        # 24h for its only chance: a market listed after the run is invisible to
+        # forecast collection until the next one, and if that run is missed - as
+        # the Aug-27 one was - the markets are stranded with no second chance
+        # before their decision instants.
+        #
+        # A short cadence removes the single-shot dependency entirely, which
+        # matters more than the daily sweep it replaces.
+        interval_seconds=900,
+        stall_after_seconds=3600,
     ),
 )
 

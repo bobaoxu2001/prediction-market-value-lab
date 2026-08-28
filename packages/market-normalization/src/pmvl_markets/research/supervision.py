@@ -301,3 +301,92 @@ def classify_reachability(watch: DecisionWatch, *, clean: bool) -> Reachability:
     # Its instant has passed uncovered. A later book cannot fix it, and using
     # one would be the look-ahead the protocol exists to prevent.
     return Reachability.PERMANENTLY_UNREACHABLE
+
+
+#: How close an unmapped market may get to its frozen decision instant before
+#: lifecycle health degrades, and then goes critical.
+#:
+#: Mapping now runs every 15 minutes and forecast collection every 15, so a
+#: market needs roughly half an hour of clear air to become PIT-eligible. Six
+#: hours is generous against that; two hours is the point at which the remaining
+#: cycles are countable on one hand.
+MAPPING_DEGRADED_BEFORE_DECISION = timedelta(hours=6)
+MAPPING_CRITICAL_BEFORE_DECISION = timedelta(hours=2)
+
+
+@dataclass(frozen=True)
+class LifecycleHealth:
+    """Whether the dependency chain can still deliver the next decision instants.
+
+    Collector liveness answers "are books arriving". This answers the question
+    that actually went unnoticed for 33 hours: is anything arriving *for the
+    markets whose decision instants are next*. On 2026-08-28 every collector
+    signal was green while seven station-days sat unmapped and therefore
+    unforecastable, because nothing checked the chain rather than its first link.
+    """
+
+    unmapped_eligible: int
+    nearest_unmapped_decision: datetime | None
+    hours_until_nearest: float | None
+    state: Liveness
+
+    def as_dict(self) -> dict[str, Any]:
+        return {
+            "unmapped_eligible_markets": self.unmapped_eligible,
+            "nearest_unmapped_decision": (
+                self.nearest_unmapped_decision.isoformat()
+                if self.nearest_unmapped_decision else None
+            ),
+            "hours_until_nearest": (
+                round(self.hours_until_nearest, 2)
+                if self.hours_until_nearest is not None else None
+            ),
+            "state": self.state.value,
+        }
+
+
+def lifecycle_health(
+    *, data_dir: Path, now: datetime | None = None, decision_offset_hours: float = 6.0
+) -> LifecycleHealth:
+    """Degrade when eligible markets are unmapped near their decision instants."""
+    now = now or datetime.now(timezone.utc)
+    path = data_dir / "pmvl.db"
+    if not path.exists():
+        return LifecycleHealth(0, None, None, Liveness.NO_DATA)
+
+    con = sqlite3.connect(f"file:{path}?mode=ro", uri=True)
+    try:
+        rows = con.execute(
+            "SELECT platform_market_id, close_time FROM markets "
+            "WHERE series_ticker LIKE 'KXHIGH%' AND close_time IS NOT NULL "
+            "AND (settlement_station_id IS NULL OR settlement_station_id = '')"
+        ).fetchall()
+    finally:
+        con.close()
+
+    nearest: datetime | None = None
+    count = 0
+    for _market_id, close_time in rows:
+        stamp = datetime.fromisoformat(str(close_time).replace(" ", "T"))
+        close = stamp if stamp.tzinfo else stamp.replace(tzinfo=timezone.utc)
+        decision = close - timedelta(hours=decision_offset_hours)
+        if decision <= now:
+            # Already past. Missing it is a recorded loss, not a live alarm -
+            # alarming forever on an unrecoverable instant trains people to
+            # ignore the alarm.
+            continue
+        count += 1
+        if nearest is None or decision < nearest:
+            nearest = decision
+
+    if nearest is None:
+        return LifecycleHealth(0, None, None, Liveness.HEALTHY)
+
+    until = (nearest - now).total_seconds()
+    if until <= MAPPING_CRITICAL_BEFORE_DECISION.total_seconds():
+        state = Liveness.CRITICAL
+    elif until <= MAPPING_DEGRADED_BEFORE_DECISION.total_seconds():
+        state = Liveness.DEGRADED
+    else:
+        state = Liveness.HEALTHY
+    return LifecycleHealth(count, nearest, until / 3600.0, state)

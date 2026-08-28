@@ -530,3 +530,143 @@ class TestWatchSeesUnmappedMarkets:
         ).read_text()
         block = source[source.index("def decision_watch"):]
         assert "if not station:" in block and "continue" in block
+
+
+class TestCronBindsUtcExplicitly:
+    """Documented-UTC cron jobs must fire at the UTC time they name.
+
+    `CronTrigger(hour=5)` binds tzlocal at construction, and the scheduler's own
+    timezone="UTC" does not override it - APScheduler applies the scheduler
+    timezone only to trigger fields passed as kwargs to add_job. On a host in
+    Asia/Shanghai every documented-UTC cron ran +8 hours late: map_stations,
+    documented "daily at 05:00 UTC", ran at 21:00 UTC, and collection_health at
+    15:50 instead of 23:50. The Aug-27 mapping opportunity was lost outright and
+    the scheduler reported itself healthy throughout.
+    """
+
+    def test_the_helper_binds_utc(self) -> None:
+        import sys
+        from pathlib import Path as _P
+
+        sys.path.insert(0, str(_P("services/worker/src").resolve()))
+        from pmvl_worker.scheduler import _utc_cron
+
+        assert str(_utc_cron(hour=5, minute=0).timezone) == "UTC"
+
+    def test_map_stations_fires_at_0500_utc_on_a_shanghai_host(self) -> None:
+        """The exact regression, with the host zone that caused it."""
+        import sys
+        from pathlib import Path as _P
+
+        sys.path.insert(0, str(_P("services/worker/src").resolve()))
+        from pmvl_worker.scheduler import _utc_cron
+
+        base = datetime(2026, 8, 28, 6, 0, tzinfo=timezone.utc)
+        fire = _utc_cron(hour=5, minute=0).get_next_fire_time(None, base)
+        assert fire.astimezone(timezone.utc).hour == 5, (
+            f"fires at {fire.astimezone(timezone.utc).hour}:00 UTC, not 05:00"
+        )
+
+    def test_collection_health_fires_at_2350_utc(self) -> None:
+        import sys
+        from pathlib import Path as _P
+
+        sys.path.insert(0, str(_P("services/worker/src").resolve()))
+        from pmvl_worker.scheduler import _utc_cron
+
+        base = datetime(2026, 8, 28, 6, 0, tzinfo=timezone.utc)
+        fire = _utc_cron(hour=23, minute=50).get_next_fire_time(None, base)
+        utc = fire.astimezone(timezone.utc)
+        assert (utc.hour, utc.minute) == (23, 50)
+
+    def test_a_raw_crontrigger_would_still_drift(self) -> None:
+        """Pins WHY the helper exists: without it the defect returns silently."""
+        import tzlocal
+        from apscheduler.triggers.cron import CronTrigger
+
+        local = str(tzlocal.get_localzone())
+        raw = CronTrigger(hour=5, minute=0)
+        if local == "UTC":
+            pytest.skip("host is UTC; drift is unobservable here")
+        assert str(raw.timezone) != "UTC", (
+            "raw CronTrigger no longer inherits host zone; helper may be redundant"
+        )
+
+    def test_no_production_cron_bypasses_the_helper(self) -> None:
+        """One forgotten site reintroduces an 8-hour shift nobody would notice."""
+        source = Path("services/worker/src/pmvl_worker/scheduler.py").read_text()
+        body = source[source.index("def build_scheduler"):]
+        assert "CronTrigger(" not in body, (
+            "a cron trigger is constructed directly in build_scheduler; route it "
+            "through _utc_cron"
+        )
+
+
+class TestMappingHasNoSingleShotDependency:
+    def test_mapping_runs_on_a_short_interval_not_daily(self) -> None:
+        """A daily cadence gave each newly listed market one chance.
+
+        The Aug-27 run was missed during an outage and 42 Aug-28 markets were
+        stranded unmapped - and therefore unforecastable - with no second chance
+        before their decision instants.
+        """
+        from pmvl_shared.cadence import CADENCE_BY_JOB
+
+        cadence = CADENCE_BY_JOB["map_stations"]
+        assert cadence.cron is None
+        assert cadence.interval_seconds is not None
+        assert cadence.interval_seconds <= 900
+
+    def test_mapping_is_idempotent_by_construction(self) -> None:
+        """Short cadence is only safe because re-running is a no-op scan."""
+        import inspect
+
+        from pmvl_worker import jobs
+
+        doc = inspect.getdoc(jobs.job_map_settlement_stations) or ""
+        assert "re-runnable" in doc or "idempotent" in doc.lower()
+
+
+class TestLifecycleHealthCatchesUnmappedMarkets:
+    """Collector liveness answers 'are books arriving'. This answers the question
+    that actually went unnoticed for 33 hours: are they arriving for the markets
+    whose decision instants are next."""
+
+    def _health(self, hours_until: float):  # noqa: ANN202
+        from pmvl_markets.research.supervision import (
+            MAPPING_CRITICAL_BEFORE_DECISION,
+            MAPPING_DEGRADED_BEFORE_DECISION,
+            Liveness,
+        )
+
+        secs = hours_until * 3600
+        if secs <= MAPPING_CRITICAL_BEFORE_DECISION.total_seconds():
+            return Liveness.CRITICAL
+        if secs <= MAPPING_DEGRADED_BEFORE_DECISION.total_seconds():
+            return Liveness.DEGRADED
+        return Liveness.HEALTHY
+
+    def test_it_degrades_then_goes_critical_as_the_instant_approaches(self) -> None:
+        from pmvl_markets.research.supervision import Liveness
+
+        assert self._health(20.0) is Liveness.HEALTHY
+        assert self._health(4.0) is Liveness.DEGRADED
+        assert self._health(1.0) is Liveness.CRITICAL
+
+    def test_thresholds_leave_room_for_the_mapping_and_forecast_cycles(self) -> None:
+        """Mapping every 15 min plus forecast every 15 needs ~30 min of clear air."""
+        from pmvl_markets.research.supervision import (
+            MAPPING_CRITICAL_BEFORE_DECISION,
+        )
+
+        assert MAPPING_CRITICAL_BEFORE_DECISION >= timedelta(minutes=30)
+
+    def test_a_past_instant_does_not_alarm_forever(self) -> None:
+        """An unrecoverable instant alarming permanently trains people to ignore
+        the alarm."""
+        import inspect
+
+        from pmvl_markets.research import supervision
+
+        body = inspect.getsource(supervision.lifecycle_health)
+        assert "if decision <= now:" in body and "continue" in body

@@ -61,6 +61,28 @@ def _guard(fn: Callable[[], Any]) -> Callable[[], None]:
     return runner
 
 
+def _utc_cron(**fields: int) -> CronTrigger:
+    """A cron trigger that actually fires at the UTC time it names.
+
+    ``CronTrigger(hour=5)`` binds ``tzlocal.get_localzone()`` at construction,
+    and the scheduler's own ``timezone="UTC"`` does NOT override it - APScheduler
+    applies the scheduler timezone only when trigger fields are passed as kwargs
+    to ``add_job``. Passing a constructed trigger, as every job here does, silently
+    inherits the host zone.
+
+    On a host in Asia/Shanghai that shifted every documented-UTC cron by +8 hours.
+    `map_stations`, documented "daily at 05:00 UTC", ran at 21:00 UTC; the Aug-27
+    mapping opportunity was lost entirely and the Aug-28 forecast dependency chain
+    sat at 0/7 while the scheduler reported itself healthy. `collection_health`,
+    documented 23:50 UTC, ran at 15:50 UTC - same offset, independently confirming
+    the cause.
+
+    Every trigger goes through here so the binding cannot be forgotten once and
+    quietly diverge from its own documentation again.
+    """
+    return CronTrigger(timezone="UTC", **fields)
+
+
 def build_scheduler() -> BlockingScheduler:
     settings = get_settings()
     scheduler = BlockingScheduler(
@@ -118,7 +140,7 @@ def build_scheduler() -> BlockingScheduler:
     # The immutable daily record, at a configurable wall-clock time.
     scheduler.add_job(
         _guard(jobs.job_snapshot),
-        CronTrigger(
+        _utc_cron(
             hour=settings.daily_snapshot_hour_utc,
             minute=settings.daily_snapshot_minute_utc,
         ),
@@ -129,7 +151,7 @@ def build_scheduler() -> BlockingScheduler:
     # Backtest after the snapshot, so the day's record is included.
     scheduler.add_job(
         _guard(jobs.job_backtest),
-        CronTrigger(
+        _utc_cron(
             hour=(settings.daily_snapshot_hour_utc + 1) % 24,
             minute=settings.daily_snapshot_minute_utc,
         ),
@@ -144,7 +166,7 @@ def build_scheduler() -> BlockingScheduler:
     # fitting is then visible rather than needing to be remembered.
     scheduler.add_job(
         _guard(jobs.job_calibrate),
-        CronTrigger(
+        _utc_cron(
             hour=(settings.daily_snapshot_hour_utc + 2) % 24,
             minute=settings.daily_snapshot_minute_utc,
         ),
@@ -154,7 +176,7 @@ def build_scheduler() -> BlockingScheduler:
 
     scheduler.add_job(
         _guard(lambda: jobs.job_prune(keep_days=30)),
-        CronTrigger(hour=4, minute=30),
+        _utc_cron(hour=4, minute=30),
         id="prune",
         name="orderbook retention",
     )
@@ -231,16 +253,18 @@ def build_scheduler() -> BlockingScheduler:
 
     scheduler.add_job(
         _guard(jobs.job_collection_health),
-        CronTrigger(hour=23, minute=50),
+        _utc_cron(hour=23, minute=50),
         id="collection_health",
         name="collection-health snapshot",
     )
 
     scheduler.add_job(
         _guard(jobs.job_map_settlement_stations),
-        CronTrigger(hour=5, minute=0),
+        IntervalTrigger(seconds=CADENCE_BY_JOB["map_stations"].interval_seconds),
         id="map_stations",
         name="settlement-station mapping",
+        # Idempotent, so a coalesced catch-up run is harmless.
+        misfire_grace_time=600,
     )
 
     return scheduler
