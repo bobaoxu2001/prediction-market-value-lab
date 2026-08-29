@@ -245,13 +245,20 @@ class TestTheFortyBookGate:
         assert MIN_BOOKS_PER_ISSUANCE_WINDOW == 40
 
     @pytest.mark.integration
-    def test_the_gate_calculation_is_deterministic(self, clean_db) -> None:  # noqa: ANN001
+    def test_the_gate_calculation_is_deterministic(self, clean_db, tmp_path) -> None:  # noqa: ANN001
+        """Hermetic on purpose.
+
+        This read the real research archive on disk, so it was deterministic
+        only while nothing was writing to that file. With a live collector two
+        successive calls differ - 187,309 books then 187,393 - and the test
+        failed for the one reason that is not a defect in the code under test.
+        """
         from pmvl_markets.alpha.collection_health import build_report
 
         fixed = datetime(2026, 8, 25, 21, 0, tzinfo=timezone.utc)
-        assert build_report(clean_db, days=1, now=fixed) == build_report(
-            clean_db, days=1, now=fixed
-        )
+        assert build_report(
+            clean_db, days=1, now=fixed, archive_root=tmp_path
+        ) == build_report(clean_db, days=1, now=fixed, archive_root=tmp_path)
 
 
 # ---------------------------------------------------------------------------
