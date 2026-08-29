@@ -142,3 +142,86 @@ class TestPruneJobWiring:
         block = source[start: source.index('id="prune"')]
         assert "IntervalTrigger" in block, block
         assert "_utc_cron" not in block, block
+
+
+class TestHostPowerTelemetry:
+    """A dead battery cost three station-days and produced no software symptom.
+
+    This is observability, not resilience: caffeinate -i cannot override
+    battery-exhaustion hibernate and neither can telemetry.
+    """
+
+    def _parse(self, text: str):  # noqa: ANN202
+        from pmvl_markets.research.host_power import parse_power
+
+        return parse_power(text)
+
+    def test_ac_power_is_ok(self) -> None:
+        from pmvl_markets.research.host_power import HostPower
+
+        s = self._parse(
+            "Now drawing from 'AC Power'\n -InternalBattery-0\t52%; charging; 2:00"
+        )
+        assert s.status is HostPower.OK
+        assert s.battery_percent == 52 and s.charging is True
+
+    def test_dangerously_low_battery_is_at_risk(self) -> None:
+        """The observed failure: hibernate at 1%."""
+        from pmvl_markets.research.host_power import HostPower
+
+        s = self._parse(
+            "Now drawing from 'Battery Power'\n -InternalBattery-0\t1%; discharging; 0:05"
+        )
+        assert s.status is HostPower.AT_RISK
+
+    def test_healthy_battery_is_not_flagged(self) -> None:
+        from pmvl_markets.research.host_power import HostPower
+
+        assert self._parse(
+            "Now drawing from 'Battery Power'\n -InternalBattery-0\t60%; discharging; 3:00"
+        ).status is HostPower.OK
+
+    @pytest.mark.parametrize("text", ["", "   ", "garbage output", "Now drawing"])
+    def test_unreadable_state_fails_to_unknown_not_ok(self, text: str) -> None:
+        """A confident "fine" is most misleading exactly when it cannot be read."""
+        from pmvl_markets.research.host_power import HostPower
+
+        assert self._parse(text).status is not HostPower.OK
+
+    def test_a_battery_with_no_percentage_is_unknown(self) -> None:
+        from pmvl_markets.research.host_power import HostPower
+
+        assert self._parse(
+            "Now drawing from 'Battery Power'\n -InternalBattery-0 present: true"
+        ).status is HostPower.UNKNOWN
+
+    def test_reading_power_never_raises(self) -> None:
+        """A probe that can crash the health check it reports on is worse than none."""
+        from pmvl_markets.research.host_power import read_power
+
+        assert read_power() is not None
+
+    def test_power_cannot_reach_pit_admissibility(self) -> None:
+        """Admissibility follows evidence, never the host's charge state."""
+        research = Path("packages/market-normalization/src/pmvl_markets/research")
+        for name in ("build.py", "pit.py", "cohort.py", "probability.py"):
+            text = (research / name).read_text()
+            for banned in ("host_power", "battery", "read_power", "HostPower"):
+                assert banned not in text, f"{name} references {banned}"
+
+    def test_power_cannot_trigger_capture(self) -> None:
+        """Low battery must not manufacture extra PIT observations."""
+        source = Path(
+            "packages/market-normalization/src/pmvl_markets/research/host_power.py"
+        ).read_text()
+        for banned in ("refresh_orderbooks", "archive_books", "job_research_books"):
+            assert banned not in source
+
+    def test_the_threshold_is_documented_not_magic(self) -> None:
+        import inspect
+
+        from pmvl_markets.research import host_power
+
+        doc = inspect.getsource(host_power)
+        assert "BATTERY_AT_RISK_PERCENT" in doc
+        assert "1%" in doc, "the observed failure point should justify the threshold"

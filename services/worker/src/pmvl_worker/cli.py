@@ -793,8 +793,20 @@ def model_vs_market_readiness(
     )
 
     health = collector_health(data_dir=root)
+    from pmvl_markets.research.host_power import read_power
+    from pmvl_markets.research.supervision import lifecycle_health
+
+    power = read_power()
+    life = lifecycle_health(data_dir=root)
     console.print("")
     console.print("--- SUPERVISION ---")
+    console.print(
+        f"  host power                    {power.status.value} "
+        f"({power.source}"
+        + (f", {power.battery_percent}%" if power.battery_percent is not None else "")
+        + ")"
+    )
+    console.print(f"  lifecycle (mapping)           {life.state.value}")
     console.print(
         f"  collector liveness            {health.state.value} "
         f"(capture age {health.capture_age_seconds}s)"
