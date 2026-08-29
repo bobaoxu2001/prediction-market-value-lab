@@ -517,12 +517,16 @@ def job_calibrate() -> dict[str, Any]:
         return payload
 
 
-def job_prune(*, keep_days: int = 30) -> dict[str, Any]:
+def job_prune(
+    *, keep_days: int | None = None, keep_hours: int | None = None
+) -> dict[str, Any]:
     from pmvl_markets.ingest import prune_orderbook_snapshots
 
     with job_run("prune") as details:
         with session_scope() as db:
-            removed = prune_orderbook_snapshots(db, keep_days=keep_days)
+            removed = prune_orderbook_snapshots(
+                db, keep_days=keep_days, keep_hours=keep_hours
+            )
         details["records_written"] = removed
         return {"orderbook_snapshots_removed": removed}
 

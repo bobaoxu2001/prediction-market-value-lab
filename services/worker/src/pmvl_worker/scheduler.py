@@ -175,10 +175,16 @@ def build_scheduler() -> BlockingScheduler:
     )
 
     scheduler.add_job(
-        _guard(lambda: jobs.job_prune(keep_days=30)),
-        _utc_cron(hour=4, minute=30),
+        _guard(jobs.job_prune),
+        # Hourly, not daily.
+        #
+        # A daily pass has to delete a whole day of levels in one window, and a
+        # missed pass doubles that. Hourly keeps each run small enough that no
+        # batch competes with a capture cycle, and makes a skipped run harmless.
+        IntervalTrigger(seconds=3600),
         id="prune",
         name="orderbook retention",
+        misfire_grace_time=900,
     )
 
     # --- research collection -------------------------------------------------

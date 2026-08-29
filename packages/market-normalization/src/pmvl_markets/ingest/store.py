@@ -8,7 +8,7 @@ regression diagnosable after the fact.
 
 from __future__ import annotations
 
-from datetime import datetime
+from datetime import datetime, timedelta
 from decimal import Decimal
 from typing import Iterable, Sequence
 
@@ -568,25 +568,89 @@ def load_market_id_map(session: Session, platform: Platform | None = None) -> di
     return {f"{p}:{pid}": mid for p, pid, mid in session.execute(stmt)}
 
 
-def prune_orderbook_snapshots(session: Session, *, keep_days: int = 30) -> int:
-    """Drop snapshots older than the retention window.
+#: Hours of raw orderbook levels the operational store keeps.
+#:
+#: These are an OPERATIONAL WORKING SET, not research evidence. The research
+#: layer never reads `orderbook_levels` - every ladder it uses is written to the
+#: separate append-only research archive at capture time, and that archive is
+#: untouched by this function. What lives here serves live quoting, the daily
+#: snapshot/backtest build, and forensic diagnosis.
+#:
+#: 48 hours is the smallest window that covers all three:
+#:
+#:   longest observed host outage        18.2 h  (2026-08-27, low-battery sleep)
+#: + one full settlement/backtest cycle  24.0 h  (venue settles the next morning;
+#:                                                the daily build reads the day)
+#: = 42.2 h, rounded up to 48 h so a second incident during recovery still has
+#:   a complete cycle of data behind it.
+#:
+#: The previous 30-day policy deleted nothing while the data was younger than 30
+#: days, so the table grew unbounded: at the observed ~79k snapshots/day it was
+#: heading for ~148M level rows and roughly 20 GB. At 48 h the working set is
+#: bounded near 10M rows instead - a steady state rather than a slope.
+OPERATIONAL_LEVELS_RETENTION_HOURS = 48
 
-    High-frequency book captures dominate storage. Recommendation snapshots and
-    settlements - the audit trail - are never pruned.
+#: Rows per transaction. Small enough that no single delete holds a write lock
+#: long enough to stall a 60-second capture cycle, large enough that pruning a
+#: day's backlog does not take all day.
+PRUNE_BATCH_SIZE = 2_000
+
+
+def prune_orderbook_snapshots(
+    session: Session,
+    *,
+    keep_days: int | None = None,
+    keep_hours: int | None = None,
+    batch_size: int = PRUNE_BATCH_SIZE,
+    max_batches: int | None = None,
+) -> int:
+    """Drop operational book snapshots older than the retention window.
+
+    Chunked and resumable. The previous implementation loaded every expiring id
+    into a Python list and issued one DELETE over all of them - at 10M level
+    rows that is an unbounded transaction holding the write lock while the
+    collector is trying to capture, which is how a retention pass becomes an
+    outage.
+
+    Each batch commits independently, so an interrupted run leaves a consistent
+    database and the next run simply continues from the new oldest row. Ordering
+    is by id so progress is deterministic and a batch cannot revisit rows.
+
+    Never touches the research archive, settlements, recommendation snapshots or
+    any provenance table - only the raw operational ladder.
     """
     from sqlalchemy import delete
 
-    cutoff = utcnow() - _timedelta_days(keep_days)
-    ids = list(
-        session.scalars(
-            select(OrderbookSnapshot.id).where(OrderbookSnapshot.observed_at < cutoff)
+    if keep_hours is None:
+        keep_hours = (
+            keep_days * 24 if keep_days is not None
+            else OPERATIONAL_LEVELS_RETENTION_HOURS
         )
-    )
-    if not ids:
-        return 0
-    session.execute(delete(OrderbookLevel).where(OrderbookLevel.snapshot_id.in_(ids)))
-    session.execute(delete(OrderbookSnapshot).where(OrderbookSnapshot.id.in_(ids)))
-    return len(ids)
+    cutoff = utcnow() - timedelta(hours=keep_hours)
+
+    removed = 0
+    batches = 0
+    while max_batches is None or batches < max_batches:
+        ids = list(
+            session.scalars(
+                select(OrderbookSnapshot.id)
+                .where(OrderbookSnapshot.observed_at < cutoff)
+                .order_by(OrderbookSnapshot.id)
+                .limit(batch_size)
+            )
+        )
+        if not ids:
+            break
+        # Children first: a snapshot without its levels is a dangling parent,
+        # and an interrupted run must never leave one behind.
+        session.execute(
+            delete(OrderbookLevel).where(OrderbookLevel.snapshot_id.in_(ids))
+        )
+        session.execute(delete(OrderbookSnapshot).where(OrderbookSnapshot.id.in_(ids)))
+        session.commit()
+        removed += len(ids)
+        batches += 1
+    return removed
 
 
 def _timedelta_days(days: int):  # noqa: ANN202
