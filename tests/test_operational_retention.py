@@ -225,3 +225,59 @@ class TestHostPowerTelemetry:
         doc = inspect.getsource(host_power)
         assert "BATTERY_AT_RISK_PERCENT" in doc
         assert "1%" in doc, "the observed failure point should justify the threshold"
+
+
+class TestSettlementInClauseIsBounded:
+    """The settle job died silently once the settlements keyset outgrew SQLite.
+
+    SQLITE_MAX_VARIABLE_NUMBER is 32,766 here. The 02:00Z run on 2026-08-29
+    succeeded just under it; every run from 02:30Z failed with "too many SQL
+    variables" at 32,507 settlements and climbing. Settle kept being scheduled,
+    kept failing, and venue terminal results stopped being archived - which
+    stops the research cohort growing for a reason that looks nothing like a
+    research problem.
+    """
+
+    def test_chunk_size_leaves_headroom_under_the_sqlite_limit(self) -> None:
+        from pmvl_markets.backtest.settlement import _IN_CLAUSE_CHUNK
+
+        assert _IN_CLAUSE_CHUNK < 32_766
+        assert _IN_CLAUSE_CHUNK <= 10_000, "too close to the limit to be safe"
+
+    def test_chunking_covers_every_id_exactly_once(self) -> None:
+        from pmvl_markets.backtest.settlement import _chunked
+
+        ids = list(range(12_345))
+        out = [x for chunk in _chunked(ids) for x in chunk]
+        assert out == ids
+
+    def test_no_chunk_exceeds_the_bound(self) -> None:
+        from pmvl_markets.backtest.settlement import _IN_CLAUSE_CHUNK, _chunked
+
+        assert all(
+            len(c) <= _IN_CLAUSE_CHUNK for c in _chunked(list(range(40_000)))
+        )
+
+    def test_an_empty_keyset_yields_nothing(self) -> None:
+        from pmvl_markets.backtest.settlement import _chunked
+
+        assert list(_chunked([])) == []
+
+    def test_a_keyset_above_the_sqlite_limit_is_survivable(self) -> None:
+        """The exact production condition: more settlements than SQLite vars."""
+        import sqlite3
+
+        from pmvl_markets.backtest.settlement import _chunked
+
+        con = sqlite3.connect(":memory:")
+        con.execute("CREATE TABLE t (id INTEGER)")
+        ids = list(range(40_000))
+        for chunk in _chunked(ids):
+            placeholders = ",".join("?" * len(chunk))
+            con.execute(f"SELECT id FROM t WHERE id IN ({placeholders})", chunk)
+
+    def test_the_settle_path_no_longer_passes_the_whole_keyset(self) -> None:
+        source = Path(
+            "packages/market-normalization/src/pmvl_markets/backtest/settlement.py"
+        ).read_text()
+        assert "in_(settlements.keys())" not in source

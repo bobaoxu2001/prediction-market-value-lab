@@ -94,6 +94,27 @@ class SettlementReport:
         }
 
 
+#: Ids per IN clause. SQLite's SQLITE_MAX_VARIABLE_NUMBER is 32,766 on this
+#: build, and the settlements keyset crossed it in production on 2026-08-29:
+#: the 02:00Z settle run succeeded at just under the limit and every run from
+#: 02:30Z failed with "too many SQL variables" at 32,507 rows and climbing.
+#:
+#: The failure is silent in the worst way - settle keeps being scheduled, keeps
+#: failing, and venue terminal results stop being archived, which stops the
+#: research cohort growing for a reason that looks nothing like a research
+#: problem.
+#:
+#: 5,000 leaves generous headroom under the limit and keeps each statement small
+#: enough not to hold the write lock against a live capture.
+_IN_CLAUSE_CHUNK = 5_000
+
+
+def _chunked(values: list[Any], size: int = _IN_CLAUSE_CHUNK):
+    """Yield slices small enough for a bound IN clause."""
+    for start in range(0, len(values), size):
+        yield values[start : start + size]
+
+
 def payout_for_side(side: Side, yes_payout: Decimal) -> Decimal:
     """Terminal value of one contract of ``side``.
 
@@ -309,12 +330,17 @@ def grade_recommendations(
         return 0, 0
 
     graded_recs = 0
-    recs = session.scalars(
-        select(Recommendation).where(
-            Recommendation.settlement_result.is_(None),
-            Recommendation.market_id.in_(settlements.keys()),
-        )
-    ).all()
+    market_ids = list(settlements.keys())
+    recs = [
+        rec
+        for chunk in _chunked(market_ids)
+        for rec in session.scalars(
+            select(Recommendation).where(
+                Recommendation.settlement_result.is_(None),
+                Recommendation.market_id.in_(chunk),
+            )
+        ).all()
+    ]
     for rec in recs:
         settlement = settlements.get(rec.market_id)
         if settlement is None:
@@ -330,12 +356,16 @@ def grade_recommendations(
         graded_recs += 1
 
     graded_snapshots = 0
-    snapshots = session.scalars(
-        select(RecommendationSnapshot).where(
-            RecommendationSnapshot.final_result.is_(None),
-            RecommendationSnapshot.market_id.in_(settlements.keys()),
-        )
-    ).all()
+    snapshots = [
+        snap
+        for chunk in _chunked(market_ids)
+        for snap in session.scalars(
+            select(RecommendationSnapshot).where(
+                RecommendationSnapshot.final_result.is_(None),
+                RecommendationSnapshot.market_id.in_(chunk),
+            )
+        ).all()
+    ]
     for snapshot in snapshots:
         settlement = settlements.get(snapshot.market_id)
         if settlement is None:
@@ -375,9 +405,14 @@ def refresh_recommendation_states(
     if not open_recs:
         return 0
 
-    market_ids = {r.market_id for r in open_recs}
+    # Chunked for the same reason as the settlements keyset above: this set is
+    # bounded by open recommendations rather than by all settlements, so it is
+    # smaller today, but it grows on the same curve and fails the same silent way.
+    market_ids = sorted({r.market_id for r in open_recs if r.market_id is not None})
     markets = {
-        m.id: m for m in session.scalars(select(Market).where(Market.id.in_(market_ids)))
+        m.id: m
+        for chunk in _chunked(market_ids)
+        for m in session.scalars(select(Market).where(Market.id.in_(chunk)))
     }
 
     updated = 0
