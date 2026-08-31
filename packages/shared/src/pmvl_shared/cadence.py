@@ -215,10 +215,28 @@ CADENCES: tuple[Cadence, ...] = (
         stall_after_seconds=26 * 3600,
     ),
     Cadence(
+        "calibrate",
+        "Calibration fit",
+        # Absent from this registry until 2026-08-31 while `scheduler.py` had
+        # registered it since the job was written. `CADENCE_BY_JOB.get` returned
+        # None, so `job_status` reported UNKNOWN rather than STALLED: the job
+        # could never be observed as missing by any alarm, which is a weaker
+        # position than reporting the wrong cadence.
+        cron="daily, two hours after the snapshot",
+        stall_after_seconds=26 * 3600,
+    ),
+    Cadence(
         "prune",
         "Orderbook retention",
-        cron="daily at 04:30 UTC",
-        stall_after_seconds=26 * 3600,
+        # Hourly, matching `IntervalTrigger(seconds=3600)` in the scheduler.
+        #
+        # This read "daily at 04:30 UTC" with a 26-hour stall threshold while the
+        # scheduler had already been running it hourly. The metadata was the only
+        # copy the health endpoint could see, so an hourly job could have been
+        # dead for most of a day before /health called it stalled - and on
+        # 2026-08-29 prune did stop for 33 hours without that alarm firing.
+        # The derived threshold (three missed intervals) is three hours.
+        interval_seconds=3600,
     ),
     # --- research collection -------------------------------------------------
     #

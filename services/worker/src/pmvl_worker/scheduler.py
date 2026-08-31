@@ -61,6 +61,27 @@ def _guard(fn: Callable[[], Any]) -> Callable[[], None]:
     return runner
 
 
+#: How late a daily cron job may still be executed after its due time.
+#:
+#: The 300s default silently deleted three validation opportunities on
+#: 2026-08-29. The host took a 900-1000s macOS Maintenance Sleep across each of
+#: the 13:00, 14:00 and 15:00 UTC instants and APScheduler discarded every run:
+#: "was missed by 0:13:43", "0:05:24", "0:19:09". The backtest lost its slot by
+#: 24 seconds. Interval jobs appeared to survive only because they recompute
+#: their next fire from the wake instant rather than recovering the missed one,
+#: so the outage read as partial when it was total for everything cron-driven.
+#:
+#: 1800s covers an observed maintenance sleep with headroom while staying under
+#: the one-hour spacing of snapshot -> backtest -> calibrate, so a recovered run
+#: cannot overtake the job that must read its output. `coalesce=True` still
+#: collapses a backlog to a single execution.
+#:
+#: This restores a missed run through the scheduler's own misfire policy. That
+#: distinction matters for validation: a job the scheduler recovers on wake is a
+#: delayed *natural* execution, whereas a hand-fired job is not evidence at all.
+_CRON_MISFIRE_GRACE = 1800
+
+
 def _utc_cron(**fields: int) -> CronTrigger:
     """A cron trigger that actually fires at the UTC time it names.
 
@@ -146,6 +167,7 @@ def build_scheduler() -> BlockingScheduler:
         ),
         id="snapshot",
         name="daily recommendation snapshot",
+        misfire_grace_time=_CRON_MISFIRE_GRACE,
     )
 
     # Backtest after the snapshot, so the day's record is included.
@@ -157,6 +179,7 @@ def build_scheduler() -> BlockingScheduler:
         ),
         id="backtest",
         name="walk-forward backtest",
+        misfire_grace_time=_CRON_MISFIRE_GRACE,
     )
 
     # Calibration after the backtest, for the same reason the backtest follows the
@@ -172,6 +195,7 @@ def build_scheduler() -> BlockingScheduler:
         ),
         id="calibrate",
         name="calibration fit",
+        misfire_grace_time=_CRON_MISFIRE_GRACE,
     )
 
     scheduler.add_job(
@@ -262,6 +286,7 @@ def build_scheduler() -> BlockingScheduler:
         _utc_cron(hour=23, minute=50),
         id="collection_health",
         name="collection-health snapshot",
+        misfire_grace_time=_CRON_MISFIRE_GRACE,
     )
 
     scheduler.add_job(

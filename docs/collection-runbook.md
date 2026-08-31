@@ -45,6 +45,70 @@ belongs to the host:
 Restart is safe. Every collector is idempotent on natural keys, so a restart
 mid-window resumes rather than re-dating anything (see below).
 
+#### When `KeepAlive` does not restart it
+
+`KeepAlive=true` only applies while the job is *loaded*. A job can be removed
+from the user domain and left in a persistent disabled list, and then nothing
+restarts it — not `KeepAlive`, and not the next login.
+
+That is what ended the 2026-08-29 run. The collector logged a clean
+`shutting down scheduler` at 23:13:37Z, which is only reachable from its
+SIGINT/SIGTERM handler, and never came back. 33 hours later:
+
+```bash
+launchctl print-disabled gui/$(id -u) | grep pmvl
+```
+
+```text
+"com.pmvl.collector" => disabled
+```
+
+`launchctl bootstrap` fails against a disabled service with the unhelpful
+`Bootstrap failed: 5: Input/output error`. Clearing the override is what the
+legacy `-w` flag does:
+
+```bash
+launchctl load -w ~/Library/LaunchAgents/com.pmvl.collector.plist
+```
+
+Then confirm the job is actually supervised, not merely present:
+
+```bash
+launchctl print gui/$(id -u)/com.pmvl.collector | grep -E "state|pid|runs"
+```
+
+Check `print-disabled` before concluding the plist is at fault. A valid plist,
+a valid interpreter path and a registered-looking job can all coexist with a
+service that launchd has been told never to run.
+
+### Host prerequisites for an unattended run
+
+Supervision restarts a process. It cannot run one on a sleeping machine, and no
+amount of configuration changes that. An unattended collection run has host
+prerequisites, and they are prerequisites rather than recommendations:
+
+| Requirement | Why |
+| --- | --- |
+| Continuous AC power | On 2026-08-28 the host reached 1% and entered Low Power Sleep for 2.45 h, losing three station-days. |
+| Lid open, or a dock that suppresses clamshell sleep | `caffeinate -i` blocks *idle* sleep only. It does not block Clamshell Sleep, and two occurred on 2026-08-29. |
+| System sleep disabled (`sudo pmset -a sleep 0 disablesleep 1`) | macOS Maintenance Sleep ran for 900-1000 s at a time and discarded three daily cron jobs. |
+
+`caffeinate -i` in the launchd plist is worth keeping, but it is the weakest of
+the three and covers only the first failure mode. It is not a substitute for the
+other two.
+
+When the host cannot meet these, say so in the report rather than presenting the
+run as unattended. A window collected across a sleeping laptop is not a weaker
+version of a continuous one; its decision instants are simply absent, and that
+is not recoverable after the fact.
+
+**There is no software fix for a sleeping host.** The scheduler's misfire grace
+(`_CRON_MISFIRE_GRACE`, 1800 s) lets a *daily* job be recovered on wake, which
+is why a short Maintenance Sleep no longer deletes a validation opportunity. It
+does nothing for order-book capture: a 30-second cadence across a 15-minute
+sleep loses 30 captures, permanently. Decision-window evidence is only ever
+collected live.
+
 ### Liveness, and why age was not enough
 
 Each job holds an *active-run slot* keyed by its idempotency key, so a scheduler
