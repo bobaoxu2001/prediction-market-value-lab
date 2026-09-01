@@ -547,6 +547,31 @@ async def refresh_orderbooks(
             )
             if not targets:
                 continue
+            # End the transaction before going to the network.
+            #
+            # `session.scalars(select(Market))` above opens a SQLite read
+            # transaction, and in WAL mode that pins a read snapshot. Holding it
+            # across `get_orderbooks` - seconds normally, minutes when a
+            # provider is retrying behind an open circuit - had two measured
+            # consequences on 2026-08-31:
+            #
+            #   * other writers failed with `database is locked` even though the
+            #     busy timeout is 30s, because the wait is longer than that. The
+            #     14:00Z backtest never started: its own job_runs INSERT was the
+            #     statement that lost. 87 such errors clustered in the two hours
+            #     before the decision window.
+            #   * the checkpointer could not reset the WAL, because a live
+            #     reader still needed the old frames. pmvl.db-wal sat at exactly
+            #     416.4 MiB for over twelve hours without moving.
+            #
+            # Committing here releases the snapshot for the duration of the
+            # fetch. Nothing is pending at this point on the research path, so
+            # this is a no-op commit that ends a read transaction; on the
+            # product path it flushes the previous platform's writes, which is
+            # also what we want before blocking on a socket. `expire_on_commit`
+            # is False on this session factory and every market has already been
+            # rehydrated into a plain NormalizedMarket, so nothing re-loads.
+            session.commit()
             try:
                 raw = await provider.get_orderbooks(targets)
                 # Stamped the instant the venue's response is in hand, before

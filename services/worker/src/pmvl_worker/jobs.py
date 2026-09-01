@@ -160,6 +160,54 @@ def _claim_active_key(db, job_name: str, key: str, started: datetime) -> int:
     return record_id
 
 
+#: How many times the opening claim may be retried when SQLite is busy.
+#:
+#: The claim is one small INSERT, but it is the FIRST statement a scheduled job
+#: runs, so it is the one that loses under write contention - and losing it is
+#: silent. On 2026-08-31T14:00:00Z the backtest's claim INSERT failed with
+#: `database is locked`; the exception left `job_run` before the body executed,
+#: `_guard` logged it and returned, and APScheduler then logged the job as
+#: "executed successfully". The result was a cron job that did not run, left no
+#: job_runs row at all, and looked healthy in the scheduler log.
+#:
+#: Retrying here does not paper over contention - it stops a transient lock from
+#: deleting a scheduled execution AND its evidence in the same moment.
+_CLAIM_RETRIES = 5
+_CLAIM_BACKOFF_SECONDS = 0.5
+
+
+def _claim_with_retry(
+    db, job_name: str, key: str, started: datetime  # noqa: ANN001
+) -> int:
+    """Claim the active-run slot, retrying only on SQLite busy/locked errors.
+
+    ``JobSkipped`` is re-raised immediately: another live run holds the slot and
+    waiting cannot change that. Every other exception propagates unchanged.
+    """
+    from sqlalchemy.exc import OperationalError
+
+    last: Exception | None = None
+    for attempt in range(_CLAIM_RETRIES):
+        try:
+            return _claim_active_key(db, job_name, key, started)
+        except JobSkipped:
+            raise
+        except OperationalError as exc:
+            if "locked" not in str(exc).lower() and "busy" not in str(exc).lower():
+                raise
+            last = exc
+            db.rollback()
+            if attempt < _CLAIM_RETRIES - 1:
+                time.sleep(_CLAIM_BACKOFF_SECONDS * (2**attempt))
+                log.warning(
+                    "claim for %s busy, retry %d/%d",
+                    job_name, attempt + 1, _CLAIM_RETRIES - 1,
+                )
+    assert last is not None
+    log.error("could not claim a run slot for %s: %s", job_name, last)
+    raise last
+
+
 @contextmanager
 def job_run(
     job_name: str,
@@ -191,7 +239,7 @@ def job_run(
 
     with session_scope() as db:
         try:
-            record_id = _claim_active_key(
+            record_id = _claim_with_retry(
                 db, job_name, record.idempotency_key, started
             )
         except JobSkipped as skip:
@@ -659,6 +707,7 @@ async def job_research_books(*, max_seconds: int = 0) -> dict[str, Any]:
     """
     import asyncio
 
+    from pmvl_shared.collection_outcome import classify_collection
     from pmvl_shared.research_archive import ResearchArchive, default_archive_path
     from pmvl_shared.timeutil import utcnow
 
@@ -679,6 +728,7 @@ async def job_research_books(*, max_seconds: int = 0) -> dict[str, Any]:
 
         captures, archived, errors = 0, 0, []
         tick, skipped = 0, 0
+        markets_seen, upstream = 0, []
 
         # Claim liveness BEFORE the first capture, not only after it.
         #
@@ -737,8 +787,16 @@ async def job_research_books(*, max_seconds: int = 0) -> dict[str, Any]:
                     )
                 captures += 1
                 archived += int(report.archive.get("books_archived", 0))
+                markets_seen += int(report.archive.get("markets_seen", 0))
+                # Provider-level failures are reported, not raised: a platform
+                # whose circuit is open is recorded in report.errors and the
+                # cycle returns normally. Collecting them here is what lets a
+                # zero-row cycle say whether the venue was reachable.
+                upstream.extend(report.errors)
+                upstream.extend(report.archive.get("errors", []))
             except Exception as exc:  # noqa: BLE001
                 errors.append(f"{type(exc).__name__}: {exc}")
+                upstream.append(f"{type(exc).__name__}: {exc}")
 
             # Prove liveness before sleeping. A worker killed mid-window used to
             # leave its 'running' row blocking every later tick; the reclaimer
@@ -787,10 +845,24 @@ async def job_research_books(*, max_seconds: int = 0) -> dict[str, Any]:
                 "window_horizon_hours": WINDOW_HORIZON_HOURS if window else None,
                 "archive_books_total": stats.books,
                 "records_written": archived,
+                # Why the row count is what it is.
+                #
+                # `records_written = 0` alone cannot distinguish a quiet market
+                # from an unreachable venue, and on 2026-08-31 the difference
+                # was six decision instants. Health reads this rather than
+                # inferring intent from a count.
+                "outcome": classify_collection(
+                    books_archived=archived,
+                    markets_seen=markets_seen,
+                    errors=upstream,
+                ).value,
+                "markets_seen": markets_seen,
             }
         )
         if errors:
             details["errors"] = errors[:10]
+        if upstream:
+            details["upstream_errors"] = upstream[:10]
         return dict(details)
 
 
