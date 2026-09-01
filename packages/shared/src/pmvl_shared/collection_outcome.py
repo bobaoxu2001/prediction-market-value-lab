@@ -57,14 +57,20 @@ def classify_collection(
     *,
     books_archived: int,
     markets_seen: int,
+    configured_markets: int = 0,
     errors: "list[str] | tuple[str, ...]" = (),
 ) -> CollectionOutcome:
     """Classify one cycle from what it observed.
 
-    Failure states are checked before the row count, because a cycle that never
+    ``markets_seen`` counts markets whose book was actually FETCHED;
+    ``configured_markets`` counts markets the collector was supposed to fetch.
+    Keeping them apart is the whole point. They were conflated on 2026-09-01,
+    when Kalshi's circuit opened, nothing was fetched, and a run over 84
+    configured markets reported NO_MARKETS_CONFIGURED for 64 minutes.
+
+    Failure states are checked before any count, because a cycle that never
     reached the venue wrote zero rows for a reason that has nothing to do with
-    the market being quiet. Order among the failure states runs from most to
-    least specific.
+    the market being quiet. Order among them runs most to least specific.
     """
     joined = " | ".join(errors).lower()
 
@@ -76,7 +82,13 @@ def classify_collection(
         return CollectionOutcome.DB_WRITE_FAILED
     if joined:
         return CollectionOutcome.UPSTREAM_FETCH_FAILED
-    if markets_seen == 0:
+
+    # Fail closed. Nothing fetched while markets WERE configured means the
+    # collector could not reach the venue, whatever the provider layer chose to
+    # report. Only a genuinely empty universe may take the benign branch.
+    if markets_seen == 0 and configured_markets > 0:
+        return CollectionOutcome.UPSTREAM_FETCH_FAILED
+    if configured_markets == 0 and markets_seen == 0:
         return CollectionOutcome.NO_MARKETS_CONFIGURED
     if books_archived > 0:
         return CollectionOutcome.SUCCESS_WITH_ROWS

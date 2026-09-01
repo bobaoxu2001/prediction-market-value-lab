@@ -43,6 +43,12 @@ class IngestReport:
     by_platform: dict[str, int] = field(default_factory=dict)
     errors: list[str] = field(default_factory=list)
     provider_stats: dict[str, Any] = field(default_factory=dict)
+    #: Markets this pass was SUPPOSED to fetch, whether or not it managed to.
+    #: Distinct from markets_seen, which counts books actually returned. With
+    #: only the latter, an unreachable venue is indistinguishable from an empty
+    #: universe - which is exactly how a 64-minute Kalshi outage was recorded
+    #: as NO_MARKETS_CONFIGURED on 2026-09-01.
+    configured_markets: int = 0
     #: What the research archive did, when one was supplied. Empty on the
     #: product-only path, so an absent archive reads as absent rather than as a
     #: pass that wrote nothing.
@@ -50,6 +56,7 @@ class IngestReport:
 
     def as_dict(self) -> dict[str, Any]:
         return {
+            "configured_markets": self.configured_markets,
             "markets_fetched": self.markets_fetched,
             "markets_written": self.markets_written,
             "events_written": self.events_written,
@@ -590,6 +597,32 @@ async def refresh_orderbooks(
             except Exception as exc:  # noqa: BLE001
                 report.errors.append(f"{platform.value} orderbooks: {exc}")
                 continue
+            report.configured_markets += len(targets)
+
+            # A silent empty fetch is the failure this guard exists for.
+            #
+            # KalshiProvider.get_orderbooks catches ProviderError - which
+            # CircuitOpenError subclasses - logs at DEBUG and returns {}. The
+            # per-market fallback swallows each exception the same way. So a
+            # completely unreachable venue arrives here as an ordinary empty
+            # result with report.errors untouched, and every downstream
+            # consumer sees "nothing to collect" instead of "could not
+            # collect". Naming it here is the earliest point that still knows
+            # both how many markets were asked for and whether the venue
+            # answered.
+            if targets and not raw:
+                client = getattr(provider, "_client", None)
+                if getattr(client, "circuit_open", False):
+                    report.errors.append(
+                        f"{platform.value} orderbooks: circuit open; 0 of "
+                        f"{len(targets)} configured markets fetched"
+                    )
+                else:
+                    report.errors.append(
+                        f"{platform.value} orderbooks: 0 of {len(targets)} "
+                        "configured markets returned a book"
+                    )
+
             books = {f"{platform.value}:{t}": b for t, b in raw.items()}
             if not research_only:
                 # A research-only pass archives; it does not write the product

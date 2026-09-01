@@ -208,6 +208,16 @@ def _claim_with_retry(
     raise last
 
 
+class CollectionUpstreamFailure(RuntimeError):
+    """A collection cycle could not reach its venue.
+
+    Distinct from a crash: the code worked, the venue did not. It is raised so
+    the run is recorded as FAILED rather than closing as a success that wrote
+    zero rows, and it is caught by the scheduler guard so one unreachable
+    provider degrades the record without stopping the schedule.
+    """
+
+
 @contextmanager
 def job_run(
     job_name: str,
@@ -707,7 +717,10 @@ async def job_research_books(*, max_seconds: int = 0) -> dict[str, Any]:
     """
     import asyncio
 
-    from pmvl_shared.collection_outcome import classify_collection
+    from pmvl_shared.collection_outcome import (
+        CollectionOutcome,
+        classify_collection,
+    )
     from pmvl_shared.research_archive import ResearchArchive, default_archive_path
     from pmvl_shared.timeutil import utcnow
 
@@ -728,7 +741,7 @@ async def job_research_books(*, max_seconds: int = 0) -> dict[str, Any]:
 
         captures, archived, errors = 0, 0, []
         tick, skipped = 0, 0
-        markets_seen, upstream = 0, []
+        markets_seen, upstream, configured = 0, [], 0
 
         # Claim liveness BEFORE the first capture, not only after it.
         #
@@ -788,6 +801,7 @@ async def job_research_books(*, max_seconds: int = 0) -> dict[str, Any]:
                 captures += 1
                 archived += int(report.archive.get("books_archived", 0))
                 markets_seen += int(report.archive.get("markets_seen", 0))
+                configured += int(getattr(report, "configured_markets", 0) or 0)
                 # Provider-level failures are reported, not raised: a platform
                 # whose circuit is open is recorded in report.errors and the
                 # cycle returns normally. Collecting them here is what lets a
@@ -854,15 +868,37 @@ async def job_research_books(*, max_seconds: int = 0) -> dict[str, Any]:
                 "outcome": classify_collection(
                     books_archived=archived,
                     markets_seen=markets_seen,
+                    configured_markets=configured,
                     errors=upstream,
                 ).value,
                 "markets_seen": markets_seen,
+                "configured_markets": configured,
             }
         )
         if errors:
             details["errors"] = errors[:10]
         if upstream:
             details["upstream_errors"] = upstream[:10]
+
+        # A run that could not reach the venue must not close as a success.
+        #
+        # On 2026-09-01 five consecutive cycles wrote status='success' through a
+        # 64-minute Kalshi outage. The capture-age alarm caught it, but every
+        # per-run record said the collection was fine, and the outcome field
+        # said there had been nothing to collect. Raising here routes the run
+        # through job_run's existing failure path - status FAILED with the
+        # reason attached - which is the contract this repository already uses
+        # for a run that did not do its job. `_guard` still absorbs it at the
+        # scheduler, so one unreachable venue degrades the record without
+        # taking down the schedule.
+        outcome = CollectionOutcome(details["outcome"])
+        if outcome.is_upstream_failure:
+            record = details["record"]
+            record.fail_provider("kalshi", details["outcome"])
+            raise CollectionUpstreamFailure(
+                f"{details['outcome']}: {configured} markets configured, "
+                f"{markets_seen} fetched, {archived} archived"
+            )
         return dict(details)
 
 
