@@ -17,6 +17,7 @@ from pathlib import Path
 from typing import Any, Callable, Iterator
 
 from sqlalchemy import and_, or_, select
+from sqlalchemy.exc import OperationalError
 
 from pmvl_shared.config import get_settings
 from pmvl_shared.db import session_scope
@@ -218,6 +219,49 @@ class CollectionUpstreamFailure(RuntimeError):
     """
 
 
+def _record_claim_failure(
+    job_name: str, record: "RunRecord", started: datetime, exc: Exception
+) -> None:
+    """Leave durable evidence that a scheduler fire was prevented by contention.
+
+    Deliberately its own short session: the caller's is poisoned by the failed
+    INSERT. Deliberately unretried: this runs while a writer is holding the very
+    lock that caused the failure, and queuing another retry storm behind it
+    would amplify the contention it is reporting. If this write cannot land
+    either, the stderr log is the fallback channel and the original
+    OperationalError still propagates, so the failure is never silent.
+    """
+    try:
+        with session_scope() as db:
+            db.add(
+                JobRun(
+                    job_name=job_name,
+                    status=JobStatus.FAILED.value,
+                    started_at=started,
+                    finished_at=utcnow(),
+                    duration_seconds=0.0,
+                    records_written=0,
+                    idempotency_key=record.idempotency_key,
+                    error=f"claim blocked by database lock: {str(exc)[:240]}",
+                    details={
+                        "run": {
+                            "run_id": record.run_id,
+                            "idempotency_key": record.idempotency_key,
+                            "claim_failed": True,
+                            "body_executed": False,
+                        }
+                    },
+                )
+            )
+    except Exception as inner:  # noqa: BLE001
+        # Never recurse into the ledger to report a ledger failure.
+        log.error(
+            "job %s could not claim a run slot AND could not record that "
+            "failure: claim=%s record=%s",
+            job_name, str(exc)[:160], str(inner)[:160],
+        )
+
+
 @contextmanager
 def job_run(
     job_name: str,
@@ -277,6 +321,26 @@ def job_run(
             # session_scope rolls back on exception; the skipped record must
             # survive so the audit trail shows both sides of the skip.
             db.commit()
+            raise
+        except OperationalError as exc:
+            # Contention must not erase the attempt.
+            #
+            # This is the defect that made a real 2026-09-01T15:00Z calibrate
+            # fire vanish. The claim INSERT is the only durable artifact an
+            # attempt has, so when it exhausts its retries against a held write
+            # lock the rollback takes the sole evidence with it: the scheduler
+            # logged a failure, the ledger showed nothing, and `job_status`
+            # went on reporting the previous day's run. Thirteen minutes of
+            # every job's history disappeared the same way.
+            #
+            # The JobSkipped branch above already set the precedent - it commits
+            # a durable record precisely so "the audit trail shows both sides".
+            # Lock contention had no equivalent, which is the asymmetry being
+            # repaired. FAILED is the existing status for a run that did not do
+            # its job; no new state is invented for it. The row cannot collide
+            # with the active-key unique index because that index covers only
+            # status='running'.
+            _record_claim_failure(job_name, record, started, exc)
             raise
 
     def heartbeat() -> None:
