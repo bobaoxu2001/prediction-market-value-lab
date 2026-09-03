@@ -226,6 +226,13 @@ def _build_engine(url: str | None = None) -> Engine:
             finally:
                 cur.close()
 
+    if url.startswith("sqlite"):
+        # Measurement only - observes transactions, never writes. See
+        # docs/sqlite-writer-instrumentation-contract.md.
+        from .writer_telemetry import install as _install_writer_telemetry
+
+        _install_writer_telemetry(engine)
+
     return engine
 
 

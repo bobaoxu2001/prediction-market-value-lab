@@ -21,6 +21,7 @@ from sqlalchemy.exc import OperationalError
 
 from pmvl_shared.config import get_settings
 from pmvl_shared.db import session_scope
+from pmvl_shared.db.writer_telemetry import current_writer_path
 from pmvl_shared.enums import JobStatus
 from pmvl_shared.logging_setup import get_logger
 from pmvl_shared.timeutil import utcnow
@@ -289,6 +290,10 @@ def job_run(
         upstream_dependencies=list(upstream or []),
     )
     details: dict[str, Any] = {"record": record}
+    # Attribution for writer telemetry. Explicit, because inferring the
+    # writer from statement text or runtime length is exactly the guess
+    # this measurement exists to replace.
+    _writer_token = current_writer_path.set(job_name)
     record_id: int | None = None
 
     with session_scope() as db:
@@ -321,6 +326,10 @@ def job_run(
             # session_scope rolls back on exception; the skipped record must
             # survive so the audit trail shows both sides of the skip.
             db.commit()
+            # Both claim exits leave job_run before the finally below, so the
+            # writer-path contextvar has to be released here or it leaks into
+            # whichever job this thread picks up next.
+            current_writer_path.reset(_writer_token)
             raise
         except OperationalError as exc:
             # Contention must not erase the attempt.
@@ -341,6 +350,7 @@ def job_run(
             # with the active-key unique index because that index covers only
             # status='running'.
             _record_claim_failure(job_name, record, started, exc)
+            current_writer_path.reset(_writer_token)
             raise
 
     def heartbeat() -> None:
@@ -398,6 +408,7 @@ def job_run(
         log.error("job %s failed: %s", job_name, exc)
         raise
     finally:
+        current_writer_path.reset(_writer_token)
         # Stop before the terminal write, so a beat cannot resurrect
         # heartbeat_at on a row that has already been closed out.
         stop_beating.set()
