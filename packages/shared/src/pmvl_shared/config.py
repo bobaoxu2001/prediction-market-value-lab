@@ -47,8 +47,39 @@ class Settings(BaseSettings):
     kalshi_api_base: str = Field(default="https://api.elections.kalshi.com/trade-api/v2")
     #: Public market data needs no credentials. These are only required if a future
     #: execution service is enabled; the research system never uses them.
+    #:
+    #: Production credentials grant READ access only - see
+    #: ``pmvl_markets.execution.modes``, where no execution mode can mutate a real
+    #: account. Supply the key inline via ``KALSHI_PRIVATE_KEY_PEM`` or, preferably,
+    #: point ``KALSHI_PRIVATE_KEY_PATH`` at a file outside the repository.
     kalshi_api_key_id: str = Field(default="")
     kalshi_private_key_pem: str = Field(default="")
+    kalshi_private_key_path: str = Field(default="")
+
+    #: Demo (sandbox) credentials. Separate fields, not a reused pair, so that a
+    #: demo run cannot authenticate with production keys by configuration alone.
+    kalshi_demo_api_key_id: str = Field(default="")
+    kalshi_demo_private_key_pem: str = Field(default="")
+    kalshi_demo_private_key_path: str = Field(default="")
+
+    # ---------------------------------------------------------------- execution
+    #: Configuration arm of the execution kill switch. Default false: a
+    #: deployment must opt in to any execution at all, including demo.
+    execution_enabled: bool = Field(default=False)
+    #: Persistent arm of the kill switch. If this file exists, no new order is
+    #: submitted in any mode, regardless of config or process state.
+    #: Anchored at the repo root, not the working directory. A kill switch
+    #: that resolves relative to cwd fails OPEN for any process started from
+    #: elsewhere - which is precisely the crash-restart case it exists for.
+    execution_kill_switch_path: str = Field(
+        default=str(REPO_ROOT / "data" / "EXECUTION_DISABLED")
+    )
+    #: Separate from ``database_url`` on purpose - execution state does not share
+    #: a file with research data. See ``pmvl_markets.execution.ledger``.
+    #: Absolute for the same reason: a cwd-relative ledger silently becomes a
+    #: fresh empty database, which reports zero unresolved orders and clears
+    #: the "unknown remote state blocks mutation" guarantee.
+    execution_db_path: str = Field(default=str(REPO_ROOT / "data" / "execution.db"))
 
     polymarket_gamma_base: str = Field(default="https://gamma-api.polymarket.com")
     polymarket_clob_base: str = Field(default="https://clob.polymarket.com")
@@ -291,6 +322,10 @@ class Settings(BaseSettings):
         secret_fields = {
             "kalshi_api_key_id",
             "kalshi_private_key_pem",
+            "kalshi_private_key_path",
+            "kalshi_demo_api_key_id",
+            "kalshi_demo_private_key_pem",
+            "kalshi_demo_private_key_path",
             "anthropic_api_key",
         }
         out: dict[str, object] = {}

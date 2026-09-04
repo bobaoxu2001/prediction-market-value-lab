@@ -16,6 +16,9 @@ dependencies = [
     "scipy>=1.14,<2",
     "scikit-learn>=1.5,<2",
     "statsmodels>=0.14,<0.15",
+    # Kalshi authenticates with RSA-PSS request signatures. Required only by the
+    # execution subsystem; the research path never authenticates.
+    "cryptography>=43,<47",
 ]
 
 [tool.setuptools.packages.find]

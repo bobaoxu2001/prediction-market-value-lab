@@ -14,12 +14,17 @@ from rich.table import Table
 from pmvl_shared.config import get_settings
 from pmvl_shared.logging_setup import setup_logging
 
-from . import jobs
+from . import execution_cli, jobs
 
 app = typer.Typer(
     add_completion=False,
-    help="Prediction Market Value Lab - research pipeline. Read-only; never trades.",
+    help=(
+        "Prediction Market Value Lab - research pipeline. The research path is "
+        "read-only and never trades; `pmvl exec` reaches a venue only in the "
+        "demo sandbox."
+    ),
 )
+app.add_typer(execution_cli.app, name="exec")
 console = Console()
 
 
