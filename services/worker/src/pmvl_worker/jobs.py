@@ -1311,7 +1311,7 @@ async def job_forecast_observations() -> dict[str, Any]:
 async def job_research_trades(*, limit: int = 100) -> dict[str, Any]:
     """Archive public trade prints for the research universe, uncapped.
 
-    A separate job from the product's ``_ingest_trades``, which samples only the
+    A separate job from the product's trade prefetch, which samples only the
     top 25 markets by volume per platform. Weather contracts frequently miss that
     cut, so relying on it would leave the research universe with no tape at all -
     and a print that was never captured cannot be recovered.

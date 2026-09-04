@@ -419,6 +419,14 @@ async def run_ingest(
             report.provider_stats[provider.platform.value] = provider.stats
 
         report.markets_fetched = len(all_markets)
+
+        # Network before the first write, never after it. Everything below this
+        # line touches the database; everything the venue can make us wait for
+        # has to finish above it.
+        fetched_trades: list[Any] = []
+        if include_trades:
+            fetched_trades = await _fetch_trade_payloads(providers, all_markets)
+
         report.events_written = upsert_events(session, all_events)
         id_map = upsert_markets(session, all_markets)
         report.markets_written = len(id_map)
@@ -427,8 +435,8 @@ async def run_ingest(
         )
 
         if include_trades:
-            report.trades_written = await _ingest_trades(
-                session, providers, all_markets, id_map
+            report.trades_written = _store_fetched_trades(
+                session, fetched_trades, id_map
             )
 
     finally:
@@ -442,20 +450,32 @@ async def run_ingest(
     return report
 
 
-async def _ingest_trades(
-    session,  # noqa: ANN001
+async def _fetch_trade_payloads(
     providers: Sequence[KalshiProvider | PolymarketProvider],
     markets: Sequence[NormalizedMarket],
-    id_map: dict[str, int],
     *,
     per_platform: int = 25,
-) -> int:
+) -> list[Any]:
     """Pull recent prints for the most active markets only.
 
     Trades are used to sanity-check that quotes are live, not to drive pricing, so a
     sample of the busiest markets is sufficient and keeps the request budget small.
+
+    Split out of the write path deliberately. This awaits the venue over the
+    network, and it used to run *after* the first INSERT of the ingest
+    transaction - so SQLite's write path stayed open for the whole round trip.
+    Measured over 31 natural cycles that put the ingest pre-commit window at a
+    169.9 s p90 and a 348.3 s maximum, 64% of all observed pre-commit write time
+    in the process. Nothing here needs the transaction: selection reads the
+    in-memory market list, and ``get_trades`` takes a NormalizedMarket and talks
+    only to the provider's HTTP client. The payloads are handed to
+    :func:`_store_fetched_trades`, which is the part that genuinely needs the
+    session and ``id_map``.
+
+    Returns the raw ``asyncio.gather`` results, exceptions included, so the
+    caller applies exactly the per-result skip the previous code did.
     """
-    written = 0
+    fetched: list[Any] = []
     for provider in providers:
         candidates = [
             m for m in markets
@@ -468,10 +488,21 @@ async def _ingest_trades(
         results = await asyncio.gather(
             *(provider.get_trades(m, limit=50) for m in top), return_exceptions=True
         )
-        for result in results:
-            if isinstance(result, Exception):
-                continue
-            written += store_trades(session, result, id_map)
+        fetched.extend(results)
+    return fetched
+
+
+def _store_fetched_trades(
+    session,  # noqa: ANN001
+    fetched: Sequence[Any],
+    id_map: dict[str, int],
+) -> int:
+    """Persist prefetched prints inside the caller's existing transaction."""
+    written = 0
+    for result in fetched:
+        if isinstance(result, Exception):
+            continue
+        written += store_trades(session, result, id_map)
     return written
 
 
