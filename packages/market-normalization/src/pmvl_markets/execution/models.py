@@ -101,6 +101,12 @@ class OrderStatus(StrEnum):
     EXPIRED = "expired"
     UNKNOWN_RECONCILIATION_REQUIRED = "unknown_reconciliation_required"
 
+    #: Shadow planning outcome. A shadow plan passed the real risk gate and was
+    #: recorded, but no venue ever saw it - so it must never be described with a
+    #: venue word. FILLED/PARTIALLY_FILLED/CANCELLED are unreachable from here,
+    #: because no fill and no cancellation happened.
+    SHADOW_AUTHORIZED = "shadow_authorized"
+
 
 TERMINAL_STATUSES = frozenset(
     {
@@ -128,7 +134,12 @@ OPEN_STATUSES = frozenset(
 #: every non-terminal state because ambiguity can arrive at any point.
 VALID_TRANSITIONS: Mapping[OrderStatus, frozenset[OrderStatus]] = {
     OrderStatus.INTENDED: frozenset(
-        {OrderStatus.BLOCKED, OrderStatus.SUBMITTING, OrderStatus.EXPIRED}
+        {
+            OrderStatus.BLOCKED,
+            OrderStatus.SUBMITTING,
+            OrderStatus.SHADOW_AUTHORIZED,
+            OrderStatus.EXPIRED,
+        }
     ),
     OrderStatus.BLOCKED: frozenset(),
     OrderStatus.SUBMITTING: frozenset(
@@ -168,6 +179,10 @@ VALID_TRANSITIONS: Mapping[OrderStatus, frozenset[OrderStatus]] = {
             OrderStatus.UNKNOWN_RECONCILIATION_REQUIRED,
         }
     ),
+    #: Terminal for a plan that never left the process. Deliberately cannot
+    #: reach FILLED, PARTIALLY_FILLED or CANCELLED: claiming a venue outcome for
+    #: an order no venue received is the same fabrication the reconciler refuses.
+    OrderStatus.SHADOW_AUTHORIZED: frozenset({OrderStatus.EXPIRED}),
     OrderStatus.FILLED: frozenset(),
     OrderStatus.CANCELLED: frozenset(),
     OrderStatus.REJECTED: frozenset(),

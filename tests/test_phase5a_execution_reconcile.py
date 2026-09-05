@@ -13,6 +13,7 @@ from pathlib import Path
 import httpx
 import pytest
 
+from pmvl_markets.execution.authorization import issue_authorization
 from pmvl_markets.execution import (
     AccountBalance,
     DiscrepancyKind,
@@ -300,7 +301,22 @@ async def test_all_four_orientations_build_the_right_body(
             quantity=1,
             mode=ExecutionMode.DEMO,
         )
-        await client.create_order(intent, "pmvl-v1-x")
+        # Sealed directly: this test is about how the client renders an
+        # approved order onto the wire, not about whether risk approves it.
+        plan = issue_authorization(
+            mode=ExecutionMode.DEMO,
+            ticker=intent.ticker,
+            outcome=intent.outcome,
+            action=intent.action,
+            limit_price_cents=intent.limit_price_cents,
+            quantity=intent.quantity,
+            time_in_force=intent.time_in_force,
+            client_order_id="pmvl-v2-x",
+            intent_id=intent.intent_id,
+            risk_checked_at=utcnow(),
+            authorization_expires_at=utcnow() + timedelta(minutes=5),
+        )
+        await client.create_order(plan)
     finally:
         creds_mod.sign_payload = original  # type: ignore[assignment]
         await transport.aclose()
@@ -428,13 +444,16 @@ async def test_shadow_mode_persists_an_intent_and_sends_nothing(
     result = await harness.submit(intent, exposure=_flat_exposure())
 
     assert result.simulated is True
-    assert result.status is OrderStatus.INTENDED
+    assert result.status is OrderStatus.SHADOW_AUTHORIZED
     assert result.exchange_order_id is None
 
     with ledger.connect() as con:
         record = ledger.get(con, result.client_order_id)
     assert record is not None
-    assert record.submitted_at is None
+    # `submitted_at` marks that the plan was acted on - it is what makes the
+    # daily-spend cap measurable in shadow. The no-venue-contact invariant is
+    # carried by exchange_order_id, which stays None.
+    assert record.exchange_order_id is None
 
 
 async def test_shadow_harness_rejects_an_execution_client(

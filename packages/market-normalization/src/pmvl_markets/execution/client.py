@@ -13,7 +13,7 @@ this code has never seen is exactly the case where guessing is most expensive.
 from __future__ import annotations
 
 from decimal import Decimal
-from typing import Any, Mapping
+from typing import TYPE_CHECKING, Any, Mapping
 
 from pmvl_shared.logging_setup import get_logger
 from pmvl_shared.timeutil import utcnow
@@ -34,7 +34,35 @@ from .models import (
 from .modes import ExecutionMode, LiveTradingNotAuthorized, ModeProfile
 from .transport import ExecutionApiError, SignedTransport
 
+if TYPE_CHECKING:  # pragma: no cover - import cycle guard
+    from .authorization import AuthorizedExecutionPlan
+
 log = get_logger(__name__)
+
+
+def _assert_transport_matches(profile: ModeProfile, transport: Any) -> None:
+    """A client must not be built around a transport for another environment.
+
+    The write path is already guarded lower down, but the *read* path was not:
+    a demo-labelled account client holding a production transport prints real
+    balances and positions under a "demo" label, and sizes risk off the wrong
+    account while every log line says demo.
+    """
+    other = getattr(transport, "profile", None)
+    if other is None:
+        raise LiveTradingNotAuthorized(
+            "transport does not expose a mode profile; refusing to bind it"
+        )
+    if other.environment is not profile.environment:
+        raise LiveTradingNotAuthorized(
+            f"refusing a {other.environment.value} transport in a "
+            f"{profile.environment.value} client ({profile.mode.value})"
+        )
+    if other.mode is not profile.mode:
+        raise LiveTradingNotAuthorized(
+            f"refusing a {other.mode.value} transport in a "
+            f"{profile.mode.value} client"
+        )
 
 __all__ = [
     "KalshiAccountClient",
@@ -213,6 +241,8 @@ class KalshiAccountClient:
                 "SHADOW mode does not authenticate; there is no account to read"
             )
         self.profile = ModeProfile.of(mode)
+        if transport is not None:
+            _assert_transport_matches(self.profile, transport)
         self._transport = transport or SignedTransport(
             self.profile,
             credentials or load_credentials(mode),
@@ -312,6 +342,8 @@ class KalshiExecutionClient:
             )
         self.profile = ModeProfile.of(mode)
         self.profile.assert_may_write("client construction")
+        if transport is not None:
+            _assert_transport_matches(self.profile, transport)
         self._transport = transport or SignedTransport(
             self.profile,
             credentials or load_credentials(mode),
@@ -325,7 +357,7 @@ class KalshiExecutionClient:
         await self._transport.aclose()
 
     async def create_order(
-        self, intent: OrderIntent, client_order_id: str
+        self, plan: "AuthorizedExecutionPlan"
     ) -> Mapping[str, Any]:
         """Submit one order. The caller supplies the derived idempotency key.
 
@@ -336,36 +368,37 @@ class KalshiExecutionClient:
         state still risks acting on an order we have not observed.
         """
         self.profile.assert_may_write("create_order")
-        if intent.mode is not self.profile.mode:
-            raise LiveTradingNotAuthorized(
-                f"intent mode {intent.mode.value} does not match client mode "
-                f"{self.profile.mode.value}"
-            )
+        # Only a sealed, unexpired, mode-matched authorization is accepted. There
+        # is deliberately no overload taking a ticker, a price, or a bare
+        # OrderIntent: "call the client directly and skip the risk gate" is not a
+        # shortcut this signature can express.
+        # Consumed here: this is the line that actually reaches the venue.
+        plan.assert_usable(mode=self.profile.mode, consume=True)
 
         body: dict[str, Any] = {
-            "action": intent.action.value,
-            "client_order_id": client_order_id,
-            "count": intent.quantity,
-            "side": intent.outcome.value,
-            "ticker": intent.ticker,
+            "action": plan.action.value,
+            "client_order_id": plan.client_order_id,
+            "count": plan.quantity,
+            "side": plan.outcome.value,
+            "ticker": plan.ticker,
             "type": "limit",
-            "time_in_force": intent.time_in_force.value,
+            "time_in_force": plan.time_in_force.value,
         }
         # Price field name carries the orientation. Sending yes_price for a NO
         # order would be an inversion, so the key is chosen from the enum.
-        if intent.outcome is Outcome.YES:
-            body["yes_price"] = intent.limit_price_cents
+        if plan.outcome is Outcome.YES:
+            body["yes_price"] = plan.limit_price_cents
         else:
-            body["no_price"] = intent.limit_price_cents
+            body["no_price"] = plan.limit_price_cents
 
         log.info(
             "submitting demo order client_order_id=%s ticker=%s %s %s %sc x%d",
-            client_order_id,
-            intent.ticker,
-            intent.action.value,
-            intent.outcome.value,
-            intent.limit_price_cents,
-            intent.quantity,
+            plan.client_order_id,
+            plan.ticker,
+            plan.action.value,
+            plan.outcome.value,
+            plan.limit_price_cents,
+            plan.quantity,
         )
         return await self._transport.post("/portfolio/orders", json=body)
 

@@ -158,7 +158,11 @@ def test_a_blocking_discrepancy_with_no_local_row_is_persisted(
     with ledger.connect() as con:
         assert ledger.open_blocking_discrepancies(con) == []
         ledger.record_blocking_discrepancy(
-            con, kind="remote_only", ticker="T1", detail="ghost order at venue"
+            con,
+            mode=ExecutionMode.DEMO,
+            kind="remote_only",
+            ticker="T1",
+            detail="ghost order at venue",
         )
         assert len(ledger.open_blocking_discrepancies(con)) == 1
         assert ledger.clear_blocking_discrepancies(con) == 1

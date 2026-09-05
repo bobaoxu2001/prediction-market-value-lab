@@ -22,7 +22,7 @@ from __future__ import annotations
 from dataclasses import replace
 
 from dataclasses import dataclass
-from typing import Any, Mapping
+from typing import TYPE_CHECKING, Any, Mapping
 
 from pmvl_shared.logging_setup import get_logger
 from pmvl_shared.timeutil import utcnow
@@ -41,6 +41,9 @@ from .modes import ExecutionMode, LiveTradingNotAuthorized
 from .risk import RiskDecision, RiskGate
 from .transport import ExecutionApiError
 
+if TYPE_CHECKING:  # pragma: no cover - import cycle guard
+    from .authorization import AuthorizedExecutionPlan
+
 log = get_logger(__name__)
 
 __all__ = ["ExecutionHarness", "PlannedOrder"]
@@ -54,10 +57,14 @@ class PlannedOrder:
     client_order_id: str
     decision: RiskDecision
     projected_notional_usd: Any = None
+    #: Present only when the decision passed. This is the object a gateway will
+    #: accept; a caller holding a PlannedOrder with `authorization is None` has
+    #: nothing it can submit, which is the point.
+    authorization: "AuthorizedExecutionPlan | None" = None
 
     @property
     def would_submit(self) -> bool:
-        return self.decision.passed
+        return self.decision.passed and self.authorization is not None
 
 
 class ExecutionHarness:
@@ -114,19 +121,22 @@ class ExecutionHarness:
                 exposure = replace(
                     exposure,
                     spend_today_usd=self.ledger.spend_today_usd(
-                        con, today=utcnow().strftime("%Y-%m-%d")
+                        con,
+                        today=utcnow().strftime("%Y-%m-%d"),
+                        mode=self.mode,
                     ),
                 )
             # Unresolved orders AND orphan blocking discrepancies. The
             # second kind - a ghost order or position at the venue with no
             # local row - is the one that used to be invisible here.
-            unresolved = len(self.ledger.unresolved_orders(con)) + len(
-                self.ledger.open_blocking_discrepancies(con)
-            )
+            unresolved = len(
+                self.ledger.unresolved_orders(con, mode=self.mode)
+            ) + len(self.ledger.open_blocking_discrepancies(con, mode=self.mode))
 
-        decision = self.risk_gate.evaluate(
+        decision, authorization = self.risk_gate.authorize(
             intent,
             exposure,
+            client_order_id=client_order_id,
             best_bid_cents=best_bid_cents,
             best_ask_cents=best_ask_cents,
             unresolved_orders=unresolved,
@@ -149,6 +159,7 @@ class ExecutionHarness:
             client_order_id=client_order_id,
             decision=decision,
             projected_notional_usd=intent.notional_usd,
+            authorization=authorization,
         )
 
     # ---------------------------------------------------------------- submit
@@ -179,22 +190,35 @@ class ExecutionHarness:
                 simulated=True,
             )
 
-        if not self.mode.may_write:
-            # SHADOW (and any future read-only mode) stops here, having done all
-            # the work. The ledger keeps the INTENDED row as the audit record.
-            log.info(
-                "shadow: would submit client_order_id=%s %s %s %s %sc x%d",
-                coid,
-                intent.ticker,
-                intent.action.value,
-                intent.outcome.value,
-                intent.limit_price_cents,
-                intent.quantity,
-            )
+        if planned.authorization is None:
+            # Defensive: a passing decision must carry an authorization. If it
+            # does not, something changed the risk gate's contract and the safe
+            # reading is "not approved".
             return OrderResult(
                 intent_id=intent.intent_id,
                 client_order_id=coid,
-                status=OrderStatus.INTENDED,
+                status=OrderStatus.BLOCKED,
+                mode=self.mode,
+                error="risk gate passed without issuing an authorization",
+                simulated=True,
+            )
+
+        if not self.mode.may_write:
+            # SHADOW stops at the gateway, having done every other step: the same
+            # resolver, the same risk policy, the same idempotency, the same
+            # authorization contract, the same ledger. Only the side effect
+            # differs, which is what makes a shadow result evidence about the
+            # real path rather than about a parallel one.
+            from .gateway import ShadowExecutionGateway
+
+            gateway = ShadowExecutionGateway(
+                ledger=self.ledger, kill_switch=self.risk_gate.kill_switch
+            )
+            result = await gateway.submit(planned.authorization)
+            return OrderResult(
+                intent_id=intent.intent_id,
+                client_order_id=coid,
+                status=result.status,
                 mode=self.mode,
                 remaining_quantity=intent.quantity,
                 simulated=True,
@@ -211,7 +235,7 @@ class ExecutionHarness:
             )
 
         try:
-            payload = await self._execution.create_order(intent, coid)
+            payload = await self._execution.create_order(planned.authorization)
         except ExecutionApiError as exc:
             return self._handle_submit_failure(intent, coid, exc)
 
@@ -307,6 +331,16 @@ class ExecutionHarness:
     # ---------------------------------------------------------------- cancel
     async def cancel(self, client_order_id: str) -> CancelResult:
         """Cancel a demo order. Idempotent; cancelling a resolved order is fine."""
+        # A cancel is a venue mutation - modes.py says so explicitly - so the
+        # operator's stop control has to reach it. It did not: the authorization
+        # contract covered create only, and `cancel` consulted neither the kill
+        # switch nor the risk gate that holds it.
+        if self.risk_gate.kill_switch.engaged:
+            raise LiveTradingNotAuthorized(
+                f"kill switch engaged ({self.risk_gate.kill_switch.reason}); "
+                f"refusing to cancel {client_order_id}"
+            )
+
         if not self.mode.may_write:
             raise LiveTradingNotAuthorized(
                 f"cancel is not permitted in mode {self.mode.value}"

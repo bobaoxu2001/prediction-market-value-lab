@@ -52,6 +52,8 @@ from pmvl_shared.logging_setup import get_logger
 from pmvl_shared.timeutil import utcnow
 
 from .models import (
+    OPEN_STATUSES,
+    ExecutionMode,
     Fill,
     OrderIntent,
     OrderStatus,
@@ -156,11 +158,21 @@ CREATE INDEX IF NOT EXISTS ix_exec_fills_order ON execution_fills (client_order_
 
 CREATE TABLE IF NOT EXISTS blocking_discrepancies (
     id            INTEGER PRIMARY KEY AUTOINCREMENT,
+    mode          TEXT NOT NULL DEFAULT '',
     raised_at     TEXT NOT NULL,
     kind          TEXT NOT NULL,
     ticker        TEXT NOT NULL DEFAULT '',
     detail        TEXT NOT NULL DEFAULT '',
     cleared_at    TEXT
+);
+
+CREATE TABLE IF NOT EXISTS resolution_attempts (
+    id              INTEGER PRIMARY KEY AUTOINCREMENT,
+    attempted_at    TEXT NOT NULL,
+    client_order_id TEXT NOT NULL,
+    mode            TEXT NOT NULL DEFAULT '',
+    resolved        INTEGER NOT NULL DEFAULT 0,
+    detail          TEXT NOT NULL DEFAULT ''
 );
 
 CREATE TABLE IF NOT EXISTS reconciliation_runs (
@@ -213,6 +225,29 @@ class ExecutionLedger:
     def path(self) -> Path:
         return self._path
 
+    def _migrate(self, con: sqlite3.Connection) -> None:
+        """Bring a Phase-5A execution.db up to the mode-scoped schema.
+
+        `CREATE TABLE IF NOT EXISTS` is a no-op against an existing table, so a
+        database created before mode scoping keeps a `blocking_discrepancies`
+        with no `mode` column and every scoped query raises. Only this file is
+        ever migrated; pmvl.db is not touched by anything in this package.
+        """
+        cols = {
+            r[1]
+            for r in con.execute("PRAGMA table_info(blocking_discrepancies)")
+        }
+        if cols and "mode" not in cols:
+            con.execute(
+                "ALTER TABLE blocking_discrepancies "
+                "ADD COLUMN mode TEXT NOT NULL DEFAULT ''"
+            )
+            log.warning(
+                "migrated execution ledger: blocking_discrepancies gained a "
+                "mode column; pre-existing rows carry no mode and therefore "
+                "block every mode until reconciled"
+            )
+
     @contextmanager
     def connect(self) -> Iterator[sqlite3.Connection]:
         self._path.parent.mkdir(parents=True, exist_ok=True)
@@ -225,6 +260,7 @@ class ExecutionLedger:
             con.execute("PRAGMA journal_mode = WAL")
             con.execute("PRAGMA busy_timeout = 5000")
             con.executescript(_SCHEMA)
+            self._migrate(con)
             con.execute(
                 "INSERT OR IGNORE INTO execution_meta (key, value) VALUES (?, ?)",
                 ("schema_version", str(SCHEMA_VERSION)),
@@ -445,24 +481,51 @@ class ExecutionLedger:
         ).fetchone()
         return _record(row) if row else None
 
-    def open_orders(self, con: sqlite3.Connection) -> list[LedgerRecord]:
-        from .models import OPEN_STATUSES
+    def open_orders(
+        self, con: sqlite3.Connection, *, mode: "ExecutionMode | str | None" = None
+    ) -> list[LedgerRecord]:
+        """Orders in a non-terminal state, scoped to one mode unless asked for all.
 
+        The mode filter is not optional in practice. Without it a production
+        reconciliation reads demo rows, finds them absent from the production
+        venue, and wedges them as LOCAL_ONLY - deciding demo order state from an
+        account that never held them.
+        """
         placeholders = ",".join("?" for _ in OPEN_STATUSES)
-        rows = con.execute(
-            f"SELECT * FROM execution_orders WHERE status IN ({placeholders})",
-            tuple(s.value for s in OPEN_STATUSES),
-        ).fetchall()
+        params: list[Any] = [s.value for s in OPEN_STATUSES]
+        sql = f"SELECT * FROM execution_orders WHERE status IN ({placeholders})"
+        if mode is not None:
+            sql += " AND mode = ?"
+            params.append(_mode_value(mode))
+        rows = con.execute(sql, params).fetchall()
         return [_record(r) for r in rows]
 
-    def unresolved_orders(self, con: sqlite3.Connection) -> list[LedgerRecord]:
-        rows = con.execute(
-            "SELECT * FROM execution_orders WHERE status = ?",
-            (OrderStatus.UNKNOWN_RECONCILIATION_REQUIRED.value,),
-        ).fetchall()
+    def unresolved_orders(
+        self, con: sqlite3.Connection, *, mode: "ExecutionMode | str | None" = None
+    ) -> list[LedgerRecord]:
+        """Orders awaiting reconciliation, scoped to one mode unless asked for all."""
+        if mode is None:
+            rows = con.execute(
+                "SELECT * FROM execution_orders WHERE status = ?",
+                (OrderStatus.UNKNOWN_RECONCILIATION_REQUIRED.value,),
+            ).fetchall()
+        else:
+            rows = con.execute(
+                "SELECT * FROM execution_orders WHERE status = ? AND mode = ?",
+                (
+                    OrderStatus.UNKNOWN_RECONCILIATION_REQUIRED.value,
+                    _mode_value(mode),
+                ),
+            ).fetchall()
         return [_record(r) for r in rows]
 
-    def spend_today_usd(self, con: sqlite3.Connection, *, today: str) -> Decimal:
+    def spend_today_usd(
+        self,
+        con: sqlite3.Connection,
+        *,
+        today: str,
+        mode: "ExecutionMode | str | None" = None,
+    ) -> Decimal:
         """Cash committed to orders submitted today, from the ledger itself.
 
         The venue has no "what did this strategy spend today" endpoint, and the
@@ -470,12 +533,16 @@ class ExecutionLedger:
         right source: it records every order this system submitted, which is
         exactly the population the cap is about.
         """
-        rows = con.execute(
+        sql = (
             "SELECT requested_price_cents, requested_quantity, filled_quantity "
             "FROM execution_orders WHERE submitted_at IS NOT NULL "
-            "AND substr(submitted_at, 1, 10) = ?",
-            (today,),
-        ).fetchall()
+            "AND substr(submitted_at, 1, 10) = ?"
+        )
+        params: tuple[Any, ...] = (today,)
+        if mode is not None:
+            sql += " AND mode = ?"
+            params = (today, _mode_value(mode))
+        rows = con.execute(sql, params).fetchall()
         total = Decimal("0")
         for row in rows:
             price = row["requested_price_cents"]
@@ -487,10 +554,85 @@ class ExecutionLedger:
             total += (Decimal(price) / Decimal(100)) * Decimal(qty)
         return total
 
+    def record_resolution_attempt(
+        self,
+        con: sqlite3.Connection,
+        *,
+        client_order_id: str,
+        mode: str,
+        resolved: bool,
+        detail: str = "",
+    ) -> None:
+        """Audit every attempt, including the ones that changed nothing.
+
+        A failed resolution is the more interesting record: it says an operator
+        looked, the venue was still ambiguous, and the order stayed blocked.
+        """
+        con.execute(
+            "INSERT INTO resolution_attempts "
+            "(attempted_at, client_order_id, mode, resolved, detail) "
+            "VALUES (?,?,?,?,?)",
+            (_iso(utcnow()), client_order_id, mode, 1 if resolved else 0, detail[:500]),
+        )
+
+    def resolution_attempts(
+        self, con: sqlite3.Connection, client_order_id: str
+    ) -> list[sqlite3.Row]:
+        return con.execute(
+            "SELECT * FROM resolution_attempts WHERE client_order_id = ? "
+            "ORDER BY attempted_at",
+            (client_order_id,),
+        ).fetchall()
+
+    def force_status_from_evidence(
+        self,
+        con: sqlite3.Connection,
+        *,
+        client_order_id: str,
+        status: OrderStatus,
+        note: str,
+        exchange_order_id: str | None = None,
+    ) -> None:
+        """Leave UNKNOWN for a status the venue actually reported.
+
+        Named for what it is. The state machine has no edge from UNKNOWN to
+        OPEN/PARTIALLY_FILLED, because nothing *inside* this process should ever
+        make that move - only a venue statement can, and this is the single
+        function that carries one. It is not reachable from the risk or submit
+        paths; `resolve_unknown_order` is its only caller.
+        """
+        row = self.get(con, client_order_id)
+        if row is None:
+            raise KeyError(client_order_id)
+        if row.status is not OrderStatus.UNKNOWN_RECONCILIATION_REQUIRED:
+            raise InvalidTransition(
+                f"{client_order_id} is {row.status.value}, not awaiting "
+                "reconciliation; evidence-based resolution does not apply"
+            )
+        con.execute(
+            "UPDATE execution_orders SET status = ?, last_reconciled_at = ?, "
+            "exchange_order_id = COALESCE(?, exchange_order_id) "
+            "WHERE client_order_id = ?",
+            (status.value, _iso(utcnow()), exchange_order_id, client_order_id),
+        )
+        con.execute(
+            "INSERT INTO execution_transitions "
+            "(client_order_id, from_status, to_status, occurred_at, note) "
+            "VALUES (?,?,?,?,?)",
+            (
+                client_order_id,
+                OrderStatus.UNKNOWN_RECONCILIATION_REQUIRED.value,
+                status.value,
+                _iso(utcnow()),
+                note[:500],
+            ),
+        )
+
     def record_blocking_discrepancy(
         self,
         con: sqlite3.Connection,
         *,
+        mode: "ExecutionMode | str",
         kind: str,
         ticker: str = "",
         detail: str = "",
@@ -504,31 +646,63 @@ class ExecutionLedger:
         risk gate never saw them and the next order sailed past a ghost position.
         """
         con.execute(
-            "INSERT INTO blocking_discrepancies (raised_at, kind, ticker, detail) "
-            "VALUES (?,?,?,?)",
-            (_iso(utcnow()), kind, ticker, detail[:500]),
+            "INSERT INTO blocking_discrepancies "
+            "(mode, raised_at, kind, ticker, detail) VALUES (?,?,?,?,?)",
+            (_mode_value(mode), _iso(utcnow()), kind, ticker, detail[:500]),
         )
 
     def open_blocking_discrepancies(
-        self, con: sqlite3.Connection
+        self, con: sqlite3.Connection, *, mode: "ExecutionMode | str | None" = None
     ) -> list[sqlite3.Row]:
+        """Open discrepancies, scoped to one mode unless asked for all.
+
+        Scoping matters: a production-read reconciliation must never make a demo
+        order untradeable, and vice versa. Passing ``mode=None`` is the explicit
+        "show me everything" for an operator report.
+        """
+        if mode is None:
+            return con.execute(
+                "SELECT * FROM blocking_discrepancies WHERE cleared_at IS NULL "
+                "ORDER BY raised_at"
+            ).fetchall()
+        # `mode = ''` is a pre-migration row whose origin is unknown. It
+        # blocks *every* mode rather than none: an unattributable discrepancy is
+        # exactly the case where guessing is unsafe.
         return con.execute(
             "SELECT * FROM blocking_discrepancies WHERE cleared_at IS NULL "
-            "ORDER BY raised_at"
+            "AND (mode = ? OR mode = '') ORDER BY raised_at",
+            (_mode_value(mode),),
         ).fetchall()
 
-    def clear_blocking_discrepancies(self, con: sqlite3.Connection) -> int:
-        cur = con.execute(
-            "UPDATE blocking_discrepancies SET cleared_at = ? "
-            "WHERE cleared_at IS NULL",
-            (_iso(utcnow()),),
-        )
+    def clear_blocking_discrepancies(
+        self, con: sqlite3.Connection, *, mode: "ExecutionMode | str | None" = None
+    ) -> int:
+        if mode is None:
+            cur = con.execute(
+                "UPDATE blocking_discrepancies SET cleared_at = ? "
+                "WHERE cleared_at IS NULL",
+                (_iso(utcnow()),),
+            )
+        else:
+            cur = con.execute(
+                "UPDATE blocking_discrepancies SET cleared_at = ? "
+                "WHERE cleared_at IS NULL AND (mode = ? OR mode = '')",
+                (_iso(utcnow()), _mode_value(mode)),
+            )
         return cur.rowcount or 0
 
-    def all_orders(self, con: sqlite3.Connection) -> list[LedgerRecord]:
-        rows = con.execute(
-            "SELECT * FROM execution_orders ORDER BY created_at"
-        ).fetchall()
+    def all_orders(
+        self, con: sqlite3.Connection, *, mode: "ExecutionMode | str | None" = None
+    ) -> list[LedgerRecord]:
+        if mode is None:
+            rows = con.execute(
+                "SELECT * FROM execution_orders ORDER BY created_at"
+            ).fetchall()
+        else:
+            rows = con.execute(
+                "SELECT * FROM execution_orders WHERE mode = ? ORDER BY created_at",
+                (_mode_value(mode),),
+            ).fetchall()
         return [_record(r) for r in rows]
 
     def fills_for(
@@ -546,6 +720,11 @@ class ExecutionLedger:
             "SELECT * FROM execution_transitions WHERE client_order_id = ? ORDER BY id",
             (client_order_id,),
         ).fetchall()
+
+
+def _mode_value(mode: "ExecutionMode | str") -> str:
+    """Accept either the enum or its value, always store the value."""
+    return mode.value if isinstance(mode, ExecutionMode) else str(mode)
 
 
 def _record(row: sqlite3.Row) -> LedgerRecord:

@@ -29,13 +29,16 @@ from dataclasses import dataclass, field, replace
 from datetime import datetime, timedelta
 from decimal import Decimal
 from enum import StrEnum
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 from pmvl_shared.logging_setup import get_logger
 from pmvl_shared.timeutil import utcnow
 
 from .models import ExposureSnapshot, OrderIntent
 from .modes import ExecutionMode
+
+if TYPE_CHECKING:  # pragma: no cover - import cycle guard
+    from .authorization import AuthorizedExecutionPlan
 
 log = get_logger(__name__)
 
@@ -250,6 +253,66 @@ class RiskGate:
         # subsystem is structural; this one was a convention, and conventions are
         # what the next caller forgets.
         self.kill_switch = kill_switch or KillSwitch.from_settings()
+
+    def authorize(
+        self,
+        intent: OrderIntent,
+        exposure: "ExposureSnapshot | None",
+        *,
+        client_order_id: str,
+        now: datetime | None = None,
+        best_bid_cents: int | None = None,
+        best_ask_cents: int | None = None,
+        unresolved_orders: int = 0,
+        ttl: timedelta | None = None,
+    ) -> tuple[RiskDecision, "AuthorizedExecutionPlan | None"]:
+        """Evaluate, and on PASS issue the sealed plan a gateway will accept.
+
+        This is the only supported way to obtain an
+        :class:`~pmvl_markets.execution.authorization.AuthorizedExecutionPlan`.
+        ``evaluate`` remains for callers that only want the verdict - a report,
+        a dry run, a test - and deliberately cannot authorize anything.
+
+        Returns ``(decision, plan)``. ``plan`` is ``None`` whenever the decision
+        did not pass, so a caller that ignores the verdict still has nothing to
+        submit.
+        """
+        from .authorization import (
+            DEFAULT_AUTHORIZATION_TTL,
+            RISK_POLICY_VERSION,
+            issue_authorization,
+        )
+
+        now = now or utcnow()
+        decision = self.evaluate(
+            intent,
+            exposure,
+            now=now,
+            best_bid_cents=best_bid_cents,
+            best_ask_cents=best_ask_cents,
+            unresolved_orders=unresolved_orders,
+        )
+        if not decision.passed:
+            return decision, None
+
+        plan = issue_authorization(
+            mode=intent.mode,
+            ticker=intent.ticker,
+            outcome=intent.outcome,
+            action=intent.action,
+            limit_price_cents=intent.limit_price_cents,
+            quantity=intent.quantity,
+            time_in_force=intent.time_in_force,
+            client_order_id=client_order_id,
+            intent_id=intent.intent_id,
+            risk_checked_at=now,
+            authorization_expires_at=now + (ttl or DEFAULT_AUTHORIZATION_TTL),
+            risk_policy_version=RISK_POLICY_VERSION,
+            signal_timestamp=intent.signal_timestamp,
+            market_data_timestamp=intent.market_data_timestamp,
+            account_state_at=getattr(exposure, "fetched_at", None),
+        )
+        return decision, plan
 
     def evaluate(
         self,

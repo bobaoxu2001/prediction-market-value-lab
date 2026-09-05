@@ -1,4 +1,4 @@
-# Kalshi execution harness (Phase 5A)
+# Kalshi execution harness (Phases 5A-5B)
 
 Authenticated account access, a demo execution harness, order/fill reconciliation
 and a hard risk kill switch — built **before** the research system is authorized
@@ -242,3 +242,130 @@ that raises, because a stub would still appear in `--help`.
 - It does not wire research `suggested_action` to any venue.
 - It says nothing about whether a strategy is profitable. Execution readiness is
   plumbing, not edge.
+
+
+---
+
+# Phase 5B — authorization contract and the shadow pipeline
+
+## The risk gate is now a type, not a convention
+
+Phase 5A's risk gate returned a *verdict* and the write client took an
+`OrderIntent`. Those two facts never touched: `create_order` was public, took raw
+caller values, and consulted nothing. The documentation called the risk gate "the
+only path from an OrderIntent to a venue mutation"; it was a convention, and
+conventions are what the next caller forgets.
+
+```
+OrderIntent -> RiskGate.authorize(...) -> AuthorizedExecutionPlan
+                                       -> ExecutionGateway.submit(plan)
+```
+
+`create_order(plan)` and `submit(plan)` accept **only** a sealed plan. There is no
+overload taking a ticker, a price, or an intent, so skipping the gate is not a
+shortcut the signature can express. `evaluate()` still exists for reports and dry
+runs and deliberately cannot authorize anything.
+
+### Why the plan is trustworthy
+
+**It binds semantics, not permission.** The plan carries the exact order that was
+approved. Submitting is not "you may trade", it is "you may place *this*".
+
+**It is issued, not merely sealed.** The first cut sealed plans with an HMAC and
+exposed a public `seal()`. A review pointed out that this is the same defect as a
+public `create_order`, moved up a layer: the HMAC proves *built in this process*,
+not *approved*, so a forged plan for a million contracts at 99c verified
+perfectly. Sealing is now private, and `issue_authorization()` — called only by
+the risk gate after a passing evaluation — records a per-issuance nonce in a
+process-local registry. Membership in that registry is what distinguishes an
+approval from a construction, and spending it makes an authorization single-use,
+so a plan cannot be replayed into two orders.
+
+Every field the venue receives is inside the seal, and so is the provenance
+(`signal_timestamp`, `market_data_timestamp`, `account_state_at`) — those cannot
+change what is placed, but a rewritable audit trail is not an audit trail.
+
+**It expires, on the gate's terms.** Default TTL is 90 seconds, hard-capped at 5
+minutes. The cap exists because the caller used to choose the lifetime: a
+strategy passing `ttl=timedelta(days=3650)` held a permanent licence to place one
+specific order against a decade-old exposure snapshot.
+
+The seal key lives only in memory and is regenerated on import, so a plan cannot
+survive a restart. That is deliberate: an authorization that outlives the account
+state it was computed against is the thing this design exists to prevent.
+
+## Point-of-use re-checks
+
+Every gateway re-verifies at submit: seal, expiry, mode, kill switch, and whether
+this mode has unresolved orders or open discrepancies. Defense in depth is
+preserved rather than replaced — the write client still refuses to construct
+outside a writing mode, and the transport still refuses any non-GET verb aimed at
+a production host, independently of anything the authorization layer decided.
+
+## Residual findings from Phase 5A, closed
+
+| | |
+|---|---|
+| **R1** credentials | `load_demo_credentials()` / `load_production_credentials()` read disjoint config namespaces. The environment is derived from the mode, never supplied beside it. This is `CONFIG_STRUCTURALLY_BOUND` — Kalshi exposes no way to prove a key belongs to a sandbox account, so the stronger claim is not made. |
+| **R2** risk bypass | Closed by the plan-only gateway API above. |
+| **R3** transport | Both clients assert `transport.profile.environment` matches their own. The *read* path crossed environments silently before this — a demo-labelled client could print real balances under a demo label. |
+| **R4** idempotency | `time_in_force` joined the hash; version bumped `v1`→`v2` so no old id is reinterpreted. Every field `create_order` sends is now bound. |
+| **R5** mode scoping | Orders, discrepancies, spend and reconciliation are scoped by mode. `recover_after_restart(mode=...)` reads only that mode's rows and stamps `reconciliation_runs.mode` with the real venue. A pre-5B `execution.db` is migrated in place; legacy rows with no mode block **every** mode rather than none. |
+| **R6** UNKNOWN recovery | `resolve_unknown_order` transitions only on venue evidence. There is no `force_clear`, `mark_filled`, `mark_cancelled` or `ignore`. Every attempt is audited, including the ones that changed nothing — a failed resolution is the more interesting record. An operator note is recorded and authorizes nothing. |
+
+## Shadow
+
+`ResearchDecision → SignalExecutionAdapter → OrderIntent → RiskGate →
+AuthorizedExecutionPlan → ShadowExecutionGateway → ledger`, then stop.
+
+Shadow uses the **same** resolver, risk policy, limits, freshness checks,
+idempotency and authorization contract that demo uses. There is no
+`ShadowRiskGate`: a shadow verdict from weaker rules would answer a question
+nobody asked. `ShadowExecutionGateway` holds no transport and no credentials, so
+"shadow accidentally traded" is not a failure it can have.
+
+`SHADOW_AUTHORIZED` is terminal and cannot reach `FILLED`, `PARTIALLY_FILLED` or
+`CANCELLED`. Claiming a venue outcome for an order no venue received is the same
+fabrication the reconciler refuses one layer down.
+
+Shadow risk is sized against a fixed virtual balance, never the operator's real
+Kalshi balance. Authorized shadow plans count as committed exposure, so one run
+cannot approve the same market repeatedly and call the total flat.
+
+```bash
+pmvl exec shadow-replay --limit 500 --json
+```
+
+## The signal adapter
+
+The canonical research decision is the `recommendations` table. The adapter
+changes representation and nothing else: it never recomputes a fair value,
+invents an edge, a ticker or a size, inverts YES/NO, or substitutes a market. A
+recommendation whose `state` is not `STILL_ACTIONABLE` is not actionable —
+turning `SETTLED` or `AVOID` into an order would be the execution layer overruling
+the model it serves.
+
+Price policy is the decision's own: `entry_price` is the price the EV was
+computed at, so it is both the limit and the ceiling. No execution optimizer is
+introduced here.
+
+Every decision produces either an `OrderIntent` or an `IneligibleSignal` naming
+exactly why not. Nothing is silently dropped, because the denominator is the
+point: "how many signals did the robot want to trade" is unanswerable if the
+refusals are not recorded.
+
+**The current research record contains no executable Kalshi signal.** All 462
+rows are `provenance='demo'` seed fixtures; of the 12 still-actionable ones, 7 are
+Polymarket and 5 are closed markets. The adapter refuses `provenance='demo'` by
+default so seed rows cannot be mistaken for model output.
+
+## Still open
+
+Not on the signal→risk→execution safety path, documented rather than fixed:
+
+- `ExecutionLedger.force_status_from_evidence` is a public ledger method. It
+  requires the row to be UNKNOWN and is called only by `resolve_unknown_order`,
+  but a determined caller could invoke it directly.
+- Kalshi supports order fields this code never sends (post-only, reduce-only,
+  non-limit types). They are absent from the idempotency hash because hashing a
+  value that never varies is theatre; adding one later requires a version bump.

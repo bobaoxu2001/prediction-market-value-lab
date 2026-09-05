@@ -32,6 +32,7 @@ find the order remotely, rather than by sending it again.
 
 from __future__ import annotations
 
+from typing import Any
 from dataclasses import dataclass, field
 from decimal import Decimal
 from enum import StrEnum
@@ -41,6 +42,7 @@ from pmvl_shared.logging_setup import get_logger
 
 from .ledger import ExecutionLedger, LedgerRecord
 from .models import (
+    ExecutionMode,
     Fill,
     Order,
     OrderStatus,
@@ -56,6 +58,8 @@ __all__ = [
     "ReconciliationReport",
     "reconcile_orders",
     "reconcile_positions",
+    "resolve_unknown_order",
+    "OrderResolution",
     "recover_after_restart",
 ]
 
@@ -315,8 +319,16 @@ def recover_after_restart(
     remote_orders: Sequence[Order],
     remote_fills: Sequence[Fill],
     remote_positions: Sequence[Position],
+    *,
+    mode: ExecutionMode = ExecutionMode.DEMO,
 ) -> ReconciliationReport:
     """Rebuild state after a process restart. Submits nothing.
+
+    ``mode`` scopes both the local rows considered and the discrepancies
+    written. Reconciling a production account against demo bookkeeping compares
+    two different accounts: every difference is a manufactured discrepancy, and
+    the demo orders it wedges were never wrong. Local rows from another mode are
+    therefore not even read.
 
     Orders left mid-flight are resolved by looking them up remotely via their
     deterministic ``client_order_id``. Anything still ambiguous is written as
@@ -324,7 +336,7 @@ def recover_after_restart(
     block on new mutations until an operator clears it.
     """
     with ledger.connect() as con:
-        local = ledger.open_orders(con)
+        local = ledger.open_orders(con, mode=mode)
         report = reconcile_orders(local, remote_orders, remote_fills)
 
         # Persist fill evidence before touching statuses, so a status can never
@@ -352,7 +364,11 @@ def recover_after_restart(
                 # with a clean-looking local ledger.
                 if d.blocking:
                     ledger.record_blocking_discrepancy(
-                        con, kind=d.kind.value, ticker=d.ticker, detail=d.detail
+                        con,
+                        mode=mode,
+                        kind=d.kind.value,
+                        ticker=d.ticker,
+                        detail=d.detail,
                     )
                 continue
             if d.kind is DiscrepancyKind.RECONCILED:
@@ -374,7 +390,7 @@ def recover_after_restart(
             )
 
         local_net: dict[tuple[str, str], int] = {}
-        for row in ledger.all_orders(con):
+        for row in ledger.all_orders(con, mode=mode):
             if not row.filled_quantity:
                 continue
             key = (row.ticker, str(row.outcome))
@@ -382,10 +398,10 @@ def recover_after_restart(
         for d in reconcile_positions(local_net, remote_positions):
             report.add(d)
             ledger.record_blocking_discrepancy(
-                con, kind=d.kind.value, ticker=d.ticker, detail=d.detail
+                con, mode=mode, kind=d.kind.value, ticker=d.ticker, detail=d.detail
             )
 
-        ledger.record_reconciliation(con, "restart", report.summary())
+        ledger.record_reconciliation(con, mode.value, report.summary())
 
     log.info("restart reconciliation: %s", report.summary())
     return report
@@ -415,4 +431,112 @@ def _safe_transition(
             new_status.value,
             record.client_order_id,
             exc,
+        )
+
+
+@dataclass(frozen=True, slots=True)
+class OrderResolution:
+    """Outcome of an evidence-driven attempt to resolve one ambiguous order."""
+
+    client_order_id: str
+    resolved: bool
+    status: OrderStatus
+    evidence: tuple[str, ...] = ()
+    detail: str = ""
+
+    def as_dict(self) -> dict[str, Any]:
+        return {
+            "client_order_id": self.client_order_id,
+            "resolved": self.resolved,
+            "status": self.status.value,
+            "evidence": list(self.evidence),
+            "detail": self.detail,
+        }
+
+
+def resolve_unknown_order(
+    ledger: ExecutionLedger,
+    client_order_id: str,
+    *,
+    mode: ExecutionMode,
+    remote_order: Order | None,
+    remote_fills: Sequence[Fill] = (),
+    operator_note: str = "",
+) -> OrderResolution:
+    """Move one order out of UNKNOWN, but only where the venue says so.
+
+    There is deliberately no ``force``, no ``mark_filled``, no ``ignore``. The
+    entire value of ``UNKNOWN_RECONCILIATION_REQUIRED`` is that it means "this
+    system does not know", and a switch that lets an operator assert otherwise
+    converts a safe stop into a guess with a human's name on it. What an operator
+    can do is *fetch evidence*; what the evidence says is not up to them.
+
+    An ``operator_note`` is recorded for the audit trail. It never authorizes a
+    transition on its own - a note attached to still-ambiguous state leaves the
+    order exactly as ambiguous as it was.
+    """
+    with ledger.connect() as con:
+        record = ledger.get(con, client_order_id)
+        if record is None:
+            return OrderResolution(
+                client_order_id, False, OrderStatus.UNKNOWN_RECONCILIATION_REQUIRED,
+                detail="no local order with that id",
+            )
+        if str(record.mode) != mode.value:
+            # Resolving a demo order with production evidence compares two
+            # different accounts.
+            return OrderResolution(
+                client_order_id, False, record.status,
+                detail=(
+                    f"order belongs to mode {record.mode}, "
+                    f"evidence was fetched for {mode.value}"
+                ),
+            )
+
+        evidence: list[str] = []
+        for fill in remote_fills:
+            if ledger.record_fill(con, fill, client_order_id=client_order_id):
+                evidence.append(f"fill {fill.fill_id}: {fill.quantity}@{fill.price_cents}c")
+
+        if remote_order is None:
+            # Absence is not a fill, and it is not a cancellation either. Without
+            # a venue statement there is nothing to act on.
+            note = f"venue has no record; still ambiguous. {operator_note}".strip()
+            ledger.record_resolution_attempt(
+                con, client_order_id=client_order_id, mode=mode.value,
+                resolved=False, detail=note,
+            )
+            return OrderResolution(
+                client_order_id, False, OrderStatus.UNKNOWN_RECONCILIATION_REQUIRED,
+                evidence=tuple(evidence),
+                detail="venue returned no order; absence is not evidence of an outcome",
+            )
+
+        target = remote_order.status
+        if target is OrderStatus.UNKNOWN_RECONCILIATION_REQUIRED:
+            ledger.record_resolution_attempt(
+                con, client_order_id=client_order_id, mode=mode.value,
+                resolved=False, detail=f"venue status unrecognised. {operator_note}".strip(),
+            )
+            return OrderResolution(
+                client_order_id, False, OrderStatus.UNKNOWN_RECONCILIATION_REQUIRED,
+                evidence=tuple(evidence),
+                detail="venue reported a status this system does not recognise",
+            )
+
+        ledger.force_status_from_evidence(
+            con,
+            client_order_id=client_order_id,
+            status=target,
+            note=f"resolved from venue evidence. {operator_note}".strip(),
+            exchange_order_id=remote_order.exchange_order_id or None,
+        )
+        ledger.record_resolution_attempt(
+            con, client_order_id=client_order_id, mode=mode.value,
+            resolved=True, detail=f"venue reports {target.value}",
+        )
+        evidence.append(f"venue order status: {target.value}")
+        return OrderResolution(
+            client_order_id, True, target, evidence=tuple(evidence),
+            detail=f"resolved to {target.value} on venue evidence",
         )

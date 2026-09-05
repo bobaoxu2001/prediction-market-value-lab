@@ -379,7 +379,9 @@ def reconcile(
             position_rows = await client.get_positions()
         finally:
             await client.aclose()
-        report = recover_after_restart(_ledger(), orders, fill_rows, position_rows)
+        report = recover_after_restart(
+            _ledger(), orders, fill_rows, position_rows, mode=m
+        )
         return {
             "mode": m.value,
             "summary": report.summary(),
@@ -453,3 +455,150 @@ def status(as_json: bool = typer.Option(False, "--json")) -> None:
 # raises - nothing. A refusing stub would still be a live-order entry point in
 # `--help`, and the correct signal to an operator is that the capability does not
 # exist in this build at all.
+
+
+@app.command("shadow-replay")
+def shadow_replay(
+    limit: int = typer.Option(500, help="How many research decisions to read."),
+    allow_demo: bool = typer.Option(
+        False,
+        "--allow-demo-provenance",
+        help="Admit provenance='demo' seed rows. They are NOT model output.",
+    ),
+    json_out: bool = typer.Option(False, "--json"),
+) -> None:
+    """Run the research record through the real risk path. Sends nothing.
+
+    Reads `recommendations` read-only and stops at the shadow gateway. Every
+    decision is counted, including the refusals - the denominator is the point.
+    """
+    import asyncio
+
+    from pmvl_markets.execution import (
+        ExecutionMode,
+        RiskGate,
+        ShadowSignalPipeline,
+        SignalExecutionAdapter,
+        load_research_decisions,
+    )
+
+    settings = get_settings()
+    # Read-only path to the research DB, derived from the configured URL. The
+    # execution layer consumes research output and must never write to it.
+    url = settings.database_url
+    db_path = url.split("://", 1)[1] if "://" in url else url
+    db_path = "/" + db_path.lstrip("/")
+    decisions = load_research_decisions(db_path, limit=limit)
+    pipeline = ShadowSignalPipeline(
+        ledger=_ledger(),
+        adapter=SignalExecutionAdapter(
+            mode=ExecutionMode.SHADOW, allow_demo_provenance=allow_demo
+        ),
+        risk_gate=RiskGate(kill_switch=_kill_switch()),
+    )
+    report = asyncio.run(pipeline.run(decisions))
+    payload = report.as_dict()
+    payload["demo_provenance_admitted"] = allow_demo
+    if json_out:
+        console.print_json(data=payload)
+    else:
+        console.print(payload)
+
+
+@app.command("reconcile-order")
+def reconcile_order(
+    client_order_id: str = typer.Argument(...),
+    mode: str = typer.Option("demo", help="demo | production"),
+    json_out: bool = typer.Option(False, "--json"),
+) -> None:
+    """Resolve one ambiguous order using venue evidence only.
+
+    There is deliberately no flag that clears an order without evidence. If the
+    venue is still ambiguous the order stays blocked, and that is the feature.
+    """
+    import asyncio
+
+    from pmvl_markets.execution import ExecutionMode, KalshiAccountClient
+    from pmvl_markets.execution.reconcile import resolve_unknown_order
+
+    target = (
+        ExecutionMode.PRODUCTION_READ_ONLY
+        if mode.lower().startswith("prod")
+        else ExecutionMode.DEMO
+    )
+    _require_credentials(target)
+
+    async def fetch() -> tuple[Any, list[Any]]:
+        client = KalshiAccountClient(target)
+        try:
+            orders = await client.get_orders()
+            fills = await client.get_fills()
+        finally:
+            await client.aclose()
+        match = [o for o in orders if o.client_order_id == client_order_id]
+        found = match[0] if match else None
+        # Fills carry no client_order_id - the venue joins them by its own order
+        # id, which is how reconcile.py matches them too. Filtering on a field
+        # `Fill` does not have raised AttributeError before resolve_unknown_order
+        # was ever reached, so the only sanctioned exit from UNKNOWN could not run.
+        exchange_id = found.exchange_order_id if found else None
+        if exchange_id is None:
+            with _ledger().connect() as con:
+                record = _ledger().get(con, client_order_id)
+            exchange_id = record.exchange_order_id if record else None
+        related = (
+            [f for f in fills if f.exchange_order_id == exchange_id]
+            if exchange_id
+            else []
+        )
+        return found, related
+
+    remote_order, remote_fills = asyncio.run(fetch())
+    result = resolve_unknown_order(
+        _ledger(),
+        client_order_id,
+        mode=target,
+        remote_order=remote_order,
+        remote_fills=remote_fills,
+    )
+    if json_out:
+        console.print_json(data=result.as_dict())
+    else:
+        console.print(result.as_dict())
+
+
+
+@app.command("discrepancies")
+def discrepancies(
+    mode: str = typer.Option("demo", help="demo | production | shadow"),
+    clear: bool = typer.Option(
+        False,
+        "--clear",
+        help="Clear this mode's open discrepancies after investigating them.",
+    ),
+    json_out: bool = typer.Option(False, "--json"),
+) -> None:
+    """List, and optionally clear, blocking reconciliation discrepancies.
+
+    Clearing is an operator act with an audit trail, not an automatic recovery:
+    a discrepancy means the venue held exposure this system did not know about,
+    and only a person can say they have looked. Without this command the rows
+    were write-only - one reconciliation against an account holding any position
+    left a permanent block with no remedy short of hand-editing execution.db.
+    """
+    target = _mode(mode)
+    ledger = _ledger()
+    with ledger.connect() as con:
+        rows = [dict(r) for r in ledger.open_blocking_discrepancies(con, mode=target)]
+        cleared = (
+            ledger.clear_blocking_discrepancies(con, mode=target) if clear else 0
+        )
+    payload = {
+        "mode": target.value,
+        "open": rows,
+        "cleared": cleared,
+    }
+    if json_out:
+        console.print_json(data=payload)
+    else:
+        console.print(payload)

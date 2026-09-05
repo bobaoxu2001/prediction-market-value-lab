@@ -10,8 +10,36 @@ configuration. See :mod:`pmvl_markets.execution.modes` for the six independent
 gates and why the lowest of them is the one that carries the guarantee.
 """
 
+from .authorization import (
+    DEFAULT_AUTHORIZATION_TTL,
+    RISK_POLICY_VERSION,
+    AuthorizationExpired,
+    AuthorizationInvalid,
+    AuthorizationTampered,
+    AuthorizedExecutionPlan,
+)
+from .gateway import (
+    DemoExecutionGateway,
+    ExecutionGateway,
+    GatewayResult,
+    ShadowExecutionGateway,
+)
+from .signals import (
+    IneligibilityReason,
+    IneligibleSignal,
+    ResearchDecision,
+    SignalExecutionAdapter,
+)
+from .shadow import (
+    ShadowAccountState,
+    ShadowRunReport,
+    ShadowSignalPipeline,
+    load_research_decisions,
+)
 from .client import KalshiAccountClient, KalshiExecutionClient
 from .credentials import (
+    load_demo_credentials,
+    load_production_credentials,
     CredentialsUnavailable,
     KalshiCredentials,
     credentials_present,
@@ -68,6 +96,24 @@ LIVE_AUTONOMOUS_TRADING_AUTHORIZED = False
 
 __all__ = [
     "AccountBalance",
+    "IneligibilityReason",
+    "IneligibleSignal",
+    "ResearchDecision",
+    "ShadowAccountState",
+    "ShadowRunReport",
+    "ShadowSignalPipeline",
+    "SignalExecutionAdapter",
+    "load_research_decisions",
+    "AuthorizationExpired",
+    "AuthorizationInvalid",
+    "AuthorizationTampered",
+    "AuthorizedExecutionPlan",
+    "DEFAULT_AUTHORIZATION_TTL",
+    "DemoExecutionGateway",
+    "ExecutionGateway",
+    "GatewayResult",
+    "RISK_POLICY_VERSION",
+    "ShadowExecutionGateway",
     "BlockReason",
     "CONSERVATIVE_LIMITS",
     "CancelResult",
@@ -111,6 +157,8 @@ __all__ = [
     "default_execution_db_path",
     "derive_client_order_id",
     "load_credentials",
+    "load_demo_credentials",
+    "load_production_credentials",
     "new_attempt_id",
     "reconcile_orders",
     "reconcile_positions",

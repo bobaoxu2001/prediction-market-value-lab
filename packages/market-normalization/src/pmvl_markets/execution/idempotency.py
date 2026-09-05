@@ -44,7 +44,13 @@ __all__ = [
 #: Bumping this deliberately invalidates every previously derived id. It is part
 #: of the hashed material so that a change to the derivation cannot silently
 #: alias old orders onto new ones.
-IDEMPOTENCY_VERSION = "v1"
+#:
+#: v1 -> v2: ``time_in_force`` joined the hash. A resting GTC order and a
+#: fill-or-kill are different economic acts, and sharing an idempotency key means
+#: the venue's dedupe silently substitutes one for the other while the ledger
+#: describes the order that was not sent. Bumped rather than redefined so no v1
+#: id can be reinterpreted under the new schema.
+IDEMPOTENCY_VERSION = "v2"
 
 CLIENT_ORDER_ID_PREFIX = "pmvl"
 
@@ -61,7 +67,15 @@ def derive_client_order_id(intent: OrderIntent) -> str:
     * ``limit_price_cents`` and ``quantity`` - so a retry that quietly changed
       size or price cannot reuse the original identity and be silently collapsed
       by the venue into the old order;
-    * ``mode`` - so a demo order and a shadow order can never share an id.
+    * ``mode`` - so a demo order and a shadow order can never share an id;
+    * ``time_in_force`` - so a GTC and a fill-or-kill cannot collide onto one
+      key and be silently substituted by the venue.
+
+    Every field this implementation actually sends to the venue and that changes
+    execution behaviour is bound. Fields the venue supports but this code does
+    not send (post-only, reduce-only, order type beyond limit) are absent because
+    including a value we never vary would be theatre; adding one later requires a
+    version bump, which is what ``IDEMPOTENCY_VERSION`` is for.
 
     Deliberately excluded: wall-clock time, attempt counters, and anything else
     that differs between a first try and its retry.
@@ -79,6 +93,7 @@ def derive_client_order_id(intent: OrderIntent) -> str:
             intent.action.value,
             str(intent.limit_price_cents),
             str(intent.quantity),
+            intent.time_in_force.value,
             str(intent.revision),
         )
     )

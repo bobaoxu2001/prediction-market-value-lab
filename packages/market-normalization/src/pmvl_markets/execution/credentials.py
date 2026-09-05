@@ -47,6 +47,8 @@ __all__ = [
     "CredentialsUnavailable",
     "SigningUnavailable",
     "load_credentials",
+    "load_demo_credentials",
+    "load_production_credentials",
     "credentials_present",
     "signing_headers",
     "signing_payload",
@@ -121,6 +123,55 @@ def _read_pem(raw_pem: str, path_value: str) -> tuple[str, str]:
     return "", ""
 
 
+def load_demo_credentials(*, settings: Any = None) -> KalshiCredentials:
+    """Demo credentials, from the demo config namespace only.
+
+    Named rather than parameterized on purpose. A single
+    ``load_credentials(environment)`` makes "which namespace am I reading" a
+    runtime value that a caller can get wrong; two functions make it a fact of
+    the call site. The namespaces do not overlap, so there is no supported path
+    that pairs a DEMO mode with the production key fields.
+    """
+    return _load_from_namespace(
+        KalshiEnvironment.DEMO,
+        settings if settings is not None else get_settings(),
+    )
+
+
+def load_production_credentials(*, settings: Any = None) -> KalshiCredentials:
+    """Production credentials. READ-ONLY use; no mode can mutate a real account."""
+    return _load_from_namespace(
+        KalshiEnvironment.PRODUCTION,
+        settings if settings is not None else get_settings(),
+    )
+
+
+def _load_from_namespace(
+    env: KalshiEnvironment, cfg: Any
+) -> KalshiCredentials:
+    if env is KalshiEnvironment.DEMO:
+        key_id = (getattr(cfg, "kalshi_demo_api_key_id", "") or "").strip()
+        pem, source = _read_pem(
+            getattr(cfg, "kalshi_demo_private_key_pem", "") or "",
+            getattr(cfg, "kalshi_demo_private_key_path", "") or "",
+        )
+    else:
+        key_id = (getattr(cfg, "kalshi_api_key_id", "") or "").strip()
+        pem, source = _read_pem(
+            getattr(cfg, "kalshi_private_key_pem", "") or "",
+            getattr(cfg, "kalshi_private_key_path", "") or "",
+        )
+    if not key_id or not pem.strip():
+        raise CredentialsUnavailable(
+            f"no {env.value} credentials configured "
+            f"(key_id {'set' if key_id else 'missing'}, "
+            f"private key {'set' if pem.strip() else 'missing'})"
+        )
+    return KalshiCredentials(
+        key_id=key_id, environment=env, private_key_pem=pem, source=source
+    )
+
+
 def load_credentials(
     mode: ExecutionMode,
     *,
@@ -137,34 +188,14 @@ def load_credentials(
         )
 
     cfg = settings if settings is not None else get_settings()
+    # The namespace is derived from the mode, never supplied beside it, so a
+    # caller cannot ask for DEMO and be handed the production key fields.
     env = environment_for(mode)
-
-    if env is KalshiEnvironment.DEMO:
-        key_id = (getattr(cfg, "kalshi_demo_api_key_id", "") or "").strip()
-        pem, source = _read_pem(
-            getattr(cfg, "kalshi_demo_private_key_pem", "") or "",
-            getattr(cfg, "kalshi_demo_private_key_path", "") or "",
-        )
-    else:
-        key_id = (getattr(cfg, "kalshi_api_key_id", "") or "").strip()
-        pem, source = _read_pem(
-            getattr(cfg, "kalshi_private_key_pem", "") or "",
-            getattr(cfg, "kalshi_private_key_path", "") or "",
-        )
-
-    if not key_id or not pem.strip():
-        raise CredentialsUnavailable(
-            f"no {env.value} credentials configured "
-            f"(key_id {'set' if key_id else 'missing'}, "
-            f"private key {'set' if pem.strip() else 'missing'})"
-        )
-
-    return KalshiCredentials(
-        key_id=key_id,
-        environment=env,
-        private_key_pem=pem,
-        source=source,
-    )
+    creds = _load_from_namespace(env, cfg)
+    # Belt and braces: the loader is the only thing that sets `environment`, but
+    # re-assert it here so a future edit that breaks the mapping fails loudly.
+    creds.assert_environment(env)
+    return creds
 
 
 def credentials_present(mode: ExecutionMode, *, settings: Any = None) -> bool:
