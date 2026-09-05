@@ -24,6 +24,16 @@ from .gateway import (
     GatewayResult,
     ShadowExecutionGateway,
 )
+from .sizing import (
+    DEMO_PROBE_SIZE,
+    SIZING_POLICY_VERSION,
+    DemoExecutionProbePolicy,
+    SizingDecision,
+    SizingNotIssued,
+    SizingPolicy,
+    SizingRefused,
+    StrategySizingPolicy,
+)
 from .signals import (
     IneligibilityReason,
     IneligibleSignal,
@@ -96,6 +106,14 @@ LIVE_AUTONOMOUS_TRADING_AUTHORIZED = False
 
 __all__ = [
     "AccountBalance",
+    "DEMO_PROBE_SIZE",
+    "DemoExecutionProbePolicy",
+    "SIZING_POLICY_VERSION",
+    "SizingDecision",
+    "SizingNotIssued",
+    "SizingPolicy",
+    "SizingRefused",
+    "StrategySizingPolicy",
     "IneligibilityReason",
     "IneligibleSignal",
     "ResearchDecision",

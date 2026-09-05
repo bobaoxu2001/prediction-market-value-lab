@@ -1,4 +1,4 @@
-# Kalshi execution harness (Phases 5A-5B)
+# Kalshi execution harness (Phases 5A-5C0)
 
 Authenticated account access, a demo execution harness, order/fill reconciliation
 and a hard risk kill switch — built **before** the research system is authorized
@@ -369,3 +369,91 @@ Not on the signal→risk→execution safety path, documented rather than fixed:
 - Kalshi supports order fields this code never sends (post-only, reduce-only,
   non-limit types). They are absent from the idempotency hash because hashing a
   value that never varies is theatre; adding one later requires a version bump.
+
+
+---
+
+# Phase 5C0 — why there are no real signals, and what a quantity means
+
+## Zero real signals is the model working, not a bug
+
+The live weather pipeline runs. `model_predictions` holds 64,469 rows under
+`ensemble-v1.0.0`, 5,747 of them on real `KXHIGH*` markets, updated continuously.
+52 real weather markets reach the scorer on a current pass, and the latest `score`
+job built **600 candidates and wrote 0 recommendations**.
+
+Reconstructing that pass read-only: 594 candidates built, **0 passed**
+`passes_gates`. For real weather specifically — 104 candidate-sides — every one
+either could not be built or had a **negative** conservative net EV. The model is
+saying there is no edge after costs, which on a book whose best ask is 1c is
+exactly what it should say.
+
+So the root cause is `D — WEATHER MARKETS ARE SCORED BUT FAIL THE ACTIONABILITY
+GATE`. It is **not** a persistence bug and **not** Phase 4C1: nothing in
+`publish_recommendations` or `rank_candidates` consults CLEAN or the 4C gate. A
+recommendation would be written the moment one cleared `min_conservative_net_ev`.
+
+The 462 rows that do exist are all `provenance='demo'` seed fixtures from June–July.
+
+## Three quantities, never collapsed
+
+```
+approved_quantity <= requested_quantity <= capacity_ceiling
+```
+
+| | what it is | who owns it |
+|---|---|---|
+| `capacity_ceiling` | what the book absorbs before the marginal contract stops being +EV (`max_profitable_size`, bounded at 5000) | research |
+| `requested_quantity` | what a named, versioned sizing policy asked for | **no component yet** |
+| `approved_quantity` | what the risk gate permitted — it may reduce, never raise | risk |
+
+`POSITION_SIZING_OWNER = NO COMPONENT YET`. The closest thing is
+`fractional_kelly`, and it is a fraction of a bankroll the research layer does not
+model; nothing converts it to contracts. So `STRATEGY_POSITION_SIZE_DEFINED = NO`
+and `StrategySizingPolicy` refuses rather than guessing.
+
+`DEMO_EXECUTION_PROBE` sizes **one contract**, DEMO-only, bound in three places.
+It is a venue-mechanics test and expresses no view; no result obtained with it
+says anything about sizing quality or profitability.
+
+## What the adversarial review broke this time
+
+Eight reproduced findings, all fixed:
+
+- **The risk gate sealed a quantity it re-read after the checks.** `evaluate()`
+  calls into the caller-supplied exposure object, and `authorize()` then re-read
+  the intent to build the plan. An exposure that mutated the intent in that
+  window produced a sealed, gateway-admissible plan for **5000 contracts against
+  a 5-contract cap**. Every venue-affecting field is now snapshotted once, before
+  anything that can run caller code, and the snapshot is what gets sealed. The
+  ordering guard is a `raise`, not an `assert` that `python -O` strips.
+- **Sizing was bound to a quantity but not to a market.** A decision sized against
+  a deep book was spendable on a thin one. Ticker and ceiling are now cross-checked.
+- **`STRATEGY_SIZED` was guarded by `is`**, so a look-alike `StrEnum` with the same
+  value was issued, sealed, and reached the ledger's audit column — the one label
+  reserved so "the strategy sized this" cannot be declared. Compared by value now,
+  and the policy must be a genuine member.
+- **The fixture gate was a denylist of one string.** `fixture` — a replayed
+  recorded response — passed, as did any casing and any unenumerated value. It is
+  an allowlist of `live` now, matching how every other classifier here fails closed.
+- **A BUY limit rounded half-even**, so 0.5966 became 60c: a third of a cent above
+  the price the edge was measured at, on edges of 1–5c. Four of the twelve live
+  actionable rows rounded up, one by 14.5% of its own edge. And the intent's price
+  ceiling was set to the same rounded number, so `PRICE_ABOVE_MAX` compared a value
+  against itself and could never fire. Rounds down now, ceiling from the unrounded
+  research price.
+- **`market_data_timestamp` was the signal timestamp**, making `MARKET_DATA_STALE`
+  a duplicate of `SIGNAL_STALE` — the same inert-limit shape as the daily loss and
+  spend breakers. It reads `quote_observed_at` now.
+- **Sizing decisions were never spent**, so one could underwrite many orders.
+- **The ledger recorded whatever label the caller asserted**, unverified.
+
+## Operator commands
+
+```bash
+pmvl exec shadow-replay --limit 500 --json
+```
+
+```bash
+pmvl exec discrepancies --mode demo --clear
+```

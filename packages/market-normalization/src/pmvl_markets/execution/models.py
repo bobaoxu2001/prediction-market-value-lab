@@ -318,6 +318,13 @@ class OrderIntent:
     expires_at: datetime | None = None
     reason: str = ""
 
+    #: Depth ceiling from research, if one exists. Carried so an auditor can see
+    #: that the quantity was bounded by it - never used *as* the quantity.
+    capacity_ceiling: int | None = None
+    #: The issued decision that chose ``quantity``. ``None`` only on intents
+    #: built by hand in tests; the signal adapter always supplies one.
+    sizing: Any = None
+
     def __post_init__(self) -> None:
         if self.quantity <= 0:
             raise ValueError(f"intent quantity must be positive, got {self.quantity}")

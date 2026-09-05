@@ -70,6 +70,7 @@ from pmvl_markets.execution.signals import (
     IneligibleSignal,
     ResearchDecision,
 )
+from pmvl_markets.execution.sizing import SizingPolicy, issue_sizing
 from pmvl_markets.execution.transport import SignedTransport
 
 pytestmark = pytest.mark.filterwarnings("ignore::DeprecationWarning")
@@ -629,7 +630,8 @@ def _decision(**kw: object) -> ResearchDecision:
         "total_cost_per_contract": Decimal("0.42"),
         "recommended_position_cap": Decimal("2"),
         "model_version": "TEST_ONLY",
-        "provenance": "TEST_ONLY",
+        # Allowlisted live provenance; the row itself is TEST_ONLY.
+        "provenance": "live",
         "horizon": "24h",
         "created_at": now,
         "evidence_updated_at": now,
@@ -639,9 +641,30 @@ def _decision(**kw: object) -> ResearchDecision:
     return ResearchDecision(**base)  # type: ignore[arg-type]
 
 
+class _FixedSizePolicy:
+    """TEST_ONLY sizing: a declared constant, so these tests exercise the path
+    without depending on a strategy policy that does not exist."""
+
+    policy = SizingPolicy.OPERATOR_SPECIFIED_DEMO_SMOKE
+
+    def __init__(self, quantity: int = 2) -> None:
+        self.quantity = quantity
+
+    def decide(self, *, mode, ticker, capacity_ceiling=None):  # noqa: ANN001
+        return issue_sizing(
+            requested_quantity=min(self.quantity, capacity_ceiling or self.quantity),
+            policy=self.policy,
+            policy_version="TEST_ONLY",
+            mode=mode,
+            ticker=ticker,
+            decided_at=utcnow(),
+            capacity_ceiling=capacity_ceiling,
+            detail="TEST_ONLY fixed size",
+        )
+
+
 def _adapter(**kw: object) -> SignalExecutionAdapter:
-    # An explicit declared size: the adapter refuses to invent one.
-    kw.setdefault("position_size", 2)
+    kw.setdefault("sizing_policy", _FixedSizePolicy())
     return SignalExecutionAdapter(mode=ExecutionMode.SHADOW, **kw)  # type: ignore[arg-type]
 
 
@@ -946,7 +969,9 @@ def test_adapter_refuses_to_invent_a_position_size() -> None:
 
 
 def test_declared_size_is_capped_by_research_capacity() -> None:
-    sized = SignalExecutionAdapter(mode=ExecutionMode.SHADOW, position_size=10)
+    sized = SignalExecutionAdapter(
+        mode=ExecutionMode.SHADOW, sizing_policy=_FixedSizePolicy(10)
+    )
     out = sized.to_intent(_decision(recommended_position_cap=Decimal("3")))
     assert isinstance(out, OrderIntent)
     assert out.quantity == 3

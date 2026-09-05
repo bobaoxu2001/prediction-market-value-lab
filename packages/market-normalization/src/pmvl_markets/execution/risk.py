@@ -60,6 +60,7 @@ class RiskVerdict(StrEnum):
 
 class BlockReason(StrEnum):
     KILL_SWITCH = "kill_switch"
+    SIZING_NOT_AUTHORIZED = "sizing_not_authorized"
     MODE_NOT_WRITABLE = "mode_not_writable"
     QUANTITY_OVER_CAP = "quantity_over_cap"
     NOTIONAL_OVER_CAP = "notional_over_cap"
@@ -284,6 +285,79 @@ class RiskGate:
         )
 
         now = now or utcnow()
+
+        # Snapshot every venue-affecting field ONCE, before anything that could
+        # run caller code.
+        #
+        # `evaluate()` calls methods on the caller-supplied exposure object, and
+        # this function used to re-read `intent.quantity` afterwards to build the
+        # plan. An exposure whose `position_exposure_usd` mutated the intent
+        # therefore had the checks run against one quantity and the seal applied
+        # to another: an adversarial review produced a sealed, gateway-admissible
+        # plan for 5000 contracts against a 5-contract cap. The seal must cover
+        # the values that were actually checked, so they are frozen here and
+        # nothing below re-reads the intent.
+        snap_ticker = intent.ticker
+        snap_outcome = intent.outcome
+        snap_action = intent.action
+        snap_price = intent.limit_price_cents
+        snap_quantity = intent.quantity
+        snap_tif = intent.time_in_force
+        snap_mode = intent.mode
+
+        # A quantity is only trustworthy if something authorized to choose one
+        # chose it. An intent carrying a sizing decision must present a genuine,
+        # unmodified, mode-matched one; an intent carrying none is a hand-built
+        # object (tests, operator smoke) and keeps the older contract.
+        sizing = getattr(intent, "sizing", None)
+        if sizing is not None:
+            try:
+                sizing.assert_issued(mode=intent.mode)
+            except Exception as exc:  # SizingNotIssued and friends
+                return (
+                    RiskDecision(
+                        verdict=RiskVerdict.BLOCK,
+                        reasons=(BlockReason.SIZING_NOT_AUTHORIZED,),
+                        detail=(str(exc)[:200],),
+                        evaluated_at=now,
+                    ),
+                    None,
+                )
+            mismatch = None
+            if sizing.requested_quantity != snap_quantity:
+                mismatch = (
+                    f"intent quantity {snap_quantity} does not match the "
+                    f"authorized request {sizing.requested_quantity}"
+                )
+            elif sizing.ticker != snap_ticker:
+                # `requested <= capacity_ceiling` is a statement about one order
+                # book. A decision sized against a deep market is meaningless on
+                # a thin one, so the market is part of what was authorized.
+                mismatch = (
+                    f"sizing was decided for {sizing.ticker}, presented for "
+                    f"{snap_ticker}"
+                )
+            elif (
+                sizing.capacity_ceiling is not None
+                and intent.capacity_ceiling is not None
+                and sizing.capacity_ceiling != intent.capacity_ceiling
+            ):
+                mismatch = (
+                    f"intent declares capacity ceiling "
+                    f"{intent.capacity_ceiling}, sizing was bounded at "
+                    f"{sizing.capacity_ceiling}"
+                )
+            if mismatch is not None:
+                return (
+                    RiskDecision(
+                        verdict=RiskVerdict.BLOCK,
+                        reasons=(BlockReason.SIZING_NOT_AUTHORIZED,),
+                        detail=(mismatch,),
+                        evaluated_at=now,
+                    ),
+                    None,
+                )
+
         decision = self.evaluate(
             intent,
             exposure,
@@ -295,14 +369,45 @@ class RiskGate:
         if not decision.passed:
             return decision, None
 
+        # The gate constrains size. It does not choose one: `max 5 contracts` is
+        # a limit, not a recommendation to buy five. Approved quantity is
+        # therefore the requested quantity, and the only permitted movement is
+        # downward - which today is expressed as a BLOCK rather than a silent
+        # reduction, so an operator sees the refusal instead of a smaller order
+        # they never asked for.
+        approved_quantity = snap_quantity
+        if sizing is not None and approved_quantity > sizing.requested_quantity:
+            # A `raise`, not an `assert`: `python -O` strips asserts, and this is
+            # the invariant the whole module exists to hold.
+            return (
+                RiskDecision(
+                    verdict=RiskVerdict.BLOCK,
+                    reasons=(BlockReason.SIZING_NOT_AUTHORIZED,),
+                    detail=("approved quantity exceeds the authorized request",),
+                    evaluated_at=now,
+                ),
+                None,
+            )
+        if snap_quantity != intent.quantity or snap_price != intent.limit_price_cents:
+            # The intent changed while the checks were running.
+            return (
+                RiskDecision(
+                    verdict=RiskVerdict.BLOCK,
+                    reasons=(BlockReason.SIZING_NOT_AUTHORIZED,),
+                    detail=("intent was modified during risk evaluation",),
+                    evaluated_at=now,
+                ),
+                None,
+            )
+
         plan = issue_authorization(
-            mode=intent.mode,
-            ticker=intent.ticker,
-            outcome=intent.outcome,
-            action=intent.action,
-            limit_price_cents=intent.limit_price_cents,
-            quantity=intent.quantity,
-            time_in_force=intent.time_in_force,
+            mode=snap_mode,
+            ticker=snap_ticker,
+            outcome=snap_outcome,
+            action=snap_action,
+            limit_price_cents=snap_price,
+            quantity=approved_quantity,
+            time_in_force=snap_tif,
             client_order_id=client_order_id,
             intent_id=intent.intent_id,
             risk_checked_at=now,
@@ -312,6 +417,8 @@ class RiskGate:
             market_data_timestamp=intent.market_data_timestamp,
             account_state_at=getattr(exposure, "fetched_at", None),
         )
+        if sizing is not None:
+            sizing.consume()
         return decision, plan
 
     def evaluate(

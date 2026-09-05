@@ -104,6 +104,12 @@ CREATE TABLE IF NOT EXISTS execution_orders (
     action               TEXT NOT NULL,
     requested_price_cents INTEGER NOT NULL,
     requested_quantity   INTEGER NOT NULL,
+    -- Sizing provenance. "Why quantity = N?" must be answerable from the row,
+    -- not reconstructed from logs. A NULL policy means the intent predates the
+    -- sizing contract or was hand-built.
+    sizing_policy        TEXT,
+    sizing_policy_version TEXT,
+    capacity_ceiling     INTEGER,
     status               TEXT NOT NULL,
     exchange_order_id    TEXT,
     filled_quantity      INTEGER NOT NULL DEFAULT 0,
@@ -203,6 +209,11 @@ class LedgerRecord:
     submitted_at: str | None
     last_reconciled_at: str | None
     error: str
+    #: Sizing provenance: why this quantity. NULL on rows written before the
+    #: sizing contract, or on hand-built intents.
+    sizing_policy: str | None = None
+    sizing_policy_version: str | None = None
+    capacity_ceiling: int | None = None
 
     @property
     def remaining_quantity(self) -> int:
@@ -233,6 +244,19 @@ class ExecutionLedger:
         with no `mode` column and every scoped query raises. Only this file is
         ever migrated; pmvl.db is not touched by anything in this package.
         """
+        order_cols = {
+            r[1] for r in con.execute("PRAGMA table_info(execution_orders)")
+        }
+        for column, decl in (
+            ("sizing_policy", "TEXT"),
+            ("sizing_policy_version", "TEXT"),
+            ("capacity_ceiling", "INTEGER"),
+        ):
+            if order_cols and column not in order_cols:
+                con.execute(
+                    f"ALTER TABLE execution_orders ADD COLUMN {column} {decl}"
+                )
+
         cols = {
             r[1]
             for r in con.execute("PRAGMA table_info(blocking_discrepancies)")
@@ -293,8 +317,9 @@ class ExecutionLedger:
                 client_order_id, intent_id, mode, ticker, outcome, action,
                 requested_price_cents, requested_quantity, status,
                 strategy, strategy_version, decision_epoch, source_signal_id,
-                revision, created_at, error
-            ) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
+                revision, created_at, error,
+                sizing_policy, sizing_policy_version, capacity_ceiling
+            ) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
             """,
             (
                 client_order_id,
@@ -313,6 +338,13 @@ class ExecutionLedger:
                 intent.revision,
                 now,
                 error,
+                # From the SEALED decision, and only if it verifies. An
+                # unverified label is worse than no label: the column exists to
+                # answer "why quantity = N?", and a row that repeats whatever the
+                # caller asserted answers with the caller's own claim. A
+                # look-alike policy object put `strategy_sized` in here - the one
+                # label issuance refuses to mint.
+                *_verified_sizing(intent),
             ),
         )
         inserted = cur.rowcount > 0
@@ -722,9 +754,44 @@ class ExecutionLedger:
         ).fetchall()
 
 
+def _verified_sizing(intent: OrderIntent) -> tuple[str | None, str | None, int | None]:
+    """(policy, policy_version, capacity_ceiling) if the sizing decision is real."""
+    sizing = getattr(intent, "sizing", None)
+    if sizing is None:
+        return (None, None, getattr(intent, "capacity_ceiling", None))
+    try:
+        sizing.assert_issued(mode=intent.mode)
+    except Exception:
+        log.warning(
+            "sizing decision on intent %s did not verify; recording no sizing "
+            "provenance rather than an unverified claim",
+            intent.intent_id,
+        )
+        return (None, None, None)
+    return (
+        str(sizing.policy.value),
+        str(sizing.policy_version),
+        sizing.capacity_ceiling,
+    )
+
+
 def _mode_value(mode: "ExecutionMode | str") -> str:
     """Accept either the enum or its value, always store the value."""
     return mode.value if isinstance(mode, ExecutionMode) else str(mode)
+
+
+def _opt_str(row: sqlite3.Row, key: str) -> str | None:
+    """Tolerate rows written before a column existed."""
+    try:
+        value = row[key]
+    except (IndexError, KeyError):
+        return None
+    return str(value) if value is not None else None
+
+
+def _opt_int(row: sqlite3.Row, key: str) -> int | None:
+    value = _opt_str(row, key)
+    return int(value) if value is not None else None
 
 
 def _record(row: sqlite3.Row) -> LedgerRecord:
@@ -737,6 +804,9 @@ def _record(row: sqlite3.Row) -> LedgerRecord:
         action=row["action"],
         requested_price_cents=int(row["requested_price_cents"]),
         requested_quantity=int(row["requested_quantity"]),
+        sizing_policy=_opt_str(row, "sizing_policy"),
+        sizing_policy_version=_opt_str(row, "sizing_policy_version"),
+        capacity_ceiling=_opt_int(row, "capacity_ceiling"),
         status=OrderStatus(row["status"]),
         exchange_order_id=row["exchange_order_id"],
         filled_quantity=int(row["filled_quantity"] or 0),

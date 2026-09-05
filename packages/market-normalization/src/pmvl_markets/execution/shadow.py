@@ -278,7 +278,7 @@ def load_research_decisions(
     con.row_factory = sqlite3.Row
     sql = """
         SELECT r.*, m.platform_market_id, m.platform, m.status AS market_status,
-               m.close_time
+               m.close_time, m.quote_observed_at
         FROM recommendations r JOIN markets m ON m.id = r.market_id
     """
     if only_actionable:
@@ -328,6 +328,7 @@ def load_research_decisions(
                     created_at=_dt(row["created_at"]),
                     evidence_updated_at=_dt(row["evidence_updated_at"]),
                     close_time=_dt(row["close_time"]),
+                    quote_observed_at=_dt(row["quote_observed_at"]),
                     expected_resolution_time=_dt(row["expected_resolution_time"]),
                 )
             )

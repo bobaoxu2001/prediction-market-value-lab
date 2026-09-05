@@ -30,15 +30,16 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from datetime import datetime, timedelta
-from decimal import Decimal
+from decimal import ROUND_DOWN, Decimal
 from enum import StrEnum
 from typing import Any
 
-from pmvl_shared.enums import RecommendationState, Side
+from pmvl_shared.enums import DataProvenance, RecommendationState, Side
 from pmvl_shared.logging_setup import get_logger
 from pmvl_shared.timeutil import utcnow
 
 from .models import ExecutionMode, OrderAction, OrderIntent, Outcome
+from .sizing import SizingRefused
 
 log = get_logger(__name__)
 
@@ -109,6 +110,8 @@ class ResearchDecision:
     evidence_updated_at: datetime | None = None
     close_time: datetime | None = None
     expected_resolution_time: datetime | None = None
+    #: When the book this decision was priced against was observed.
+    quote_observed_at: datetime | None = None
 
     @property
     def signal_id(self) -> str:
@@ -148,15 +151,15 @@ class SignalExecutionAdapter:
         mode: ExecutionMode = ExecutionMode.SHADOW,
         max_signal_age: timedelta = timedelta(hours=6),
         allow_demo_provenance: bool = False,
-        position_size: int | None = None,
+        sizing_policy: Any = None,
     ) -> None:
         self.mode = mode
         self.max_signal_age = max_signal_age
-        #: Explicit, caller-supplied position size. ``None`` - the default -
-        #: blocks every signal, because the research record does not yet publish
-        #: a size and this module refuses to invent one. A shadow study may set
-        #: it to a declared constant to exercise the rest of the path.
-        self.position_size = position_size
+        #: The component allowed to answer "how many contracts?". ``None`` - the
+        #: default - blocks every signal: the research record publishes a
+        #: capacity ceiling and a Kelly fraction, neither of which is a size, and
+        #: an adapter that picks a number is an adapter that invented a strategy.
+        self.sizing_policy = sizing_policy
         # Seed/fixture rows must not be mistaken for model output. Off by
         # default; the shadow replay turns it on explicitly and labels the run.
         self.allow_demo_provenance = allow_demo_provenance
@@ -177,11 +180,23 @@ class SignalExecutionAdapter:
                 f"recommendation state is {decision.state.value}",
             )
 
-        if not self.allow_demo_provenance and decision.provenance == "demo":
-            return refuse(
-                IneligibilityReason.DEMO_PROVENANCE,
-                "seed/fixture row, not model output",
-            )
+        # Allowlist LIVE; refuse everything else.
+        #
+        # This was a denylist of the single literal "demo", which let through
+        # `fixture` (a replayed recorded response - exactly the thing that must
+        # not become an order), any casing, and any value nobody enumerated.
+        # Every other classifier in this subsystem fails closed; this one failed
+        # open, on the one gate standing between recorded data and a venue.
+        provenance = (decision.provenance or "").strip().lower()
+        if provenance != DataProvenance.LIVE.value:
+            if provenance == DataProvenance.DEMO.value and self.allow_demo_provenance:
+                pass  # explicitly admitted by a labelled study
+            else:
+                return refuse(
+                    IneligibilityReason.DEMO_PROVENANCE,
+                    f"provenance {provenance or '<empty>'!r} is not live model "
+                    "output",
+                )
 
         # ---- market identity: exact or nothing ------------------------------
         if not ticker:
@@ -228,12 +243,26 @@ class SignalExecutionAdapter:
         # mean the order no longer matches the research record.
         if decision.entry_price is None:
             return refuse(IneligibilityReason.MISSING_EXECUTABLE_PRICE)
-        limit_cents = int((decision.entry_price * 100).to_integral_value())
+        # Round DOWN, always. Default Decimal rounding is half-even, which took
+        # 0.5966 to 60c - a third of a cent *above* the price the edge was
+        # measured at, on conservative edges of 1-5c. On the 12 live actionable
+        # rows, 4 rounded up, one of them by 14.5% of its own edge. Paying more
+        # than the research entry price is the one direction that silently
+        # invalidates the trade, so the tick is always taken in our favour.
+        limit_cents = int(
+            (decision.entry_price * 100).to_integral_value(rounding=ROUND_DOWN)
+        )
         if not 1 <= limit_cents <= 99:
             return refuse(
                 IneligibilityReason.PRICE_OUT_OF_RANGE,
                 f"entry price {decision.entry_price} -> {limit_cents}c",
             )
+
+        # The unrounded research entry price, as a ceiling the limit is checked
+        # against rather than derived from.
+        max_entry_cents = int(
+            (decision.entry_price * 100).to_integral_value(rounding=ROUND_DOWN)
+        )
 
         # ---- edge: measured by research, not by this module -----------------
         edge = decision.conservative_net_ev
@@ -266,13 +295,19 @@ class SignalExecutionAdapter:
                 IneligibilityReason.MISSING_SIZE,
                 f"capacity ceiling is {decision.recommended_position_cap}",
             )
-        if self.position_size is None:
+        if self.sizing_policy is None:
             return refuse(
                 IneligibilityReason.SIZE_POLICY_UNDEFINED,
-                "research publishes a capacity ceiling "
-                f"({capacity}) but no position size; execution will not choose one",
+                f"research publishes a capacity ceiling ({capacity}) but no "
+                "position size, and no sizing policy is configured",
             )
-        quantity = min(self.position_size, capacity)
+        try:
+            sizing = self.sizing_policy.decide(
+                mode=self.mode, ticker=ticker, capacity_ceiling=capacity
+            )
+        except SizingRefused as exc:
+            return refuse(IneligibilityReason.SIZE_POLICY_UNDEFINED, str(exc)[:200])
+        quantity = sizing.requested_quantity
 
         return OrderIntent(
             intent_id=decision.signal_id,
@@ -289,12 +324,22 @@ class SignalExecutionAdapter:
             model_probability=decision.fair_probability,
             conservative_probability=decision.conservative_probability,
             expected_edge_after_fees=edge,
-            max_acceptable_price_cents=limit_cents,
+            # The ceiling is the research price, not the rounded limit. Setting
+            # both to the same number made the risk gate's PRICE_ABOVE_MAX arm
+            # compare a value against itself, so it could never fire.
+            max_acceptable_price_cents=max_entry_cents,
             decision_timestamp=decision.created_at,
             signal_timestamp=signal_at,
-            market_data_timestamp=signal_at,
+            # The quote's own observation time where research recorded one.
+            # Reusing the signal timestamp made MARKET_DATA_STALE a duplicate of
+            # SIGNAL_STALE, so a decision could be fresh while the book it was
+            # priced against was not - the same inert-limit shape as the daily
+            # loss and spend breakers.
+            market_data_timestamp=decision.quote_observed_at or signal_at,
             reason=(
                 f"{STRATEGY_NAME} rank batch {decision.batch_id} "
                 f"horizon {decision.horizon}"
             ),
+            capacity_ceiling=capacity,
+            sizing=sizing,
         )
