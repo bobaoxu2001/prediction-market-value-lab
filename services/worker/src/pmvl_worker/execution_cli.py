@@ -31,6 +31,7 @@ from pmvl_markets.execution import (
 )
 from pmvl_markets.execution.harness import ExecutionHarness
 from pmvl_shared.config import get_settings
+from pmvl_shared.logging_setup import get_logger
 from pmvl_shared.timeutil import utcnow
 
 app = typer.Typer(
@@ -41,6 +42,7 @@ app = typer.Typer(
     ),
 )
 console = Console()
+log = get_logger(__name__)
 
 _MODES = {
     "shadow": ExecutionMode.SHADOW,
@@ -602,3 +604,48 @@ def discrepancies(
         console.print_json(data=payload)
     else:
         console.print(payload)
+
+
+@app.command("demo-arm")
+def demo_arm(
+    minutes: int = typer.Option(30, help="How long the arm stays valid."),
+    reason: str = typer.Option(..., help="Why, for the audit trail."),
+    confirm: bool = typer.Option(False, "--confirm", help="required"),
+) -> None:
+    """Permit DEMO sandbox writes for a bounded window.
+
+    This is not a safety switch. It satisfies the *configuration* arm of the kill
+    switch for DEMO only, and only until it expires - an operator who forgets to
+    disarm gets a system that disarms itself. `pmvl exec kill` still overrides it
+    absolutely, and nothing here can enable a production write, because no
+    execution mode can perform one.
+    """
+    from datetime import timedelta
+
+    if not confirm:
+        raise typer.BadParameter("pass --confirm to arm demo execution")
+    if minutes <= 0 or minutes > 240:
+        raise typer.BadParameter("arm window must be between 1 and 240 minutes")
+
+    expiry = utcnow() + timedelta(minutes=minutes)
+    path = Path(get_settings().execution_demo_arm_path)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(f"{expiry.isoformat()} {reason}\n", encoding="utf-8")
+    log.warning(
+        "DEMO execution armed until %s by operator: %s", expiry.isoformat(), reason
+    )
+    console.print(
+        f"[yellow]DEMO writes armed[/yellow] until {expiry.isoformat()} ({path})"
+    )
+
+
+@app.command("demo-disarm")
+def demo_disarm() -> None:
+    """Revoke the demo arm immediately."""
+    path = Path(get_settings().execution_demo_arm_path)
+    if path.exists():
+        path.unlink()
+        log.warning("DEMO execution disarmed by operator")
+        console.print("[green]demo arm removed[/green]")
+    else:
+        console.print("no demo arm present")

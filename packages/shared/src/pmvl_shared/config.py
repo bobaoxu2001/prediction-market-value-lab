@@ -74,6 +74,14 @@ class Settings(BaseSettings):
     execution_kill_switch_path: str = Field(
         default=str(REPO_ROOT / "data" / "EXECUTION_DISABLED")
     )
+    #: Time-bounded DEMO arming. Its presence and expiry are the only way to
+    #: satisfy the configuration arm of the kill switch without setting
+    #: ``execution_enabled`` permanently. It can never enable a production
+    #: write - no mode can perform one.
+    execution_demo_arm_path: str = Field(
+        default=str(REPO_ROOT / "data" / "DEMO_ARMED")
+    )
+
     #: Separate from ``database_url`` on purpose - execution state does not share
     #: a file with research data. See ``pmvl_markets.execution.ledger``.
     #: Absolute for the same reason: a cwd-relative ledger silently becomes a

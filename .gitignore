@@ -110,3 +110,9 @@ apps/extension/chrome/
 # the 4C0.9 commit; they churn the working tree on every capture and would
 # make "working tree clean" meaningless as a verification signal.
 logs/
+
+# Operator runtime state, never source. A committed DEMO_ARMED would arm demo
+# execution for every checkout until it expired; a committed EXECUTION_DISABLED
+# would silently kill execution for everyone else.
+data/DEMO_ARMED
+data/EXECUTION_DISABLED

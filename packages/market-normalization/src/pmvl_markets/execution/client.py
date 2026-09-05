@@ -260,11 +260,41 @@ class KalshiAccountClient:
         return normalize_balance(payload or {}, self.profile.environment.value)
 
     async def get_positions(self, *, limit: int = 200) -> list[Position]:
-        payload = await self._transport.get(
-            "/portfolio/positions", params={"limit": limit}
+        rows = await self._paginate(
+            "/portfolio/positions", "market_positions", {"limit": limit}
         )
-        rows = (payload or {}).get("market_positions") or []
         return [normalize_position(r) for r in rows]
+
+    async def _paginate(
+        self, path: str, key: str, params: dict[str, Any], *, max_pages: int = 50
+    ) -> list[Any]:
+        """Every page, not just the first.
+
+        A single 200-row page with the cursor discarded made a ghost order past
+        row 200 reconcile clean, and made exposure under-count - the one unknown
+        in this subsystem that reported success instead of blocking. `max_pages`
+        bounds the walk so a malformed cursor cannot loop forever; hitting it is
+        logged, because a truncated read must never pass silently for a complete
+        one.
+        """
+        out: list[Any] = []
+        cursor: str | None = None
+        for _page in range(max_pages):
+            request = dict(params)
+            if cursor:
+                request["cursor"] = cursor
+            payload = await self._transport.get(path, params=request) or {}
+            out.extend(payload.get(key) or [])
+            cursor = payload.get("cursor") or None
+            if not cursor:
+                return out
+        log.error(
+            "%s: stopped after %d pages with a cursor still open; the account "
+            "read is INCOMPLETE and must not be treated as authoritative",
+            path,
+            max_pages,
+        )
+        raise ExecutionApiError(f"{path}: could not read the account completely")
 
     async def get_orders(
         self, *, ticker: str | None = None, status: str | None = None, limit: int = 200
@@ -274,8 +304,7 @@ class KalshiAccountClient:
             params["ticker"] = ticker
         if status:
             params["status"] = status
-        payload = await self._transport.get("/portfolio/orders", params=params)
-        rows = (payload or {}).get("orders") or []
+        rows = await self._paginate("/portfolio/orders", "orders", params)
         return [normalize_order(r) for r in rows]
 
     async def get_fills(
@@ -284,8 +313,7 @@ class KalshiAccountClient:
         params: dict[str, Any] = {"limit": limit}
         if ticker:
             params["ticker"] = ticker
-        payload = await self._transport.get("/portfolio/fills", params=params)
-        rows = (payload or {}).get("fills") or []
+        rows = await self._paginate("/portfolio/fills", "fills", params)
         return [normalize_fill(r) for r in rows]
 
     async def get_exposure(self) -> ExposureSnapshot:

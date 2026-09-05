@@ -102,7 +102,7 @@ class _BaseGateway:
         self.ledger = ledger
         # Configured by default, not a blank switch. A gateway built with the
         # obvious one-liner must be guarded.
-        self.kill_switch = kill_switch or KillSwitch.from_settings()
+        self.kill_switch = kill_switch or KillSwitch.from_settings(mode=self.mode)
 
     def _admit(self, plan: AuthorizedExecutionPlan) -> None:
         """Re-verify everything at the moment of use.

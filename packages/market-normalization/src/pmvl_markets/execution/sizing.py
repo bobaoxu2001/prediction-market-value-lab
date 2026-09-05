@@ -250,6 +250,19 @@ def issue_sizing(**fields: Any) -> SizingDecision:
             "STRATEGY_SIZED cannot be issued: no validated strategy sizing "
             "policy exists in this repository"
         )
+    # The probe label's entire meaning is "exactly one contract, expresses no
+    # view". Binding the size only inside the policy object meant bypassing the
+    # policy bypassed the size, and a 5-contract order could carry a label that
+    # reads in the audit trail as a 1-contract mechanics test.
+    if (
+        str(policy.value) == SizingPolicy.DEMO_EXECUTION_PROBE.value
+        and fields.get("requested_quantity") != DEMO_PROBE_SIZE
+    ):
+        raise SizingRefused(
+            f"{SizingPolicy.DEMO_EXECUTION_PROBE.value} is exactly "
+            f"{DEMO_PROBE_SIZE} contract; refusing to label "
+            f"{fields.get('requested_quantity')} as a mechanics probe"
+        )
     fields["nonce"] = secrets.token_hex(16)
     fields.pop("seal_digest", None)
     draft = SizingDecision(**fields, seal_digest="")

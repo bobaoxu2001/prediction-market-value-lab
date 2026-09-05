@@ -524,13 +524,27 @@ def resolve_unknown_order(
                 detail="venue reported a status this system does not recognise",
             )
 
-        ledger.force_status_from_evidence(
-            con,
-            client_order_id=client_order_id,
-            status=target,
-            note=f"resolved from venue evidence. {operator_note}".strip(),
-            exchange_order_id=remote_order.exchange_order_id or None,
-        )
+        try:
+            ledger.force_status_from_evidence(
+                con,
+                client_order_id=client_order_id,
+                status=target,
+                note=f"resolved from venue evidence. {operator_note}".strip(),
+                exchange_order_id=remote_order.exchange_order_id or None,
+            )
+        except Exception as exc:
+            # The venue named a filled status but supplied no fills to back it.
+            # Staying UNKNOWN is the honest outcome: the operator can re-run once
+            # the fills feed catches up.
+            ledger.record_resolution_attempt(
+                con, client_order_id=client_order_id, mode=mode.value,
+                resolved=False, detail=str(exc)[:400],
+            )
+            return OrderResolution(
+                client_order_id, False,
+                OrderStatus.UNKNOWN_RECONCILIATION_REQUIRED,
+                evidence=tuple(evidence), detail=str(exc)[:400],
+            )
         ledger.record_resolution_attempt(
             con, client_order_id=client_order_id, mode=mode.value,
             resolved=True, detail=f"venue reports {target.value}",

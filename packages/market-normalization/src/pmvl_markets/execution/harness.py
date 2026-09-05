@@ -229,7 +229,34 @@ class ExecutionHarness:
                 "no execution client is configured; refusing to submit"
             )
 
+        # An order this system has already sent is not re-sent.
+        #
+        # Reprocessing the same logical decision used to raise
+        # `InvalidTransition: open -> submitting` out of the ledger - a crash,
+        # not a placed order, so it was never a safety hole. But an automatic
+        # probe loop that dies on its own idempotency is not usable, and the
+        # crash hid the fact that deduplication had worked. The deterministic
+        # client_order_id already guarantees the venue would refuse a second
+        # order; this returns that outcome instead of an exception.
         with self.ledger.connect() as con:
+            existing = self.ledger.get(con, coid)
+            if existing is not None and existing.status is not OrderStatus.INTENDED:
+                log.info(
+                    "already submitted %s (%s); not re-sending",
+                    coid,
+                    existing.status.value,
+                )
+                return OrderResult(
+                    intent_id=intent.intent_id,
+                    client_order_id=coid,
+                    status=existing.status,
+                    mode=self.mode,
+                    exchange_order_id=existing.exchange_order_id,
+                    filled_quantity=existing.filled_quantity,
+                    remaining_quantity=existing.remaining_quantity,
+                    simulated=False,
+                    error="deduplicated: this decision was already submitted",
+                )
             self.ledger.transition(
                 con, coid, OrderStatus.SUBMITTING, submitted=True, note="submitting"
             )
@@ -379,6 +406,21 @@ class ExecutionHarness:
                 exchange_order_id=record.exchange_order_id,
                 already_resolved=True,
             )
+        if record.status is OrderStatus.UNKNOWN_RECONCILIATION_REQUIRED:
+            # An operator reaching for cancel on an ambiguous order is the most
+            # likely moment for this call, and it used to raise InvalidTransition
+            # out of the CLI as a traceback - the same crash-instead-of-explain
+            # defect fixed on the submit path, left here. The refusal is correct;
+            # only the presentation was wrong.
+            return CancelResult(
+                client_order_id=client_order_id,
+                status=record.status,
+                exchange_order_id=record.exchange_order_id,
+                error=(
+                    "order state is unresolved; run `pmvl exec reconcile-order` "
+                    "to establish it from venue evidence before cancelling"
+                ),
+            )
 
         with self.ledger.connect() as con:
             self.ledger.transition(
@@ -412,13 +454,37 @@ class ExecutionHarness:
         # reports a real position as flat, terminally, where reconciliation can
         # no longer reach it.
         #
-        # A confirmed cancel of an order we know to be unfilled is terminal.
-        # Anything else needs reconciliation.
+        # The fill test has to read the VENUE's answer, not ours. The previous
+        # guard consulted `record.filled_quantity` - local state, populated only
+        # by a reconciliation that has not run yet - so it was 0 in exactly the
+        # case the race creates. A cancel of a partially filled order was then
+        # written as terminal CANCELLED with the fill discarded, and CANCELLED
+        # is outside OPEN_STATUSES, so nothing ever looked at the row again.
+        venue_order = (payload or {}).get("order") or {}
+        raw_filled = venue_order.get("taker_fill_count")
+        if raw_filled is None:
+            # `initial - remaining` is NOT a fill count on a cancel response:
+            # cancelling legitimately drives remaining to zero. Without an
+            # explicit fill count there is nothing to infer from, and unknown
+            # must not read as zero.
+            venue_filled = -1 if venue_order else 0
+        else:
+            try:
+                venue_filled = int(raw_filled)
+            except (TypeError, ValueError):
+                venue_filled = -1
+
         resolved = OrderStatus.CANCELLED
         note = "cancel confirmed"
         if already:
             resolved = OrderStatus.UNKNOWN_RECONCILIATION_REQUIRED
             note = "venue reported nothing to cancel; fill state unverified"
+        elif venue_filled != 0:
+            resolved = OrderStatus.UNKNOWN_RECONCILIATION_REQUIRED
+            note = (
+                f"venue reports {venue_filled} filled at cancel; "
+                "position unverified"
+            )
         elif record.filled_quantity:
             resolved = OrderStatus.UNKNOWN_RECONCILIATION_REQUIRED
             note = "cancelled with fills outstanding; position unverified"

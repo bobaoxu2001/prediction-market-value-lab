@@ -1,4 +1,4 @@
-# Kalshi execution harness (Phases 5A-5C0)
+# Kalshi execution harness (Phases 5A-5C)
 
 Authenticated account access, a demo execution harness, order/fill reconciliation
 and a hard risk kill switch — built **before** the research system is authorized
@@ -457,3 +457,104 @@ pmvl exec shadow-replay --limit 500 --json
 ```bash
 pmvl exec discrepancies --mode demo --clear
 ```
+
+
+---
+
+# Phase 5C — demo venue mechanics
+
+## What was validated, and against what
+
+There are no demo credentials configured, so **nothing was sent to Kalshi**. The
+order lifecycle is instead driven through the real stack against a stateful fake
+venue (`tests/fake_kalshi_demo.py`): the transport, client, harness, risk gate,
+authorization contract, sizing contract, ledger and reconciler are all production
+code, and only the socket is replaced.
+
+That proves our half of the conversation — how this system behaves given a venue
+response. It cannot prove the venue responds as modelled. Every claim below is
+about the former.
+
+```
+DEMO_CREDENTIALS_PRESENT = NO
+DEMO_LIVE_SMOKE          = BLOCKED_MISSING_DEMO_CREDENTIALS
+```
+
+To unblock, an operator sets, in the environment or a gitignored `.env`:
+
+```
+KALSHI_DEMO_API_KEY_ID=<demo key id>
+KALSHI_DEMO_PRIVATE_KEY_PATH=/path/outside/this/repo/demo-key.pem
+```
+
+then arms demo writes for a bounded window:
+
+```bash
+pmvl exec demo-arm --minutes 30 --reason "5C first probe" --confirm
+```
+
+## Time-bounded demo arming
+
+`EXECUTION_ENABLED` is false by default, which engages the kill switch, which is
+correct. Turning it on permanently is a bad way to run a first probe, so the arm
+exists: a file carrying an expiry that satisfies the **configuration** arm of the
+kill switch, for **DEMO only**, for at most four hours.
+
+- shadow and production are unaffected — verified, not asserted
+- an expired, unreadable, or over-long arm means *not armed*
+- `pmvl exec kill` overrides it absolutely
+- `pmvl exec demo-disarm` revokes it immediately
+- the arm file is gitignored; committing one would arm every checkout
+
+It cannot enable a production write, because no mode can perform one.
+
+## What the adversarial review broke
+
+Seven reproduced defects, all fixed. Three attackers found the first one
+independently.
+
+**A cancel racing a partial fill was recorded as terminal CANCELLED.** The guard
+consulted `record.filled_quantity` — local state that reconciliation had not yet
+populated, so it read 0 in exactly the case the race creates. The venue's own
+DELETE response carried `taker_fill_count` and was discarded. Because CANCELLED
+is terminal and outside `OPEN_STATUSES`, nothing looked at the row again: the
+ledger permanently asserted flat while the account held contracts. The guard now
+reads the venue's answer. Note `initial - remaining` is *not* a fill count on a
+cancel response — cancelling legitimately drives remaining to zero — so an absent
+`taker_fill_count` is treated as unknown rather than as zero.
+
+**`resolve_unknown_order` wrote terminal FILLED from a status string with no fill
+rows.** Exactly what `_apply_submit_response` refuses one layer down. A venue
+status is evidence of an outcome, never of a quantity; the ledger now refuses it
+and the resolution stays UNKNOWN until the fills arrive.
+
+**Gate 6 validated the pre-redirect URL.** `follow_redirects` was checked at
+construction, but httpx reads it at send time, so flipping the attribute on a
+supplied client let a 307 from the demo host re-send an order body to production.
+Now pinned per send.
+
+**The demo arm was inert.** No shipped caller passed `mode=` to
+`KillSwitch.from_settings`, so the command reported success and unblocked
+nothing — the five tests establishing it exercised a path no caller took. Wired
+through `RiskGate(mode=)` and the gateways.
+
+**`issue_sizing` would mint a `demo_execution_probe` label for any quantity.** The
+size was bound only inside the policy object, so bypassing the policy bypassed the
+size and a 5-contract order read in the audit trail as a 1-contract mechanics
+test. Bound at issuance now, the same guard shape that reserves `STRATEGY_SIZED`.
+
+**Account reads were a single 200-row page with the cursor dropped.** A ghost
+order past row 200 reconciled clean and exposure under-counted — the one unknown
+in this subsystem that reported success instead of blocking. Reads paginate; an
+endless cursor raises rather than returning a partial account.
+
+**`harness.cancel` raised `InvalidTransition` on an UNKNOWN order** — the same
+crash-instead-of-explain defect fixed on the submit path, left on cancel, landing
+at the moment an operator is most likely to reach for it.
+
+## Still not validated
+
+No order has touched a venue. Fills, partial fills, cancellation, restart
+recovery and idempotency are proven against a fake that this repository wrote.
+`NATURAL_DEMO_PARTIAL_FILL_OBSERVED = NO`, and no execution statistics, latencies,
+slippage or fee data exist, because no venue produced any.

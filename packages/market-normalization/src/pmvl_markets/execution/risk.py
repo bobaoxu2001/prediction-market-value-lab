@@ -26,7 +26,7 @@ account balance is *not* treated as available risk capital.
 from __future__ import annotations
 
 from dataclasses import dataclass, field, replace
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from decimal import Decimal
 from enum import StrEnum
 from typing import TYPE_CHECKING, Any
@@ -41,6 +41,10 @@ if TYPE_CHECKING:  # pragma: no cover - import cycle guard
     from .authorization import AuthorizedExecutionPlan
 
 log = get_logger(__name__)
+
+#: The longest an operator may arm demo execution for, enforced on both the
+#: writing and reading side.
+MAX_DEMO_ARM_WINDOW = timedelta(hours=4)
 
 __all__ = [
     "RiskLimits",
@@ -175,8 +179,42 @@ class KillSwitch:
         self._runtime_reason = ""
         self._flag_path = flag_path
 
+    @staticmethod
+    def demo_arm_active(*, now: datetime | None = None) -> tuple[bool, str]:
+        """Whether an unexpired operator arm for DEMO exists.
+
+        Deliberately expiring. An operator who forgets to disarm gets a system
+        that disarms itself, which is the failure direction that costs nothing.
+        Reading the file is wrapped because an unreadable arm must mean "not
+        armed" rather than "armed".
+        """
+        from pathlib import Path as _Path
+
+        from pmvl_shared.config import get_settings as _get
+
+        try:
+            path = _Path(_get().execution_demo_arm_path)
+            if not path.exists():
+                return False, "no demo arm"
+            expiry = datetime.fromisoformat(
+                path.read_text(encoding="utf-8").strip().split()[0]
+            )
+            if expiry.tzinfo is None:
+                expiry = expiry.replace(tzinfo=timezone.utc)
+        except Exception:
+            return False, "demo arm unreadable"
+        moment = now or utcnow()
+        if moment >= expiry:
+            return False, f"demo arm expired at {expiry.isoformat()}"
+        # The 1-240 minute bound lived only in the CLI, so a hand-written or
+        # copied arm file could assert a window that never ends. The reader
+        # enforces it too: an over-long arm is treated as no arm.
+        if expiry - moment > MAX_DEMO_ARM_WINDOW:
+            return False, "demo arm window exceeds the permitted maximum"
+        return True, f"demo armed until {expiry.isoformat()}"
+
     @classmethod
-    def from_settings(cls) -> "KillSwitch":
+    def from_settings(cls, *, mode: "ExecutionMode | None" = None) -> "KillSwitch":
         """The switch as the deployment configured it - all three arms live.
 
         This is what any caller should get by default. ``KillSwitch()`` with no
@@ -188,8 +226,19 @@ class KillSwitch:
         from pmvl_shared.config import get_settings
 
         settings = get_settings()
+        config_disabled = not settings.execution_enabled
+
+        # A live DEMO arm satisfies the configuration arm, and only that arm.
+        # The persistent kill file and the runtime flag still override it, so
+        # `pmvl exec kill` remains absolute. Production is untouched because no
+        # mode can write there at all.
+        if config_disabled and mode is ExecutionMode.DEMO:
+            armed, _reason = cls.demo_arm_active()
+            if armed:
+                config_disabled = False
+
         return cls(
-            config_disabled=not settings.execution_enabled,
+            config_disabled=config_disabled,
             flag_path=Path(settings.execution_kill_switch_path),
         )
 
@@ -244,6 +293,7 @@ class RiskGate:
         limits: RiskLimits | None = None,
         *,
         kill_switch: KillSwitch | None = None,
+        mode: "ExecutionMode | None" = None,
     ) -> None:
         self.limits = limits or CONSERVATIVE_LIMITS
         # Default to the *configured* switch, not a blank one.
@@ -253,7 +303,7 @@ class RiskGate:
         # gate with all three arms disabled, silently. Every other guard in this
         # subsystem is structural; this one was a convention, and conventions are
         # what the next caller forgets.
-        self.kill_switch = kill_switch or KillSwitch.from_settings()
+        self.kill_switch = kill_switch or KillSwitch.from_settings(mode=mode)
 
     def authorize(
         self,

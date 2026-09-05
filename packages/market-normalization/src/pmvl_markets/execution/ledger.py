@@ -641,6 +641,19 @@ class ExecutionLedger:
                 f"{client_order_id} is {row.status.value}, not awaiting "
                 "reconciliation; evidence-based resolution does not apply"
             )
+        # A venue *status* is evidence of an outcome, never of a quantity.
+        # Writing FILLED from a status string reintroduces one layer up exactly
+        # what `_apply_submit_response` refuses one layer down: a terminal row
+        # asserting a complete fill with no fill behind it, which then drops the
+        # ticker out of the expected-position map and can never be corrected.
+        if status in (OrderStatus.FILLED, OrderStatus.PARTIALLY_FILLED):
+            fills = self.fills_for(con, client_order_id)
+            if not fills:
+                raise InvalidTransition(
+                    f"refusing to record {status.value} for {client_order_id}: "
+                    "the venue reports it but no fill rows exist. Fetch the "
+                    "fills and record them first."
+                )
         con.execute(
             "UPDATE execution_orders SET status = ?, last_reconciled_at = ?, "
             "exchange_order_id = COALESCE(?, exchange_order_id) "

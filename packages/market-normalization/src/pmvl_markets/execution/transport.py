@@ -200,7 +200,12 @@ class SignedTransport:
 
         try:
             request.headers.update(headers)
-            response = await self._client.send(request)
+            # Pinned per-send, not merely checked at construction. httpx reads
+            # `follow_redirects` from the client at send time, so a mutable
+            # attribute on a supplied client could separate the URL gate 6
+            # inspected from the one the socket reached - a 307 from the demo
+            # host would have re-sent the order body to production.
+            response = await self._client.send(request, follow_redirects=False)
         except (httpx.TimeoutException, httpx.TransportError) as exc:
             self.stats["errors"] += 1
             self._breaker.record_failure()
