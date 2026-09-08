@@ -633,37 +633,71 @@ class TestCollectionHealthIsDeterministic:
         assert first == second
 
     @pytest.mark.integration
-    def test_the_report_states_that_it_computes_no_returns(self, clean_db) -> None:  # noqa: ANN001
+    def test_the_report_states_that_it_computes_no_returns(self, clean_db, tmp_path) -> None:  # noqa: ANN001
         from pmvl_markets.alpha.collection_health import build_report
 
-        report = build_report(clean_db, days=1, now=BASE)
+        report = build_report(clean_db, days=1, now=BASE, archive_root=tmp_path)
         assert "No markout" in report["scope"]
         assert "COLLECTION HEALTH ONLY" in report["scope"]
 
     @pytest.mark.integration
-    def test_gates_report_expected_beside_actual(self, clean_db) -> None:  # noqa: ANN001
+    def test_gates_report_expected_beside_actual(self, clean_db, tmp_path) -> None:  # noqa: ANN001
         from pmvl_markets.alpha.collection_health import build_report
 
-        report = build_report(clean_db, days=1, now=BASE)
+        report = build_report(clean_db, days=1, now=BASE, archive_root=tmp_path)
         for gate in report["gates"]:
             assert "actual" in gate and "expected" in gate
             assert isinstance(gate["passing"], bool)
 
     @pytest.mark.integration
     def test_an_empty_database_fails_gates_rather_than_erroring(
-        self, clean_db
+        self, clean_db, tmp_path
     ) -> None:  # noqa: ANN001
         from pmvl_markets.alpha.collection_health import build_report
 
-        report = build_report(clean_db, days=1, now=BASE)
+        report = build_report(clean_db, days=1, now=BASE, archive_root=tmp_path)
         assert report["all_gates_passing"] is False
 
     @pytest.mark.integration
-    def test_the_report_is_json_serialisable(self, clean_db) -> None:  # noqa: ANN001
+    def test_the_report_is_json_serialisable(self, clean_db, tmp_path) -> None:  # noqa: ANN001
         from pmvl_markets.alpha.collection_health import build_report
 
-        report = build_report(clean_db, days=1, now=BASE)
+        report = build_report(clean_db, days=1, now=BASE, archive_root=tmp_path)
         assert json.loads(json.dumps(report)) == report
+
+    def test_no_test_here_reads_the_live_research_archive(self) -> None:
+        """The determinism claim holds only while the archive is an input.
+
+        ``build_report`` defaults ``archive_root`` to the repository's real
+        ``data/research-archive.db``, which the collector writes to
+        continuously. Four tests in this class omitted the argument, so they
+        opened that live file and raised "database is locked" whenever a
+        collection run held it - intermittently, and only on a machine where
+        collection was actually running, which is why it read as a flaky suite
+        rather than as a test that names its own inputs.
+
+        Asserted against the AST rather than the prose, so a future test cannot
+        reintroduce the implicit read.
+        """
+        import ast
+
+        cls = next(
+            node
+            for node in ast.parse(Path(__file__).read_text()).body
+            if isinstance(node, ast.ClassDef)
+            and node.name == "TestCollectionHealthIsDeterministic"
+        )
+        unpinned = [
+            node.lineno
+            for node in ast.walk(cls)
+            if isinstance(node, ast.Call)
+            and getattr(node.func, "id", "") == "build_report"
+            and not any(kw.arg == "archive_root" for kw in node.keywords)
+        ]
+        assert not unpinned, (
+            "build_report called without archive_root at line(s) "
+            f"{unpinned}: that reads the live research archive"
+        )
 
 
 class TestNoForwardReturnsAnywhere:
