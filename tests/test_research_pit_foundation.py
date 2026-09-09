@@ -369,6 +369,23 @@ class TestMidpointIsNotExecutable:
         assert one.fee_per_contract_yes > many.fee_per_contract_yes
         assert one.executable_yes_net < many.executable_yes_net
 
+    def test_the_fee_is_charged_at_the_offer_not_the_midpoint(self) -> None:
+        """Size 1 cannot distinguish this; the whole-cent ceiling hides it.
+
+        At one contract the fee is 0.02 whether it is computed at the ask
+        (0.46), the midpoint (0.43), the model probability (0.50) or the NO
+        offer (0.60) - the ceiling collapses all four. Every other fee
+        assertion here therefore passes against a version that charges the
+        wrong price. At 100 contracts they separate: 0.0174 / 0.0172 / 0.0175
+        / 0.0168 respectively, so this is the only test that pins the reading
+        of "applied to executable" that the protocol actually depends on.
+        """
+        edge = compute_edge(Decimal("0.50"), self._state(), contracts=Decimal(100))
+        assert edge.fee_per_contract_yes == Decimal("0.0174")   # at the ask
+        assert edge.fee_per_contract_yes != Decimal("0.0172")   # not the midpoint
+        assert edge.fee_per_contract_yes != Decimal("0.0175")   # not the model p
+        assert edge.fee_per_contract_no == Decimal("0.0168")    # NO leg at no_ask
+
     def test_the_no_leg_is_fee_charged_at_the_no_offer(self) -> None:
         """The NO side is a separate trade at a separate price.
 
@@ -426,7 +443,10 @@ class TestMidpointIsNotExecutable:
         )
         body = ast.unparse(fn)
         assert "no_ask" in body
-        assert "1 - state.yes_bid" not in body.replace(" ", "")
+        # Both sides must be space-stripped. This compared a spaced needle
+        # against a space-stripped haystack, so it could never match and
+        # passed against a body literally containing `1 - state.yes_bid`.
+        assert "1-state.yes_bid" not in body.replace(" ", "")
 
     def test_a_crossed_book_is_rejected(self) -> None:
         bad = MarketState(Decimal("0.60"), Decimal("0.40"), None, None)
