@@ -369,6 +369,51 @@ class TestMidpointIsNotExecutable:
         assert one.fee_per_contract_yes > many.fee_per_contract_yes
         assert one.executable_yes_net < many.executable_yes_net
 
+    def test_the_no_leg_is_fee_charged_at_the_no_offer(self) -> None:
+        """The NO side is a separate trade at a separate price.
+
+        Its fee must be computed at the NO offer, not at the YES offer: the
+        quadratic fee peaks at 50c, so charging the wrong leg's price gets the
+        magnitude wrong in whichever direction the book is skewed.
+        """
+        edge = compute_edge(Decimal("0.30"), self._state())
+        # no_ask is 0.60, so buying NO costs 0.60 and pays 1 if it settles NO.
+        assert edge.executable_no == Decimal("0.10")
+        # 0.07 * 1 * 0.60 * 0.40 = 0.0168, ceiled to the whole cent = 0.02.
+        assert edge.fee_per_contract_no == Decimal("0.02")
+        assert edge.executable_no_net == Decimal("0.08")
+
+    def test_a_zero_gross_edge_is_negative_once_the_fee_is_charged(self) -> None:
+        """Fair value at the offer is not a free trade."""
+        edge = compute_edge(Decimal("0.46"), self._state())
+        assert edge.executable_yes == Decimal("0.00")
+        assert edge.executable_yes_net < 0
+
+    def test_a_zero_fee_rate_leaves_the_edge_untouched(self) -> None:
+        """A fee-free series must not be charged a fee by default."""
+        edge = compute_edge(Decimal("0.50"), self._state(), fee_rate=Decimal("0"))
+        assert edge.fee_per_contract_yes == Decimal("0")
+        assert edge.executable_yes_net == edge.executable_yes
+        assert edge.executable_no_net == edge.executable_no
+
+    def test_the_serialised_edge_carries_gross_and_net_separately(self) -> None:
+        """A consumer must never have to guess which one it was handed."""
+        payload = compute_edge(Decimal("0.50"), self._state()).as_dict()
+        assert payload["executable_yes_edge"] == "0.04"
+        assert payload["executable_yes_edge_net"] == "0.02"
+        assert payload["fee_per_contract_yes"] == "0.02"
+        assert payload["raw_mid_edge"] == "0.07"
+        assert all(v is None or isinstance(v, str) for v in payload.values())
+
+    def test_an_unpriced_leg_serialises_as_null_not_zero(self) -> None:
+        payload = compute_edge(
+            Decimal("0.50"),
+            MarketState(yes_bid=None, yes_ask=Decimal("0.46"), no_bid=None, no_ask=None),
+        ).as_dict()
+        assert payload["executable_no_edge"] is None
+        assert payload["executable_no_edge_net"] is None
+        assert payload["fee_per_contract_no"] is None
+
     def test_no_side_uses_the_quoted_no_ask_not_one_minus_yes_bid(self) -> None:
         """1 - yes_bid = 0.60 coincides here; the code must not rely on that."""
         source = Path(
