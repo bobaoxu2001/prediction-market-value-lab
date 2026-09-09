@@ -19,7 +19,19 @@ from dataclasses import dataclass
 from decimal import Decimal
 from typing import Any
 
+from pmvl_shared.enums import Platform
+
+from ..pricing.fees import KALSHI_TAKER_RATE, fee_per_contract
 from .exclusions import Exclusion
+
+#: Order size at which the venue fee is charged against an edge.
+#:
+#: One contract, deliberately. Kalshi ceils the taker fee to the whole cent on
+#: the *whole order*, so the per-contract fee is at its maximum at size 1 and
+#: falls as size grows. Charging the size-1 fee is therefore the conservative
+#: reading, and on these series it is also the realistic one: median depth at
+#: the touch is a few dollars.
+DEFAULT_FEE_CONTRACTS = Decimal(1)
 
 
 @dataclass(frozen=True)
@@ -99,17 +111,36 @@ class MarketState:
 
 @dataclass(frozen=True)
 class Edge:
-    """Model minus market, kept in three separate forms.
+    """Model minus market, kept in separate forms that must not be collapsed.
 
     They are different numbers answering different questions, and collapsing
-    them is how a descriptive gap becomes a claimed profit. ``raw_mid`` is a
-    research diagnostic; only the executable variants can support any statement
-    about a position.
+    them is how a descriptive gap becomes a claimed profit.
+
+    ``raw_mid`` is a research diagnostic against a price nobody offers.
+
+    The ``executable_*`` fields are gross of fees: they answer "how far is the
+    model from the offer", which is a statement about mispricing, not about
+    money. They were previously documented as the fields that could support a
+    position claim; they cannot. On these series the taker fee at the money is
+    1.75 probability points against a median quoted spread of 1.00, so a gross
+    edge smaller than the fee is a loss that reads as a profit.
+
+    Only ``executable_*_net`` may support a statement about a position. That is
+    also what the frozen protocol declares - see ``protocol.py``,
+    ``fee_treatment = "kalshi_taker_fee_applied_to_executable_only"`` - and the
+    fee is applied to the executable legs only, never to ``raw_mid``.
     """
 
     raw_mid: Decimal | None
     executable_yes: Decimal | None
     executable_no: Decimal | None
+    #: Executable edge after the venue's taker fee. The only tradeable number.
+    executable_yes_net: Decimal | None = None
+    executable_no_net: Decimal | None = None
+    #: The fee actually charged, per contract, at the size it was charged for.
+    #: Reported so a thin edge can be seen to die to fees rather than vanishing.
+    fee_per_contract_yes: Decimal | None = None
+    fee_per_contract_no: Decimal | None = None
 
     def as_dict(self) -> dict[str, Any]:
         def s(v: Decimal | None) -> str | None:
@@ -119,24 +150,69 @@ class Edge:
             "raw_mid_edge": s(self.raw_mid),
             "executable_yes_edge": s(self.executable_yes),
             "executable_no_edge": s(self.executable_no),
+            "executable_yes_edge_net": s(self.executable_yes_net),
+            "executable_no_edge_net": s(self.executable_no_net),
+            "fee_per_contract_yes": s(self.fee_per_contract_yes),
+            "fee_per_contract_no": s(self.fee_per_contract_no),
         }
 
 
-def compute_edge(model_probability: Decimal, state: MarketState) -> Edge:
-    """Edges in probability units throughout.
+def compute_edge(
+    model_probability: Decimal,
+    state: MarketState,
+    *,
+    contracts: Decimal = DEFAULT_FEE_CONTRACTS,
+    fee_rate: Decimal = KALSHI_TAKER_RATE,
+    fee_type: str = "",
+) -> Edge:
+    """Edges in probability units throughout, gross and net of the venue fee.
 
     Everything is a probability in [0,1]. Kalshi quotes cents and it is
     tempting to mix units; a single cents-versus-probability slip is a factor of
     100 and produces an edge that looks spectacular rather than wrong.
+
+    The fee is a probability too: a fee of 2 cents on a contract that pays 1
+    dollar is 0.02 in these units, which is why it can be subtracted from an
+    edge directly. ``fee_rate`` should already carry the series
+    ``fee_multiplier``; the default is Kalshi's published rate at multiplier 1.
+
+    Applied to the executable legs only, per ``protocol.py``'s frozen
+    ``fee_treatment``. ``raw_mid`` is left gross because it is a diagnostic
+    against an unofferable price - charging a fee against a trade nobody could
+    have made would imply the midpoint was executable, which is the exact
+    confusion this module exists to prevent.
     """
     mid = state.mid
     yes_ask = state.executable_yes_buy
     no_ask = state.executable_no_buy
+
+    def fee_at(price: Decimal | None) -> Decimal | None:
+        """Per-contract fee at the price actually paid, or None if unquoted."""
+        if price is None:
+            return None
+        return fee_per_contract(
+            Platform.KALSHI, contracts, price, rate=fee_rate, fee_type=fee_type
+        )
+
+    def net(gross: Decimal | None, fee: Decimal | None) -> Decimal | None:
+        # An unknown fee must not read as a free trade.
+        if gross is None or fee is None:
+            return None
+        return gross - fee
+
+    # Buying YES: pay the YES offer, receive 1 if it settles YES.
+    gross_yes = None if yes_ask is None else model_probability - yes_ask
+    # Buying NO: pay the NO offer, receive 1 if it settles NO, which has
+    # modelled probability (1 - p).
+    gross_no = None if no_ask is None else (Decimal(1) - model_probability) - no_ask
+    fee_yes, fee_no = fee_at(yes_ask), fee_at(no_ask)
+
     return Edge(
         raw_mid=None if mid is None else model_probability - mid,
-        # Buying YES: pay the YES offer, receive 1 if it settles YES.
-        executable_yes=None if yes_ask is None else model_probability - yes_ask,
-        # Buying NO: pay the NO offer, receive 1 if it settles NO, which has
-        # modelled probability (1 - p).
-        executable_no=None if no_ask is None else (Decimal(1) - model_probability) - no_ask,
+        executable_yes=gross_yes,
+        executable_no=gross_no,
+        executable_yes_net=net(gross_yes, fee_yes),
+        executable_no_net=net(gross_no, fee_no),
+        fee_per_contract_yes=fee_yes,
+        fee_per_contract_no=fee_no,
     )

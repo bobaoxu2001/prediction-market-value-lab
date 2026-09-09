@@ -303,6 +303,72 @@ class TestMidpointIsNotExecutable:
         assert edge.executable_yes == Decimal("0.04")
         assert edge.raw_mid > edge.executable_yes
 
+    def test_the_venue_fee_is_charged_against_the_executable_legs(self) -> None:
+        """The frozen protocol declares this; the code did not implement it.
+
+        protocol.py sets fee_treatment to
+        "kalshi_taker_fee_applied_to_executable_only", and that string is inside
+        the protocol hash. compute_edge nevertheless returned model - ask with
+        no fee term, so every executable edge was overstated by the whole fee.
+        """
+        edge = compute_edge(Decimal("0.50"), self._state())
+        # 0.07 * 1 * 0.46 * 0.54 = 0.017388, ceiled to the whole cent = 0.02.
+        assert edge.fee_per_contract_yes == Decimal("0.02")
+        assert edge.executable_yes == Decimal("0.04")
+        assert edge.executable_yes_net == Decimal("0.02")
+        assert edge.executable_yes_net == edge.executable_yes - edge.fee_per_contract_yes
+
+    def test_the_fee_is_not_charged_against_the_midpoint(self) -> None:
+        """raw_mid is a diagnostic against a price nobody offers.
+
+        Charging a fee there would imply the midpoint was executable, which is
+        the confusion this module exists to prevent. "executable_only" in the
+        protocol string is load-bearing.
+        """
+        state = self._state()
+        cheap = compute_edge(Decimal("0.50"), state, fee_rate=Decimal("0.001"))
+        dear = compute_edge(Decimal("0.50"), state, fee_rate=Decimal("0.20"))
+        assert cheap.raw_mid == dear.raw_mid
+        assert cheap.executable_yes == dear.executable_yes
+        assert cheap.executable_yes_net > dear.executable_yes_net
+
+    def test_an_edge_smaller_than_the_fee_is_a_loss_not_a_signal(self) -> None:
+        """The reason the missing fee term mattered.
+
+        At the money Kalshi's taker fee is 1.75 probability points against a
+        median quoted spread of 1.00, so a gross edge can be positive while the
+        trade loses money. Gross-only reporting turns that loss into a signal.
+        """
+        thin = MarketState(
+            yes_bid=Decimal("0.44"), yes_ask=Decimal("0.46"),
+            no_bid=Decimal("0.54"), no_ask=Decimal("0.60"),
+        )
+        edge = compute_edge(Decimal("0.475"), thin)
+        assert edge.executable_yes > 0        # looks tradeable
+        assert edge.executable_yes_net < 0    # is not
+
+    def test_an_unpriced_leg_has_no_net_edge_rather_than_a_free_one(self) -> None:
+        state = MarketState(
+            yes_bid=None, yes_ask=Decimal("0.46"), no_bid=None, no_ask=None,
+        )
+        edge = compute_edge(Decimal("0.50"), state)
+        assert edge.executable_no is None
+        assert edge.executable_no_net is None
+        assert edge.fee_per_contract_no is None
+
+    def test_the_per_contract_fee_falls_with_order_size(self) -> None:
+        """Kalshi ceils to the whole cent on the whole order.
+
+        Size 1 therefore pays the most per contract, which is why it is the
+        default: it cannot understate the fee, and median depth at the touch on
+        these series is a few dollars anyway.
+        """
+        state = self._state()
+        one = compute_edge(Decimal("0.50"), state, contracts=Decimal(1))
+        many = compute_edge(Decimal("0.50"), state, contracts=Decimal(100))
+        assert one.fee_per_contract_yes > many.fee_per_contract_yes
+        assert one.executable_yes_net < many.executable_yes_net
+
     def test_no_side_uses_the_quoted_no_ask_not_one_minus_yes_bid(self) -> None:
         """1 - yes_bid = 0.60 coincides here; the code must not rely on that."""
         source = Path(
