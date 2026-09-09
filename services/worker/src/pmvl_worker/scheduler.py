@@ -35,80 +35,14 @@ from . import jobs
 log = get_logger(__name__)
 
 
-def _sync(
-    coro_factory: Callable[[], Any],
-    *,
-    timeout_seconds: float | None = None,
-    job_name: str = "",
-) -> Callable[[], None]:
-    """Adapt an async job to APScheduler's synchronous executor.
-
-    ``timeout_seconds`` bounds how long one run may hold a worker thread.
-
-    ``max_instances=1`` stops a job overlapping *itself*; nothing stopped a
-    single run lasting forever. Real runs do overrun: on the job's own
-    monotonic clock (``job_runs.duration_seconds``), `research_books` reaches
-    3,929.8s against a 60s cadence and `ingest` reaches 9,156.3s against 600s.
-    Both exceed the budgets set below, so this bound does real work.
-
-    Read that monotonic column, never the timestamps. An earlier version of
-    this docstring cited 119,229s for `research_books` and 113,780s for
-    `ingest`. Those are wall clock - ``finished_at - started_at`` - on rows
-    whose status is `interrupted`: the run was killed, and the reclaimer
-    stamped `finished_at` when it noticed, 28.8 days later for one `ingest`
-    row. Such rows carry `duration_seconds` NULL precisely because nothing
-    measured them. They are host-sleep artifacts, not work, and quoting them as
-    runtimes overstated the problem by more than an order of magnitude.
-
-    A stalled run is still self-blocking, which remains the concrete harm: it
-    holds its own slot while later ticks record themselves as skipped, 234 of
-    them for `research_books`, and the reclaimer note on ``job_research_books``
-    describes the same failure from the other side.
-
-    What this does NOT establish, recorded because an earlier version of this
-    docstring claimed it: these overruns were blamed for starving the 180s book
-    collector, on the strength of a staleness spike at 03-05Z (a >300s
-    inter-capture gap rate of 37.8% at 04Z against 4.0% at 20Z) that coincides
-    with them. That was correlation, and testing it directly refutes it - across
-    the 400 largest capture gaps, `research_books` ran during every single one
-    and succeeded in 358, so it was not starved of execution. The cause of those
-    gaps is not settled, and this budget must not be described as fixing them.
-
-    The budget is ``Cadence.stall_threshold_seconds()``: three missed intervals,
-    floored at ten minutes. A job that cannot finish within three of its own
-    periods has already failed to keep its cadence, so continuing to hold the
-    worker only costs the jobs behind it.
-
-    Honest limitation, sharper than "cancels at an ``await``":
-    ``asyncio.wait_for`` cancels the task and then AWAITS it, through
-    ``_cancel_and_wait``, with no bound of its own. A coroutine wedged in
-    blocking synchronous work - a SQLite write, a lock wait, CPU, a C extension
-    - never reaches a cancellation point, so ``wait_for`` blocks with it and
-    the worker is NOT returned. Demonstrated: a 0.1s budget against a body
-    calling ``time.sleep(3)`` returns after 3.01s. So this bounds awake
-    await-time, which is the observed `ingest` and `research_books` case, and
-    does nothing whatsoever for a non-yielding wedge.
-    """
-
-    async def _bounded() -> None:
-        if timeout_seconds is None:
-            await coro_factory()
-            return
-        await asyncio.wait_for(coro_factory(), timeout=timeout_seconds)
+def _sync(coro_factory: Callable[[], Any]) -> Callable[[], None]:
+    """Adapt an async job to APScheduler's synchronous executor."""
 
     def runner() -> None:
         try:
-            asyncio.run(_bounded())
+            asyncio.run(coro_factory())
         except jobs.JobSkipped as exc:  # a skip is not a failure
             log.info("%s", exc)
-        except TimeoutError:
-            # Logged as an error, not swallowed: an overrun is a real fault, and
-            # the next tick will start a clean run rather than queue behind this.
-            log.error(
-                "scheduled job %s exceeded its %ss budget and was cancelled",
-                job_name or "<unnamed>",
-                timeout_seconds,
-            )
         except Exception as exc:  # noqa: BLE001 - a failed job must not kill the scheduler
             log.error("scheduled job failed: %s", exc)
 
@@ -170,19 +104,6 @@ def _utc_cron(**fields: int) -> CronTrigger:
     return CronTrigger(timezone="UTC", **fields)
 
 
-def _budget(job_id: str) -> float | None:
-    """How long one run of ``job_id`` may hold a worker thread.
-
-    Reuses the stall policy rather than inventing a second number: the cadence
-    registry already defines when a job counts as stalled, and a run that has
-    passed that point is by the system's own definition not keeping its cadence.
-    """
-    cadence = CADENCE_BY_JOB.get(job_id)
-    if cadence is None:
-        return None
-    return float(cadence.stall_threshold_seconds())
-
-
 def build_scheduler() -> BlockingScheduler:
     settings = get_settings()
     scheduler = BlockingScheduler(
@@ -192,11 +113,7 @@ def build_scheduler() -> BlockingScheduler:
 
     # Market discovery: metadata changes slowly.
     scheduler.add_job(
-        _sync(
-            lambda: jobs.job_ingest(),
-            timeout_seconds=_budget("ingest"),
-            job_name="ingest",
-        ),
+        _sync(lambda: jobs.job_ingest()),
         IntervalTrigger(seconds=CADENCE_BY_JOB["ingest"].interval_seconds),
         id="ingest",
         name="market discovery + orderbooks",
@@ -205,11 +122,7 @@ def build_scheduler() -> BlockingScheduler:
     # Orderbooks for the markets that can actually rank. A quote older than a few
     # minutes is not an executable price, which is the whole premise of the platform.
     scheduler.add_job(
-        _sync(
-            lambda: jobs.job_orderbooks(),
-            timeout_seconds=_budget("orderbooks"),
-            job_name="orderbooks",
-        ),
+        _sync(lambda: jobs.job_orderbooks()),
         IntervalTrigger(seconds=CADENCE_BY_JOB["orderbooks"].interval_seconds),
         id="orderbooks",
         name="orderbook refresh",
@@ -226,32 +139,20 @@ def build_scheduler() -> BlockingScheduler:
     # Model scoring is expensive (external data per market) and the inputs move on
     # the scale of hours, so a 2-hour cadence with an hourly re-rank is sufficient.
     scheduler.add_job(
-        _sync(
-            lambda: jobs.job_score(),
-            timeout_seconds=_budget("score"),
-            job_name="score",
-        ),
+        _sync(lambda: jobs.job_score()),
         IntervalTrigger(seconds=CADENCE_BY_JOB["score"].interval_seconds),
         id="score",
         name="probability ensemble",
     )
     scheduler.add_job(
-        _sync(
-            lambda: jobs.job_rank(),
-            timeout_seconds=_budget("rank"),
-            job_name="rank",
-        ),
+        _sync(lambda: jobs.job_rank()),
         IntervalTrigger(seconds=CADENCE_BY_JOB["rank"].interval_seconds),
         id="rank",
         name="ranking + recommendations",
     )
 
     scheduler.add_job(
-        _sync(
-            lambda: jobs.job_settle(),
-            timeout_seconds=_budget("settle"),
-            job_name="settle",
-        ),
+        _sync(lambda: jobs.job_settle()),
         IntervalTrigger(seconds=CADENCE_BY_JOB["settle"].interval_seconds),
         id="settle",
         name="settlement sync + grading",
@@ -319,11 +220,7 @@ def build_scheduler() -> BlockingScheduler:
     # The archive's uniqueness constraint makes a duplicate harmless, but the
     # request would still have been made.
     scheduler.add_job(
-        _sync(
-            jobs.job_forecast_observations,
-            timeout_seconds=_budget("forecast_observations"),
-            job_name="forecast_observations",
-        ),
+        _sync(jobs.job_forecast_observations),
         IntervalTrigger(
             seconds=CADENCE_BY_JOB["forecast_observations"].interval_seconds
         ),
@@ -333,11 +230,7 @@ def build_scheduler() -> BlockingScheduler:
     )
 
     scheduler.add_job(
-        _sync(
-            jobs.job_station_observations,
-            timeout_seconds=_budget("station_observations"),
-            job_name="station_observations",
-        ),
+        _sync(jobs.job_station_observations),
         IntervalTrigger(
             seconds=CADENCE_BY_JOB["station_observations"].interval_seconds
         ),
@@ -349,11 +242,7 @@ def build_scheduler() -> BlockingScheduler:
     )
 
     scheduler.add_job(
-        _sync(
-            jobs.job_research_books,
-            timeout_seconds=_budget("research_books"),
-            job_name="research_books",
-        ),
+        _sync(jobs.job_research_books),
         IntervalTrigger(
             seconds=CADENCE_BY_JOB["research_books"].interval_seconds
         ),
@@ -366,11 +255,7 @@ def build_scheduler() -> BlockingScheduler:
     )
 
     scheduler.add_job(
-        _sync(
-            jobs.job_research_trades,
-            timeout_seconds=_budget("research_trades"),
-            job_name="research_trades",
-        ),
+        _sync(jobs.job_research_trades),
         IntervalTrigger(seconds=CADENCE_BY_JOB["research_trades"].interval_seconds),
         id="research_trades",
         name="weather trade prints",
@@ -378,11 +263,7 @@ def build_scheduler() -> BlockingScheduler:
     )
 
     scheduler.add_job(
-        _sync(
-            jobs.job_daily_climate,
-            timeout_seconds=_budget("daily_climate"),
-            job_name="daily_climate",
-        ),
+        _sync(jobs.job_daily_climate),
         IntervalTrigger(seconds=CADENCE_BY_JOB["daily_climate"].interval_seconds),
         id="daily_climate",
         name="CLI daily climate (settlement label)",
@@ -393,11 +274,7 @@ def build_scheduler() -> BlockingScheduler:
     )
 
     scheduler.add_job(
-        _sync(
-            jobs.job_forecast_validity,
-            timeout_seconds=_budget("forecast_validity"),
-            job_name="forecast_validity",
-        ),
+        _sync(jobs.job_forecast_validity),
         IntervalTrigger(seconds=CADENCE_BY_JOB["forecast_validity"].interval_seconds),
         id="forecast_validity",
         name="forecast validity audit",
