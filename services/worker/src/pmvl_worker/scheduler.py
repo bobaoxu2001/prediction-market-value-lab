@@ -46,15 +46,24 @@ def _sync(
     ``timeout_seconds`` bounds how long one run may hold a worker thread.
 
     ``max_instances=1`` stops a job overlapping *itself*; nothing stopped a
-    single run lasting forever. Runs did: measured over the job ledger, one
-    `research_books` run lasted 119,229s (33 hours), and `ingest` averaged
-    113,780s (31.6 hours) on its 05Z runs against a 600s cadence.
+    single run lasting forever. Real runs do overrun: on the job's own
+    monotonic clock (``job_runs.duration_seconds``), `research_books` reaches
+    3,929.8s against a 60s cadence and `ingest` reaches 9,156.3s against 600s.
+    Both exceed the budgets set below, so this bound does real work.
 
-    A stalled run is self-blocking, which is the concrete harm. It holds its own
-    slot and later ticks record themselves as skipped rather than capturing;
-    234 skipped `research_books` runs sit in the ledger, and the reclaimer note
-    on ``job_research_books`` describes the same failure from the other side.
-    Bounding a run turns a 33-hour hole into one lost tick.
+    Read that monotonic column, never the timestamps. An earlier version of
+    this docstring cited 119,229s for `research_books` and 113,780s for
+    `ingest`. Those are wall clock - ``finished_at - started_at`` - on rows
+    whose status is `interrupted`: the run was killed, and the reclaimer
+    stamped `finished_at` when it noticed, 28.8 days later for one `ingest`
+    row. Such rows carry `duration_seconds` NULL precisely because nothing
+    measured them. They are host-sleep artifacts, not work, and quoting them as
+    runtimes overstated the problem by more than an order of magnitude.
+
+    A stalled run is still self-blocking, which remains the concrete harm: it
+    holds its own slot while later ticks record themselves as skipped, 234 of
+    them for `research_books`, and the reclaimer note on ``job_research_books``
+    describes the same failure from the other side.
 
     What this does NOT establish, recorded because an earlier version of this
     docstring claimed it: these overruns were blamed for starving the 180s book
@@ -70,11 +79,15 @@ def _sync(
     periods has already failed to keep its cadence, so continuing to hold the
     worker only costs the jobs behind it.
 
-    Honest limitation: this cancels at an ``await`` point. A run wedged inside a
-    blocking call - a synchronous SQLite write, say - will not observe the
-    cancellation until it yields, so this bounds I/O-bound overruns (the
-    observed `ingest` case) and not CPU- or lock-bound ones. It is a bound on
-    the common failure, not a guarantee.
+    Honest limitation, sharper than "cancels at an ``await``":
+    ``asyncio.wait_for`` cancels the task and then AWAITS it, through
+    ``_cancel_and_wait``, with no bound of its own. A coroutine wedged in
+    blocking synchronous work - a SQLite write, a lock wait, CPU, a C extension
+    - never reaches a cancellation point, so ``wait_for`` blocks with it and
+    the worker is NOT returned. Demonstrated: a 0.1s budget against a body
+    calling ``time.sleep(3)`` returns after 3.01s. So this bounds awake
+    await-time, which is the observed `ingest` and `research_books` case, and
+    does nothing whatsoever for a non-yielding wedge.
     """
 
     async def _bounded() -> None:

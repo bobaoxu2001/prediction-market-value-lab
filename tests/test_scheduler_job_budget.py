@@ -1,13 +1,18 @@
 """A scheduled job may not hold a worker thread indefinitely.
 
 ``max_instances=1`` stops a job overlapping itself. Nothing stopped a single
-run lasting forever, and the job ledger shows runs that did: one `research_books`
-run lasted 119,229s (33 hours), and `ingest` averaged 113,780s (31.6 hours) on
-its 05Z runs against a 600s cadence.
+run lasting forever, and on the ledger's monotonic clock
+(`job_runs.duration_seconds`) real runs overrun: `research_books` reaches
+3,929.8s against a 60s cadence, `ingest` reaches 9,156.3s against 600s. Both
+exceed their budgets, so the bound binds on real behaviour.
+
+Earlier versions of this file cited 119,229s and 113,780s. Those were wall
+clock on `interrupted` rows, where the reclaimer stamped `finished_at` long
+after a killed run - host-sleep artifacts carrying `duration_seconds` NULL, not
+runtimes.
 
 The harm is self-blocking: a stalled run holds its own slot and later ticks
-record themselves as skipped, 234 of them for `research_books`. A budget turns
-that 33-hour hole into one lost tick.
+record themselves as skipped, 234 of them for `research_books`.
 
 These tests deliberately assert only that. An earlier rationale blamed the
 overruns for starving the book collector; tested directly that is false, since
@@ -67,6 +72,27 @@ class TestAnOverrunIsCancelledRatherThanHeld:
 
         _sync(quick, timeout_seconds=5, job_name="quick")()
         assert ran == [True]
+
+    def test_a_non_yielding_body_is_NOT_freed_by_its_budget(self) -> None:
+        """The limitation, pinned executably rather than only in prose.
+
+        asyncio.wait_for cancels the task and then awaits it through
+        _cancel_and_wait, with no bound of its own. A body that never reaches a
+        cancellation point therefore holds the worker for its full duration and
+        takes wait_for down with it. Anyone reading the budget as a guarantee
+        that a worker is returned is reading it wrong, and this test says so in
+        code.
+        """
+        import time as _time
+
+        async def wedged() -> None:
+            _time.sleep(0.5)  # blocking; never yields to the loop
+
+        start = _time.monotonic()
+        _sync(wedged, timeout_seconds=0.01, job_name="wedged")()
+        elapsed = _time.monotonic() - start
+        # A 0.01s budget did not stop a 0.5s non-yielding body.
+        assert elapsed >= 0.4
 
     def test_a_job_inside_its_budget_is_untouched(self) -> None:
         ran: list[bool] = []
