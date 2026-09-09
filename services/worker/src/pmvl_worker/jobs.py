@@ -407,6 +407,20 @@ def job_run(
         error = f"{type(exc).__name__}: {exc}\n{traceback.format_exc()[-1500:]}"
         log.error("job %s failed: %s", job_name, exc)
         raise
+    except BaseException as exc:
+        # A cancelled or interrupted run is NOT a success, and `except Exception`
+        # cannot see it: asyncio.CancelledError derives from BaseException, as do
+        # KeyboardInterrupt and SystemExit. Without this branch `status` keeps its
+        # initial SUCCESS and the `finally` below commits it, so a run killed
+        # part-way through writes a durable success carrying records_written=0.
+        #
+        # That is the same defect the upstream-failure guard further down exists
+        # to prevent - five consecutive cycles once wrote success through a
+        # 64-minute venue outage - arriving by a different door.
+        status = JobStatus.INTERRUPTED
+        error = f"{type(exc).__name__}: interrupted mid-run"
+        log.warning("job %s interrupted: %s", job_name, type(exc).__name__)
+        raise
     finally:
         current_writer_path.reset(_writer_token)
         # Stop before the terminal write, so a beat cannot resurrect

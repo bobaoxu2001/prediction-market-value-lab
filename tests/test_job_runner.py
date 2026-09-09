@@ -292,6 +292,38 @@ class TestJobRunContextManager:
         assert row.status == JobStatus.FAILED.value
         assert "upstream exploded" in row.error
 
+    def test_a_cancelled_run_is_not_recorded_as_a_success(self, clean_db) -> None:  # noqa: ANN001
+        """`except Exception` cannot see a cancellation.
+
+        asyncio.CancelledError derives from BaseException, as do
+        KeyboardInterrupt and SystemExit. Without an explicit branch the
+        context manager's `status` keeps its initial SUCCESS and the `finally`
+        commits it, so a run killed part-way through leaves a durable success
+        carrying records_written=0 - a job that did nothing, indistinguishable
+        in the ledger from one that did everything.
+
+        This is the same defect the upstream-failure guard exists to prevent,
+        reached through a different door.
+        """
+        import asyncio
+        import sys
+        from pathlib import Path
+
+        worker_src = Path(__file__).resolve().parents[1] / "services/worker/src"
+        if str(worker_src) not in sys.path:
+            sys.path.insert(0, str(worker_src))
+        from pmvl_worker.jobs import job_run
+
+        from pmvl_markets.db_models import JobRun
+
+        with pytest.raises(asyncio.CancelledError):
+            with job_run("orderbooks"):
+                raise asyncio.CancelledError()
+
+        row = clean_db.query(JobRun).filter_by(job_name="orderbooks").one()
+        assert row.status != JobStatus.SUCCESS.value
+        assert row.status == JobStatus.INTERRUPTED.value
+
 
 class TestIngestFailureIsolation:
     """A venue outage must degrade the run, not delete it or hide it.
