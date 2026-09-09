@@ -46,15 +46,24 @@ def _sync(
     ``timeout_seconds`` bounds how long one run may hold a worker thread.
 
     ``max_instances=1`` stops a job overlapping *itself*; nothing stopped a
-    single run lasting forever. It did: measured over the job ledger, `ingest`
-    averaged 113,780s (31.6 hours) on its 05Z runs against a 600s cadence, and
-    `score` averaged 15,548s (4.3 hours) against 7,200s. The scheduler is a
-    BlockingScheduler over a bounded thread pool, so runs like those retire
-    workers one at a time until the 180s book collector cannot be dispatched.
-    That is visible in the archive as a staleness spike at 03-05Z - a >300s gap
-    rate of 37.8% at 04Z against 4.0% at 20Z - and it is the largest single
-    cause of ORDERBOOK_TOO_STALE exclusions, which drop ~60% of the research
-    cohort's candidate observations.
+    single run lasting forever. Runs did: measured over the job ledger, one
+    `research_books` run lasted 119,229s (33 hours), and `ingest` averaged
+    113,780s (31.6 hours) on its 05Z runs against a 600s cadence.
+
+    A stalled run is self-blocking, which is the concrete harm. It holds its own
+    slot and later ticks record themselves as skipped rather than capturing;
+    234 skipped `research_books` runs sit in the ledger, and the reclaimer note
+    on ``job_research_books`` describes the same failure from the other side.
+    Bounding a run turns a 33-hour hole into one lost tick.
+
+    What this does NOT establish, recorded because an earlier version of this
+    docstring claimed it: these overruns were blamed for starving the 180s book
+    collector, on the strength of a staleness spike at 03-05Z (a >300s
+    inter-capture gap rate of 37.8% at 04Z against 4.0% at 20Z) that coincides
+    with them. That was correlation, and testing it directly refutes it - across
+    the 400 largest capture gaps, `research_books` ran during every single one
+    and succeeded in 358, so it was not starved of execution. The cause of those
+    gaps is not settled, and this budget must not be described as fixing them.
 
     The budget is ``Cadence.stall_threshold_seconds()``: three missed intervals,
     floored at ten minutes. A job that cannot finish within three of its own

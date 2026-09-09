@@ -1,13 +1,18 @@
 """A scheduled job may not hold a worker thread indefinitely.
 
 ``max_instances=1`` stops a job overlapping itself. Nothing stopped a single
-run lasting forever, and the job ledger shows runs that did: `ingest` averaged
-113,780s (31.6 hours) on its 05Z runs against a 600s cadence, `score` averaged
-15,548s against 7,200s. The scheduler is a BlockingScheduler over a bounded
-thread pool, so those runs retire workers until the 180s book collector cannot
-be dispatched - visible in the research archive as a >300s inter-capture gap
-rate of 37.8% at 04Z against 4.0% at 20Z, and the largest single source of the
-ORDERBOOK_TOO_STALE exclusions that drop most of the cohort's candidates.
+run lasting forever, and the job ledger shows runs that did: one `research_books`
+run lasted 119,229s (33 hours), and `ingest` averaged 113,780s (31.6 hours) on
+its 05Z runs against a 600s cadence.
+
+The harm is self-blocking: a stalled run holds its own slot and later ticks
+record themselves as skipped, 234 of them for `research_books`. A budget turns
+that 33-hour hole into one lost tick.
+
+These tests deliberately assert only that. An earlier rationale blamed the
+overruns for starving the book collector; tested directly that is false, since
+`research_books` ran during all 400 of the largest capture gaps and succeeded in
+358. Nothing here should be read as evidence about ORDERBOOK_TOO_STALE.
 """
 
 from __future__ import annotations
