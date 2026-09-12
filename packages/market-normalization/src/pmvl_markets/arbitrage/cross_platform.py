@@ -30,7 +30,13 @@ from pmvl_shared.config import get_settings
 from pmvl_shared.timeutil import humanize_seconds
 from pmvl_shared.enums import ArbitrageKind, ArbitrageLabel, RuleCompatibility, Side
 from pmvl_shared.money import ONE, ZERO, quantize_usd, safe_div
-from pmvl_shared.schemas import ArbitrageResult, ArbLeg, NormalizedMarket, OrderBook
+from pmvl_shared.schemas import (
+    ArbitrageResult,
+    ArbLeg,
+    NormalizedMarket,
+    OrderBook,
+    outcome_label,
+)
 from pmvl_shared.timeutil import age_seconds, hours_until, utcnow
 
 from ..matching.equivalence import EquivalenceScore, EquivalenceVerdict
@@ -97,6 +103,16 @@ def scan_cross_platform(
             best = result
     return best
 
+
+def _leg_name(market: NormalizedMarket, side: Side) -> str:
+    """How to name a leg in a headline: the side, plus the outcome when it has one.
+
+    "polymarket YES" is ambiguous on a market whose outcomes are two team names, and
+    an inverted pair produces the genuinely confusing "kalshi YES / polymarket YES".
+    Naming the outcome makes the two legs read as the opposite sides they are.
+    """
+    label = outcome_label(market, side)
+    return f"{side.value.upper()} {label}" if label else side.value.upper()
 
 def _flip(side: Side) -> Side:
     return Side.NO if side == Side.YES else Side.YES
@@ -267,8 +283,8 @@ def _scan_orientation(
         kind=ArbitrageKind.CROSS_PLATFORM,
         label=label,
         title=(
-            f"{market_a.platform.value} {side_a.value.upper()} / "
-            f"{market_b.platform.value} {side_b.value.upper()}: {market_a.title[:80]}"
+            f"{market_a.platform.value} {_leg_name(market_a, side_a)} / "
+            f"{market_b.platform.value} {_leg_name(market_b, side_b)}: {market_a.title[:80]}"
         ),
         legs=[
             ArbLeg(
@@ -281,6 +297,7 @@ def _scan_orientation(
                 size_available=quote_a.filled_size,
                 fee_per_contract=quantize_usd(safe_div(fee_a, sets)),
                 token_id=market_a.yes_token_id if side_a == Side.YES else market_a.no_token_id,
+                outcome_label=outcome_label(market_a, side_a),
             ),
             ArbLeg(
                 platform=market_b.platform,
@@ -292,6 +309,7 @@ def _scan_orientation(
                 size_available=quote_b.filled_size,
                 fee_per_contract=quantize_usd(safe_div(fee_b, sets)),
                 token_id=market_b.yes_token_id if side_b == Side.YES else market_b.no_token_id,
+                outcome_label=outcome_label(market_b, side_b),
             ),
         ],
         gross_edge_per_set=quantize_usd(ONE - per_set_gross),

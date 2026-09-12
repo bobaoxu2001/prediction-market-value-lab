@@ -25,7 +25,13 @@ from pmvl_shared.config import get_settings
 from pmvl_shared.timeutil import humanize_seconds
 from pmvl_shared.enums import ArbitrageKind, ArbitrageLabel, RuleCompatibility, Side
 from pmvl_shared.money import ONE, ZERO, quantize_usd, safe_div
-from pmvl_shared.schemas import ArbitrageResult, ArbLeg, NormalizedMarket, OrderBook
+from pmvl_shared.schemas import (
+    ArbLeg,
+    ArbitrageResult,
+    NormalizedMarket,
+    OrderBook,
+    outcome_label,
+)
 from pmvl_shared.timeutil import age_seconds
 
 from ..pricing.execution import transfer_cost_per_contract
@@ -104,6 +110,7 @@ def scan_multi_outcome(
                 size_available=quote.filled_size,
                 fee_per_contract=quantize_usd(safe_div(fee, sets)),
                 token_id=leg.market.yes_token_id,
+                outcome_label=outcome_label(leg.market, Side.YES),
             )
         )
 

@@ -15,7 +15,7 @@ Rule text below is taken from the wording the venues actually publish.
 
 from __future__ import annotations
 
-from datetime import date, timedelta
+from datetime import UTC, date, datetime, timedelta
 from decimal import Decimal
 
 import pytest
@@ -672,3 +672,126 @@ class TestFindingsFromAdversarialReview:
         assert cands and cands[0].fixture is not None
         score = score_equivalence(cands[0])
         assert not score.verdict.allows_guaranteed_arbitrage, score.verdict
+
+
+class TestTheInstructionNamesTheOutcome:
+    """"YES" and "NO" name opposite teams on a market whose outcomes are teams.
+
+    Half of all fixture pairs are polarity-inverted, so the same Polymarket market
+    appears as YES in one opportunity and NO in another. A reader resolving "YES" the
+    obvious way buys the wrong side and is unhedged, so the leg has to say which
+    outcome it actually buys.
+    """
+
+    def opportunity(self, kalshi_pays_on: str):  # noqa: ANN201
+        from pmvl_shared.schemas import BookLevel, OrderBook
+
+        from pmvl_markets.arbitrage.cross_platform import scan_cross_platform
+
+        kalshi = kalshi_game(
+            side=kalshi_pays_on,
+            market_id=f"KXMLBGAME-26SEP112215SDSF-{kalshi_pays_on[:2].upper()}",
+        )
+        poly = poly_game()
+        candidates = generate_candidates([kalshi], [poly])
+        assert candidates
+        candidate = candidates[0]
+        inverted = candidate.fixture_polarity_inverted
+
+        def book(platform, market_id, yes, no):  # noqa: ANN001, ANN202
+            return OrderBook(
+                platform=platform, platform_market_id=market_id, observed_at=utcnow(),
+                yes_asks=[BookLevel(price=Decimal(yes), size=Decimal("4000"))],
+                no_asks=[BookLevel(price=Decimal(no), size=Decimal("4000"))],
+                yes_bids=[], no_bids=[],
+            )
+
+        result = scan_cross_platform(
+            kalshi,
+            book(Platform.KALSHI, kalshi.platform_market_id, "0.40", "0.62"),
+            poly,
+            book(
+                Platform.POLYMARKET, poly.platform_market_id,
+                "0.40" if inverted else "0.62",
+                "0.62" if inverted else "0.40",
+            ),
+            score_equivalence(candidate),
+        )
+        assert result is not None
+        return result
+
+    def test_a_team_named_leg_carries_its_outcome(self) -> None:
+        result = self.opportunity("San Diego")
+        poly_leg = next(l for l in result.legs if l.platform is Platform.POLYMARKET)
+        assert poly_leg.outcome_label == "San Francisco Giants"
+
+    def test_the_inverted_orientation_names_the_other_team(self) -> None:
+        result = self.opportunity("San Francisco")
+        poly_leg = next(l for l in result.legs if l.platform is Platform.POLYMARKET)
+        assert poly_leg.outcome_label == "San Diego Padres"
+
+    def test_a_yes_no_market_adds_no_noise(self) -> None:
+        """Kalshi's outcomes really are Yes/No, so the side says everything."""
+        result = self.opportunity("San Diego")
+        kalshi_leg = next(l for l in result.legs if l.platform is Platform.KALSHI)
+        assert kalshi_leg.outcome_label == ""
+
+    def test_the_headline_distinguishes_the_two_orientations(self) -> None:
+        """Previously both read "kalshi YES / polymarket YES"."""
+        assert "Philadelphia" not in self.opportunity("San Diego").title
+        inverted = self.opportunity("San Francisco").title
+        assert "San Diego Padres" in inverted
+
+
+class TestTheContestDateIsAPropertyOfTheRow:
+    """Not of the wall clock.
+
+    97 of 99 real Polymarket fixtures state no year, and the shared date extractor
+    falls back to the current one - so the same unchanged market named a different
+    contest depending on when it was parsed, and a stored match could not be
+    reproduced from the row it came from.
+    """
+
+    def poly_with_timing(self, when: str, close: datetime) -> NormalizedMarket:
+        return poly_game(when=when).model_copy(
+            update={
+                "close_time": close,
+                "expected_resolution_time": close + timedelta(hours=3),
+                "event_occurrence_time": None,
+            }
+        )
+
+    def test_a_yearless_date_is_anchored_to_the_market_not_to_today(self) -> None:
+        market = self.poly_with_timing(
+            "December 28 at 7:05 PM ET",
+            datetime(2027, 12, 28, 23, 5, tzinfo=UTC),
+        )
+        fixture = extract_fixture(market)
+        assert fixture is not None
+        assert fixture.scheduled == date(2027, 12, 28)
+
+    def test_a_contest_in_december_resolved_by_a_january_close(self) -> None:
+        """The neighbouring year has to be considered, not just the close's own."""
+        market = self.poly_with_timing(
+            "December 31 at 8:00 PM ET",
+            datetime(2028, 1, 1, 4, 0, tzinfo=UTC),
+        )
+        fixture = extract_fixture(market)
+        assert fixture is not None
+        assert fixture.scheduled == date(2027, 12, 31)
+
+    def test_an_explicit_year_is_trusted_over_the_anchor(self) -> None:
+        market = self.poly_with_timing(
+            "September 11, 2026 at 10:15 PM ET",
+            datetime(2026, 9, 12, 4, 0, tzinfo=UTC),
+        )
+        assert extract_fixture(market).scheduled == date(2026, 9, 11)
+
+    def test_a_date_implausibly_far_from_the_market_is_refused(self) -> None:
+        """The fixture proposer bypasses the resolution-gap gate, so this is the
+        only corroboration the contest date gets."""
+        market = self.poly_with_timing(
+            "March 3, 2019 at 7:05 PM ET",
+            datetime(2026, 9, 12, 4, 0, tzinfo=UTC),
+        )
+        assert extract_fixture(market) is None

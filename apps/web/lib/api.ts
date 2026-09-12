@@ -89,6 +89,15 @@ export interface ArbLeg {
   price: string;
   size_available: string;
   fee_per_contract: string;
+  /**
+   * The venue's own name for the outcome this leg buys, when it has one.
+   *
+   * A Polymarket game market's outcomes are two team names, so YES and NO denote
+   * opposite teams - and half of all cross-venue fixture pairs are polarity
+   * inverted, so the same market appears as YES in one opportunity and NO in
+   * another. Empty for genuinely Yes/No markets.
+   */
+  outcome_label?: string;
 }
 
 export interface ArbitrageOpportunity {

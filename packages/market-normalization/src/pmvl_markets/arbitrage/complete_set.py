@@ -17,7 +17,13 @@ from pmvl_shared.config import get_settings
 from pmvl_shared.timeutil import humanize_seconds
 from pmvl_shared.enums import ArbitrageKind, ArbitrageLabel, RuleCompatibility, Side
 from pmvl_shared.money import ONE, ZERO, quantize_usd, safe_div
-from pmvl_shared.schemas import ArbitrageResult, ArbLeg, NormalizedMarket, OrderBook
+from pmvl_shared.schemas import (
+    ArbLeg,
+    ArbitrageResult,
+    NormalizedMarket,
+    OrderBook,
+    outcome_label,
+)
 from pmvl_shared.timeutil import age_seconds, utcnow
 
 from ..pricing.execution import capital_cost_per_contract, transfer_cost_per_contract
@@ -129,6 +135,7 @@ def scan_complete_set(
                 size_available=yes_quote.filled_size,
                 fee_per_contract=quantize_usd(safe_div(yes_fee, sets)),
                 token_id=market.yes_token_id,
+                outcome_label=outcome_label(market, Side.YES),
             ),
             ArbLeg(
                 platform=market.platform,
@@ -140,6 +147,7 @@ def scan_complete_set(
                 size_available=no_quote.filled_size,
                 fee_per_contract=quantize_usd(safe_div(no_fee, sets)),
                 token_id=market.no_token_id,
+                outcome_label=outcome_label(market, Side.NO),
             ),
         ],
         gross_edge_per_set=quantize_usd(ONE - per_set_gross),

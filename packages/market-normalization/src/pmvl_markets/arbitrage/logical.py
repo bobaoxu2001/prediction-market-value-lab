@@ -27,7 +27,13 @@ from pmvl_shared.timeutil import humanize_seconds
 from pmvl_shared.enums import ArbitrageKind, ArbitrageLabel, RuleCompatibility, Side
 from pmvl_shared.logging_setup import get_logger
 from pmvl_shared.money import D, ONE, ZERO, quantize_usd, safe_div
-from pmvl_shared.schemas import ArbitrageResult, ArbLeg, NormalizedMarket, OrderBook
+from pmvl_shared.schemas import (
+    ArbLeg,
+    ArbitrageResult,
+    NormalizedMarket,
+    OrderBook,
+    outcome_label,
+)
 from pmvl_shared.timeutil import age_seconds
 
 from ..pricing.fees import taker_fee
@@ -313,6 +319,7 @@ def _price_monotonicity_hedge(
             market_id=weaker.market_id,
             title=weaker.market.title,
             side=Side.YES,
+            outcome_label=outcome_label(weaker.market, Side.YES),
             price=q1.average_price,
             size_available=q1.filled_size,
             fee_per_contract=quantize_usd(safe_div(fee1, sets)),
@@ -323,6 +330,7 @@ def _price_monotonicity_hedge(
             market_id=stronger.market_id,
             title=stronger.market.title,
             side=Side.NO,
+            outcome_label=outcome_label(stronger.market, Side.NO),
             price=q2.average_price,
             size_available=q2.filled_size,
             fee_per_contract=quantize_usd(safe_div(fee2, sets)),

@@ -61,7 +61,7 @@ from __future__ import annotations
 
 import re
 from dataclasses import dataclass
-from datetime import date
+from datetime import date, datetime
 
 from pmvl_shared.enums import Platform
 from pmvl_shared.schemas import NormalizedMarket
@@ -271,20 +271,64 @@ def _stated_time(text: str) -> int | None:
     return hour * 60 + minute
 
 
-def _stated_schedule(text: str) -> tuple[date | None, int | None]:
+#: A four-digit year stated alongside the date.
+_EXPLICIT_YEAR = re.compile(r"\b(20\d{2})\b")
+
+#: How far the stated contest date may sit from the venue's own timing fields.
+#: Kalshi holds a market open for days past the game to cover its rescheduling
+#: window, so this is generous; it exists to catch a date off by a *year*, not to
+#: second-guess a venue by a day.
+MAX_SCHEDULE_DRIFT_DAYS = 30
+
+
+def _stated_schedule(
+    text: str, reference: datetime | None = None
+) -> tuple[date | None, int | None]:
     """The date and clock time the venue states the contest begins at.
 
     Deliberately not converted to UTC. Both venues quote a venue-local time with an
     explicit US Eastern marker, and a 10:15 PM EDT first pitch on 11 September is
     02:15 UTC on the 12th - so normalising one side and not the other would make two
     descriptions of the same game disagree by a day.
+
+    Polymarket states no year in 97 of 99 real fixtures, and the shared date
+    extractor falls back to the *current* year - which would make this field a
+    function of the wall clock rather than of the stored row, so the same unchanged
+    market names a different contest next January. When the venue states no year, it
+    is resolved against the market's own timing instead.
     """
     match = _SCHEDULED.search(text or "")
     if match is None:
         return None, None
     tail = text[match.end():match.end() + 60]
     found = extract_dates(tail)
-    return (found[0] if found else None), _stated_time(tail)
+    if not found:
+        return None, _stated_time(tail)
+
+    stated = found[0]
+    if not _EXPLICIT_YEAR.search(tail) and reference is not None:
+        stated = _closest_year(stated, reference.date())
+    return stated, _stated_time(tail)
+
+
+def _closest_year(stated: date, reference: date) -> date:
+    """Re-anchor a yearless date onto the year that puts it nearest ``reference``.
+
+    A contest in late December referenced by a market closing in early January
+    belongs to the previous year, so the neighbouring years are considered too.
+    """
+    best = stated
+    best_gap: int | None = None
+    for year in (reference.year - 1, reference.year, reference.year + 1):
+        try:
+            candidate = stated.replace(year=year)
+        except ValueError:
+            # 29 February in a non-leap year.
+            continue
+        gap = abs((candidate - reference).days)
+        if best_gap is None or gap < best_gap:
+            best, best_gap = candidate, gap
+    return best
 
 
 def _league_from_prose(text: str) -> str:
@@ -297,6 +341,15 @@ def _league_from_prose(text: str) -> str:
 
 def _sport_from_prose(text: str) -> str:
     return next((s for s in _SPORTS if re.search(rf"\b{s}\b", text or "", re.I)), "")
+
+
+def _reference_time(market: NormalizedMarket) -> datetime | None:
+    """The venue's own sense of when this market is about, for anchoring a date."""
+    return (
+        market.event_occurrence_time
+        or market.close_time
+        or market.expected_resolution_time
+    )
 
 
 def _publishes_a_strike(market: NormalizedMarket) -> bool:
@@ -332,7 +385,7 @@ def _kalshi_fixture(market: NormalizedMarket) -> Fixture | None:
         league = ticker_match.group(1)
     league = league or _league_from_prose(corpus)
 
-    scheduled, start_minute = _stated_schedule(corpus)
+    scheduled, start_minute = _stated_schedule(corpus, _reference_time(market))
     sport = LEAGUE_SPORTS.get(league) or match.group("sport").lower()
     return Fixture(
         league=league,
@@ -371,7 +424,7 @@ def _polymarket_fixture(market: NormalizedMarket) -> Fixture | None:
         return None
 
     league = _league_from_prose(f"{market.title} {corpus}")
-    scheduled, start_minute = _stated_schedule(corpus)
+    scheduled, start_minute = _stated_schedule(corpus, _reference_time(market))
     return Fixture(
         league=league,
         sport=LEAGUE_SPORTS.get(league) or _sport_from_prose(corpus),
@@ -400,6 +453,15 @@ def extract_fixture(market: NormalizedMarket) -> Fixture | None:
         return None
     if fixture is None or not fixture.is_usable:
         return None
+    # Corroborate the parsed date against the venue's own timing fields. The
+    # fixture proposer bypasses the resolution-gap gate the token proposer applies
+    # - it has to, because Kalshi holds a market open for days past the game - so
+    # without this the contest date has no independent check at all.
+    reference = _reference_time(market)
+    if reference is not None:
+        drift = abs((fixture.scheduled - reference.date()).days)
+        if drift > MAX_SCHEDULE_DRIFT_DAYS:
+            return None
     return fixture
 
 
