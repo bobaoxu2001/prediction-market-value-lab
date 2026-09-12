@@ -502,15 +502,17 @@ See `/methodology` for the live list. The significant ones:
 - There is no live track record yet: `pmvl readiness` reports 0 settled live
   recommendations against the 60 needed to quote a Brier-versus-market figure.
 - Genuinely rule-identical pairs across these two venues are rare, so cross-platform
-  arbitrage rarely has anything to report. On a live scan of 12 September 2026 no
-  pair reached `identical` out of 478 candidates, and 95% of the demotions were
-  genuine contradictions rather than missing information. Two known recall gaps sit
-  behind that number and are measured in
-  [docs/cross-venue-matching-recall.md](docs/cross-venue-matching-recall.md): 84% of
-  open Kalshi markets have no linked event row, and the venues title sports contracts
-  in incompatible shapes (Kalshi names the outcome, "Seattle wins"; Polymarket names
-  the matchup, "Seattle Mariners vs. Athletics"). Neither gap can manufacture a false
-  match — both only discard real candidates before they are verified.
+  arbitrage rarely has anything to report. On live scans of 12 September 2026 the
+  matcher verified 12 cross-venue pairs and **none** reached `identical`. On the four
+  pairs quoted on both venues, the cheapest cross-venue combination cost $1.0000 —
+  no edge before a single fee. The two venues are cross-arbitraged to within a cent.
+  Sports pairs additionally cannot be riskless as the rules stand: Kalshi bounds a
+  postponement to two days and then resolves "to a fair price", while Polymarket waits
+  until the game is played. Measurements in
+  [docs/cross-venue-matching-recall.md](docs/cross-venue-matching-recall.md).
+- Cross-venue fixture matching covers head-to-head moneylines only. Totals, spreads
+  and "team to advance" markets are deliberately excluded: they are different
+  questions about the same contest.
 - Polymarket expected resolution adds a fixed oracle-latency estimate to `endDate`;
   actual UMA settlement time varies.
 - Slippage beyond measured book impact is a fixed tick pad, not a fitted market-impact

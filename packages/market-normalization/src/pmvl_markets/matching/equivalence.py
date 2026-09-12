@@ -207,6 +207,16 @@ class EquivalenceScore:
 
 # --------------------------------------------------------------- components
 def _entity_component(candidate: MatchCandidate) -> ComponentScore:
+    if candidate.fixture is not None:
+        # The competitors were matched structurally, which is stronger evidence than
+        # word overlap: the same two teams, on the same stated date. The venues
+        # simply spell them differently ("San Diego" against "San Diego Padres").
+        left, right = candidate.fixture
+        return ComponentScore(
+            "entity", ComponentResult.MATCH,
+            f"same contest: {left.competitors[0]} v {left.competitors[1]} "
+            f"== {right.competitors[0]} v {right.competitors[1]}",
+        )
     unmatched = unmatched_proper_nouns(candidate.market_a, candidate.market_b)
     if unmatched:
         return ComponentScore(
@@ -223,6 +233,11 @@ def _entity_component(candidate: MatchCandidate) -> ComponentScore:
 
 
 def _event_component(candidate: MatchCandidate) -> ComponentScore:
+    if candidate.fixture is not None:
+        return ComponentScore(
+            "event", ComponentResult.MATCH,
+            f"same scheduled contest on {candidate.fixture[0].scheduled}",
+        )
     if candidate.token_similarity < 0.35:
         return ComponentScore(
             "event", ComponentResult.MISMATCH,
@@ -471,19 +486,69 @@ def score_equivalence(
     verdict = verdict or verify_match(candidate)
     rules_a, rules_b = rules_for(candidate.market_a), rules_for(candidate.market_b)
 
-    components = [
-        _entity_component(candidate),
-        _event_component(candidate),
-        _threshold_component(rules_a, rules_b),
-        _operator_component(candidate, rules_a, rules_b),
-        _time_component(rules_a, rules_b),
-        _source_component(rules_a, rules_b),
-        _settlement_rule_component(rules_a, rules_b),
-        _cancellation_component(candidate, rules_a, rules_b),
-    ]
+    if candidate.fixture is not None:
+        # A head-to-head moneyline has no strike, no comparator and no measurement
+        # basis. Those terms are INAPPLICABLE, not unverified - there is nothing
+        # about them that could differ between the venues - and reporting them as
+        # unknown would demote every sports pair for failing to state terms that do
+        # not exist. The timing term is the contest date, which fixture matching
+        # already required to be identical.
+        #
+        # Settlement source and cancellation handling are NOT waived. They are real
+        # terms for a sporting contest, they do differ between these venues, and they
+        # are what keeps these pairs below the strict verdict.
+        structural = [
+            ComponentScore("threshold", ComponentResult.MATCH,
+                           "not applicable: a moneyline has no strike"),
+            ComponentScore("operator", ComponentResult.MATCH,
+                           "not applicable: a moneyline has no comparator"
+                           + (" (polarity inverted)" if candidate.fixture_polarity_inverted else "")),
+            ComponentScore("time", ComponentResult.MATCH,
+                           f"same contest date ({candidate.fixture[0].scheduled})"),
+            ComponentScore("settlement_rule", ComponentResult.MATCH,
+                           "not applicable: the result of the contest is the basis"),
+        ]
+        components = [
+            _entity_component(candidate),
+            _event_component(candidate),
+            *structural,
+            _source_component(rules_a, rules_b),
+            _cancellation_component(candidate, rules_a, rules_b),
+        ]
+    else:
+        components = [
+            _entity_component(candidate),
+            _event_component(candidate),
+            _threshold_component(rules_a, rules_b),
+            _operator_component(candidate, rules_a, rules_b),
+            _time_component(rules_a, rules_b),
+            _source_component(rules_a, rules_b),
+            _settlement_rule_component(rules_a, rules_b),
+            _cancellation_component(candidate, rules_a, rules_b),
+        ]
+
+    derived = _derive_verdict(components, verdict.rule_compatibility)
+    if candidate.fixture is not None and derived is EquivalenceVerdict.VERIFIED_EQUIVALENT_STRICT:
+        # A fixture pair may never back a guaranteed-arbitrage claim, by
+        # construction rather than by coincidence.
+        #
+        # Six of the eight components are decided structurally for these pairs, so
+        # only the settlement source and the void handling are genuinely evaluated -
+        # and both fall to ordinary venue prose. What was actually keeping these
+        # below the strict verdict was the resolution digest happening to differ,
+        # which is an incidental hash comparison, not a safety property: an ingest
+        # fix that populated Polymarket's event_occurrence_time would remove one of
+        # the fields it differs on.
+        #
+        # The cap is also *correct on the merits*. Kalshi extends a postponed market
+        # for two days and then resolves "to a fair price in accordance with the
+        # rules"; Polymarket waits until the game is played. Those legs diverge on
+        # any meaningful postponement, so the pair is a hedge with residual rule
+        # risk - never a locked box.
+        derived = EquivalenceVerdict.VERIFIED_EQUIVALENT_STANDARD
 
     return EquivalenceScore(
-        verdict=_derive_verdict(components, verdict.rule_compatibility),
+        verdict=derived,
         components=components,
         rule_compatibility=verdict.rule_compatibility,
         match_confidence=verdict.match_confidence,

@@ -8,6 +8,7 @@ opportunity, and spending the rate-limit budget on it starves the ones that can.
 from __future__ import annotations
 
 import asyncio
+from collections import defaultdict
 from dataclasses import dataclass, field
 from datetime import datetime
 from decimal import Decimal
@@ -20,6 +21,9 @@ from pmvl_shared.schemas import NormalizedMarket, OrderBook
 from pmvl_shared.timeutil import horizons_for, utcnow
 
 from ..alpha.issuance import within_window_horizon
+from sqlalchemy import select
+
+from ..db_models import Market
 from ..providers.kalshi import KalshiProvider
 from ..providers.polymarket import PolymarketProvider
 from .store import (
@@ -314,6 +318,7 @@ async def fetch_platform(
     market_limit: int,
     orderbook_limit: int,
     matched_ids: Collection[str] | None = None,
+    matched_markets: Sequence[NormalizedMarket] = (),
 ) -> tuple[list[NormalizedMarket], dict[str, OrderBook], list[Any], list[str]]:
     """Fetch markets, events and prioritised orderbooks for one venue."""
     errors: list[str] = []
@@ -368,8 +373,17 @@ async def fetch_platform(
         except Exception as exc:  # noqa: BLE001
             errors.append(f"{provider.platform.value} events: {exc}")
 
+    # A matched leg is only selectable if it appears in this cycle's market page,
+    # and the venues list far more markets than one page returns - so a pair that was
+    # verified last cycle could keep missing its book purely because its market did
+    # not come back in the listing. The already-known rows are unioned in from the
+    # database so the reserve can always reach both halves of a pair.
+    known = {m.platform_market_id for m in markets}
+    pool = list(markets) + [
+        m for m in matched_markets if m.platform_market_id not in known
+    ]
     targets = select_for_orderbooks(
-        markets, orderbook_limit, matched_ids=matched_ids
+        pool, orderbook_limit, matched_ids=matched_ids
     )
     if targets:
         try:
@@ -418,6 +432,31 @@ def matched_market_ids(session) -> set[str]:  # noqa: ANN001 - sqlalchemy Sessio
     return set(rows)
 
 
+def hydrate_matched_markets(
+    session, matched_ids: Collection[str]  # noqa: ANN001 - sqlalchemy Session
+) -> dict[Platform, list[NormalizedMarket]]:
+    """Load the stored rows for matched legs, grouped by venue.
+
+    Read back from the database rather than relying on this cycle's listing. A
+    verified pair is worth a book on both sides even when one of its markets happens
+    not to be on the page the venue returned, and that is the common case: the venues
+    list several times more open markets than one fetch retrieves.
+    """
+    if not matched_ids:
+        return {}
+    out: dict[Platform, list[NormalizedMarket]] = defaultdict(list)
+    rows = session.scalars(
+        select(Market).where(
+            Market.platform_market_id.in_(list(matched_ids)),
+            Market.status == MarketStatus.OPEN.value,
+        )
+    ).all()
+    for row in rows:
+        market = _market_from_row(row)
+        out[market.platform].append(market)
+    return dict(out)
+
+
 async def run_ingest(
     session,  # noqa: ANN001 - sqlalchemy Session
     *,
@@ -442,6 +481,7 @@ async def run_ingest(
     # Legs of pairs already verified as settling identically. Passed to both venues
     # so a match that is worth pricing gets a book on *both* sides in the same cycle.
     matched_ids = matched_market_ids(session)
+    matched_by_platform = hydrate_matched_markets(session, matched_ids)
 
     try:
         # Both venues are fetched concurrently; they share no rate-limit budget.
@@ -452,6 +492,7 @@ async def run_ingest(
                     market_limit=market_limit // max(1, len(providers)),
                     orderbook_limit=orderbook_limit // max(1, len(providers)),
                     matched_ids=matched_ids,
+                    matched_markets=matched_by_platform.get(p.platform, ()),
                 )
                 for p in providers
             ),

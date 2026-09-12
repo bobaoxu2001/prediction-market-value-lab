@@ -27,6 +27,8 @@ Compatibility ladder
 
 from __future__ import annotations
 
+import re
+
 from dataclasses import dataclass, field
 from enum import StrEnum
 from datetime import timedelta
@@ -352,6 +354,23 @@ def verify_match(candidate: MatchCandidate) -> MatchVerdict:
     level = RuleCompatibility.IDENTICAL
     polarity_inverted = False
 
+    # A fixture-identified pair resolves on the same head-to-head contest: the same
+    # two competitors, on the same stated date, on a moneyline both venues phrase as
+    # "who wins". That identity is established structurally, so several checks below
+    # are not merely satisfied - they are INAPPLICABLE.
+    #
+    # The distinction matters. A moneyline has no threshold, no comparator and no
+    # measurement basis; recording those as "unknown" is a category error, and it
+    # demotes every sports pair for failing to state terms that do not exist. This is
+    # the third kind of answer alongside the contradiction/missing-information split
+    # the demotion codes already draw.
+    #
+    # Nothing here relaxes a check for a NON-fixture pair, and the relaxations are
+    # not a shortcut to a risk-free claim: settlement source and cancellation
+    # handling are still checked, and in practice they are what keeps these pairs
+    # below the strict verdict.
+    fixture = candidate.fixture
+
     def demote(to: RuleCompatibility, code: DemotionCode, reason: str) -> None:
         nonlocal level
         reasons.append(reason)
@@ -372,6 +391,27 @@ def verify_match(candidate: MatchCandidate) -> MatchVerdict:
     # finish in the Top 10" share every word except the one that decides the outcome,
     # and scored 0.55 confidence before this check existed.
     unmatched = unmatched_proper_nouns(a, b)
+    if fixture is not None:
+        # The competitors were matched pairwise by the fixture, so the franchise
+        # nicknames one venue spells out ("Padres", "Giants") and the other does not
+        # are accounted for. Matched as whole tokens, not as a substring of a pooled
+        # blob: a substring test whitelists any noun that happens to occur inside
+        # another name.
+        #
+        # Be clear about what this does NOT do. It cannot separate two leagues: the
+        # nickname that proves a WNBA team is not an MLB team ("Storm" beside
+        # "Seattle") is structurally identical to the nickname that proves nothing
+        # ("Padres" beside "San Diego"). Only the competition check in
+        # ``fixtures_agree`` distinguishes those, and it is the one that must hold.
+        # A proper noun from outside the competitor names still demotes here.
+        named = {
+            token
+            for f in fixture
+            for name in f.competitors
+            for token in re.split(r"[^\w]+", name.lower())
+            if token
+        }
+        unmatched = {n for n in unmatched if n not in named}
     if unmatched:
         demote(
             RuleCompatibility.INCOMPATIBLE,
@@ -380,13 +420,16 @@ def verify_match(candidate: MatchCandidate) -> MatchVerdict:
         )
 
     # ---- subject ---------------------------------------------------------
-    if candidate.token_similarity < 0.35:
+    # Word overlap is not evidence about a fixture pair either way: a real
+    # Kalshi/Polymarket moneyline pair scores about 0.29 because the venues title the
+    # outcome and the matchup respectively. Subject identity comes from the fixture.
+    if fixture is None and candidate.token_similarity < 0.35:
         demote(
             RuleCompatibility.SIMILAR,
             DemotionCode.LOW_TITLE_SIMILARITY,
             f"low title similarity ({candidate.token_similarity:.2f})",
         )
-    if candidate.entity_overlap < 0.3:
+    if fixture is None and candidate.entity_overlap < 0.3:
         demote(
             RuleCompatibility.SIMILAR,
             DemotionCode.LOW_ENTITY_OVERLAP,
@@ -394,7 +437,11 @@ def verify_match(candidate: MatchCandidate) -> MatchVerdict:
         )
 
     # ---- threshold -------------------------------------------------------
-    threshold_verdict = compare_thresholds(rules_a.threshold, rules_b.threshold)
+    # Inapplicable to a moneyline: "does San Diego win" has no strike to compare.
+    threshold_verdict = (
+        "match" if fixture is not None
+        else compare_thresholds(rules_a.threshold, rules_b.threshold)
+    )
     if threshold_verdict == "differ":
         demote(
             RuleCompatibility.INCOMPATIBLE,
@@ -412,28 +459,48 @@ def verify_match(candidate: MatchCandidate) -> MatchVerdict:
         )
 
     # ---- comparator / polarity -------------------------------------------
-    continuous = is_continuous_quantity(a) and is_continuous_quantity(b)
-    compatible, inverted = comparators_match(
-        rules_a.comparator, rules_b.comparator, continuous=continuous
-    )
-    if not compatible:
-        demote(
-            RuleCompatibility.INCOMPATIBLE,
-            DemotionCode.COMPARATOR_INCOMPATIBLE,
-            f"incompatible comparators ({rules_a.comparator} vs {rules_b.comparator})",
+    if fixture is not None:
+        # A moneyline has no comparator to invert. Polarity comes from which
+        # competitor each market pays out on, which the fixture establishes exactly:
+        # Kalshi "San Diego wins" against Polymarket's "San Francisco Giants" outcome
+        # is the hedged orientation, and any comparator scraped from the prose here
+        # would be an artefact rather than a term.
+        polarity_inverted = candidate.fixture_polarity_inverted
+        if polarity_inverted:
+            reasons.append(
+                "the two markets pay out on opposite competitors, so YES on one "
+                "hedges YES on the other"
+            )
+    else:
+        continuous = is_continuous_quantity(a) and is_continuous_quantity(b)
+        compatible, inverted = comparators_match(
+            rules_a.comparator, rules_b.comparator, continuous=continuous
         )
-    polarity_inverted = inverted
-    if inverted:
-        reasons.append("YES/NO polarity is inverted between venues")
-    if not rules_a.comparator or not rules_b.comparator:
-        demote(
-            RuleCompatibility.EQUIVALENT,
-            DemotionCode.COMPARATOR_UNKNOWN,
-            "comparator could not be established on one side",
-        )
+        if not compatible:
+            demote(
+                RuleCompatibility.INCOMPATIBLE,
+                DemotionCode.COMPARATOR_INCOMPATIBLE,
+                f"incompatible comparators ({rules_a.comparator} vs {rules_b.comparator})",
+            )
+        polarity_inverted = inverted
+        if inverted:
+            reasons.append("YES/NO polarity is inverted between venues")
+        if not rules_a.comparator or not rules_b.comparator:
+            demote(
+                RuleCompatibility.EQUIVALENT,
+                DemotionCode.COMPARATOR_UNKNOWN,
+                "comparator could not be established on one side",
+            )
 
     # ---- measurement basis ----------------------------------------------
-    sem_a, sem_b = rules_a.threshold_semantics, rules_b.threshold_semantics
+    # Also inapplicable to a moneyline. Worse than merely absent: the extractor reads
+    # "the market will remain open and close after the rescheduled game" as a
+    # close-at-cutoff basis, so leaving this check on demotes a real pair on a term
+    # neither venue was stating.
+    sem_a, sem_b = (
+        ("", "") if fixture is not None
+        else (rules_a.threshold_semantics, rules_b.threshold_semantics)
+    )
     if sem_a and sem_b and sem_a != sem_b:
         # "closes above" vs "touches intraday" are genuinely different questions.
         demote(
@@ -449,7 +516,11 @@ def verify_match(candidate: MatchCandidate) -> MatchVerdict:
         )
 
     # ---- timing ----------------------------------------------------------
-    delta = cutoff_delta(rules_a, rules_b)
+    # For a fixture the contest date IS the timing term, and fixtures_agree already
+    # required it to match exactly. Comparing close times instead reads a real pair
+    # as seven days apart, because Kalshi holds its market open past the game to
+    # cover a rescheduling window while Polymarket does not.
+    delta = timedelta(0) if fixture is not None else cutoff_delta(rules_a, rules_b)
     if delta is None:
         time_compatibility = D("0.5")
         demote(
