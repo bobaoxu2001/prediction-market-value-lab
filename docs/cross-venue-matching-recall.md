@@ -39,7 +39,7 @@ fields the parser could not establish"*.
 the existing `ENTITY_ALIASES` map. On the live scan `entity_mismatch` fell from 478 to
 314 and stopped being the largest demotion reason.
 
-## Gap 2 — event linkage (not needed after all)
+## Gap 2 — event linkage (not needed for matching; see below for the scanner it did starve)
 
 84% of open Kalshi markets (26,965) carry an event identifier resolving to no event
 row, because event fetching is capped at `min(600, market_limit)` while market
@@ -52,9 +52,9 @@ about the matchup requires an event row:
 > originally scheduled for Sep 11, 2026 at 10:15 PM EDT**, then the market resolves
 > to Yes.
 
-The gap is still real and still starves the multi-outcome scanner, which needs
-`Event.outcome_count` to establish that a basket is complete. It is no longer on the
-path to cross-venue arbitrage.
+The gap is still real and still starved the multi-outcome scanner, which needs
+`Event.outcome_count` to establish that a basket is complete — that is dealt with
+under *Gap 2, revisited* below. It was never on the path to cross-venue arbitrage.
 
 ## Gap 3 — the venues title sports contracts differently (closed)
 
@@ -173,30 +173,56 @@ each one was demonstrated, not anticipated:
 After these fixes the live scan still verifies the same 12 genuine matches, and the
 reproduced attacks are blocked.
 
+## The three the review left open, and how they were closed
+
+* **The instruction did not say which team to buy.** `ArbLeg` now carries
+  `outcome_label` — the venue's own name for the outcome that leg buys, empty when
+  the outcomes really are Yes/No. The table renders it beside the side and the
+  headline names it, so an inverted pair reads `kalshi YES / polymarket YES
+  Philadelphia Phillies: Atlanta wins` instead of the previous `polymarket YES`
+  with nothing to say which team that was.
+* **The contest date was a function of the wall clock.** A yearless Polymarket date
+  is now anchored to the market's own timing fields, considering neighbouring years
+  so a contest on 31 December resolved by a market closing on 1 January lands in the
+  right one.
+* **The fixture proposer had no timing corroboration.** It still bypasses the token
+  proposer's 3-day resolution-gap gate — it has to, since every genuine pair sits
+  6d23h apart while Kalshi holds its market open past the game — but a parsed contest
+  date more than 30 days from the venue's own timing is now refused. That catches a
+  date wrong by a year without second-guessing a venue by a day.
+
+## Gap 2, revisited — event linkage (closed for the scanner that needed it)
+
+The backlog is real: ~28,000 open Kalshi markets referenced an event ticker resolving
+to no row, because event discovery is paged and capped while market ingestion is not.
+The scanner it actually starved was the multi-outcome basket, which refuses to price
+an event whose venue-reported outcome count is unknown.
+
+`GET /events/{ticker}?with_nested_markets=true` resolves a named event directly, so
+the gaps that are *in scope* can be filled without paging further through events
+nobody is pricing. Each cycle fills the most-traded 150 per venue, ranked by volume,
+and already-filled ones drop out of the query.
+
+Effect on the live scan, measured before and after:
+
+| Multi-outcome skip reason | Before | After |
+|---|---:|---:|
+| Venue outcome count unknown (no event row) | dozens | **0** |
+| Partial basket (priced N of M outcomes) | 46 | 46 |
+
+Every in-scope event now has an authoritative outcome count. What remains is a book
+budget limit rather than a metadata gap — pricing 8 of an event's 54 outcomes is not
+a complete set, and the scanner is right to say so.
+
 ## Known and unfixed
 
-* **Yearless Polymarket dates.** 97 of 99 Polymarket fixtures state no year, and
-  `extract_dates` falls back to the current year. Because Kalshi always states its
-  year, a wrong inference produces *no* match rather than a wrong one — silent recall
-  loss around the new year, and a stored match that is not reproducible from its row.
-* **The arbitrage table renders `YES`/`NO` for Polymarket legs** whose outcomes are
-  two team names. The engine's orientation is correct and `ArbLeg.token_id` carries
-  the disambiguator, but the web table does not display it, so the same market reads
-  `NO` in one row and `YES` in another with nothing on screen to say which team that
-  is. Polarity is inverted on about half of fixture pairs, so this is not an edge
-  case.
-* **The fixture proposer bypasses the 3-day resolution-gap and category gates.**
-  Necessarily so — every genuine live pair has a 6d23h gap, because Kalshi holds its
-  market open past the game — but that leaves the contest date without independent
-  corroboration.
-
-## What remains
-
-* Kalshi event linkage (Gap 2) for the multi-outcome scanner.
-* Fixture extraction covers head-to-head moneylines only. Totals and spreads are
+* **Fixture extraction covers head-to-head moneylines only.** Totals and spreads are
   deliberately excluded; matching them needs the line itself compared, not just the
   contest.
-* `source_unknown` is the last demotion standing on the live sports pairs: Polymarket's
-  rules for a game do not name a settlement authority the parser recognises. Resolving
-  it would move these from `PROBABLE_MATCH` to a verified tier — still not to
-  `EXECUTABLE`, because the cancellation divergence above is real.
+* **`source_unknown` is the last demotion standing on the live sports pairs.**
+  Polymarket's rules for a game do not name a settlement authority the parser
+  recognises. Resolving it would move these to a verified tier — still not to
+  `EXECUTABLE`, which a fixture pair is capped below by construction.
+* **The event backfill works down a backlog rather than clearing it.** 150 tickers
+  per venue per cycle against tens of thousands, most of them crypto strike ladders
+  that the monotonicity scanner handles and the basket scanner does not want.

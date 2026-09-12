@@ -21,7 +21,7 @@ from pmvl_shared.schemas import NormalizedMarket, OrderBook
 from pmvl_shared.timeutil import horizons_for, utcnow
 
 from ..alpha.issuance import within_window_horizon
-from sqlalchemy import select
+from sqlalchemy import func, select
 
 from ..db_models import Market
 from ..providers.kalshi import KalshiProvider
@@ -319,6 +319,7 @@ async def fetch_platform(
     orderbook_limit: int,
     matched_ids: Collection[str] | None = None,
     matched_markets: Sequence[NormalizedMarket] = (),
+    backfill_event_tickers: Sequence[str] = (),
 ) -> tuple[list[NormalizedMarket], dict[str, OrderBook], list[Any], list[str]]:
     """Fetch markets, events and prioritised orderbooks for one venue."""
     errors: list[str] = []
@@ -347,6 +348,20 @@ async def fetch_platform(
             markets.extend(m for m in nested if m.platform_market_id not in seen)
         except Exception as exc:  # noqa: BLE001
             errors.append(f"{provider.platform.value} nested events: {exc}")
+
+        # Events referenced by markets already ingested but never fetched. The
+        # multi-outcome scanner needs the venue's own outcome count before it will
+        # price a basket, so a missing event row is not a cosmetic gap: it silently
+        # removes those events from that scanner entirely.
+        if backfill_event_tickers:
+            try:
+                filled = await provider.get_events_by_ticker(backfill_event_tickers)
+                seen_events = {e.platform_event_id for e in events}
+                events.extend(
+                    e for e in filled if e.platform_event_id not in seen_events
+                )
+            except Exception as exc:  # noqa: BLE001
+                errors.append(f"{provider.platform.value} event backfill: {exc}")
 
         # Flat time-ordered listing picks up near-dated markets whose events fell
         # outside the event page budget.
@@ -432,6 +447,46 @@ def matched_market_ids(session) -> set[str]:  # noqa: ANN001 - sqlalchemy Sessio
     return set(rows)
 
 
+def unlinked_event_tickers(
+    session,  # noqa: ANN001 - sqlalchemy Session
+    *,
+    per_platform: int = 150,
+) -> dict[Platform, list[str]]:
+    """Event tickers referenced by in-scope markets that have no event row yet.
+
+    Ranked by traded volume and capped, because this is one request per ticker and
+    the backlog is tens of thousands. The cap means a cycle closes the most valuable
+    gaps rather than all of them; successive cycles work down the list as the
+    already-filled ones drop out of this query.
+    """
+    out: dict[Platform, list[str]] = {}
+    rows = session.execute(
+        select(
+            Market.platform,
+            Market.platform_event_id,
+            func.max(Market.volume_24h).label("volume"),
+        )
+        .where(
+            Market.status == MarketStatus.OPEN.value,
+            Market.event_id.is_(None),
+            Market.platform_event_id.is_not(None),
+            Market.platform_event_id != "",
+        )
+        .group_by(Market.platform, Market.platform_event_id)
+        .order_by(func.max(Market.volume_24h).desc())
+    ).all()
+
+    for platform_value, ticker, _volume in rows:
+        try:
+            platform = Platform(platform_value)
+        except ValueError:
+            continue
+        bucket = out.setdefault(platform, [])
+        if len(bucket) < per_platform:
+            bucket.append(ticker)
+    return out
+
+
 def hydrate_matched_markets(
     session, matched_ids: Collection[str]  # noqa: ANN001 - sqlalchemy Session
 ) -> dict[Platform, list[NormalizedMarket]]:
@@ -482,6 +537,7 @@ async def run_ingest(
     # so a match that is worth pricing gets a book on *both* sides in the same cycle.
     matched_ids = matched_market_ids(session)
     matched_by_platform = hydrate_matched_markets(session, matched_ids)
+    unlinked = unlinked_event_tickers(session)
 
     try:
         # Both venues are fetched concurrently; they share no rate-limit budget.
@@ -493,6 +549,7 @@ async def run_ingest(
                     orderbook_limit=orderbook_limit // max(1, len(providers)),
                     matched_ids=matched_ids,
                     matched_markets=matched_by_platform.get(p.platform, ()),
+                    backfill_event_tickers=unlinked.get(p.platform, ()),
                 )
                 for p in providers
             ),

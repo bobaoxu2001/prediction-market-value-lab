@@ -448,6 +448,51 @@ class KalshiProvider:
         await self.get_series(self.series_ticker_from_event(row.get("event_ticker")))
         return self._normalize_market(row)
 
+    async def get_events_by_ticker(
+        self, tickers: Sequence[str], *, concurrency: int = 8
+    ) -> list[NormalizedEvent]:
+        """Fetch named events directly, with their authoritative outcome counts.
+
+        The paged discovery in :meth:`list_events_with_markets` is capped well below
+        the number of markets ingested, so most markets end up referencing an event
+        row that was never fetched. That matters for one scanner in particular: the
+        multi-outcome basket refuses to evaluate an event whose venue-reported
+        outcome count is unknown - correctly, since "we do not know if this set is
+        complete" must never read as "it is" - so those markets are skipped entirely.
+
+        Fetching by ticker fills exactly the gaps that are in scope rather than
+        paging further through events nobody is pricing.
+        """
+        semaphore = asyncio.Semaphore(concurrency)
+
+        async def one(ticker: str) -> NormalizedEvent | None:
+            async with semaphore:
+                data = await self._client.get_json(
+                    f"/events/{ticker}",
+                    params={"with_nested_markets": "true"},
+                    allow_404=True,
+                )
+            row = (data or {}).get("event")
+            if not row:
+                return None
+            nested = [
+                m for m in (row.get("markets") or [])
+                if isinstance(m, dict) and not m.get("mve_collection_ticker")
+            ]
+            if not nested:
+                # Without the nested markets there is no authoritative count, and a
+                # row asserting zero outcomes is worse than no row at all.
+                return None
+            event = self._normalize_event(row)
+            event.outcome_count = len(nested)
+            event.market_ids = [m.get("ticker", "") for m in nested]
+            return event
+
+        results = await asyncio.gather(
+            *(one(t) for t in tickers), return_exceptions=True
+        )
+        return [r for r in results if isinstance(r, NormalizedEvent)]
+
     async def list_events(self, *, limit: int = 200) -> list[NormalizedEvent]:
         rows = await self._paginate(
             "/events",
