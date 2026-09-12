@@ -263,6 +263,29 @@ class AuthorizedExecutionPlan:
                 f"{self.risk_policy_version}, current policy is "
                 f"{RISK_POLICY_VERSION}; reauthorization required"
             )
+        # The account-state age, re-checked where it matters.
+        #
+        # The gate enforces it once, at issue. Between issue and the POST sits
+        # the whole authorization TTL, and a resting order can fill in that
+        # window - so a plan could reach the venue sized against exposure nearly
+        # twice as old as the cap. This is the same "carried but never read"
+        # defect the account-state module was written to fix, one layer lower.
+        from .account_state import MAX_ACCOUNT_STATE_AGE
+
+        moment = now or utcnow()
+        if self.account_state_at is None:
+            raise AuthorizationInvalid(
+                "plan carries no account-state observation time; exposure of "
+                "unknown age cannot support a mutation"
+            )
+        state_age = moment - self.account_state_at
+        if state_age > MAX_ACCOUNT_STATE_AGE:
+            raise AuthorizationExpired(
+                f"account state behind this plan is {state_age.total_seconds():.0f}s "
+                f"old > {MAX_ACCOUNT_STATE_AGE.total_seconds():.0f}s; "
+                "reauthorization against a fresh account read is required"
+            )
+
         if consume:
             self.consume()
 

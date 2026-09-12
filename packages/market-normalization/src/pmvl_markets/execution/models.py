@@ -407,14 +407,30 @@ class ExposureSnapshot:
     #: Cash spent placing orders today, for the daily-spend cap. ``None`` blocks,
     #: for the same reason.
     spend_today_usd: Decimal | None = None
+    #: Whether every account endpoint answered. A read missing its orders page
+    #: is not a partial picture of the account - it is a complete picture of the
+    #: wrong thing, because the missing page is where unseen exposure would be.
+    #: Defaults True so hand-built snapshots behave as before; the production
+    #: reader always sets it from the actual read.
+    complete: bool = True
     extra: dict[str, Any] = field(default_factory=dict)
 
     def position_exposure_usd(self, ticker: str) -> Decimal:
         total = Decimal("0")
         for pos in self.positions:
-            if pos.ticker != ticker or pos.quantity == 0:
+            if pos.ticker != ticker:
                 continue
-            if pos.exposure_usd is not None:
+            if pos.quantity == 0 and not pos.exposure_usd:
+                # Genuinely nothing here. A zero quantity WITH a reported
+                # exposure is a contradiction, not a flat position, and is
+                # handled below rather than skipped.
+                continue
+            if pos.exposure_usd:
+                # Truthiness, not `is not None`. A venue reporting
+                # market_exposure 0 alongside 40 contracts was trusted over the
+                # contract count, so partial information scored lower than none:
+                # 40 contracts with no exposure field charged $40, the same 40
+                # with a reported 0 charged nothing.
                 total += abs(pos.exposure_usd)
             elif pos.average_price_cents is not None:
                 total += (

@@ -20,6 +20,7 @@ from pmvl_shared.timeutil import utcnow
 
 from .credentials import KalshiCredentials, load_credentials
 from .models import (
+    TERMINAL_STATUSES,
     AccountBalance,
     ExposureSnapshot,
     Fill,
@@ -178,6 +179,22 @@ def normalize_order(payload: Mapping[str, Any]) -> Order:
     filled = _int_or_none(payload.get("taker_fill_count"))
     if filled is None and remaining is not None:
         filled = max(original - remaining, 0)
+    # A terminal status alongside non-zero remaining quantity is the venue
+    # contradicting itself - most plausibly mid cancel/fill race. Resolving that
+    # toward "nothing here" erases working quantity a cap was meant to bound;
+    # resolving it toward reconciliation costs one over-conservative block.
+    if (
+        status in TERMINAL_STATUSES
+        and remaining is not None
+        and remaining > 0
+    ):
+        log.warning(
+            "venue reports %s with %s remaining; flagging for reconciliation",
+            raw_status,
+            remaining,
+        )
+        status = OrderStatus.UNKNOWN_RECONCILIATION_REQUIRED
+
     return Order(
         exchange_order_id=str(payload.get("order_id", "")),
         ticker=str(payload.get("ticker", "")),
@@ -283,8 +300,25 @@ class KalshiAccountClient:
             request = dict(params)
             if cursor:
                 request["cursor"] = cursor
-            payload = await self._transport.get(path, params=request) or {}
-            out.extend(payload.get(key) or [])
+            payload = await self._transport.get(path, params=request)
+            # "The venue did not answer with a list" is not "the list is empty".
+            # An empty body, a null envelope, or a renamed key all used to read
+            # as a flat account - and a page promised by a cursor that came back
+            # without the envelope ended the walk as though it had finished.
+            if not isinstance(payload, dict) or key not in payload:
+                raise ExecutionApiError(
+                    f"{path}: response carried no {key!r} list; the account "
+                    "read is incomplete and must not be read as empty"
+                )
+            rows = payload.get(key)
+            # `null` is not `[]`. An empty account answers with an empty list;
+            # a null envelope is the venue declining to answer, and reading it
+            # as "you hold nothing" is the failure direction that hides money.
+            if not isinstance(rows, list):
+                raise ExecutionApiError(
+                    f"{path}: {key!r} was {type(rows).__name__}, not a list"
+                )
+            out.extend(rows)
             cursor = payload.get("cursor") or None
             if not cursor:
                 return out
@@ -325,7 +359,12 @@ class KalshiAccountClient:
         """
         balance = await self.get_balance()
         positions = await self.get_positions()
-        orders = await self.get_orders(status="resting")
+        # No status filter. Asking for `resting` could never return a `pending`
+        # order, which this codebase's own map calls SUBMITTING and counts as
+        # open - so the reader that gates order placement was blind to exactly
+        # the working quantity a cap exists to bound. Filter locally on is_open,
+        # which is the definition the rest of the system uses.
+        orders = await self.get_orders()
         # Realized loss is measured, not assumed. The venue already reports
         # realized P&L per position; only the losing side counts toward the
         # daily loss breaker, and an unreported P&L leaves the total unknown
@@ -344,6 +383,9 @@ class KalshiAccountClient:
             resting_orders=tuple(o for o in orders if o.is_open),
             fetched_at=utcnow(),
             realized_loss_today_usd=realized_loss,
+            # Every endpoint answered, or one of them raised and we never got
+            # here. Stated explicitly rather than inherited from the default.
+            complete=True,
         )
 
 

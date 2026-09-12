@@ -63,6 +63,9 @@ def _exposure(**overrides: object) -> ExposureSnapshot:
         # now blocks on unmeasured cumulative state.
         "realized_loss_today_usd": Decimal("0"),
         "spend_today_usd": Decimal("0"),
+        # An account snapshot with no observation time now blocks: exposure
+        # measured at an unknown moment is not a measurement.
+        "fetched_at": utcnow(),
     }
     base.update(overrides)
     return ExposureSnapshot(**base)  # type: ignore[arg-type]

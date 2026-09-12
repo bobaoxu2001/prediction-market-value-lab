@@ -82,6 +82,8 @@ class BlockReason(StrEnum):
     DECISION_EXPIRED = "decision_expired"
     INSUFFICIENT_BALANCE = "insufficient_balance"
     EXPOSURE_UNKNOWN = "exposure_unknown"
+    ACCOUNT_STATE_STALE = "account_state_stale"
+    ACCOUNT_STATE_INCOMPLETE = "account_state_incomplete"
     UNRESOLVED_ORDER_STATE = "unresolved_order_state"
 
 
@@ -108,6 +110,10 @@ class RiskLimits:
     max_spread_cents: int
     max_signal_age: timedelta
     max_market_data_age: timedelta
+    #: How old the account snapshot may be. Exposure measured ten minutes
+    #: ago is a claim about ten minutes ago, and a resting order can fill
+    #: in the gap.
+    max_account_state_age: timedelta = timedelta(seconds=120)
     #: Cash the account must retain beyond the new order's cost.
     min_balance_buffer_usd: Decimal = Decimal("0")
 
@@ -130,6 +136,7 @@ CONSERVATIVE_LIMITS = RiskLimits(
     max_spread_cents=5,
     max_signal_age=timedelta(seconds=300),
     max_market_data_age=timedelta(seconds=300),
+    max_account_state_age=timedelta(seconds=120),
     min_balance_buffer_usd=Decimal("0"),
 )
 
@@ -630,6 +637,10 @@ class RiskGate:
                 f"intent expired at {intent.expires_at.isoformat()}",
             )
 
+    def _now_for_state(self) -> datetime:
+        """Seam for tests; production always reads the wall clock."""
+        return utcnow()
+
     def _check_exposure(
         self,
         intent: OrderIntent,
@@ -638,6 +649,37 @@ class RiskGate:
         block: Any,
     ) -> None:
         limits = self.limits
+
+        # An account read that did not complete is not a small account.
+        #
+        # If the orders endpoint failed, the resting-order exposure this gate is
+        # about to compute is zero for the wrong reason - the page where it
+        # lived never arrived. Sizing against that is how a cap gets exceeded by
+        # exactly the amount nobody could see.
+        if not getattr(exposure, "complete", True):
+            block(
+                BlockReason.ACCOUNT_STATE_INCOMPLETE,
+                "account read did not complete: "
+                + ",".join(sorted(exposure.extra.get("failures", {}))),
+            )
+
+        # Exposure measured ten minutes ago is a claim about ten minutes ago.
+        # `fetched_at` was carried onto every authorization and never checked,
+        # which made it decoration rather than a cap.
+        fetched_at = exposure.fetched_at
+        if fetched_at is None:
+            block(
+                BlockReason.ACCOUNT_STATE_STALE,
+                "account snapshot carries no observation time",
+            )
+        else:
+            age = self._now_for_state() - fetched_at
+            if age > limits.max_account_state_age:
+                block(
+                    BlockReason.ACCOUNT_STATE_STALE,
+                    f"account snapshot is {age.total_seconds():.0f}s old > "
+                    f"{limits.max_account_state_age.total_seconds():.0f}s",
+                )
 
         # Existing position + resting orders + this order. Never assume flat.
         market_existing = exposure.position_exposure_usd(

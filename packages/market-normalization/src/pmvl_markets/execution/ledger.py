@@ -172,6 +172,19 @@ CREATE TABLE IF NOT EXISTS blocking_discrepancies (
     cleared_at    TEXT
 );
 
+CREATE TABLE IF NOT EXISTS account_snapshots (
+    id            INTEGER PRIMARY KEY AUTOINCREMENT,
+    mode          TEXT NOT NULL,
+    observed_at   TEXT NOT NULL,
+    completeness  TEXT NOT NULL,
+    balance_usd   TEXT,
+    positions     INTEGER NOT NULL DEFAULT 0,
+    open_orders   INTEGER NOT NULL DEFAULT 0,
+    recent_fills  INTEGER NOT NULL DEFAULT 0,
+    external_orders INTEGER NOT NULL DEFAULT 0,
+    failures      TEXT NOT NULL DEFAULT ''
+);
+
 CREATE TABLE IF NOT EXISTS resolution_attempts (
     id              INTEGER PRIMARY KEY AUTOINCREMENT,
     attempted_at    TEXT NOT NULL,
@@ -585,6 +598,43 @@ class ExecutionLedger:
             qty = row["filled_quantity"] or row["requested_quantity"] or 0
             total += (Decimal(price) / Decimal(100)) * Decimal(qty)
         return total
+
+    def record_account_snapshot(
+        self, con: sqlite3.Connection, snapshot: Any
+    ) -> None:
+        """Persist one account observation, complete or not.
+
+        Incomplete reads are recorded too. A burn-in that only kept the
+        successful cycles would report a reliability it never had.
+        """
+        import json as _json
+
+        d = snapshot.as_dict()
+        con.execute(
+            "INSERT INTO account_snapshots (mode, observed_at, completeness, "
+            "balance_usd, positions, open_orders, recent_fills, external_orders,"
+            " failures) VALUES (?,?,?,?,?,?,?,?,?)",
+            (
+                d["mode"],
+                d["observed_at"],
+                d["completeness"],
+                d["balance_usd"],
+                d["position_count"],
+                d["open_order_count"],
+                d["recent_fill_count"],
+                d["external_orders"],
+                _json.dumps(d["failures"])[:500],
+            ),
+        )
+
+    def account_snapshots(
+        self, con: sqlite3.Connection, *, mode: "ExecutionMode | str", limit: int = 50
+    ) -> list[sqlite3.Row]:
+        return con.execute(
+            "SELECT * FROM account_snapshots WHERE mode = ? "
+            "ORDER BY observed_at DESC LIMIT ?",
+            (_mode_value(mode), limit),
+        ).fetchall()
 
     def record_resolution_attempt(
         self,

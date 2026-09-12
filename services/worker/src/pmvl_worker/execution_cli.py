@@ -649,3 +649,74 @@ def demo_disarm() -> None:
         console.print("[green]demo arm removed[/green]")
     else:
         console.print("no demo arm present")
+
+
+@app.command("account-snapshot")
+def account_snapshot(
+    mode: str = typer.Option("production", help="production | demo"),
+    persist: bool = typer.Option(True, help="Record the observation."),
+    json_out: bool = typer.Option(False, "--json"),
+) -> None:
+    """Read the account once and report what was learned, and what was not.
+
+    Read-only by construction: it holds an account client, and
+    PRODUCTION_READ_ONLY cannot build a write client at all. An endpoint that
+    fails is reported as a failure rather than omitted, because a quietly short
+    read is indistinguishable from a small account.
+    """
+    import asyncio
+
+    from pmvl_markets.execution import (
+        KalshiAccountClient,
+        ProductionReadOnlyAccountState,
+    )
+
+    target = _mode(mode)
+    if target.may_write:
+        raise typer.BadParameter(
+            "account-snapshot is a read-only surface; pass production or demo"
+        )
+    _require_credentials(target)
+    ledger = _ledger()
+
+    async def _run() -> dict[str, Any]:
+        client = KalshiAccountClient(target)
+        try:
+            reader = ProductionReadOnlyAccountState(
+                client, ledger=ledger, mode=target
+            )
+            snap = await reader.snapshot()
+        finally:
+            await client.aclose()
+        if persist:
+            with ledger.connect() as con:
+                ledger.record_account_snapshot(con, snap)
+        return snap.as_dict()
+
+    _emit(asyncio.run(_run()), as_json=json_out)
+
+
+@app.command("account-history")
+def account_history(
+    mode: str = typer.Option("production", help="production | demo"),
+    limit: int = typer.Option(20),
+    json_out: bool = typer.Option(False, "--json"),
+) -> None:
+    """Recent account observations, including the incomplete ones.
+
+    A burn-in that kept only its successful cycles would report a reliability it
+    never had, so failures are first-class rows here.
+    """
+    ledger = _ledger()
+    target = _mode(mode)
+    with ledger.connect() as con:
+        rows = [dict(r) for r in ledger.account_snapshots(con, mode=target, limit=limit)]
+    complete = sum(1 for r in rows if r["completeness"] == "complete")
+    payload = {
+        "mode": target.value,
+        "cycles": len(rows),
+        "complete": complete,
+        "incomplete": len(rows) - complete,
+        "snapshots": rows,
+    }
+    _emit(payload, as_json=json_out)

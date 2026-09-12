@@ -1,4 +1,4 @@
-# Kalshi execution harness (Phases 5A-5C)
+# Kalshi execution harness (Phases 5A-5D)
 
 Authenticated account access, a demo execution harness, order/fill reconciliation
 and a hard risk kill switch — built **before** the research system is authorized
@@ -558,3 +558,70 @@ No order has touched a venue. Fills, partial fills, cancellation, restart
 recovery and idempotency are proven against a fake that this repository wrote.
 `NATURAL_DEMO_PARTIAL_FILL_OBSERVED = NO`, and no execution statistics, latencies,
 slippage or fee data exist, because no venue produced any.
+
+
+---
+
+# Phase 5D — understanding a real account
+
+The real-account burn-in is **blocked**: there are no credentials, and the §0
+gate holds demo validation as a prerequisite. What is built and tested here is
+the half that needs no venue — reading an account, knowing how much of it you
+actually know, and refusing to act on the rest.
+
+```
+PRODUCTION READS  allowed        PRODUCTION WRITES  structurally impossible
+```
+
+## Three properties that matter more than the numbers
+
+**Completeness is part of the answer.** An account read is four endpoints. If one
+fails, the other three are not a partial picture — they are a complete picture of
+the wrong thing, because the missing endpoint is where the unseen exposure would
+be. `AccountSnapshot` carries `COMPLETE`/`INCOMPLETE`, and an incomplete read
+blocks on `ACCOUNT_STATE_INCOMPLETE` rather than reading as a flat account.
+
+**Age is part of the answer.** `fetched_at` was carried onto every authorization
+and never once read, which made it decoration. It is now a cap (120 s), checked
+at the gate *and* re-checked at the point of use — because the interval between
+approval and the POST is exactly when a resting order fills.
+
+**Ownership is never assumed.** `BOT_MANAGED` requires a local ledger row that
+actually reached a venue. A manually-placed position is still exposure — it is
+precisely what a cap exists to bound — but it is never claimed as ours.
+
+## What the adversarial review broke
+
+Nine reproduced defects, all fixed. Four were introduced in this phase.
+
+| | |
+|---|---|
+| **HIGH** | `_paginate` collapsed "the venue did not answer with a list" into "the list is empty". An empty body, a `null` envelope, a renamed key, or a page the cursor *promised* that came back without the envelope — all read as COMPLETE and flat. |
+| **HIGH** | Success was tested as `not >= 400`, so an unfollowed 301/307 or a 204 arrived as an empty page. One proxy adding a trailing slash turned a working order into a flat account. |
+| **HIGH** | `get_exposure()` — the reader that actually gates order placement — queried `?status=resting`, which can never return a `pending` order, even though this codebase maps `pending` to SUBMITTING and counts it as open. Two readers of the same account disagreed by the full order size, and the blind one gated the write. |
+| **HIGH** | `account_state_at` was sealed onto every plan and never re-checked, so a write could land on state 1.7× older than the cap. The defect this module's own docstring criticises, one layer lower. |
+| **MED** | A position scored $0 when the venue reported `market_exposure: 0` beside 40 contracts — partial information trusted more than none. |
+| **MED** | `BOT_MANAGED` was claimed for orders the risk gate had *refused to place*: a BLOCKED row with no `submitted_at` is positive evidence we did not place it. |
+| **MED** | The reader's declared mode was never checked against its client's, so a production read could be classified against demo ledger rows and filed as a demo snapshot. |
+| **MED** | The venue's raw error body was copied verbatim into the operator summary and into `execution.db`. The header and URL channels were carefully redacted; this one was not. |
+| **LOW** | A terminal order status carrying non-zero `remaining_count` — the venue contradicting itself mid-race — dropped working quantity instead of flagging for reconciliation. |
+
+## Operator surface
+
+```bash
+pmvl exec account-snapshot --mode production --json
+```
+
+```bash
+pmvl exec account-history --mode production --limit 20
+```
+
+Incomplete cycles are recorded too. A burn-in that kept only its successes would
+report a reliability it never had.
+
+## Still not validated
+
+No real account has been contacted. Balance normalization against live units,
+real position orientation, real fill linkage, restart against real state, and the
+continuous burn-in are all unproven, and no `PRODUCTION_READ_ONLY_BURN_IN`
+maturity may be claimed from this work.

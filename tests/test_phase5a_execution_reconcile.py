@@ -315,6 +315,9 @@ async def test_all_four_orientations_build_the_right_body(
             intent_id=intent.intent_id,
             risk_checked_at=utcnow(),
             authorization_expires_at=utcnow() + timedelta(minutes=5),
+            # A plan is now refused at use unless it names the age of the
+            # account state it was sized against.
+            account_state_at=utcnow(),
         )
         await client.create_order(plan)
     finally:
@@ -413,7 +416,10 @@ def _flat_exposure() -> ExposureSnapshot:
         spend_today_usd=Decimal("0"),
         balance=AccountBalance(
             balance_usd=Decimal("100"), available_usd=Decimal("100")
-        )
+        ),
+        # Known-empty AND known-when. An unstamped snapshot is now treated as
+        # unknown age and blocks, which is the point of the freshness cap.
+        fetched_at=utcnow(),
     )
 
 

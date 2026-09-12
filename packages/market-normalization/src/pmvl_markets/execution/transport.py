@@ -213,7 +213,12 @@ class SignedTransport:
                 f"{method} {path} transport failure: {type(exc).__name__}"
             ) from exc
 
-        if response.status_code >= 400:
+        # Anything outside 2xx is a failure, including a redirect. The test
+        # used to be `>= 400`, so a 301/307 - which this transport deliberately
+        # does not follow - and a 204 both arrived as an empty success and then
+        # as an empty page. One proxy adding a trailing slash was enough to turn
+        # "your account holds a working order" into "your account is flat".
+        if not (200 <= response.status_code < 300):
             self.stats["errors"] += 1
             # 4xx other than 429 are our fault and must not trip the breaker on
             # their own; 5xx and 429 are the venue's and must.
@@ -231,9 +236,15 @@ class SignedTransport:
                 self._profile.environment.value,
                 redact_headers(headers),
             )
+            # The status and our own path, never the venue's body. The body is
+            # remote-controlled text that gets copied into the operator summary
+            # and into execution.db, where it stays; the header and URL channels
+            # are already redacted, and leaving this one raw was the asymmetry.
+            # Diagnostics keep the body at debug level only.
+            log.debug("kalshi error body: %s", _safe_body(response))
             raise ExecutionApiError(
                 f"{method} {_safe_path(path)} failed with "
-                f"{response.status_code}: {_safe_body(response)}",
+                f"{response.status_code}",
                 status_code=response.status_code,
             )
 
