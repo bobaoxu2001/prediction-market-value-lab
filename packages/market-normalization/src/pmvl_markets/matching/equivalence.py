@@ -9,7 +9,8 @@ mismatch than to a threshold mismatch.
 This module scores each component separately and then derives a public verdict. It
 **wraps** the existing verifier rather than reimplementing it: the deterministic
 demotion logic there stays the single source of truth for compatibility, and this
-layer adds attribution on top.
+layer adds attribution on top - plus one check the verifier does not make at all,
+namely whether the two venues handle cancellation and postponement the same way.
 
 The verdict vocabulary is deliberately blunt about what it licenses:
 
@@ -34,6 +35,7 @@ contradiction does, because an unverified term is not a verified one.
 
 from __future__ import annotations
 
+import re
 from dataclasses import dataclass, field
 from decimal import Decimal
 from enum import StrEnum
@@ -41,7 +43,10 @@ from enum import StrEnum
 from pmvl_shared.enums import RuleCompatibility
 from pmvl_shared.money import D, ZERO
 
-from ..normalize.rules import NormalizedRules
+from pmvl_shared.enums import Category
+from pmvl_shared.schemas import NormalizedMarket
+
+from ..normalize.rules import NormalizedRules, VoidPolicy
 from .candidates import MatchCandidate
 from .verify import (
     MatchVerdict,
@@ -59,10 +64,15 @@ class EquivalenceVerdict(StrEnum):
     """Public equivalence vocabulary.
 
     Split into two verified tiers because neither venue publishes cancellation,
-    postponement or void handling in structured form. Collapsing them into a single
-    "verified" level forces a false choice: either certify pairs whose void behaviour
-    is unknown - and a pair where one leg voids while the other pays is not riskless -
-    or refuse every cross-venue pair outright and lose the genuine ones too.
+    postponement or void handling as a structured field. Collapsing them into a
+    single "verified" level forces a false choice: either certify pairs whose void
+    behaviour is unknown - and a pair where one leg voids while the other pays is not
+    riskless - or refuse every cross-venue pair outright and lose the genuine ones
+    too.
+
+    The tier is decided by reading each venue's own cancellation and postponement
+    sentences, so STRICT is reachable for the pairs that really do state matching
+    terms, and STANDARD is what remains when one side stayed silent.
     """
 
     VERIFIED_EQUIVALENT_STRICT = "VERIFIED_EQUIVALENT_STRICT"
@@ -312,25 +322,97 @@ def _settlement_rule_component(a: NormalizedRules, b: NormalizedRules) -> Compon
     return ComponentScore("settlement_rule", ComponentResult.MATCH, sem_a)
 
 
-def _cancellation_component(a: NormalizedRules, b: NormalizedRules) -> ComponentScore:
-    """Cancellation and postponement handling.
+#: Markets whose settlement hangs on a *scheduled occurrence* - a game, a fight, a
+#: launch, a hearing. Only these can be postponed, so only these need postponement
+#: handling confirmed before a pair is certified risk-free. A threshold on an index
+#: at a fixed date has no event to reschedule, and demanding evidence about a risk
+#: that cannot arise would block every genuine pair for no gain.
+_SCHEDULED_OCCURRENCE_WORDS = re.compile(
+    r"\b(game|match|fight|bout|race|series|playoff|tournament|launch|hearing|"
+    r"summit|meeting|speech|debate|ceremony|concert|fixture|bell)\b",
+    re.I,
+)
 
-    Neither venue publishes this in a structured field, and the rule text rarely
-    states it explicitly. Reporting UNKNOWN is the honest answer, and because UNKNOWN
-    blocks VERIFIED_EQUIVALENT it is also the conservative one: a pair cannot be
-    certified risk-free while it is unknown whether one leg voids and the other pays
-    on a postponed event.
+
+def postponement_is_material(market: NormalizedMarket) -> bool:
+    """Whether a postponement could plausibly happen to this market.
+
+    Decided from the venue's own structured timing field first: a market carrying an
+    ``event_occurrence_time`` is by definition about something scheduled. Sports are
+    material by category, and everything else falls back to the rule text.
     """
-    hashes_agree = a.resolution_hash == b.resolution_hash
-    if hashes_agree:
+    if market.event_occurrence_time is not None:
+        return True
+    if market.category is Category.SPORTS:
+        return True
+    corpus = f"{market.title} {market.subtitle} {market.settlement_rules_raw}"
+    return bool(_SCHEDULED_OCCURRENCE_WORDS.search(corpus))
+
+
+def _cancellation_component(
+    candidate: MatchCandidate, a: NormalizedRules, b: NormalizedRules
+) -> ComponentScore:
+    """Cancellation and postponement handling, read from each venue's own wording.
+
+    Neither venue publishes this as a structured field, so the terms are classified
+    from the rule prose (see
+    :func:`pmvl_markets.normalize.rules.classify_void_language`). The classifier only
+    reads sentences that raise cancellation or postponement, and returns ``UNSTATED``
+    when a venue's wording is absent or ambiguous.
+
+    The bar for MATCH is that **both** venues positively stated the same consequence.
+    Silence on one side is UNKNOWN, never a pass, because a venue that said nothing
+    has committed to nothing - and this component is the last gate before a pair may
+    be called guaranteed.
+
+    Postponement is only required when something *can* be postponed. For a threshold
+    on an index at a fixed date the concept does not apply, and requiring evidence
+    about an impossible event would make the strict verdict unreachable, which is
+    the failure this component previously had.
+    """
+    cancel_a = VoidPolicy(a.cancellation_policy or "")
+    cancel_b = VoidPolicy(b.cancellation_policy or "")
+    postpone_a = VoidPolicy(a.postponement_policy or "")
+    postpone_b = VoidPolicy(b.postponement_policy or "")
+
+    material = postponement_is_material(candidate.market_a) or postponement_is_material(
+        candidate.market_b
+    )
+
+    # A stated contradiction on either term is fatal regardless of materiality: if
+    # one venue voids and the other settles, the pair is not hedged.
+    if cancel_a and cancel_b and cancel_a is not cancel_b:
+        return ComponentScore(
+            "cancellation", ComponentResult.MISMATCH,
+            f"cancellation handling differs: {cancel_a.value} vs {cancel_b.value}",
+        )
+    if postpone_a and postpone_b and postpone_a is not postpone_b:
+        return ComponentScore(
+            "cancellation", ComponentResult.MISMATCH,
+            f"postponement handling differs: {postpone_a.value} vs {postpone_b.value}",
+        )
+
+    if not cancel_a or not cancel_b:
+        stated = "neither venue" if not cancel_a and not cancel_b else "only one venue"
         return ComponentScore(
             "cancellation", ComponentResult.UNKNOWN,
-            "not published in structured form; normalized rule digests agree",
+            f"cancellation handling stated by {stated}",
         )
-    return ComponentScore(
-        "cancellation", ComponentResult.UNKNOWN,
-        "not published in structured form; digests differ, so some uncompared term differs",
-    )
+
+    if material and (not postpone_a or not postpone_b):
+        stated = "neither venue" if not postpone_a and not postpone_b else "only one venue"
+        return ComponentScore(
+            "cancellation", ComponentResult.UNKNOWN,
+            f"this market turns on a scheduled occurrence, and postponement "
+            f"handling is stated by {stated}",
+        )
+
+    detail = f"both venues void as {cancel_a.value}"
+    if material:
+        detail += f"; postponement {postpone_a.value} on both"
+    else:
+        detail += "; nothing schedulable to postpone"
+    return ComponentScore("cancellation", ComponentResult.MATCH, detail)
 
 
 # ------------------------------------------------------------------ verdict
@@ -369,10 +451,12 @@ def _derive_verdict(
 
     # Payout terms agree. Cancellation decides which verified tier this is.
     #
-    # Neither venue publishes void/postponement handling structurally, so in practice
-    # this is almost always UNKNOWN and almost every real pair lands on STANDARD. That
-    # is the honest outcome: the payout terms really do match, and the void behaviour
-    # really is unverified, so the pair supports a hedge but not a guarantee.
+    # The component reads each venue's published wording, so a pair reaches STRICT
+    # only when both venues stated the same void consequence (and, for a market that
+    # turns on a scheduled occurrence, the same postponement consequence). A pair
+    # where one side stayed silent lands on STANDARD: the payout terms really do
+    # match and the void behaviour really is unverified, so it supports a hedge but
+    # not a guarantee.
     cancellation = next((c for c in components if c.name == "cancellation"), None)
     if cancellation is not None and cancellation.result is not ComponentResult.MATCH:
         return EquivalenceVerdict.VERIFIED_EQUIVALENT_STANDARD
@@ -395,7 +479,7 @@ def score_equivalence(
         _time_component(rules_a, rules_b),
         _source_component(rules_a, rules_b),
         _settlement_rule_component(rules_a, rules_b),
-        _cancellation_component(rules_a, rules_b),
+        _cancellation_component(candidate, rules_a, rules_b),
     ]
 
     return EquivalenceScore(

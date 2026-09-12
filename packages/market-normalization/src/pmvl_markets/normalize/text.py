@@ -131,10 +131,22 @@ def normalize_title(title: str, *, subtitle: str = "") -> str:
     for phrase in _STOP_PHRASES:
         if text.startswith(phrase + " "):
             text = text[len(phrase) + 1 :]
-    # Alias expansion is word-boundary anchored so "us" inside "used" survives.
-    for alias, canonical in ENTITY_ALIASES.items():
-        text = re.sub(rf"(?<![\w]){re.escape(alias)}(?![\w])", canonical, text)
+    text = expand_entity_aliases(text)
     return _WS_RE.sub(" ", text).strip()
+
+
+def expand_entity_aliases(text: str) -> str:
+    """Rewrite known aliases to their canonical entity token, in lowercased text.
+
+    Word-boundary anchored so "us" inside "used" survives. Exposed separately
+    because every comparison between two venues' wording needs it: Kalshi writes the
+    ticker ("SOL", "BTC") where Polymarket writes the name ("Solana", "Bitcoin"), and
+    a comparison that skips this step reads the same asset as two different subjects.
+    """
+    lowered = text.lower()
+    for alias, canonical in ENTITY_ALIASES.items():
+        lowered = re.sub(rf"(?<![\w]){re.escape(alias)}(?![\w])", canonical, lowered)
+    return lowered
 
 
 def tokenize(text: str) -> set[str]:

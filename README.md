@@ -88,6 +88,13 @@ strictly positive. Everything else is labelled — Rule Mismatch Risk, Execution
 Stale Quote, Insufficient Liquidity, Not Guaranteed, Logical Mispricing — with the
 specific reason attached.
 
+For a cross-venue pair, "identical" includes **how each venue handles cancellation**,
+and for a market that turns on a scheduled occurrence, postponement as well. A pair
+whose payout terms agree but whose void behaviour is unconfirmed is a hedge with
+residual rule risk, not an arbitrage: if one leg voids and refunds while the other
+settles, both legs can lose. Those pairs are labelled Rule Mismatch Risk. Only a pair
+where both venues *stated* the same void consequence reaches `executable`.
+
 ---
 
 ## Quick start
@@ -495,7 +502,15 @@ See `/methodology` for the live list. The significant ones:
 - There is no live track record yet: `pmvl readiness` reports 0 settled live
   recommendations against the 60 needed to quote a Brier-versus-market figure.
 - Genuinely rule-identical pairs across these two venues are rare, so cross-platform
-  arbitrage rarely has anything to report.
+  arbitrage rarely has anything to report. On a live scan of 12 September 2026 no
+  pair reached `identical` out of 478 candidates, and 95% of the demotions were
+  genuine contradictions rather than missing information. Two known recall gaps sit
+  behind that number and are measured in
+  [docs/cross-venue-matching-recall.md](docs/cross-venue-matching-recall.md): 84% of
+  open Kalshi markets have no linked event row, and the venues title sports contracts
+  in incompatible shapes (Kalshi names the outcome, "Seattle wins"; Polymarket names
+  the matchup, "Seattle Mariners vs. Athletics"). Neither gap can manufacture a false
+  match — both only discard real candidates before they are verified.
 - Polymarket expected resolution adds a fixed oracle-latency estimate to `endDate`;
   actual UMA settlement time varies.
 - Slippage beyond measured book impact is a fixed tick pad, not a fitted market-impact

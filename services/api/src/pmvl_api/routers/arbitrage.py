@@ -12,6 +12,7 @@ from pmvl_shared.enums import (
     ACTIONABLE_ARBITRAGE_LABELS,
     ArbitrageKind,
     ArbitrageLabel,
+    JobStatus,
     classify_arbitrage_label,
     is_actionable_label,
 )
@@ -89,15 +90,7 @@ def list_arbitrage(
     db: Session = DbDep,
     mode: DataMode = ModeDep,
 ) -> dict[str, Any]:
-    latest_batch = db.scalar(
-        apply_provenance(
-            select(ArbitrageOpportunity.batch_id).order_by(
-                ArbitrageOpportunity.created_at.desc()
-            ),
-            ArbitrageOpportunity.provenance,
-            mode,
-        ).limit(1)
-    )
+    latest_batch, scan_found_nothing = _latest_batch(db, mode)
     diagnostics = _matching_diagnostics(db)
     # Why this list is the length it is. An empty result is the platform's most
     # common output and its most dangerous, because a scan that found nothing and
@@ -125,10 +118,15 @@ def list_arbitrage(
             matching_diagnostics=diagnostics,
             health=health,
             empty_reason=(
-                "No arbitrage scan has run yet, or the most recent scan found nothing. "
+                "The most recent arbitrage scan completed and found nothing. "
                 "Finding nothing is the normal result: both venues are actively "
                 "arbitraged, and this scanner refuses to label an opportunity "
                 "executable unless every leg is fillable after all costs."
+                if scan_found_nothing
+                else "No arbitrage scan has run yet, or the most recent scan found "
+                "nothing. Finding nothing is the normal result: both venues are "
+                "actively arbitraged, and this scanner refuses to label an "
+                "opportunity executable unless every leg is fillable after all costs."
             ),
         )
 
@@ -208,6 +206,55 @@ def list_arbitrage(
             "finding, not a trade."
         ),
     )
+
+
+def _latest_batch(db: Session, mode: DataMode) -> tuple[str | None, bool]:
+    """The batch a reader should be shown, and whether the newest scan was empty.
+
+    Derived from the **scan**, not from the rows it wrote. A successful scan that
+    finds nothing writes no opportunity row, so a query for "the most recent batch
+    present in the opportunities table" skips it and returns the previous scan's
+    batch instead. The list then keeps showing yesterday's executable arbitrage,
+    labelled actionable, after today's scan established it was gone - which is the
+    single most damaging way this endpoint can be wrong.
+
+    Demo provenance is exempt: demo rows are seeded rather than produced by a scan
+    job, so there is no JobRun that corresponds to them and the row-derived batch is
+    the only meaningful answer. The same applies to a published snapshot, which
+    carries opportunity rows without the job history that produced them.
+    """
+    row_batch = db.scalar(
+        apply_provenance(
+            select(ArbitrageOpportunity.batch_id).order_by(
+                ArbitrageOpportunity.created_at.desc()
+            ),
+            ArbitrageOpportunity.provenance,
+            mode,
+        ).limit(1)
+    )
+    if mode is not DataMode.LIVE:
+        return row_batch, False
+
+    # A failed scan is deliberately NOT treated as authoritative: it did not
+    # establish that the previous batch is gone, so the old rows stay visible and
+    # the health metadata flags their age. Only a run that completed can supersede.
+    run = db.scalar(
+        select(JobRun)
+        .where(
+            JobRun.job_name == "arbitrage",
+            JobRun.status.in_((JobStatus.SUCCESS.value, JobStatus.PARTIAL_SUCCESS.value)),
+        )
+        .order_by(JobRun.started_at.desc())
+        .limit(1)
+    )
+    scan_batch = (run.details or {}).get("batch_id") if run else None
+    if not scan_batch:
+        return row_batch, False
+    if scan_batch == row_batch:
+        return row_batch, False
+    # The newest completed scan is not the batch these rows came from, so every
+    # stored row predates it and none of them survived it.
+    return None, True
 
 
 def _matching_diagnostics(db: Session) -> dict[str, Any] | None:

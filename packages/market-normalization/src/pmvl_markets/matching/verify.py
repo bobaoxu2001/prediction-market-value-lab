@@ -43,6 +43,7 @@ from ..normalize.rules import (
     NormalizedRules,
     normalize_rules,
 )
+from ..normalize.text import expand_entity_aliases
 from .candidates import MatchCandidate
 
 #: Cutoff differences at or below this are immaterial.
@@ -283,14 +284,22 @@ def unmatched_proper_nouns(a: NormalizedMarket, b: NormalizedMarket) -> set[str]
     The comparison is against the other market's *full* text (title, subtitle and
     rules), not just its title, so a name that appears only in the settlement rules
     still counts as present and does not trigger a false rejection.
+
+    Both the names and the text they are sought in are alias-expanded first. The
+    venues do not share a naming convention - Kalshi lists "SOL price on Sep 12"
+    against Polymarket's "Will the price of Solana be above $110" - and a raw
+    substring test reads the ticker and the name as two different subjects, rejecting
+    the pair on an entity mismatch that does not exist. This is a recall bug rather
+    than a safety one: it discards real pairs without making any false pair look
+    good, which is why it survived a suite built around not over-claiming.
     """
     text_a = f"{a.title} {a.subtitle}"
     text_b = f"{b.title} {b.subtitle}"
-    full_a = f"{text_a} {a.settlement_rules_raw[:1500]}".lower()
-    full_b = f"{text_b} {b.settlement_rules_raw[:1500]}".lower()
+    full_a = expand_entity_aliases(f"{text_a} {a.settlement_rules_raw[:1500]}")
+    full_b = expand_entity_aliases(f"{text_b} {b.settlement_rules_raw[:1500]}")
 
-    nouns_a = proper_nouns(text_a)
-    nouns_b = proper_nouns(text_b)
+    nouns_a = {expand_entity_aliases(n) for n in proper_nouns(text_a)}
+    nouns_b = {expand_entity_aliases(n) for n in proper_nouns(text_b)}
 
     missing = {n for n in nouns_a if n not in full_b}
     missing |= {n for n in nouns_b if n not in full_a}

@@ -11,7 +11,7 @@ import asyncio
 from dataclasses import dataclass, field
 from datetime import datetime
 from decimal import Decimal
-from typing import Any, Sequence
+from typing import Any, Collection, Sequence
 
 from pmvl_shared.config import get_settings
 from pmvl_shared.enums import Category, MarketStatus, Platform
@@ -150,10 +150,21 @@ def select_for_orderbooks(
     limit: int,
     *,
     now: datetime | None = None,
+    matched_ids: Collection[str] | None = None,
 ) -> list[NormalizedMarket]:
     """Pick the markets worth spending an orderbook request on.
 
-    The budget is split into **two reserves**, filled in order.
+    The budget is split into **three reserves**, filled in order.
+
+    *Match reserve* comes first and holds the markets named in ``matched_ids`` -
+    the legs of cross-venue pairs already verified as settling on the same terms.
+    It is first because it is the only reserve whose product needs a book on two
+    venues simultaneously: the cross-platform scanner prices a Kalshi leg against a
+    Polymarket leg, and one leg alone buys nothing. The other two reserves rank each
+    venue independently by liquidity, so the chance of both halves of a pair winning
+    their own venue's draw is small, and a verified match would routinely arrive with
+    one book and one empty side. Both venues' selections read the same match set, so
+    taking a leg here takes its partner there.
 
     *Scoring reserve* (the majority) keeps the original behaviour exactly: ordered
     by ``orderbook_priority``, so a market that can be scored outranks one that
@@ -258,6 +269,17 @@ def select_for_orderbooks(
             else:
                 take(market)
 
+    # Matched legs first. Deliberately exempt from the per-series cap: a pair is
+    # two specific contracts, not a series to be sampled, and dropping one half
+    # because its series quota was spent leaves the other half useless.
+    match_budget = int(limit * settings.orderbook_match_share)
+    if matched_ids and match_budget > 0:
+        wanted = set(matched_ids)
+        legs = [m for m in tradeable if m.platform_market_id in wanted]
+        legs.sort(key=coverage_priority)
+        for market in legs[:match_budget]:
+            take(market)
+
     # The coverage reserve is expressed as the share of the budget it may not be
     # squeezed below, so the scoring pass is capped at the remainder.
     coverage_reserve = int(limit * settings.orderbook_coverage_share)
@@ -291,6 +313,7 @@ async def fetch_platform(
     *,
     market_limit: int,
     orderbook_limit: int,
+    matched_ids: Collection[str] | None = None,
 ) -> tuple[list[NormalizedMarket], dict[str, OrderBook], list[Any], list[str]]:
     """Fetch markets, events and prioritised orderbooks for one venue."""
     errors: list[str] = []
@@ -345,7 +368,9 @@ async def fetch_platform(
         except Exception as exc:  # noqa: BLE001
             errors.append(f"{provider.platform.value} events: {exc}")
 
-    targets = select_for_orderbooks(markets, orderbook_limit)
+    targets = select_for_orderbooks(
+        markets, orderbook_limit, matched_ids=matched_ids
+    )
     if targets:
         try:
             raw_books = await provider.get_orderbooks(targets)
@@ -358,6 +383,39 @@ async def fetch_platform(
             log.error("orderbook fetch failed for %s: %s", provider.platform.value, exc)
 
     return markets, books, events, errors
+
+
+def matched_market_ids(session) -> set[str]:  # noqa: ANN001 - sqlalchemy Session
+    """Platform market ids that are a leg of a still-valid cross-venue match.
+
+    Withdrawn matches are excluded by the ``rule_compatibility`` filter, so a pair
+    that stopped matching stops consuming book budget on the next cycle rather than
+    holding a reserved slot indefinitely.
+
+    Ids are returned unqualified by venue because each venue's selection only ever
+    sees its own markets, and the two venues' ticker spaces do not collide in
+    practice. A stray collision would at worst fetch one extra book.
+    """
+    from sqlalchemy import or_, select as sa_select
+
+    from ..db_models import Market, MarketMatch
+
+    rows = session.execute(
+        sa_select(Market.platform_market_id)
+        .join(
+            MarketMatch,
+            or_(
+                MarketMatch.market_a_id == Market.id,
+                MarketMatch.market_b_id == Market.id,
+            ),
+        )
+        .where(
+            MarketMatch.rule_compatibility != "incompatible",
+            Market.status == MarketStatus.OPEN.value,
+        )
+        .distinct()
+    ).scalars().all()
+    return set(rows)
 
 
 async def run_ingest(
@@ -381,6 +439,10 @@ async def run_ingest(
     if Platform.POLYMARKET in wanted:
         providers.append(PolymarketProvider())
 
+    # Legs of pairs already verified as settling identically. Passed to both venues
+    # so a match that is worth pricing gets a book on *both* sides in the same cycle.
+    matched_ids = matched_market_ids(session)
+
     try:
         # Both venues are fetched concurrently; they share no rate-limit budget.
         results = await asyncio.gather(
@@ -389,6 +451,7 @@ async def run_ingest(
                     p,
                     market_limit=market_limit // max(1, len(providers)),
                     orderbook_limit=orderbook_limit // max(1, len(providers)),
+                    matched_ids=matched_ids,
                 )
                 for p in providers
             ),

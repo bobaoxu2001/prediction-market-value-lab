@@ -340,6 +340,17 @@ class MarketMatch(Base, TimestampMixin):
     mismatch_reasons: Mapped[list | None] = mapped_column(JSONColumn, nullable=True)
     verified_by: Mapped[str] = mapped_column(String(32), nullable=False, default="deterministic")
     llm_assisted: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
+    #: The public equivalence verdict, which is what decides whether this pair may
+    #: back a guaranteed-arbitrage claim. ``rule_compatibility`` above is the
+    #: monotone internal level; it cannot express that payout terms agree while
+    #: void handling was never confirmed, and that distinction is the difference
+    #: between a hedge and an arbitrage.
+    equivalence_verdict: Mapped[str] = mapped_column(
+        String(32), nullable=False, default="REJECTED"
+    )
+    #: Per-component attribution behind the verdict, so a reader can see *which*
+    #: term failed rather than only that something did.
+    equivalence_components: Mapped[list | None] = mapped_column(JSONColumn, nullable=True)
 
 
 # ------------------------------------------------------------------ market data

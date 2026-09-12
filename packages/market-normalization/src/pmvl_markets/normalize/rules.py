@@ -20,6 +20,7 @@ import re
 from dataclasses import asdict, dataclass, field
 from datetime import datetime
 from decimal import Decimal
+from enum import StrEnum
 from typing import Any
 
 from pmvl_shared.timeutil import ensure_utc, iso, parse_ts
@@ -61,6 +62,102 @@ def source_family(text: str) -> str:
     return ""
 
 
+class VoidPolicy(StrEnum):
+    """What a venue says happens when the question cannot be settled as written.
+
+    This is the term that decides whether a matched cross-venue pair is a hedge or a
+    coin flip. If one venue voids a cancelled event and refunds the stake while the
+    other resolves it NO, a "riskless" pair loses the NO leg's premium and only gets
+    the YES leg's stake back - a loss on a position that was sold as a guarantee.
+
+    ``UNSTATED`` is a real answer, not a default to fall back on: a venue that says
+    nothing about cancellation has committed to nothing, and an unverified term is
+    not a verified one.
+    """
+
+    #: Stake returned - "void", "refunded", "annulled", or an explicit 50-50 split.
+    VOID_REFUND = "void_refund"
+    #: The contract still settles; non-occurrence decides the question outright.
+    RESOLVE_OUTRIGHT = "resolve_outright"
+    #: Settlement waits - the deadline moves to the rescheduled date.
+    EXTENDED = "extended"
+    #: Nothing the venue published addresses this, or what it published is ambiguous.
+    UNSTATED = ""
+
+
+#: Sentences that raise the question. Mirrors the cue lists the ingest store already
+#: uses to preserve each venue's own cancellation and postponement wording, so the
+#: classifier reads exactly the sentences a human auditor would be shown.
+CANCELLATION_TRIGGERS = (
+    "cancel", "void", "annul", "no contest", "not take place", "does not occur",
+    "do not occur", "fails to occur", "never occurs", "abandon",
+)
+POSTPONEMENT_TRIGGERS = (
+    "postpone", "delay", "reschedul", "suspend", "not completed", "moved to",
+)
+
+#: The consequence a sentence commits to. Ordered most specific first, so that
+#: "resolve 50-50" is read as a refund rather than matching the bare "resolve" rule
+#: below it.
+_CONSEQUENCE_CUES: list[tuple[re.Pattern[str], "VoidPolicy"]] = [
+    (re.compile(r"50\s*[-/:]\s*50|split\s+evenly|each\s+side\s+receives"), "VOID_REFUND"),
+    (re.compile(r"\bvoid(ed|s)?\b|\brefund(ed|s)?\b|\bannul(led|s)?\b|\bno contest\b"),
+     "VOID_REFUND"),
+    (re.compile(r"\bresolv\w*\s+(to\s+|as\s+)?(no|yes)\b"), "RESOLVE_OUTRIGHT"),
+    (re.compile(r"\bextend(ed|s)?\b|\bremain(s)?\s+open\b|\bpushed\s+back\b|"
+                r"\bnew\s+(resolution\s+)?date\b|\brescheduled\s+date\b|"
+                r"\buntil\s+(the\s+)?(event|game|match|contest)\b"),
+     "EXTENDED"),
+]
+
+
+def _sentences(text: str) -> list[str]:
+    """Split rule prose into sentences, tolerating the venues' loose punctuation."""
+    if not text:
+        return []
+    flattened = re.sub(r"\s+", " ", text.replace("\n", " "))
+    return [s.strip() for s in re.split(r"(?<=[.;])\s+", flattened) if s.strip()]
+
+
+def _plain(sentence: str) -> str:
+    """Lowercase and strip the quoting the venues wrap outcome names in.
+
+    Polymarket writes resolve to "No" with curly or straight quotes depending on the
+    market; matching on the quoted form would make the classifier depend on which.
+    """
+    lowered = sentence.lower()
+    for ch in ('"', "'", "“", "”", "‘", "’"):
+        lowered = lowered.replace(ch, "")
+    return lowered
+
+
+def classify_void_language(text: str, triggers: tuple[str, ...]) -> VoidPolicy:
+    """Read the venue's own words and name the consequence it committed to.
+
+    Only sentences that actually raise the trigger are considered, and the
+    consequence must appear in the *same* sentence. A rule that says "resolves NO if
+    the price is below the strike" elsewhere in the text is not a statement about
+    cancellation, and reading it as one would manufacture agreement between two
+    venues that never addressed the question.
+
+    Two different consequences across the matched sentences returns ``UNSTATED``
+    rather than picking one. An ambiguous commitment is not a commitment, and this
+    value gates a risk-free claim.
+    """
+    found: set[VoidPolicy] = set()
+    for sentence in _sentences(text):
+        plain = _plain(sentence)
+        if not any(cue in plain for cue in triggers):
+            continue
+        for pattern, policy_name in _CONSEQUENCE_CUES:
+            if pattern.search(plain):
+                found.add(VoidPolicy[policy_name])
+                break
+    if len(found) == 1:
+        return found.pop()
+    return VoidPolicy.UNSTATED
+
+
 @dataclass
 class NormalizedRules:
     """Structured settlement terms, plus the digest computed from them."""
@@ -74,6 +171,12 @@ class NormalizedRules:
     settlement_source_raw: str = ""
     includes_overtime: bool | None = None
     uses_revised_data: bool | None = None
+    #: How the venue says it handles a cancelled or a postponed event. Deliberately
+    #: **outside** ``hash_payload`` - the digest stays a statement about the terms
+    #: that decide a *normal* payout, and void handling is compared as its own
+    #: equivalence component so a reader can see which of the two disagreed.
+    cancellation_policy: str = ""
+    postponement_policy: str = ""
     resolution_hash: str = ""
     summary: str = ""
 
@@ -148,6 +251,12 @@ def normalize_rules(
         settlement_source_raw=(settlement_source or "").strip(),
         includes_overtime=features.includes_overtime,
         uses_revised_data=features.uses_revised_data,
+        cancellation_policy=classify_void_language(
+            description, CANCELLATION_TRIGGERS
+        ).value,
+        postponement_policy=classify_void_language(
+            description, POSTPONEMENT_TRIGGERS
+        ).value,
     )
     rules.resolution_hash = rules.compute_hash()
     rules.summary = summarize(rules)

@@ -190,6 +190,20 @@ def _build_logical_result(
         risk_flags.append(f"oldest quote is {humanize_seconds(worst_age)} old")
     if total_cost < settings.min_orderbook_notional_usd:
         label = ArbitrageLabel.INSUFFICIENT_LIQUIDITY
+    # Both sides of the hedge must be buyable. Half a monotonicity hedge is a naked
+    # directional position on one strike, which is the opposite of what this result
+    # claims to be.
+    unavailable = [
+        m.market.platform_market_id
+        for m in (weaker, stronger)
+        if not m.market.accepting_orders
+    ]
+    if unavailable:
+        label = ArbitrageLabel.EXECUTION_RISK
+        risk_flags.append(
+            f"not accepting orders: {', '.join(unavailable)}; the hedge cannot be "
+            f"completed"
+        )
 
     per_set_total = safe_div(total_cost, sets)
     return ArbitrageResult(

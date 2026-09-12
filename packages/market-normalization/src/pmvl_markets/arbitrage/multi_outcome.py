@@ -155,6 +155,22 @@ def scan_multi_outcome(
         risk_flags.append(
             f"{len(legs)} legs must all fill; execution risk grows with leg count"
         )
+    # Every leg must actually accept an order. A basket is only a complete set if
+    # *all* of it can be bought: an open market that has stopped accepting orders
+    # leaves the buyer holding the other legs naked, which is a directional bet on
+    # the outcomes they did manage to fill. Open status does not imply this - the
+    # venues suspend order entry around settlement while the market is still listed.
+    blocked = [
+        leg.market.platform_market_id
+        for leg in legs
+        if not leg.market.accepting_orders
+    ]
+    if blocked:
+        label = ArbitrageLabel.EXECUTION_RISK
+        risk_flags.append(
+            f"{len(blocked)} of {len(legs)} legs are not accepting orders "
+            f"({', '.join(blocked[:3])}); the basket cannot be completed"
+        )
 
     per_set_total = safe_div(total_cost, sets)
     resolution = max(
