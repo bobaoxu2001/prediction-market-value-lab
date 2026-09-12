@@ -942,6 +942,32 @@ class SourceObservationRow(Base):
     #: Recorded explicitly so a NULL is a documented fact about the source
     #: rather than an unexplained gap that a later reader might "repair".
     timestamp_absence: Mapped[dict | None] = mapped_column(JSONColumn, nullable=True)
+    #: Established by auditing the row against its own immutable raw payload -
+    #: not inferred from commit time, which cannot distinguish them: the same
+    #: job wrote both correct and defective rows, and which is which depends on
+    #: the market's weather day.
+    validity_status: Mapped[str] = mapped_column(
+        String(40), nullable=False, default="UNKNOWN"
+    )
+    #: Fails closed. A row whose eligibility has never been established is
+    #: excluded, because "not checked" is not "fine".
+    research_eligible: Mapped[bool] = mapped_column(
+        Boolean, nullable=False, default=False
+    )
+    defect_class: Mapped[str] = mapped_column(String(64), nullable=False, default="")
+    #: Set on a correction derived from the archived payload. Such a row is NOT
+    #: feature backfill: every value in it existed in a document retrieved at
+    #: the original availability instant.
+    rederived_from_raw: Mapped[bool] = mapped_column(
+        Boolean, nullable=False, default=False
+    )
+    source_raw_sha256: Mapped[str] = mapped_column(
+        String(80), nullable=False, default=""
+    )
+    original_observation_id: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    derivation_logic_version: Mapped[str] = mapped_column(
+        String(40), nullable=False, default=""
+    )
 
 
 class DailyClimateObservationRow(Base):
