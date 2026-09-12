@@ -305,9 +305,14 @@ def _stated_schedule(
     if not found:
         return None, _stated_time(tail)
 
-    stated = found[0]
-    if not _EXPLICIT_YEAR.search(tail) and reference is not None:
-        stated = _closest_year(stated, reference.date())
+    anchor = reference.date() if reference is not None else None
+    if not _EXPLICIT_YEAR.search(tail) and anchor is not None:
+        found = [_closest_year(d, anchor) for d in found]
+    # ``extract_dates`` returns its hits sorted, so the first is the EARLIEST rather
+    # than the one the venue stated first. No real fixture tail currently carries two
+    # dates (0 of 401 measured), but picking the one nearest the market's own timing
+    # costs nothing and removes the dependence on that staying true.
+    stated = min(found, key=lambda d: abs((d - anchor).days)) if anchor else found[0]
     return stated, _stated_time(tail)
 
 
@@ -362,9 +367,29 @@ def _publishes_a_strike(market: NormalizedMarket) -> bool:
     return market.floor_strike is not None or market.cap_strike is not None
 
 
+def _can_match_kalshi_fixture(corpus: str | None) -> bool:
+    """Cheap necessary condition for the fixture pattern, checked before the regex.
+
+    ``_KALSHI_FIXTURE`` chains several lazy bounded quantifiers and only commits at
+    "scheduled for", so text that starts to match and then does not - "If the
+    Democratic candidate wins the Michigan vs Ohio professional football game and..."
+    without the scheduling clause - makes the engine backtrack through every
+    combination. Measured at 2.7ms per call on a 400-character partial match against
+    0.03ms on text that never enters the pattern, and this runs over every market on
+    both venues on every candidate-generation pass.
+
+    Substring tests are linear and rule out the pathological inputs outright.
+    """
+    if not corpus:
+        return False
+    lowered = corpus.lower()
+    return "wins the" in lowered and "scheduled for" in lowered
+
 def _kalshi_fixture(market: NormalizedMarket) -> Fixture | None:
     corpus = market.settlement_rules_raw or market.description
-    match = _KALSHI_FIXTURE.search(corpus or "")
+    if not _can_match_kalshi_fixture(corpus):
+        return None
+    match = _KALSHI_FIXTURE.search(corpus)
     if match is None:
         return None
 

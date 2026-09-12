@@ -795,3 +795,32 @@ class TestTheContestDateIsAPropertyOfTheRow:
             datetime(2026, 9, 12, 4, 0, tzinfo=UTC),
         )
         assert extract_fixture(market) is None
+
+
+class TestDateSelectionWhenTheTailIsAmbiguous:
+    """The shared date extractor returns its hits sorted, so the first is the
+    earliest rather than the one the venue stated first.
+
+    No real fixture tail carries two dates today (0 of 401 measured), so this is
+    hardening rather than a fix - but the contest date is the guard that stops two
+    different games pairing, and it should not depend on that staying true.
+    """
+
+    def test_the_date_nearest_the_market_is_chosen_not_the_earliest(self) -> None:
+        rules = (
+            "If San Diego wins the San Diego vs San Francisco professional baseball "
+            "game originally scheduled for Sep 11, 2026 at 10:15 PM EDT, settled by "
+            "Sep 05, 2026, then the market resolves to Yes."
+        )
+        market = kalshi_game().model_copy(
+            update={
+                "settlement_rules_raw": rules,
+                "description": rules,
+                "close_time": datetime(2026, 9, 12, 4, 0, tzinfo=UTC),
+                "event_occurrence_time": None,
+                "expected_resolution_time": datetime(2026, 9, 12, 4, 0, tzinfo=UTC),
+            }
+        )
+        fixture = extract_fixture(market)
+        assert fixture is not None
+        assert fixture.scheduled == date(2026, 9, 11)

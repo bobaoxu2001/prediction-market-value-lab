@@ -214,6 +214,26 @@ Every in-scope event now has an authoritative outcome count. What remains is a b
 budget limit rather than a metadata gap — pricing 8 of an event's 54 outcomes is not
 a complete set, and the scanner is right to say so.
 
+## Verification of the labelling, dating and backfill changes
+
+Checked against every real row they apply to rather than on constructed examples:
+
+| Check | Result |
+|---|---|
+| `outcomes[0]` ↔ `clobTokenIds[0]` ↔ stored `yes_token_id` | 3,761 open Polymarket rows, **0 misaligned** — so `outcome_label` cannot name the wrong team |
+| Polymarket `outcome_label` agrees with the fixture's own side | 79 of 79 fixture-eligible markets |
+| Kalshi `outcome_label` empty (its outcomes really are Yes/No) | 322 of 322 |
+| Contest-date drift from the venue's own timing | 401 fixtures, min 0 / median 1 / p95 7 / **max 8 days** against a 30-day gate — the gate rejects **0** real fixtures while still catching a year error |
+| Fixtures with no reference time to anchor against | 0 |
+| Nested market list truncated for large events | No — `/events/{ticker}?with_nested_markets=true` matched `/markets?event_ticker=…` exactly on an 82-outcome event, so `outcome_count` cannot come back too low |
+| Fixture tails containing more than one date | 0 of 401 (the date nearest the market's timing is chosen anyway) |
+
+A wrong `outcome_count` is the one failure here that could manufacture a false
+risk-free claim, since the basket scanner treats it as authoritative — hence checking
+truncation directly against the API rather than trusting the code comment. The
+failure direction is also safe: a count that included settled markets would make the
+scanner demand more priced outcomes than exist and skip, not certify.
+
 ## Known and unfixed
 
 * **Fixture extraction covers head-to-head moneylines only.** Totals and spreads are
