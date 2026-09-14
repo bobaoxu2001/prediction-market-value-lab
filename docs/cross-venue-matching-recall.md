@@ -275,6 +275,46 @@ direction rather than shared:
   positions for a risk that runs the other way, so a non-exhaustive short basket is
   flagged as being in the holder's favour rather than downgraded.
 
+### The short basket has an asymmetry of its own, running the other way
+
+The first version of this got the risk profile half right and shipped a false
+guarantee for one state, which is worth recording because the reasoning error is easy
+to repeat.
+
+"Mutually exclusive and exhaustive" describes the outcome **space**. It does not
+promise the event *resolves*. If an event voids and every leg settles at $0.50 rather
+than $0/$1 — which is exactly what these venues do on an unresolvable market — the
+short basket collects N/2 against a cost near N−1:
+
+| N | long cost | long void payout | long P/L | short cost | short void payout | short P/L |
+|---:|---:|---:|---:|---:|---:|---:|
+| 2 | $1.00 | $1.00 | $0.00 | $1.00 | $1.00 | $0.00 |
+| 3 | $1.00 | $1.50 | **+$0.50** | $2.00 | $1.50 | **−$0.50** |
+| 5 | $1.00 | $2.50 | **+$1.50** | $4.00 | $2.50 | **−$1.50** |
+| 8 | $1.00 | $4.00 | **+$3.00** | $7.00 | $4.00 | **−$3.00** |
+
+A void *gains* for the long basket and *loses* $(N−2)/2 per set for the short one.
+So the short direction may only be called `EXECUTABLE` when the venue enforces the
+partition — and negative-risk events do, through their own rules rather than through
+a flag:
+
+> **Fed Decision in October** — "If no statement is released by the end date of the
+> next scheduled meeting, this market will resolve to the **No change** bracket."
+
+> **Emmys 2026** — "If for any reason no winner is declared… or in case of **overall
+> cancellation** or a tie for winner, this market will resolve in favor of the
+> nominee which comes **first in alphabetical order**."
+
+Both guarantee a winner is always declared, which is what rules the void state out.
+Without that construction the short basket is a hedge with a real void exposure and
+is labelled `NOT_GUARANTEED` with the dollar figure stated. A negative-risk basket
+still reports what a void would have cost, so the reader can see what the label rests
+on. At N=2 the exposure is zero and no flag is raised.
+
+Note what is *not* the reason: a missing outcome. That genuinely helps a short
+basket, so citing exhaustiveness as its risk would be wrong in substance even where
+the label happened to be right in effect.
+
 ### It still does not clear its costs
 
 The measured edge is real and too thin, and the honest arithmetic is worth keeping:

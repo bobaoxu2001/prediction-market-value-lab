@@ -226,6 +226,37 @@ def _scan_basket(
             "in your favour: an unlisted winner pays every leg"
         )
 
+    # Event-level void is the short basket's own asymmetry, running the other way
+    # from exhaustiveness. "Mutually exclusive and exhaustive" describes the outcome
+    # SPACE; it does not promise the event resolves at all. If it voids and every leg
+    # settles at $0.50 rather than $0/$1, the basket collects N/2 against a cost near
+    # N-1 - a loss of (N-2)/2 per set, which the long basket does not share because
+    # N/2 exceeds the $1 it paid.
+    #
+    # Only a venue-enforced partition rules this out, and it does so through the
+    # event's own rules rather than the flags: Polymarket's negative-risk events
+    # carry a fallback that always declares a winner ("resolve to the No change
+    # bracket", "the nominee first in alphabetical order"). Without that
+    # construction the claim is a hedge with a real void exposure, not a locked box.
+    if shorting:
+        void_exposure = (Decimal(len(legs)) - Decimal(2)) / Decimal(2)
+        if void_exposure > 0:
+            if negative_risk:
+                risk_flags.append(
+                    f"if the event voided and every leg settled at $0.50 this basket "
+                    f"would lose ${void_exposure} per set; the venue's negative-risk "
+                    f"construction always declares a winner, which is what rules that out"
+                )
+            else:
+                label = ArbitrageLabel.NOT_GUARANTEED
+                risk_flags.insert(
+                    0,
+                    f"the venue does not enforce this partition, so an event-level "
+                    f"void settling every leg at $0.50 would lose ${void_exposure} per "
+                    f"set. Exclusivity and exhaustiveness describe the outcome set, "
+                    f"not whether the event resolves at all. NOT a guaranteed profit",
+                )
+
     ages = [age_seconds(leg.book.observed_at) for leg in legs]
     worst_age = max([a for a in ages if a is not None], default=None)
     if worst_age is not None and worst_age > settings.max_quote_age_seconds:

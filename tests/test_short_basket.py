@@ -129,17 +129,32 @@ class TestExhaustivenessIsLoadBearingOneWayOnly:
     would reject sound positions for a risk that runs the other way.
     """
 
-    def test_a_non_exhaustive_short_basket_is_not_downgraded_for_it(
+    def test_a_non_exhaustive_short_basket_is_not_downgraded_for_exhaustiveness(
         self, kalshi_market  # noqa: ANN001
     ) -> None:
+        """It is downgraded - but for void exposure, never for the missing outcome.
+
+        The distinction matters: a missing outcome genuinely helps a short basket, so
+        citing it as the risk would be wrong in substance even where the label is
+        right in effect.
+        """
         legs = basket(kalshi_market, ["0.40"] * 3, ["0.60"] * 3)
         result = scan(legs, exhaustive=False, negative_risk=False)
 
         assert result is not None
         assert result.cost_breakdown["direction"] == "short"
-        assert result.label is ArbitrageLabel.EXECUTABLE
-        assert not any("exhaustiveness" in f for f in result.risk_flags)
+        assert not any(
+            "does not assert" in f and "exhaustiveness" in f for f in result.risk_flags
+        ), result.risk_flags
         assert any("in your favour" in f for f in result.risk_flags)
+
+    def test_a_venue_enforced_short_basket_is_executable(self, kalshi_market) -> None:  # noqa: ANN001
+        """Negative-risk events carry a fallback that always declares a winner."""
+        legs = basket(kalshi_market, ["0.40"] * 3, ["0.60"] * 3)
+        result = scan(legs, exhaustive=False, negative_risk=True)
+
+        assert result is not None
+        assert result.label is ArbitrageLabel.EXECUTABLE
 
     def test_a_non_exhaustive_long_basket_is_still_downgraded(
         self, kalshi_market  # noqa: ANN001
@@ -235,3 +250,60 @@ class TestCostsAreChargedTheSameWay:
         """
         legs = basket(kalshi_market, ["0.335"] * 3, ["0.665"] * 3)
         assert scan(legs) is None
+
+
+class TestEventVoidIsTheShortBasketsOwnAsymmetry:
+    """The risk that runs the OTHER way from exhaustiveness.
+
+    "Mutually exclusive and exhaustive" describes the outcome *space*; it does not
+    promise the event resolves at all. If it voids and every leg settles at $0.50
+    instead of $0/$1, a short basket collects N/2 against a cost near N-1 - a loss of
+    (N-2)/2 per set. The long basket is unharmed, because N/2 exceeds the $1 it paid.
+
+    Missing this is how a short basket gets labelled riskless when it is not.
+    """
+
+    def test_a_short_basket_without_an_enforced_partition_is_not_guaranteed(
+        self, kalshi_market  # noqa: ANN001
+    ) -> None:
+        legs = basket(kalshi_market, ["0.40"] * 3, ["0.60"] * 3)
+        result = scan(
+            legs, mutually_exclusive=True, exhaustive=True, negative_risk=False
+        )
+
+        assert result is not None
+        assert result.cost_breakdown["direction"] == "short"
+        assert result.label is ArbitrageLabel.NOT_GUARANTEED
+        assert any("void" in f for f in result.risk_flags)
+        assert any("NOT a guaranteed profit" in f for f in result.risk_flags)
+
+    def test_the_exposure_is_quantified(self, kalshi_market) -> None:  # noqa: ANN001
+        """(N-2)/2 per set - a reader should not have to derive it."""
+        legs = basket(kalshi_market, ["0.40"] * 5, ["0.71"] * 5)
+        result = scan(legs, negative_risk=False)
+        assert result is not None
+        assert result.cost_breakdown["direction"] == "short"
+        # Five outcomes: (5-2)/2 = $1.50 per set.
+        assert any("$1.5" in f for f in result.risk_flags), result.risk_flags
+
+    def test_an_enforced_partition_still_states_what_a_void_would_cost(
+        self, kalshi_market  # noqa: ANN001
+    ) -> None:
+        """Executable, but the reader is told what the label depends on."""
+        legs = basket(kalshi_market, ["0.40"] * 3, ["0.60"] * 3)
+        result = scan(legs, negative_risk=True)
+
+        assert result is not None
+        assert result.label is ArbitrageLabel.EXECUTABLE
+        assert any("negative-risk construction always declares a winner" in f
+                   for f in result.risk_flags)
+
+    def test_two_outcomes_have_no_void_exposure(self, kalshi_market) -> None:  # noqa: ANN001
+        """At N=2 a void pays $1.00 against a $1.00 cost - exactly break-even."""
+        legs = basket(kalshi_market, ["0.55", "0.55"], ["0.40", "0.40"])
+        result = scan(legs, negative_risk=False)
+
+        assert result is not None
+        assert result.cost_breakdown["direction"] == "short"
+        assert not any("void" in f for f in result.risk_flags)
+        assert result.label is ArbitrageLabel.EXECUTABLE
