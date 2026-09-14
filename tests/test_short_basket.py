@@ -167,17 +167,96 @@ class TestExhaustivenessIsLoadBearingOneWayOnly:
         assert result.label is ArbitrageLabel.NOT_GUARANTEED
         assert any("exhaustiveness" in f for f in result.risk_flags)
 
-    def test_mutual_exclusivity_is_required_in_both_directions(
-        self, kalshi_market  # noqa: ANN001
-    ) -> None:
+    def test_mutual_exclusivity_binds_the_short_basket(self, kalshi_market) -> None:  # noqa: ANN001
         """Two outcomes both resolving YES costs the short basket a paying leg."""
         legs = basket(kalshi_market, ["0.40"] * 3, ["0.60"] * 3)
         result = scan(legs, mutually_exclusive=False, negative_risk=False)
 
         assert result is not None
+        assert result.cost_breakdown["direction"] == "short"
         assert result.label is ArbitrageLabel.NOT_GUARANTEED
         assert any("mutual exclusivity" in f for f in result.risk_flags)
         assert any("collects less than it is priced for" in f for f in result.risk_flags)
+
+    def test_mutual_exclusivity_does_not_bind_the_long_basket(
+        self, kalshi_market  # noqa: ANN001
+    ) -> None:
+        """Two winners pay the long basket $2 for its $1 - a windfall, not a risk.
+
+        An earlier version demoted long baskets for this and printed the
+        exhaustiveness consequence as the reason, which was wrong twice over. The
+        test that was supposed to catch it only ever exercised the short direction.
+        """
+        legs = basket(kalshi_market, ["0.30"] * 3, ["0.80"] * 3)
+        result = scan(
+            legs, mutually_exclusive=False, exhaustive=True, negative_risk=False
+        )
+
+        assert result is not None
+        assert result.cost_breakdown["direction"] == "long"
+        assert result.label is ArbitrageLabel.EXECUTABLE
+        assert not any("mutual exclusivity" in f for f in result.risk_flags)
+
+    def test_negative_risk_does_not_excuse_exclusivity(self, kalshi_market) -> None:  # noqa: ANN001
+        """The only demonstrated route to a genuinely false EXECUTABLE.
+
+        Negative risk asserts an exhaustive, always-resolving partition. It does not
+        assert exclusivity, and exclusivity is the one property that genuinely binds
+        the short side. Two winners on a 3-leg basket pay $1 against a ~$1.80 cost.
+        """
+        legs = basket(kalshi_market, ["0.40"] * 3, ["0.60"] * 3)
+        result = scan(legs, mutually_exclusive=False, negative_risk=True)
+
+        assert result is not None
+        assert result.cost_breakdown["direction"] == "short"
+        assert result.label is ArbitrageLabel.NOT_GUARANTEED
+
+
+class TestTheGuaranteeVerdictOutranksFillQuality:
+    """A broken payout premise is not an execution problem.
+
+    ``label`` used to be a scalar that the staleness, liquidity and accepting-orders
+    gates overwrote unconditionally, so a basket whose guarantee had failed came back
+    as ``stale_quote`` - which the API explains to a reader as "a race, not an edge"
+    and the taxonomy classes as "genuinely riskless, but ... cannot be captured".
+    That inverts the kind of problem being reported, in a codebase whose purpose is
+    to avoid exactly that.
+    """
+
+    def not_guaranteed_basket(self, kalshi_market, **kw):  # noqa: ANN001, ANN201
+        legs = basket(kalshi_market, ["0.40"] * 3, ["0.60"] * 3, **kw)
+        return legs
+
+    def test_a_stale_book_does_not_downgrade_it_to_stale_quote(
+        self, kalshi_market  # noqa: ANN001
+    ) -> None:
+        legs = self.not_guaranteed_basket(kalshi_market)
+        legs[1] = OutcomeLeg(
+            market=legs[1].market,
+            book=make_book(
+                market_id="KXOUT-1",
+                yes_asks=[("0.40", "1000")],
+                no_asks=[("0.60", "1000")],
+                observed_at=utcnow() - timedelta(hours=4),
+            ),
+            market_id=2,
+        )
+        result = scan(legs, mutually_exclusive=False, negative_risk=False)
+        assert result is not None
+        assert result.label is ArbitrageLabel.NOT_GUARANTEED
+        # The staleness is still reported, just not as the headline verdict.
+        assert any("old" in f for f in result.risk_flags)
+
+    def test_a_blocked_leg_does_not_downgrade_it_to_execution_risk(
+        self, kalshi_market  # noqa: ANN001
+    ) -> None:
+        legs = self.not_guaranteed_basket(
+            kalshi_market, accepting=[True, False, True]
+        )
+        result = scan(legs, mutually_exclusive=False, negative_risk=False)
+        assert result is not None
+        assert result.label is ArbitrageLabel.NOT_GUARANTEED
+        assert any("not accepting orders" in f for f in result.risk_flags)
 
 
 class TestTheSameGatesApply:
@@ -298,12 +377,100 @@ class TestEventVoidIsTheShortBasketsOwnAsymmetry:
         assert any("negative-risk construction always declares a winner" in f
                    for f in result.risk_flags)
 
-    def test_two_outcomes_have_no_void_exposure(self, kalshi_market) -> None:  # noqa: ANN001
-        """At N=2 a void pays $1.00 against a $1.00 cost - exactly break-even."""
+    def test_two_outcomes_break_even_on_a_void_and_still_say_so(
+        self, kalshi_market  # noqa: ANN001
+    ) -> None:
+        """At N=2 a 50-50 void pays $1.00 against a $1.00 cost - no exposure.
+
+        The note is still emitted rather than suppressed, because the modelled basis
+        is an assumption: Kalshi's own rules for a cancelled game say the market
+        resolves to "a fair price", and two separately-settled fair prices need not
+        sum to $1.00. Silence would read as "no cancellation risk here" when what is
+        true is "under a 50-50 void there is none".
+        """
         legs = basket(kalshi_market, ["0.55", "0.55"], ["0.40", "0.40"])
         result = scan(legs, negative_risk=False)
 
         assert result is not None
         assert result.cost_breakdown["direction"] == "short"
-        assert not any("void" in f for f in result.risk_flags)
         assert result.label is ArbitrageLabel.EXECUTABLE
+        assert any("break even" in f for f in result.risk_flags)
+        assert any("fair price" in f for f in result.risk_flags)
+
+
+class TestSizingAndCompleteness:
+    """Findings from an adversarial pass, each reproduced before it was fixed."""
+
+    def test_a_profitable_prefix_is_not_discarded_for_expensive_depth(
+        self, kalshi_market  # noqa: ANN001
+    ) -> None:
+        """Sizing on gross and charging costs afterwards threw away real arbitrage.
+
+        Three legs with a cheap 100-deep prefix behind expensive depth: the
+        gross-maximal size is net-negative, so the whole basket was dropped.
+        """
+        legs = []
+        for index in range(3):
+            legs.append(
+                OutcomeLeg(
+                    market=kalshi_market.model_copy(
+                        update={"platform_market_id": f"KXL-{index}"}
+                    ),
+                    book=make_book(
+                        market_id=f"KXL-{index}",
+                        yes_asks=[("0.40", "1000")],
+                        no_asks=[("0.50", "100"), ("0.674", "900")],
+                    ),
+                    market_id=index + 1,
+                )
+            )
+        result = scan(legs)
+        assert result is not None
+        assert result.cost_breakdown["direction"] == "short"
+        assert result.max_executable_sets == Decimal("100")
+        assert result.max_net_profit > 0
+
+    def test_sizes_are_whole_contracts(self, kalshi_market) -> None:  # noqa: ANN001
+        """Both venues trade integer contracts; 637.5 sets is not a position."""
+        legs = basket(kalshi_market, ["0.40"] * 3, ["0.60"] * 3, size="137.5")
+        result = scan(legs)
+        assert result is not None
+        assert result.max_executable_sets == result.max_executable_sets.to_integral_value()
+        assert all(
+            leg.size_available == leg.size_available.to_integral_value()
+            for leg in result.legs
+        )
+
+    def test_more_legs_than_the_venue_reports_is_refused(self, kalshi_market) -> None:  # noqa: ANN001
+        """The venue count was validated and then the payout derived from len(legs).
+
+        A duplicated outcome means that outcome winning kills two legs, so the basket
+        pays $(N-2) against the $(N-1) it was priced for.
+        """
+        legs = basket(kalshi_market, ["0.40"] * 6, ["0.79"] * 6)
+        assert scan(legs, expected_outcome_count=5) is None
+
+    def test_the_direction_is_chosen_on_return_not_raw_profit(
+        self, kalshi_market  # noqa: ANN001
+    ) -> None:
+        """A short set earns on ~$(N-1) of capital, a long set on ~$1.
+
+        Five legs where the short basket has the larger per-set profit but ties up
+        four times the capital for a worse return.
+        """
+        legs = basket(kalshi_market, ["0.16"] * 5, ["0.74"] * 5)
+        result = scan(legs)
+        assert result is not None
+        assert result.cost_breakdown["direction"] == "long"
+        assert result.net_roi > 0
+
+    def test_the_liquidity_floor_is_per_dollar_of_payout(self, kalshi_market) -> None:  # noqa: ANN001
+        """A dollar floor on the whole basket binds ~(N-1)x looser when shorting.
+
+        Same physical depth on both sides; the verdict must not depend on how many
+        legs the event has.
+        """
+        legs = basket(kalshi_market, ["0.10"] * 8, ["0.85"] * 8, size="5")
+        result = scan(legs)
+        assert result is not None
+        assert result.label is ArbitrageLabel.INSUFFICIENT_LIQUIDITY

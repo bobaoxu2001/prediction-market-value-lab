@@ -315,6 +315,60 @@ Note what is *not* the reason: a missing outcome. That genuinely helps a short
 basket, so citing exhaustiveness as its risk would be wrong in substance even where
 the label happened to be right in effect.
 
+### What an adversarial pass found in the short direction
+
+The first version got the duality half right and shipped three defects. All were
+reproduced against the live database before being fixed.
+
+**The asymmetry was stated backwards for exclusivity.** The claim was that mutual
+exclusivity binds both directions, because two winners "pay the long basket $2 on a
+$1 premise". Receiving $2 for $1 is a *windfall*. Hand-settling every assignment of
+winners shows the real structure is a clean duality:
+
+| Property | Binds long | Binds short |
+|---|:--:|:--:|
+| Exhaustiveness (nothing wins) | **yes** — pays $0, total loss | no — pays $N, better |
+| Exclusivity (two win) | no — pays $2 for $1 | **yes** — pays $(N−2), short |
+| Event-level void (50-50) | no — pays N/2 > $1 | **yes** at N>2 — loses (N−2)/2 |
+
+The code applied exclusivity to both and printed the exhaustiveness *consequence* as
+the reason, so a sound long basket was demoted for a risk running in its favour, with
+an explanation about a different property. Each trigger now carries its own
+consequence, and the test that was meant to catch this — which only ever exercised
+the short direction despite its name — now covers both.
+
+**`negative_risk` bypassed the exclusivity gate.** The structure was
+`if negative_risk: <flag> else: <every gate>`, so the one property that genuinely
+binds the short side was never checked on exactly the events most likely to reach
+`EXECUTABLE`. With `negRisk=True` and exclusivity denied, a 5-leg basket returned
+`EXECUTABLE` at $3.90/set against an asserted $4.00 payout — two winners pay $3, a
+$0.90/set loss on the only label that claims a locked-in result. It was unreachable
+today only because the Polymarket provider derives both flags from one boolean, a
+coupling no test protected. Negative risk now satisfies exhaustiveness and
+void-freedom only; exclusivity is checked unconditionally.
+
+**A failed guarantee was overwritten by fill-quality labels.** `label` was a scalar
+that the staleness, liquidity and accepting-orders gates reassigned unconditionally,
+so `NOT_GUARANTEED` could be replaced by `stale_quote` — which the API explains as
+"a race, not an edge" and the taxonomy classes as "genuinely riskless, but … cannot
+be captured". This fired on live data: `US x Iran Effective Ceasefire begins by…?`,
+a five-leg *nested deadline ladder* where an early ceasefire resolves every leg Yes,
+every NO leg pays $0 and the basket loses its full $14,927 — reported as
+`stale_quote` while its own flags said "NOT a guaranteed profit". The guarantee
+verdict is now tracked separately and applied last, so it outranks every fill-quality
+label. That basket now reads `not_guaranteed`, with the void exposure and the missing
+exclusivity stated first and the staleness kept as a secondary flag.
+
+Three further findings were real and fixed alongside: the completeness gate was
+one-sided (`<` rather than `!=`), so more legs than the venue reports overstated the
+payout; sizing maximised *gross* rather than net, discarding a genuinely executable
+$45.50 basket and misreporting the size on those it kept — the same defect already
+corrected in the complete-set and cross-venue scanners; and the liquidity floor was
+denominated per basket rather than per dollar of payout, binding roughly (N−1)×
+looser on the short side. Sizes are now floored to whole contracts and checked
+against each leg's minimum order size, and the two directions are compared on return
+per dollar of capital rather than raw profit per set.
+
 ### It still does not clear its costs
 
 The measured edge is real and too thin, and the honest arithmetic is worth keeping:

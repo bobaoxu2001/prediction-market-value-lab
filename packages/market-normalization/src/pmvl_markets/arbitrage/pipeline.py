@@ -422,11 +422,12 @@ def run_arbitrage_scan(
                 f"unknown, so completeness of the basket cannot be established"
             )
             continue
-        if len(members) < known_outcomes:
+        if len(members) != known_outcomes:
+            shape = "priced" if len(members) < known_outcomes else "holds"
             report.errors.append(
-                f"multi_outcome event {event_id} skipped: priced {len(members)} of "
-                f"{known_outcomes} venue-reported outcomes; a partial basket is not a "
-                f"complete set"
+                f"multi_outcome event {event_id} skipped: {shape} {len(members)} of "
+                f"{known_outcomes} venue-reported outcomes; a basket that does not "
+                f"match the venue's own count is not a complete set"
             )
             continue
 

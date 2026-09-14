@@ -37,7 +37,7 @@ direction needs.
 from __future__ import annotations
 
 from dataclasses import dataclass
-from decimal import Decimal
+from decimal import ROUND_FLOOR, Decimal
 
 from pmvl_shared.config import get_settings
 from pmvl_shared.timeutil import humanize_seconds
@@ -88,7 +88,14 @@ def scan_multi_outcome(
     """
     if len(legs) < 2:
         return None
-    if expected_outcome_count is not None and len(legs) < expected_outcome_count:
+    if expected_outcome_count is not None and len(legs) != expected_outcome_count:
+        # Two-sided on purpose. Too few legs is a partial basket. Too many means a
+        # leg duplicates an outcome - a re-keyed market, a stale count, or one of
+        # Polymarket's augmented-negative-risk placeholder slots - and then the
+        # duplicated outcome winning kills two legs, so a short basket pays $(N-2)
+        # against the $(N-1) it was priced for. The venue's count is the authority;
+        # validating it and then deriving the payout from len(legs) anyway would
+        # discard exactly the check that was just made.
         return None
 
     best: ArbitrageResult | None = None
@@ -107,7 +114,11 @@ def scan_multi_outcome(
         )
         if result is None:
             continue
-        if best is None or result.net_profit_per_set > best.net_profit_per_set:
+        # Compared on return per dollar of capital, not per set. A short set earns on
+        # ~$(N-1) of capital where a long set earns on ~$1, so the raw per-set figures
+        # are not comparable: a short basket with the larger per-set profit can tie up
+        # four times the capital for materially worse return.
+        if best is None or result.net_roi > best.net_roi:
             best = result
     return best
 
@@ -138,47 +149,14 @@ def _scan_basket(
     if sum(tops, ZERO) >= payout_per_set:
         return None
 
-    sets = _max_matched_sets(legs, side, payout_per_set, max_sets=max_sets)
+    sets = _max_matched_sets(legs, side, payout_per_set, settings, max_sets=max_sets)
     if sets <= 0:
         return None
 
-    gross_cost = ZERO
-    total_fees = ZERO
-    arb_legs: list[ArbLeg] = []
-
-    for leg in legs:
-        quote = executable_quote(leg.book, side, sets)
-        if quote is None or quote.filled_size < sets:
-            return None
-        gross_cost += quote.average_price * sets
-        fee = taker_fee(
-            leg.market.platform, sets, quote.average_price,
-            rate=leg.market.fee_rate, fee_type=leg.market.fee_type,
-        )
-        total_fees += fee
-        arb_legs.append(
-            ArbLeg(
-                platform=leg.market.platform,
-                platform_market_id=leg.market.platform_market_id,
-                market_id=leg.market_id,
-                title=leg.market.title,
-                side=side,
-                price=quote.average_price,
-                size_available=quote.filled_size,
-                fee_per_contract=quantize_usd(safe_div(fee, sets)),
-                token_id=(
-                    leg.market.yes_token_id if side == Side.YES else leg.market.no_token_id
-                ),
-                outcome_label=outcome_label(leg.market, side),
-            )
-        )
-
-    slippage = sum(
-        (leg.market.tick_size * Decimal(settings.slippage_ticks) for leg in legs), ZERO
-    ) * sets
-    transfer = sum(
-        (transfer_cost_per_contract(leg.market.platform, sets) for leg in legs), ZERO
-    ) * sets
+    priced = _price_at(legs, side, sets, settings)
+    if priced is None:
+        return None
+    gross_cost, total_fees, slippage, transfer, arb_legs = priced
 
     total_cost = gross_cost + total_fees + slippage + transfer
     payout = sets * payout_per_set
@@ -188,83 +166,116 @@ def _scan_basket(
 
     risk_flags: list[str] = []
     label = ArbitrageLabel.EXECUTABLE
-
     shorting = side == Side.NO
+
+    # ---- what each direction actually needs ------------------------------
+    #
+    # The two properties form a duality, and applying either to both directions is
+    # wrong in one of them. Settled by hand over every assignment of winners:
+    #
+    #   EXHAUSTIVENESS binds the LONG basket only. If nothing listed wins, every leg
+    #   resolves NO and the long basket pays $0 - a total loss. The short basket
+    #   collects on every leg and takes $N instead of $(N-1): the missing outcome
+    #   HELPS it.
+    #
+    #   EXCLUSIVITY binds the SHORT basket only. If two outcomes both win, two legs
+    #   pay nothing and the short basket takes $(N-2) against a $(N-1) premise. The
+    #   long basket receives $2 for its $1 - a windfall, not a risk. An earlier
+    #   version demoted long baskets for this and printed the exhaustiveness
+    #   consequence as the reason, which was wrong twice over.
+    #
+    # ``guaranteed`` is tracked separately from ``label`` because it describes the
+    # PAYOUT PREMISE, while the gates below describe fill quality. A scalar label
+    # let a stale timestamp overwrite "this is not a locked box" with "refresh the
+    # quote", which inverts the kind of problem being reported.
+    guaranteed = True
+
+    def withdraw(reason: str) -> None:
+        nonlocal guaranteed
+        guaranteed = False
+        risk_flags.insert(0, reason)
+
     if negative_risk:
-        # Polymarket negative-risk events are constructed as an exhaustive partition
-        # with shared collateral, which is exactly the guarantee this needs.
         risk_flags.append(
             "negative-risk event: outcomes are a venue-enforced exhaustive partition"
         )
-    else:
-        # Exhaustiveness is load-bearing one way only. Shorting collects on every leg
-        # but the winner, so an unlisted outcome winning means ALL legs pay and the
-        # basket collects $N instead of $(N-1) - the missing outcome helps. Going
-        # long, the same event pays nothing at all.
-        missing = []
-        if not mutually_exclusive:
-            missing.append("mutual exclusivity")
-        if not exhaustive and not shorting:
-            missing.append("exhaustiveness")
-        if missing:
-            label = ArbitrageLabel.NOT_GUARANTEED
-            consequence = (
-                "if two outcomes can both resolve YES, two legs pay nothing and the "
-                "basket collects less than it is priced for"
-                if shorting
-                else "if an unlisted outcome can occur, every leg can resolve NO and "
-                "the position loses its entire cost"
-            )
-            risk_flags.insert(
-                0,
-                "the venue does not assert " + " or ".join(missing)
-                + f" for these outcomes; {consequence}",
-            )
+
+    # Negative risk asserts the partition is exhaustive and always resolves. It does
+    # NOT assert exclusivity, so that check runs regardless - it is the one property
+    # that genuinely binds the short side, and skipping it was the only route to a
+    # false guarantee. (Polymarket happens to derive both flags from one boolean, but
+    # relying on that coupling would make this gate depend on a provider detail.)
+    if shorting and not mutually_exclusive:
+        withdraw(
+            "the venue does not assert mutual exclusivity for these outcomes; if two "
+            "of them can both resolve YES, two legs pay nothing and the basket "
+            "collects less than it is priced for. NOT a guaranteed profit"
+        )
+    if not shorting and not (exhaustive or negative_risk):
+        withdraw(
+            "the venue does not assert exhaustiveness for these outcomes; if an "
+            "unlisted outcome can occur, every leg resolves NO and the position "
+            "loses its entire cost. NOT a guaranteed profit"
+        )
     if shorting and not exhaustive:
         risk_flags.append(
             "the outcome set is not asserted exhaustive, which for a short basket is "
             "in your favour: an unlisted winner pays every leg"
         )
 
-    # Event-level void is the short basket's own asymmetry, running the other way
-    # from exhaustiveness. "Mutually exclusive and exhaustive" describes the outcome
-    # SPACE; it does not promise the event resolves at all. If it voids and every leg
+    # Event-level void is the short basket's other exposure, and it runs the opposite
+    # way from exhaustiveness. Exclusivity and completeness describe the outcome
+    # SPACE; neither promises the event resolves at all. If it voids and every leg
     # settles at $0.50 rather than $0/$1, the basket collects N/2 against a cost near
-    # N-1 - a loss of (N-2)/2 per set, which the long basket does not share because
-    # N/2 exceeds the $1 it paid.
+    # N-1 - a loss of (N-2)/2 per set. The long basket is unharmed, because N/2
+    # exceeds the $1 it paid.
     #
     # Only a venue-enforced partition rules this out, and it does so through the
-    # event's own rules rather than the flags: Polymarket's negative-risk events
-    # carry a fallback that always declares a winner ("resolve to the No change
-    # bracket", "the nominee first in alphabetical order"). Without that
-    # construction the claim is a hedge with a real void exposure, not a locked box.
+    # event's own rules rather than the flags: negative-risk events carry a fallback
+    # that always declares a winner ("resolve to the No change bracket", "the nominee
+    # first in alphabetical order").
     if shorting:
         void_exposure = (Decimal(len(legs)) - Decimal(2)) / Decimal(2)
-        if void_exposure > 0:
-            if negative_risk:
-                risk_flags.append(
-                    f"if the event voided and every leg settled at $0.50 this basket "
-                    f"would lose ${void_exposure} per set; the venue's negative-risk "
-                    f"construction always declares a winner, which is what rules that out"
-                )
-            else:
-                label = ArbitrageLabel.NOT_GUARANTEED
-                risk_flags.insert(
-                    0,
-                    f"the venue does not enforce this partition, so an event-level "
-                    f"void settling every leg at $0.50 would lose ${void_exposure} per "
-                    f"set. Exclusivity and exhaustiveness describe the outcome set, "
-                    f"not whether the event resolves at all. NOT a guaranteed profit",
-                )
+        basis = (
+            f"an event-level void settling every leg at $0.50 would "
+            f"{'lose $' + str(void_exposure) + ' per set' if void_exposure > 0 else 'break even'}"
+        )
+        if negative_risk:
+            risk_flags.append(
+                f"{basis}; the venue's negative-risk construction always declares a "
+                f"winner, which is what rules that out"
+            )
+        elif void_exposure > 0:
+            withdraw(
+                f"the venue does not enforce this partition, so {basis}. Exclusivity "
+                f"and completeness describe the outcome set, not whether the event "
+                f"resolves at all. NOT a guaranteed profit"
+            )
+        else:
+            risk_flags.append(
+                f"{basis}, so a void costs nothing here; the settlement basis is not "
+                f"asserted complementary, and a venue that resolves to 'a fair price' "
+                f"rather than 50-50 need not pay the two legs $1.00 between them"
+            )
 
+    # ---- fill quality ----------------------------------------------------
     ages = [age_seconds(leg.book.observed_at) for leg in legs]
     worst_age = max([a for a in ages if a is not None], default=None)
     if worst_age is not None and worst_age > settings.max_quote_age_seconds:
         label = ArbitrageLabel.STALE_QUOTE
         risk_flags.append(f"oldest leg quote is {humanize_seconds(worst_age)} old")
-    if total_cost < settings.min_orderbook_notional_usd:
+    # Denominated per set of payout, not per basket. A short set costs about $(N-1)
+    # where a long set costs about $1, so a dollar floor on the whole basket binds
+    # roughly (N-1) times more loosely on the short side - it would stop measuring
+    # "is there enough book to be worth executing" and start measuring "how many legs
+    # does this event have".
+    notional_per_payout = safe_div(total_cost, payout_per_set)
+    if notional_per_payout < settings.min_orderbook_notional_usd:
         label = ArbitrageLabel.INSUFFICIENT_LIQUIDITY
-        risk_flags.append(f"only ${total_cost:.2f} of matched depth across all legs")
+        risk_flags.append(
+            f"only ${notional_per_payout:.2f} of matched depth per $1 of payout "
+            f"across all legs"
+        )
     if len(legs) > 6:
         risk_flags.append(
             f"{len(legs)} legs must all fill; execution risk grows with leg count"
@@ -285,6 +296,11 @@ def _scan_basket(
             f"{len(blocked)} of {len(legs)} legs are not accepting orders "
             f"({', '.join(blocked[:3])}); the basket cannot be completed"
         )
+
+    # Applied last so it outranks every fill-quality label. A broken payout premise is
+    # not an execution problem a reader can solve by refreshing the quote.
+    if not guaranteed:
+        label = ArbitrageLabel.NOT_GUARANTEED
 
     per_set_total = safe_div(total_cost, sets)
     resolution = max(
@@ -329,47 +345,111 @@ def _scan_basket(
     )
 
 
+def _price_at(
+    legs: list[OutcomeLeg], side: Side, sets: Decimal, settings  # noqa: ANN001
+) -> tuple[Decimal, Decimal, Decimal, Decimal, list[ArbLeg]] | None:
+    """Cost stack and leg detail for buying ``sets`` of every leg, or None."""
+    gross_cost = ZERO
+    total_fees = ZERO
+    arb_legs: list[ArbLeg] = []
+
+    for leg in legs:
+        quote = executable_quote(leg.book, side, sets)
+        if quote is None or quote.filled_size < sets:
+            return None
+        gross_cost += quote.average_price * sets
+        fee = taker_fee(
+            leg.market.platform, sets, quote.average_price,
+            rate=leg.market.fee_rate, fee_type=leg.market.fee_type,
+        )
+        total_fees += fee
+        arb_legs.append(
+            ArbLeg(
+                platform=leg.market.platform,
+                platform_market_id=leg.market.platform_market_id,
+                market_id=leg.market_id,
+                title=leg.market.title,
+                side=side,
+                price=quote.average_price,
+                size_available=quote.filled_size,
+                fee_per_contract=quantize_usd(safe_div(fee, sets)),
+                token_id=(
+                    leg.market.yes_token_id if side == Side.YES else leg.market.no_token_id
+                ),
+                outcome_label=outcome_label(leg.market, side),
+            )
+        )
+
+    slippage = sum(
+        (leg.market.tick_size * Decimal(settings.slippage_ticks) for leg in legs), ZERO
+    ) * sets
+    transfer = sum(
+        (transfer_cost_per_contract(leg.market.platform, sets) for leg in legs), ZERO
+    ) * sets
+    return gross_cost, total_fees, slippage, transfer, arb_legs
+
+
 def _max_matched_sets(
     legs: list[OutcomeLeg],
     side: Side,
     payout_per_set: Decimal,
+    settings,  # noqa: ANN001
     *,
     max_sets: Decimal,
 ) -> Decimal:
-    """Largest N where every leg fills at N contracts and the basket stays profitable.
+    """The size maximising NET profit across the basket, not gross.
 
-    Bisects on N. The total cost of a complete set rises monotonically with N (each
-    leg's VWAP is non-decreasing in size), so the profitable region is a prefix.
+    Sizing on gross and then charging costs at whatever size that picked discards
+    real arbitrage. Per-set fees and slippage scale with leg count, so on exactly the
+    multi-leg baskets this scanner targets the gross-maximal size is routinely
+    net-negative - a 3-leg ladder with a cheap prefix returned nothing at its gross
+    size while 100 sets of the same book were worth $45.50. Where the basket did
+    survive, the reported size was still not the profitable one.
+
+    Net profit is piecewise-linear in size between ladder boundaries, because each
+    leg's VWAP only changes slope where a level is exhausted. Evaluating the
+    boundaries is therefore exact rather than a sample.
+
+    Sizes are floored to whole contracts: both venues trade integer contracts, and a
+    headline profit quoted for 637.5 sets is quoted for a position neither will
+    accept.
     """
-    capacities = []
+    boundaries: set[Decimal] = set()
+    ceiling = max_sets
     for leg in legs:
-        capacity = sum((lvl.size for lvl in leg.book.asks(side)), ZERO)
-        if capacity <= 0:
+        cumulative = ZERO
+        for level in leg.book.asks(side):
+            cumulative += level.size
+            if cumulative <= max_sets:
+                boundaries.add(cumulative)
+        if cumulative <= 0:
             return ZERO
-        capacities.append(capacity)
-    hi = min(min(capacities), max_sets)
-    if hi <= 0:
+        # No basket can exceed the thinnest leg's total depth.
+        ceiling = min(ceiling, cumulative)
+    if ceiling <= 0:
+        return ZERO
+    boundaries.add(ceiling)
+
+    minimum = max((leg.market.min_order_size for leg in legs), default=ONE)
+    candidates = sorted(
+        {
+            size
+            for size in (b.to_integral_value(rounding=ROUND_FLOOR) for b in boundaries)
+            if size >= minimum and size <= ceiling
+        },
+        reverse=True,
+    )
+    if not candidates:
         return ZERO
 
-    def total_at(size: Decimal) -> Decimal | None:
-        total = ZERO
-        for leg in legs:
-            quote = executable_quote(leg.book, side, size)
-            if quote is None or quote.filled_size < size:
-                return None
-            total += quote.average_price
-        return total
-
-    top = total_at(hi)
-    if top is not None and top < payout_per_set:
-        return hi
-
-    lo = Decimal("0")
-    for _ in range(24):
-        mid = (lo + hi) / Decimal("2")
-        value = total_at(mid)
-        if value is not None and value < payout_per_set:
-            lo = mid
-        else:
-            hi = mid
-    return lo.quantize(Decimal("0.01"))
+    best_size = ZERO
+    best_profit = ZERO
+    for size in candidates:
+        priced = _price_at(legs, side, size, settings)
+        if priced is None:
+            continue
+        gross_cost, fees, slippage, transfer, _ = priced
+        profit = size * payout_per_set - (gross_cost + fees + slippage + transfer)
+        if profit > best_profit:
+            best_profit, best_size = profit, size
+    return best_size
