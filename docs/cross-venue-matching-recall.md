@@ -234,6 +234,68 @@ truncation directly against the API rather than trusting the code comment. The
 failure direction is also safe: a count that included settled markets would make the
 scanner demand more priced outcomes than exist and skip, not certify.
 
+## The side nobody was checking (14 September 2026)
+
+Re-running two days later on fresh data surfaced a structure the scanner was blind
+to. An event with N mutually exclusive outcomes trades as a basket in **two**
+directions:
+
+* **Long** — buy YES on every outcome. Exactly one resolves YES, so the payout is $1.
+* **Short** — buy NO on every outcome. Every leg but the winner pays, so the payout
+  is $(N−1).
+
+`scan_multi_outcome` priced only the long side. On live data that is the side where
+edge does *not* appear:
+
+| Complete, fully-priced, exclusive baskets | 12 |
+|---|---:|
+| Gross-profitable **long** (Σ YES asks < $1) | **0** |
+| Gross-profitable **short** (Σ NO asks < $N−1) | **1** |
+
+The one was a real Polymarket negative-risk event, `Fed Decision in October?`, with
+a **+$0.006 per-set** gross short edge against a −$0.031 long edge. That is the
+strongest guarantee structure anywhere in this system — a venue-enforced exhaustive
+partition, one venue, so no cross-venue rule divergence, no transfer cost and no
+settlement timing risk — and nothing looked at it.
+
+Both directions are now priced and the better is returned.
+
+### The guarantees are not symmetric
+
+Getting this backwards is how the change would go wrong, so it is enforced per
+direction rather than shared:
+
+* **Mutual exclusivity** is load-bearing **both** ways. Two outcomes both resolving
+  YES pays the long basket $2 on a $1 premise, and costs the short basket a paying
+  leg ($(N−2), not $(N−1)).
+* **Exhaustiveness** is load-bearing for the **long** basket only. An unlisted
+  outcome winning makes every listed leg resolve NO: the long basket pays $0, a total
+  loss. The short basket collects on *every* leg and takes $N instead of $(N−1) — the
+  missing outcome helps it. Requiring exhaustiveness to short would reject sound
+  positions for a risk that runs the other way, so a non-exhaustive short basket is
+  flagged as being in the holder's favour rather than downgraded.
+
+### It still does not clear its costs
+
+The measured edge is real and too thin, and the honest arithmetic is worth keeping:
+
+```
+payout (N−1 = 4 × 100 sets)   $400.00
+gross cost                    $399.40
+gross edge                    +$0.60
+Polymarket fees               −$2.48
+slippage pad (1 tick × 5)     −$2.30
+NET                           −$4.18
+```
+
+The fees concentrate on the two mid-priced legs (NO at $0.39 and $0.63): Polymarket's
+fee peaks near $0.50, so a basket on an event with a genuine favourite pays most of
+its fee on the favourite's NO leg. That is a structural reason short baskets are hard
+here, not bad luck on one event.
+
+The scanner reports nothing for it, which is correct — but it now reports nothing
+*having checked*, rather than by construction.
+
 ## Known and unfixed
 
 * **Fixture extraction covers head-to-head moneylines only.** Totals and spreads are
