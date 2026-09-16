@@ -119,6 +119,9 @@ class FundingLedger:
     def __init__(self) -> None:
         self._funds: dict[Platform, VenueFunds] = {}
         self._reservations: dict[str, Reservation] = {}
+        #: Commits a later balance read superseded. Kept, not deleted: the run's
+        #: journal still has to be able to show where the money went.
+        self._retired: dict[str, Reservation] = {}
 
     # ----------------------------------------------------------------- balance
     def declare(
@@ -131,18 +134,50 @@ class FundingLedger:
     ) -> None:
         """Record what a venue says is spendable.
 
-        Re-declaring replaces the figure but leaves held reservations standing: a
-        refreshed balance read does not release money that is still committed to a
-        candidate in flight.
+        Re-declaring replaces the figure. What happens to existing reservations
+        depends on which of two different things they represent, and conflating them
+        costs capacity on every refresh:
+
+        **Held** reservations are money promised to a candidate that has not yet
+        filled. The venue does not know about them, so they are *not* reflected in a
+        fresh balance read and must keep being subtracted. They survive.
+
+        **Committed** reservations are money already spent. A fresh read from the
+        venue itself has that spend baked into the number it returns, so continuing
+        to subtract it would deduct the same dollars twice - and the error compounds,
+        because every subsequent refresh retires nothing and the ledger's idea of
+        spendable capacity drifts steadily below the truth. So a ``VENUE_API``
+        declaration retires the commits it supersedes.
+
+        An ``OPERATOR_DECLARED`` figure is a notional bankroll, not a reading of the
+        account, so it retires nothing: the operator is saying how much to risk, not
+        reporting what is left.
         """
         if available_usd is not None and available_usd < ZERO:
             raise ValueError(f"{venue.value}: available balance cannot be negative")
+        stamp = as_of or utcnow()
+        if source is BalanceSource.VENUE_API:
+            self._retire_commits_reflected_in(venue, stamp)
         self._funds[venue] = VenueFunds(
             venue=venue,
             available_usd=available_usd,
             source=source,
-            as_of=as_of or utcnow(),
+            as_of=stamp,
         )
+
+    def _retire_commits_reflected_in(self, venue: Platform, as_of: datetime) -> None:
+        """Drop committed reservations the venue's own figure already accounts for.
+
+        Only those settled at or before the read. A commit that landed *after* the
+        balance was sampled is not in that number yet and must keep being subtracted.
+        """
+        for ref, reservation in list(self._reservations.items()):
+            if reservation.venue != venue:
+                continue
+            if reservation.state is not ReservationState.COMMITTED:
+                continue
+            if reservation.settled_at is not None and reservation.settled_at <= as_of:
+                self._retired[ref] = self._reservations.pop(ref)
 
     def funds(self, venue: Platform) -> VenueFunds:
         return self._funds.get(
@@ -267,7 +302,7 @@ class FundingLedger:
         return reservation
 
     def reservation(self, ref: str) -> Reservation | None:
-        return self._reservations.get(ref)
+        return self._reservations.get(ref) or self._retired.get(ref)
 
     def _require(self, ref: str) -> Reservation:
         reservation = self._reservations.get(ref)
@@ -302,4 +337,5 @@ class FundingLedger:
                 for venue in venues
             },
             "reservations": [r.as_dict() for r in self._reservations.values()],
+            "retired_reservations": [r.as_dict() for r in self._retired.values()],
         }

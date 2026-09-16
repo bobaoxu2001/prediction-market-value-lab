@@ -193,3 +193,62 @@ def test_a_duplicate_reservation_ref_is_refused():
     outcome = ledger.reserve_all([("a", Platform.KALSHI, D("10"))])
     assert outcome.approved is False
     assert "already exists" in outcome.reasons[0]
+
+
+def test_a_fresh_venue_read_does_not_deduct_already_spent_money_twice():
+    """The venue's own figure already has the spend in it.
+
+    Continuing to subtract a committed reservation after the account has been re-read
+    deducts the same dollars twice, and the error compounds: every refresh retires
+    nothing, so the ledger's idea of spendable capacity drifts steadily below the
+    truth until it refuses trades the account can afford.
+    """
+    ledger = FundingLedger()
+    ledger.declare(Platform.KALSHI, D("1000"), source=BalanceSource.VENUE_API)
+    ledger.reserve_all([("a", Platform.KALSHI, D("50"))])
+    ledger.commit("a", D("46.74"))
+    assert ledger.spendable_usd(Platform.KALSHI) == D("953.26")
+
+    # The venue now reports the post-trade balance.
+    ledger.declare(Platform.KALSHI, D("953.26"), source=BalanceSource.VENUE_API)
+    assert ledger.spendable_usd(Platform.KALSHI) == D("953.26")
+    # The record of where the money went survives the retirement.
+    assert ledger.reservation("a").committed_usd == D("46.74")
+    assert len(ledger.snapshot()["retired_reservations"]) == 1
+
+
+def test_a_fresh_read_still_subtracts_money_that_has_not_filled_yet():
+    """A held reservation is invisible to the venue, so it must keep being subtracted."""
+    ledger = FundingLedger()
+    ledger.declare(Platform.KALSHI, D("1000"), source=BalanceSource.VENUE_API)
+    ledger.reserve_all([("a", Platform.KALSHI, D("300"))])
+    ledger.declare(Platform.KALSHI, D("1000"), source=BalanceSource.VENUE_API)
+    assert ledger.spendable_usd(Platform.KALSHI) == D("700")
+
+
+def test_a_commit_that_landed_after_the_read_is_not_retired():
+    """It is not in that number yet, so it still has to come off."""
+    from datetime import timedelta
+
+    from pmvl_shared.timeutil import utcnow
+
+    ledger = FundingLedger()
+    ledger.declare(Platform.KALSHI, D("1000"), source=BalanceSource.VENUE_API)
+    ledger.reserve_all([("a", Platform.KALSHI, D("50"))])
+    ledger.commit("a", D("46.74"))
+    # A balance sampled *before* that commit settled.
+    ledger.declare(
+        Platform.KALSHI, D("1000"), source=BalanceSource.VENUE_API,
+        as_of=utcnow() - timedelta(minutes=5),
+    )
+    assert ledger.spendable_usd(Platform.KALSHI) == D("953.26")
+
+
+def test_an_operator_bankroll_retires_nothing():
+    """A notional bankroll says how much to risk, not what the account holds."""
+    ledger = FundingLedger()
+    ledger.declare(Platform.KALSHI, D("1000"), source=BalanceSource.OPERATOR_DECLARED)
+    ledger.reserve_all([("a", Platform.KALSHI, D("50"))])
+    ledger.commit("a", D("46.74"))
+    ledger.declare(Platform.KALSHI, D("1000"), source=BalanceSource.OPERATOR_DECLARED)
+    assert ledger.spendable_usd(Platform.KALSHI) == D("953.26")

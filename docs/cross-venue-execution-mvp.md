@@ -346,10 +346,10 @@ state where it pays nothing.
 | `test_cross_venue_execution.py` | 32 | pass |
 | `test_settlement_payoff.py` | 24 | pass |
 | `test_cross_venue_pipeline.py` | 24 | pass |
-| `test_venue_constraints_and_funding.py` | 17 | pass |
+| `test_venue_constraints_and_funding.py` | 21 | pass |
 | `test_cancellation_attestation.py` | 16 | pass |
-| **New this round** | **113** | **113 pass, 0 fail** |
-| **Full suite** | **2,584 collected** | **2,581 pass, 3 skip, 0 fail** |
+| **New this round** | **117** | **117 pass, 0 fail** |
+| **Full suite** | **2,588 collected** | **2,585 pass, 3 skip, 0 fail** |
 
 Baseline before this round was 2,471 collected (2,468 pass, 3 skip). The 3 skips are
 unchanged: they are the Kalshi demo order path, skipped for want of demo credentials.
