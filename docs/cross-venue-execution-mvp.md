@@ -358,17 +358,34 @@ state where it pays nothing.
 | `test_venue_constraints_and_funding.py` | 21 | pass |
 | `test_cancellation_attestation.py` | 16 | pass |
 | **New this round** | **117** | **117 pass, 0 fail** |
-| **Full suite** | **2,588 collected** | **2,585 pass, 3 skip, 0 fail** |
+| **Full suite** | **2,588 collected** | **2,585 pass, 3 skip, 0 fail** in 8:47 |
 
 Baseline before this round was 2,471 collected (2,468 pass, 3 skip). The 3 skips are
-unchanged: they are the Kalshi demo order path, skipped for want of demo credentials.
+unchanged in count but not in cause, and the cause is worth stating precisely:
+
+```
+SKIPPED tests/test_matching_and_time.py:281  blocking rejected the pair on time
+                                             plausibility, which is correct
+SKIPPED tests/test_phase5a_execution_auth.py:272  cryptography is not installed
+SKIPPED tests/test_phase5a_execution_auth.py:306  cryptography is not installed
+```
+
+**`cryptography` is a declared dependency of `pmvl-markets` and is not installed in
+this virtualenv.** Kalshi authenticates with RSA-PSS request signatures, so the
+signing path is not merely untested for want of credentials — it cannot execute at
+all in this environment. Installing the package is a prerequisite to any
+authenticated Kalshi call, demo included, and is independent of whether credentials
+exist.
 
 `ruff check packages/ services/ tests/` — clean.
 
 ### What these tests do not cover
 
-- **Any real venue.** Every fill is simulated. The 2 skipped tests are the Kalshi demo
-  order path, skipped because no demo credentials are present.
+- **Any real venue.** Every fill is simulated.
+- **Kalshi request signing.** The two `test_phase5a_execution_auth` skips are not about
+  credentials: `cryptography` is absent from the virtualenv, so the RSA-PSS signing
+  code never runs. Nothing in this round depends on it — the shadow path never
+  authenticates — but it means that path carries no test evidence at all right now.
 - **Websocket book maintenance.** The spec asks for reconnect, out-of-order, duplicate
   and sequence-gap handling. This round consumes REST snapshots only; there is no
   streaming book, so none of that is implemented *or* tested. The one guarantee that
@@ -422,7 +439,8 @@ Each gate below is currently **closed**. None may be opened by configuration.
 | 4 | Net positive after *all* costs | 0 of 7 | Capital cost dominates on long-dated markets | Only near-dated pairs can clear; none currently qualify |
 | 5 | Real per-venue balances | Both `UNKNOWN`; reservation refuses | No credentials present for either environment | Out of scope — requires explicit authorization |
 | 6 | Trading eligibility per venue and region | `AccessStatus.UNVERIFIED` | Never checked | Must be checked directly and independently. **Not** to be worked around by proxy, identity or deployment location |
-| 7 | Kalshi demo order behaviour | Code present, 2 tests skipped | No demo credentials | Provide demo credentials; run the existing demo harness |
+| 7 | Kalshi request signing runs at all | 2 tests skipped: `cryptography` not installed | The declared dependency is absent from the virtualenv | `pip install 'cryptography>=43,<47'`, then re-run; this is independent of credentials |
+| 7b | Kalshi demo order behaviour | Code present, untested | No demo credentials *and* no signing library | Install the dependency, provide demo credentials, run the existing demo harness |
 | 8 | A Polymarket sandbox | **None exists that this round verified** | — | Do not fabricate one. Kalshi demo prices must never be paired with Polymarket live prices and called an opportunity |
 | 9 | A Polymarket order can be constructed at all | `VenueOrderSpec` models the constraints only | No EIP-712 signing, no allowance handling, no on-chain settlement path | Build and review it separately; it is a distinct trust boundary from Kalshi's REST |
 | 10 | A live write path | Does not exist | `ExecutionMode` has no live member; `assert_transport_write_allowed` refuses | Deliberate, reviewable source change — not a config flag |
