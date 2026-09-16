@@ -633,3 +633,40 @@ def test_a_partial_close_escalates_and_keeps_the_residual_exposure_visible():
     assert kalshi.retained_quantity == D("50")
     assert journal.realised_payoff.structural_status is StructuralStatus.NOT_GUARANTEED
     assert journal.arbitrage_completed is False
+
+
+def test_a_journal_records_the_rules_it_was_judged_against_even_when_refused():
+    """"Why did this not trade" is unanswerable from a journal that keeps only winners.
+
+    The venue can rewrite its rule page between the attempt and the audit, so the terms
+    actually relied on travel with the journal rather than being looked up again later
+    and silently differing.
+    """
+    executor, _ = _executor()
+    refused = executor.run(_candidate(evidence=LinkageEvidence.ASSERTED))
+    assert refused.state is PairState.ABANDONED
+
+    exported = refused.as_dict()
+    assert set(exported["rules_used"]) == {KALSHI_TICKER, POLY_TOKEN}
+    kalshi_rule = exported["rules_used"][KALSHI_TICKER]
+    assert kalshi_rule["rule_source"] == "kalshi:rules#resolves-no-if-not-played"
+    assert kalshi_rule["rule_version"] == "2026-03-01"
+    assert kalshi_rule["can_void"] is False
+    assert kalshi_rule["void_payout"] == "unknown"
+
+    link = exported["linkages_used"][0]
+    assert link["evidence"] == "asserted"
+    assert link["prunes"] is False
+    assert link["covers_void"] is True
+    assert link["relation"] == "identical"
+
+
+def test_a_completed_journal_carries_the_same_provenance():
+    journal = _executor()[0].run(_candidate())
+    exported = journal.as_dict()
+    assert exported["linkages_used"][0]["evidence"] == "proven"
+    assert exported["linkages_used"][0]["prunes"] is True
+    assert all(
+        r["rule_source"].startswith(("kalshi:", "polymarket:"))
+        for r in exported["rules_used"].values()
+    )

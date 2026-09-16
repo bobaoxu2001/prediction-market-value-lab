@@ -312,6 +312,14 @@ close proceeds, unwind loss, gross and net cash out, plus free-text notes includ
 *"venue acknowledged the request; this is not evidence of a fill"* and any correction
 reconciliation applied.
 
+**Rule provenance travels with the journal.** Every export carries `rules_used` and
+`linkages_used` — per contract the venue, event key, whether it can void or split, the
+void payout, and the rule source and version; per linkage the relation, the evidence
+level, whether it covers void handling and whether it actually pruned anything. These
+are captured *before* any verdict, so a pair that was refused still records the terms
+it was refused on. A venue can rewrite its rule page between the attempt and the audit,
+and looking the terms up again months later would silently answer a different question.
+
 **The property that matters**: `arbitrage_completed` requires four independent
 conditions — terminal state is `BOTH_FILLED`/`RECONCILED`, every leg filled its full
 size, zero unwind cost, and the settlement evaluator re-run *on the actual fills*
@@ -335,13 +343,16 @@ state where it pays nothing.
 
 | Suite | Tests | Result |
 |---|---|---|
-| `test_cross_venue_execution.py` | 30 | pass |
+| `test_cross_venue_execution.py` | 32 | pass |
 | `test_settlement_payoff.py` | 24 | pass |
 | `test_cross_venue_pipeline.py` | 21 | pass |
 | `test_venue_constraints_and_funding.py` | 17 | pass |
 | `test_cancellation_attestation.py` | 16 | pass |
-| **New this round** | **108** | **108 pass, 0 fail** |
-| Pre-existing suite | 2,468 pass / 3 skip | unchanged |
+| **New this round** | **110** | **110 pass, 0 fail** |
+| **Full suite** | **2,581 collected** | **2,578 pass, 3 skip, 0 fail** |
+
+Baseline before this round was 2,471 collected (2,468 pass, 3 skip). The 3 skips are
+unchanged: they are the Kalshi demo order path, skipped for want of demo credentials.
 
 `ruff check packages/ services/ tests/` — clean.
 
@@ -395,6 +406,7 @@ Each gate below is currently **closed**. None may be opened by configuration.
 
 | # | Gate | Evidence today | Missing | Minimum action |
 |---|---|---|---|---|
+| 0 | The matcher proposes any pair at all on live data | **0 of 629,600** on a cold live scan; 117 of 119,520 from the DB | Recall. This gate is upstream of every other one and is currently the binding constraint | Fix the prescreen: Kalshi's entity often lives in the series ticker, not the title |
 | 1 | A real pair reaches `VERIFIED_EQUIVALENT_*` | 0 of 117 | `threshold`, `operator`, `time`, `data_source`, `settlement_rule` all UNKNOWN on the closest candidates | Fix rule extraction so these components resolve; re-measure the funnel |
 | 2 | Cancellation terms attested on both venues | 0 attestations | A person has to read two rule pages per pair | Run `pair attest-draft`, confirm against published rules, sign `reviewed_by` |
 | 3 | Outcome↔token mapping verified | 49% of Polymarket markets | The other 51% are `Over/Under`, `Up/Down`, team names | Derive the mapping from the question text, not the label; or restrict to `Yes/No` markets |
@@ -403,7 +415,8 @@ Each gate below is currently **closed**. None may be opened by configuration.
 | 6 | Trading eligibility per venue and region | `AccessStatus.UNVERIFIED` | Never checked | Must be checked directly and independently. **Not** to be worked around by proxy, identity or deployment location |
 | 7 | Kalshi demo order behaviour | Code present, 2 tests skipped | No demo credentials | Provide demo credentials; run the existing demo harness |
 | 8 | A Polymarket sandbox | **None exists that this round verified** | — | Do not fabricate one. Kalshi demo prices must never be paired with Polymarket live prices and called an opportunity |
-| 9 | A live write path | Does not exist | `ExecutionMode` has no live member; `assert_transport_write_allowed` refuses | Deliberate, reviewable source change — not a config flag |
+| 9 | A Polymarket order can be constructed at all | `VenueOrderSpec` models the constraints only | No EIP-712 signing, no allowance handling, no on-chain settlement path | Build and review it separately; it is a distinct trust boundary from Kalshi's REST |
+| 10 | A live write path | Does not exist | `ExecutionMode` has no live member; `assert_transport_write_allowed` refuses | Deliberate, reviewable source change — not a config flag |
 
 Credential presence is not authorization. Nothing in this round requested plaintext
 keys, and nothing enabled live trading.

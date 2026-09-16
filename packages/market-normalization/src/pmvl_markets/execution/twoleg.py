@@ -447,6 +447,12 @@ class PairJournal:
     realised_payoff: PayoffReport | None = None
     #: Costs outside the legs - bridge, gas, withdrawal - carried from the candidate.
     extra_cost_usd: Decimal = ZERO
+    #: The exact settlement rules and linkages this attempt relied on, captured at
+    #: validation. An exported journal has to be arguable with months later, when the
+    #: venue may have rewritten the rule page - so the terms that were actually used
+    #: travel with the journal rather than being looked up again and silently differing.
+    rules_used: dict[str, ContractRule] = field(default_factory=dict)
+    linkages_used: list[SettlementLinkage] = field(default_factory=list)
     abandon_reason: str = ""
     escalation_reason: str = ""
     residual_risks: list[str] = field(default_factory=list)
@@ -537,6 +543,31 @@ class PairJournal:
             "transitions": [t.as_dict() for t in self.transitions],
             "legs": [leg.as_dict() for leg in self.legs],
             "assessment": self.assessment.as_dict(),
+            "rules_used": {
+                key: {
+                    "contract_key": rule.contract_key,
+                    "venue": rule.venue.value,
+                    "event_key": rule.event_key,
+                    "can_void": rule.can_void,
+                    "can_fifty_fifty": rule.can_fifty_fifty,
+                    "void_payout": rule.void_payout.value,
+                    "rule_source": rule.rule_source,
+                    "rule_version": rule.rule_version,
+                }
+                for key, rule in self.rules_used.items()
+            },
+            "linkages_used": [
+                {
+                    "contract_a": link.contract_a,
+                    "contract_b": link.contract_b,
+                    "relation": link.relation.value,
+                    "evidence": link.evidence.value,
+                    "covers_void": link.covers_void,
+                    "prunes": link.prunes,
+                    "note": link.note,
+                }
+                for link in self.linkages_used
+            ],
             "planned_payoff": self.planned_payoff.as_dict() if self.planned_payoff else None,
             "realised_payoff": self.realised_payoff.as_dict() if self.realised_payoff else None,
             "total_cash_out_usd": str(quantize_usd(self.total_cash_out_usd)),
@@ -682,6 +713,8 @@ class TwoLegExecutor:
             pair_id=candidate.pair_id,
             mode=self._mode,
             extra_cost_usd=candidate.extra_cost_usd,
+            rules_used=dict(candidate.rules),
+            linkages_used=list(candidate.linkages),
         )
         journal.transition(PairState.VALIDATED, "recovering a pair from a prior process")
         journal.transition(
@@ -730,6 +763,12 @@ class TwoLegExecutor:
 
     # ---------------------------------------------------------------- validate
     def _validate(self, candidate: PairCandidate, journal: PairJournal) -> bool:
+        # Recorded before any verdict, so a pair that is refused still carries the
+        # terms it was refused on. "Why did this not trade" is the question asked most
+        # often, and it is unanswerable from a journal that only keeps the winners'
+        # inputs.
+        journal.rules_used = dict(candidate.rules)
+        journal.linkages_used = list(candidate.linkages)
         assessment = journal.assessment
         assessment.quote_status = candidate.quote_status
         assessment.access_status = candidate.access_status
