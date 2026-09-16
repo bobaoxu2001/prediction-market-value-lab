@@ -559,3 +559,39 @@ def test_an_illegal_transition_raises_rather_than_being_written():
 def _run(candidate):
     executor, clients = _executor()
     return executor.run(candidate), clients
+
+
+def test_recovery_settles_a_rehydrated_ledger_and_tolerates_a_missing_one():
+    """Recovery must work whether or not the funding state survived the crash.
+
+    A ledger that came back holds reservations the dead process took, and they have to
+    reach a terminal state. A ledger that did not come back has nothing to settle, and
+    that must not be an error - it is the case recovery exists for.
+    """
+    k_ladders, p_ladders = _ladders()
+    clients = {
+        Platform.KALSHI: BookBackedVenueClient(Platform.KALSHI, k_ladders),
+        Platform.POLYMARKET: BookBackedVenueClient(Platform.POLYMARKET, p_ladders),
+    }
+    candidate = _candidate()
+    funding = _funded()
+    TwoLegExecutor(
+        mode=ExecutionMode.SHADOW, funding=funding, clients=clients
+    ).run(candidate)
+
+    # A rehydrated ledger: same reservations, already committed by the first run.
+    recovered = TwoLegExecutor(
+        mode=ExecutionMode.SHADOW, funding=funding, clients=clients
+    ).recover(candidate)
+    assert recovered.state is PairState.RECONCILED
+    assert all(
+        r["state"] in ("committed", "released")
+        for r in funding.snapshot()["reservations"]
+    )
+
+    # A ledger that did not survive: nothing to settle, and no crash.
+    blank = TwoLegExecutor(
+        mode=ExecutionMode.SHADOW, funding=_funded(), clients=clients
+    ).recover(candidate)
+    assert blank.state is PairState.RECONCILED
+    assert blank.arbitrage_completed is True

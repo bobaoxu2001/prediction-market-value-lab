@@ -684,7 +684,11 @@ class TwoLegExecutor:
             extra_cost_usd=candidate.extra_cost_usd,
         )
         journal.transition(PairState.VALIDATED, "recovering a pair from a prior process")
-        journal.transition(PairState.FUNDS_RESERVED, "reservations restored from the ledger")
+        journal.transition(
+            PairState.FUNDS_RESERVED,
+            "funding is whatever the ledger was rehydrated with; recovery re-reserves "
+            "nothing, because the money was already committed by the dead process",
+        )
         journal.transition(PairState.RECHECKED, "no recheck on recovery; nothing new is sent")
         journal.transition(PairState.SUBMITTING, "querying the venues for prior orders")
 
@@ -716,6 +720,10 @@ class TwoLegExecutor:
             PairState.UNKNOWN,
         ):
             self._apply_remedy(candidate, journal)
+        # Settle whatever holds the rehydrated ledger still carries. On a ledger that
+        # was not rehydrated this is a no-op rather than an error: recovery must work
+        # when the funding state is gone, because that is the case it exists for.
+        self._settle_funding(journal)
         self._score_realised(candidate, journal)
         self._finish(journal)
         return journal

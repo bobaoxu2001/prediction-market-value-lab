@@ -265,9 +265,23 @@ def test_contradictory_linkages_report_inconsistency_rather_than_a_proof():
     assert any("inconsistent" in r for r in report.reasons)
 
 
-def test_no_legs_is_unknown_rather_than_a_vacuous_guarantee():
-    report = evaluate_payoff([], _rules(), _proven())
-    assert report.structural_status is StructuralStatus.UNKNOWN
+def test_an_empty_basket_pays_nothing_and_never_reports_a_guarantee():
+    """Holding nothing is exhaustively knowable: it pays $0 in every state.
+
+    This is where a fully unwound pair lands. Calling it UNKNOWN would hide a loss
+    that is both known and final; calling it GUARANTEED would be absurd. It is
+    riskless when nothing was spent, and a realised loss when something was.
+    """
+    flat = evaluate_payoff([], _rules(), _proven())
+    assert flat.structural_status is StructuralStatus.NO_LOSS
+    assert flat.guaranteed is False
+    assert flat.min_payout_usd == D("0")
+    assert flat.exhaustive is True
+
+    unwound = evaluate_payoff([], _rules(), _proven(), extra_cost_usd=D("5.46"))
+    assert unwound.structural_status is StructuralStatus.NOT_GUARANTEED
+    assert unwound.worst_case_net_usd == D("-5.46")
+    assert any("realised loss" in r for r in unwound.reasons)
 
 
 def test_a_linkage_naming_an_absent_contract_is_ignored_not_applied():

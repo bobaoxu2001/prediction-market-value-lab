@@ -298,15 +298,31 @@ def evaluate_payoff(
     total_cost = sum((leg.cost_usd for leg in legs), ZERO) + extra_cost_usd
 
     if not legs:
+        # An empty basket is not an unknown one. It holds nothing, so it pays $0 in
+        # every state of the world - which is exhaustively enumerable, and which
+        # makes any money already spent a realised loss rather than an open question.
+        # This is the state a fully unwound pair lands in, and reporting it as UNKNOWN
+        # would hide a loss that is both known and final.
+        net = ZERO - total_cost
         return PayoffReport(
-            structural_status=StructuralStatus.UNKNOWN,
+            structural_status=(
+                StructuralStatus.NO_LOSS if net == ZERO else StructuralStatus.NOT_GUARANTEED
+            ),
             total_cost_usd=total_cost,
-            min_payout_usd=None,
-            worst_case_net_usd=None,
-            exhaustive=False,
-            scenarios_considered=0,
+            min_payout_usd=ZERO,
+            worst_case_net_usd=net,
+            exhaustive=True,
+            scenarios_considered=1,
             scenarios_pruned=0,
-            reasons=["no legs supplied; there is nothing to evaluate"],
+            worst_scenario=ScenarioPayoff(results=(), payout_usd=ZERO),
+            reasons=(
+                []
+                if net == ZERO
+                else [
+                    f"the basket is empty and ${quantize_usd(total_cost)} was spent; "
+                    "that is a realised loss, not an open position"
+                ]
+            ),
         )
 
     missing = sorted({leg.contract_key for leg in legs} - set(rules))
