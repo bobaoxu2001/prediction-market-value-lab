@@ -65,9 +65,9 @@ Cost-model constants in force: `slippage_ticks=1` per side,
 |---|---|---|
 | `settlement/payoff.py` | 615 | Had to be unable to see the signal. A method on the scanner could not be. |
 | `execution/venues.py` | 289 | `OrderIntent` is integer cents and whole contracts; Polymarket is neither. |
-| `execution/funding.py` | 305 | `risk.py` checks one intent against a balance; a pair needs reservations across two venues. |
+| `execution/funding.py` | 341 | `risk.py` checks one intent against a balance; a pair needs reservations across two venues. |
 | `execution/assessment.py` | 134 | Six axes that must not overwrite each other. |
-| `execution/twoleg.py` | 1,208 | `OrderIntent`/`LedgerRecord` have no sibling-leg concept. |
+| `execution/twoleg.py` | 1,255 | `OrderIntent`/`LedgerRecord` have no sibling-leg concept. |
 | `execution/simulator.py` | 312 | Fault injection against real depth. |
 | `execution/candidates.py` | 349 | Rebuilds the case from primary sources, discarding the scanner's label. |
 | `matching/cancellation.py` | 277 | Rule-text reading, and the review gate that stops a regex certifying a trade. |
@@ -75,7 +75,7 @@ Cost-model constants in force: `slippage_ticks=1` per side,
 | `execution/shadow_pairs.py` | 341 | The runner. |
 | `pmvl_worker/crossvenue_cli.py` | 252 | `pmvl pair scan / replay / attest-draft`. |
 
-**Three defects found and fixed while testing**, all in code written this round:
+**Five defects found and fixed while testing**, all in code written this round:
 
 1. A linkage claiming matched void handling pruned divergent states even when the two
    rules admitted *different* non-binary outcomes — deleting exactly the states where
@@ -88,6 +88,15 @@ Cost-model constants in force: `slippage_ticks=1` per side,
    handed an empty basket. An empty basket is not unknown — it pays $0 in every state,
    exhaustively, which makes the money already spent a *realised loss*. Reporting it as
    unknown hid a loss that was both known and final.
+4. `recover()` journalled "reservations restored from the ledger" while restoring
+   nothing. A journal that describes an action it did not take is worse than one that
+   stays silent, because it is the record an audit trusts.
+5. `declare()` kept committed reservations across a balance refresh. Held money is
+   invisible to the venue and must keep being subtracted; committed money is already
+   baked into a fresh venue read, and subtracting it again deducts the same dollars
+   twice. The error compounds across refreshes, so spendable capacity drifts steadily
+   below the truth. Latent today — the CLI declares a bankroll once and never refreshes
+   — but exactly the kind of fault that stays invisible until the live path turns it on.
 
 ---
 
