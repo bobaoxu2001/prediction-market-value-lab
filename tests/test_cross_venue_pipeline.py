@@ -378,3 +378,76 @@ def test_kalshi_markets_are_not_subject_to_the_token_check():
     from pmvl_markets.execution.candidates import verify_outcome_token_mapping
 
     assert verify_outcome_token_mapping(_kalshi_market(outcomes=["Up", "Down"])) is None
+
+
+# --------------------------------------------------------------- polarity
+def test_an_inverted_pair_buys_the_same_nominal_side_on_both_venues():
+    """When one venue words the question as the negation, YES/YES is the hedge.
+
+    Two independent places react to `polarity_inverted`: the orientation search picks
+    which side to buy, and the linkage records how the contracts relate. They describe
+    different things, so both must flip — but if the flips compounded, the pair would
+    be long the same outcome twice while every status field still read green. This
+    pins that they do not compound.
+    """
+    from pmvl_markets.execution.shadow_pairs import _orientations
+
+    straight = _orientations(_score())
+    assert straight == [(Side.YES, Side.NO), (Side.NO, Side.YES)]
+
+    inverted = _orientations(_score(inverted=True))
+    assert inverted == [(Side.YES, Side.YES), (Side.NO, Side.NO)]
+
+
+def test_an_inverted_pair_is_still_proven_guaranteed_end_to_end():
+    candidate = build_pair_candidate(
+        pair_id="inverted",
+        market_a=_kalshi_market(),
+        book_a=_book(Platform.KALSHI, KALSHI_ID),
+        side_a=Side.YES,
+        market_b=_poly_market(),
+        book_b=_book(Platform.POLYMARKET, POLY_ID),
+        side_b=Side.YES,          # same nominal side, because the mapping is inverted
+        score=_score(inverted=True),
+        attestations=_attested(),
+        max_quote_age_seconds=120,
+        access_status=AccessStatus.PERMITTED,
+    )
+    assert not isinstance(candidate, CandidateRejection)
+    assert candidate.linkages[0].relation.value == "complementary"
+    assert candidate.leg_b.contract.contract_key == POLY_YES
+
+    # The evaluator, seeing two YES legs under a complementary linkage, must still
+    # find every reachable state fully paid.
+    from pmvl_markets.settlement.payoff import StructuralStatus, evaluate_payoff
+    from pmvl_markets.settlement.payoff import HeldLeg
+
+    legs = [
+        HeldLeg(candidate.leg_a.contract.contract_key, Side.YES, D("100"), D("0.45")),
+        HeldLeg(candidate.leg_b.contract.contract_key, Side.YES, D("100"), D("0.45")),
+    ]
+    report = evaluate_payoff(legs, candidate.rules, candidate.linkages)
+    assert report.structural_status is StructuralStatus.GUARANTEED
+    assert report.min_payout_usd == D("100")
+
+
+def test_treating_an_inverted_pair_as_straight_is_caught_as_a_doubled_bet():
+    """The failure this guards against, made explicit: buy YES/NO on an inverted pair."""
+    from pmvl_markets.settlement.payoff import StructuralStatus, evaluate_payoff
+    from pmvl_markets.settlement.payoff import HeldLeg
+
+    candidate = build_pair_candidate(
+        pair_id="inverted-wrong",
+        market_a=_kalshi_market(), book_a=_book(Platform.KALSHI, KALSHI_ID), side_a=Side.YES,
+        market_b=_poly_market(), book_b=_book(Platform.POLYMARKET, POLY_ID), side_b=Side.NO,
+        score=_score(inverted=True),
+        attestations=_attested(), max_quote_age_seconds=120,
+        access_status=AccessStatus.PERMITTED,
+    )
+    legs = [
+        HeldLeg(candidate.leg_a.contract.contract_key, Side.YES, D("100"), D("0.45")),
+        HeldLeg(candidate.leg_b.contract.contract_key, Side.NO, D("100"), D("0.50")),
+    ]
+    report = evaluate_payoff(legs, candidate.rules, candidate.linkages)
+    assert report.structural_status is StructuralStatus.NOT_GUARANTEED
+    assert report.min_payout_usd == D("0")
