@@ -19,7 +19,7 @@ at a production host.
 | **Quotes** — is the outcome↔token mapping verified? | **No, and now blocked** | The provider assigns `clobTokenIds[0]` to YES positionally. Only 6,464 of 13,086 open Polymarket markets (49%) are labelled `('Yes','No')`. The execution bridge now refuses the rest rather than guessing. |
 | **Economics** — are both buy directions priced at real depth? | **Yes** | Both orientations are walked; sizing is equal settlement shares, not equal notional; the limit is the worst level touched, not the VWAP. |
 | **Economics** — is any real pair net positive? | **No** | 3 of 7 candidates are positive after fees (+0.6% to +0.85%), all negative after the capital cost of a 2028 resolution (≈ −10% ROI). |
-| **Execution** — is a two-leg failure distinguishable from success? | **Yes** | `arbitrage_completed` is recomputed from actual fills by the independent evaluator. Nine failure injections verified. |
+| **Execution** — is a two-leg failure distinguishable from success? | **Yes** | `arbitrage_completed` is recomputed from actual fills by the independent evaluator. Eleven failure injections verified. |
 | **Funding** — can two candidates double-spend? | **No** | Per-venue reservations, all-or-nothing across legs, unread balance refuses. |
 | **Access** — is trading permission established? | **No, and it blocks** | `AccessStatus` defaults to `UNVERIFIED`, which fails `tradeable`. Nothing in this round checks venue or regional eligibility, so nothing may proceed past it. |
 
@@ -302,6 +302,8 @@ These figures describe this system's logic, not a market opportunity.)*
 | Book moves past the limit | leg does not fill | `arbitrage_completed = False` |
 | Cancel racing a fill | `ONE_LEG_FILLED → UNKNOWN → BOTH_FILLED` | Reconciliation re-read caught it; first read was not treated as final |
 | Process crash mid-pair | `recover()` → `RECONCILED` | Same `client_order_id`s; **no liquidity consumed** — recovery is a read |
+| Unwind times out | `ONE_LEG_FILLED → UNWINDING → ESCALATED` | Nothing recorded as closed; 100 shares still exposed and visible |
+| Unwind fills short (50 of 100) | `→ ESCALATED` | 50 closed, 50 retained; payoff scored on the residual |
 | Live (non-simulation) client | `NotASimulation` raised at construction | |
 
 **Per-leg reconciliation** is recorded for every leg: requested vs filled quantity and
@@ -333,12 +335,12 @@ state where it pays nothing.
 
 | Suite | Tests | Result |
 |---|---|---|
-| `test_cross_venue_execution.py` | 27 | pass |
+| `test_cross_venue_execution.py` | 30 | pass |
 | `test_settlement_payoff.py` | 24 | pass |
 | `test_cross_venue_pipeline.py` | 21 | pass |
 | `test_venue_constraints_and_funding.py` | 17 | pass |
 | `test_cancellation_attestation.py` | 16 | pass |
-| **New this round** | **105** | **105 pass, 0 fail** |
+| **New this round** | **108** | **108 pass, 0 fail** |
 | Pre-existing suite | 2,468 pass / 3 skip | unchanged |
 
 `ruff check packages/ services/ tests/` — clean.

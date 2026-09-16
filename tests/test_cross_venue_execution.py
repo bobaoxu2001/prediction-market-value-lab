@@ -595,3 +595,41 @@ def test_recovery_settles_a_rehydrated_ledger_and_tolerates_a_missing_one():
     ).recover(candidate)
     assert blank.state is PairState.RECONCILED
     assert blank.arbitrage_completed is True
+
+
+# ------------------------------------------------------- when the remedy fails
+def test_a_close_out_that_times_out_escalates_instead_of_claiming_it_is_hedged():
+    """An unwind that did not answer leaves a position nobody has confirmed closed.
+
+    Calling that HEDGED would record an exposure as neutralised on the strength of a
+    request that was never acknowledged - the same mistake as treating a submit ack
+    as a fill, made at the other end of the trade.
+    """
+    executor, _ = _executor(
+        poly_faults=[Fault.SUBMIT_REJECT], kalshi_faults=[Fault.CLOSE_TIMEOUT]
+    )
+    journal = executor.run(_candidate())
+
+    assert journal.state is PairState.ESCALATED
+    assert "close timed out" in journal.escalation_reason
+    assert journal.arbitrage_completed is False
+    # Nothing was recorded as closed, so the exposure is still on the books.
+    kalshi = journal.leg(f"kalshi:{KALSHI_TICKER}")
+    assert kalshi.closed_quantity == D("0")
+    assert kalshi.retained_quantity == D("100")
+
+
+def test_a_partial_close_escalates_and_keeps_the_residual_exposure_visible():
+    executor, _ = _executor(
+        poly_faults=[Fault.SUBMIT_REJECT], kalshi_faults=[Fault.CLOSE_PARTIAL]
+    )
+    journal = executor.run(_candidate())
+
+    assert journal.state is PairState.ESCALATED
+    assert "only 50 of 100 could be closed" in journal.escalation_reason
+    kalshi = journal.leg(f"kalshi:{KALSHI_TICKER}")
+    assert kalshi.closed_quantity == D("50")
+    # 50 shares of a one-legged position remain, and the payoff is scored on them.
+    assert kalshi.retained_quantity == D("50")
+    assert journal.realised_payoff.structural_status is StructuralStatus.NOT_GUARANTEED
+    assert journal.arbitrage_completed is False
