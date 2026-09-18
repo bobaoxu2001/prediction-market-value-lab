@@ -1,4 +1,4 @@
-# Implication route — checkpoint
+# Same-venue structure routes — checkpoint
 
 Machine-readable state for resuming. Updated 2026-09-18.
 
@@ -100,16 +100,47 @@ live structures rest on 89 books, so they are **not** 1,588 independent capaciti
   follows from.
 * *Available depth is capacity* — **refuted**, with a measured $94 swing.
 * *Kalshi ladders are internally mispriced* — **not supported**. Live cheapest combined
-  ask is exactly $1.0000 across 1,588 structures.
+  ask is exactly $1.0000 across 1,588 structures, and $1.0000 again across 4,038 on the
+  wide sweep.
+* *A basket sharing an event ticker is exhaustive* — **refuted, with a worked case**.
+  Five rungs of a 170-rung event priced at $0.82 against a $1 floor that does not hold.
+
+## Route B — exhaustive baskets (`pmvl pair basket-scan`)
+
+Implemented. Buying every YES pays $1 because exactly one rung wins; buying every NO
+pays $(N-1) because every rung but the winner does. Both directions priced.
+
+`prove_partition` checks disjointness and coverage separately, because they break
+different floors: overlapping rungs let two win and destroy the all-YES floor, a gap
+lets every rung lose and destroys the all-NO floor.
+
+**Coverage is proven on an inferred grid, not on the reals.** The Chicago ladder
+`<74 | [74,75] | [76,77] | [78,79] | [80,81] | >81` leaves open gaps at (75,76),
+(77,78), (79,80). A 75.4 reading settles every rung NO and pays $N against an assumed
+floor of $(N-1). The grid step is inferred from the rung boundaries, the tiling verified
+on it, and the step recorded on every certificate as a stated assumption. Gaps wider
+than one step are refused.
+
+### What the partition proof caught on real data
+
+`KXBTC-26SEP1709` carries ~170 rungs; the local store holds books for five, all
+adjacent. All-YES across those five costs **$0.82** and reads as an 18c/set edge. The
+event can settle in any of the other 165 buckets, where all five pay nothing and the
+whole $0.82 is lost. **Refused** — "a partition of the line needs exactly one rung open
+at each end". This is the "same event implies exhaustive" error, caught by the gate
+built to catch it.
+
+Stored-book run: 20 baskets, 40 certificates, **10 partitions proven** (the complete
+six-rung weather baskets, grid=1), **0 accepted** — a rung lacked an ask, or the
+combined ask did not clear ($1.10 against a $1 floor on KXHIGHLAX-26SEP18).
 
 ## Next actions
 
-1. `--live` currently seeds ladders from prior book coverage; 300 of 389 requested rungs
-   returned no book. Widen to quote by event directly and record which rungs are unquoted.
-2. Route B (same-venue exhaustive/mutually-exclusive baskets) is **not implemented**.
-   `between` rungs are correctly `NOT_APPLICABLE` here and are the natural input to it —
-   81,975 open Kalshi markets carry that comparator.
-3. Cross-venue equivalence remains gated where it was; nothing in this route touches it.
+1. `--live` seeds ladders from prior book coverage; 200 of 1,864 requested rungs returned
+   a book on the wide sweep. Quote by event directly and record which rungs are unquoted.
+2. Cross-venue equivalence remains gated where it was; neither same-venue route touches it.
+3. Route B live sweep over complete weather baskets — the cheapest structures to quote in
+   full, at six rungs each.
 
 ## Boundaries held
 

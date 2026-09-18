@@ -12,6 +12,7 @@ from decimal import Decimal
 
 from pmvl_markets.settlement.payoff import (
     ContractRule,
+    ExclusiveGroup,
     HeldLeg,
     LinkageEvidence,
     LinkageRelation,
@@ -63,11 +64,29 @@ def test_complementary_legs_on_a_proven_pair_are_guaranteed():
 
 
 def test_the_evaluator_takes_no_verdict_from_its_caller():
-    """There is no parameter through which a caller can assert safety."""
+    """No parameter lets a caller assert the conclusion.
+
+    Deliberately a property rather than a frozen parameter list: new *evidence* inputs
+    are expected as the engine learns new structures, and pinning the exact signature
+    only fails the next one of those. What must never appear is an input that states
+    the answer - guaranteed, safe, riskless - because the whole point of this module
+    is to derive that from rules and fills.
+    """
     import inspect
 
     params = set(inspect.signature(evaluate_payoff).parameters)
-    assert params == {"legs", "rules", "linkages", "extra_cost_usd"}
+    assert params == {"legs", "rules", "linkages", "extra_cost_usd", "groups"}
+    banned = ("guarantee", "safe", "riskless", "verdict", "status", "label", "trust")
+    for name in params:
+        assert not any(word in name.lower() for word in banned), name
+
+    # And every claim-bearing input carries an evidence level the engine judges for
+    # itself, rather than a bare assertion it is obliged to believe.
+    import dataclasses
+
+    for claim_type in (SettlementLinkage, ExclusiveGroup):
+        fields = {f.name for f in dataclasses.fields(claim_type)}
+        assert "evidence" in fields, claim_type
 
 
 # ------------------------------------------------------- the states that lose

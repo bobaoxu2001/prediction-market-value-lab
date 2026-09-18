@@ -269,7 +269,12 @@ class BasketCertificate:
     event_key: str
     direction: str
     proof: PartitionProof
+    #: Rungs priced here.
     rung_count: int = 0
+    #: Rungs the venue actually lists for this event, when known. "We hold 5 of 170"
+    #: says why a partition failed; "missing a tail" only says that it did, and the
+    #: two lead to completely different work - fetch the rest, or discard the event.
+    rungs_in_event: int | None = None
     legs: list[dict[str, object]] = field(default_factory=list)
     quantity: Decimal = ZERO
     payoff_floor_usd: Decimal = ZERO
@@ -293,6 +298,7 @@ class BasketCertificate:
             "direction": self.direction,
             "proof": self.proof.as_dict(),
             "rung_count": self.rung_count,
+            "rungs_in_event": self.rungs_in_event,
             "legs": self.legs,
             "quantity": str(self.quantity),
             "payoff_per_set": str(self.payoff_per_set),
@@ -355,19 +361,30 @@ def scan_basket(
     max_sets: Decimal = Decimal("10000"),
     min_net_floor_usd: Decimal = Decimal("0.01"),
     max_quote_age_seconds: int = 300,
+    rungs_in_event: int | None = None,
 ) -> list[BasketCertificate]:
     """Price both directions of one basket. Both, because either can be the mispriced one."""
     proof = prove_partition(buckets)
     out: list[BasketCertificate] = []
     for direction in (BasketDirection.ALL_YES, BasketDirection.ALL_NO):
-        out.append(
-            _price_basket(
-                buckets, proof, direction,
-                max_sets=max_sets,
-                min_net_floor_usd=min_net_floor_usd,
-                max_quote_age_seconds=max_quote_age_seconds,
-            )
+        cert = _price_basket(
+            buckets, proof, direction,
+            max_sets=max_sets,
+            min_net_floor_usd=min_net_floor_usd,
+            max_quote_age_seconds=max_quote_age_seconds,
         )
+        cert.rungs_in_event = rungs_in_event
+        if (
+            not proof.proven
+            and rungs_in_event is not None
+            and rungs_in_event > len(buckets)
+        ):
+            cert.rejection_reason = (
+                f"partition not proven: only {len(buckets)} of {rungs_in_event} rungs "
+                f"the venue lists have a book, so the basket is incomplete by "
+                f"construction ({proof.reason})"
+            )
+        out.append(cert)
     return out
 
 

@@ -227,3 +227,27 @@ def test_the_basket_scanner_reaches_no_venue():
     source = inspect.getsource(basket)
     for forbidden in ("requests", "httpx", "urlopen", "submit", "place_order"):
         assert forbidden not in source
+
+
+def test_interval_extraction_covers_every_comparator_kalshi_uses():
+    """A rung read with the wrong strike field silently becomes an unbounded interval.
+
+    `less` carries its bound in cap_strike and `greater` in floor_strike. Reading the
+    wrong one yields None, which drops the rung from the basket - and a basket missing
+    a rung is not exhaustive, so the all-NO floor would be overstated by a whole dollar.
+    """
+    cases = [
+        ("less", None, D("74"), "(-inf, 74)"),
+        ("less_or_equal", None, D("74"), "(-inf, 74]"),
+        ("greater", D("81"), None, "(81, inf)"),
+        ("greater_or_equal", D("81"), None, "[81, inf)"),
+        ("between", D("74"), D("75"), "[74, 75]"),
+    ]
+    for comparator, floor, cap, expected in cases:
+        interval = interval_for(_market("M", comparator, floor, cap))
+        assert interval is not None, comparator
+        assert interval.describe() == expected
+
+    # A comparator this route cannot reason about yields nothing rather than a guess.
+    assert interval_for(_market("M", "custom", D("1"), D("2"))) is None
+    assert interval_for(_market("M", "greater", None, None)) is None

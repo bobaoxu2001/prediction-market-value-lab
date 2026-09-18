@@ -663,7 +663,20 @@ def implication_replay(
 
 
 # --------------------------------------------------------------------- baskets
-def _load_baskets(max_age_hours: int, live: bool, live_events: int):
+async def _fetch_books_once(markets):
+    """Fetch books and close the client on the same event loop."""
+    from pmvl_markets.providers.kalshi import KalshiProvider
+
+    provider = KalshiProvider()
+    try:
+        return await provider.get_orderbooks(markets)
+    finally:
+        await provider.aclose()
+
+
+def _load_baskets(
+    max_age_hours: int, live: bool, live_events: int, max_rungs_per_event: int = 20
+):
     """Group booked, open markets into same-event outcome baskets.
 
     Unlike the implication route this keeps ``between`` rungs - they are the interior
@@ -700,7 +713,15 @@ def _load_baskets(max_age_hours: int, live: bool, live_events: int):
                 Market.id.in_(recently_booked),
             )
             .group_by(Market.platform_event_id)
-            .having(func.count(Market.id) >= 2)
+            # Only baskets small enough to quote in full. A partition is all-or-nothing
+            # - a 170-rung Bitcoin ladder needs all 170 books before its floor means
+            # anything, which no sane request budget buys, and asking for them anyway
+            # tripped the provider's circuit breaker for no gain. Six-rung weather
+            # baskets are completable in one batch.
+            .having(
+                func.count(Market.id) >= 2,
+                func.count(Market.id) <= max_rungs_per_event,
+            )
             .order_by(func.count(Market.id).desc())
             .limit(live_events if live else 10_000)
         ).all()
@@ -713,6 +734,19 @@ def _load_baskets(max_age_hours: int, live: bool, live_events: int):
             )
         ).all()
         markets = [_market_from_row(r) for r in rows]
+        # How many rungs the venue lists per event, booked or not. The difference
+        # between this and what we hold is the whole reason most partitions fail.
+        rungs_in_event = {
+            evt: n
+            for evt, n in db.execute(
+                select(Market.platform_event_id, func.count(Market.id))
+                .where(
+                    Market.platform_event_id.in_(event_ids),
+                    Market.status == MarketStatus.OPEN.value,
+                )
+                .group_by(Market.platform_event_id)
+            ).all()
+        }
         stored: dict[str, Any] = {}
         if not live:
             for row in rows:
@@ -722,14 +756,13 @@ def _load_baskets(max_age_hours: int, live: bool, live_events: int):
 
     rungs = [m for m in markets if interval_for(m) is not None]
     if live:
-        from pmvl_markets.providers.kalshi import KalshiProvider
-
-        kalshi = [m for m in rungs if m.platform is Platform.KALSHI]
-        provider = KalshiProvider()
-        try:
-            stored = asyncio.run(provider.get_orderbooks(kalshi))
-        finally:
-            asyncio.run(provider.aclose())
+        # One event loop for the fetch *and* the close. Two asyncio.run() calls give
+        # the client a loop that is already closed by the time aclose() runs, and the
+        # teardown raises after the data was fetched successfully - a failure that
+        # looks like the fetch failing.
+        stored = asyncio.run(
+            _fetch_books_once([m for m in rungs if m.platform is Platform.KALSHI])
+        )
 
     baskets: dict[str, list] = defaultdict(list)
     for market in rungs:
@@ -739,13 +772,20 @@ def _load_baskets(max_age_hours: int, live: bool, live_events: int):
         baskets[f"{market.platform.value}:{market.platform_event_id}"].append(
             Bucket(market=market, book=book, interval=interval_for(market))
         )
-    return {k: v for k, v in baskets.items() if len(v) >= 2}, len(rungs)
+    return (
+        {k: v for k, v in baskets.items() if len(v) >= 2},
+        len(rungs),
+        rungs_in_event,
+    )
 
 
 @app.command("basket-scan")
 def basket_scan(
     live: bool = typer.Option(False, "--live", help="Fetch fresh public books"),
-    live_events: int = typer.Option(40, help="How many events to quote when --live"),
+    live_events: int = typer.Option(10, help="How many events to quote when --live"),
+    max_rungs_per_event: int = typer.Option(
+        20, help="Skip baskets too large to quote in full; a partition needs every rung"
+    ),
     max_age_hours: int = typer.Option(24, help="How old a stored book may be"),
     max_quote_age_seconds: int = typer.Option(300, help="Freshness limit for pricing"),
     min_net_floor: float = typer.Option(0.01, help="Net floor a basket must clear"),
@@ -762,7 +802,9 @@ def basket_scan(
     """
     from pmvl_markets.arbitrage.basket import scan_basket
 
-    baskets, rung_total = _load_baskets(max_age_hours, live, live_events)
+    baskets, rung_total, rungs_in_event = _load_baskets(
+        max_age_hours, live, live_events, max_rungs_per_event
+    )
     console.print(
         f"[bold]{len(baskets)}[/bold] booked baskets "
         f"({sum(len(v) for v in baskets.values())} of {rung_total} rungs have a book)"
@@ -770,12 +812,14 @@ def basket_scan(
 
     certificates = []
     for _key, buckets in sorted(baskets.items()):
+        event = buckets[0].market.platform_event_id or ""
         certificates.extend(
             scan_basket(
                 buckets,
                 max_sets=Decimal(str(max_sets)),
                 min_net_floor_usd=Decimal(str(min_net_floor)),
                 max_quote_age_seconds=max_quote_age_seconds,
+                rungs_in_event=rungs_in_event.get(event),
             )
         )
 
@@ -795,7 +839,9 @@ def basket_scan(
         )
         console.print(
             f"      partition: {'proven' if cert.proof.proven else 'NOT proven'} "
-            f"grid={cert.proof.grid_step}  combined_ask=${cert.combined_top_of_book}"
+            f"grid={cert.proof.grid_step}  rungs {cert.rung_count}"
+            f"/{cert.rungs_in_event if cert.rungs_in_event is not None else '?'} "
+            f"combined_ask=${cert.combined_top_of_book}"
         )
         if not cert.accepted:
             console.print(f"      [dim]{cert.rejection_reason[:160]}[/dim]")
