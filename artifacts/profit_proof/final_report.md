@@ -57,17 +57,36 @@ of notional carrying 4 c of gross edge against 18 c of fee across six legs. Depl
 capital at any tested level is bounded by opportunities that do not exist rather than by
 size.
 
-## Execution assumptions
+## Execution assumptions — and the second falsification
 
-`ATOMIC_THEORETICAL` throughout. This is an upper bound and is labelled as one. A
-`TAKER_SEQUENTIAL_WORST_CASE` model — leg one fills, leg two's price disappears, unwind
-at the bid — is not implemented, so nothing here may be promoted to
-`EXECUTABLE_ARBITRAGE_OBSERVED` even if a simultaneous structure were found.
+`TAKER_SEQUENTIAL_WORST_CASE` is now implemented, and it kills the same three
+structures independently of the simultaneity problem. Kalshi fills one order at a time,
+so a floor computed as though both legs land together describes a trade the venue does
+not offer.
+
+| structure | atomic floor | sequential worst case | if the second leg vanishes |
+|---|---|---|---|
+| KXSOLD-26SEP1817 | **+$33.45** | **−$52.80** | −$387.82 |
+| KXBTCD-26SEP1710 (1,378) | +$3.74 | **−$19.26** | −$35.58 |
+| KXBTCD-26SEP1710 (2,302) | +$26.18 | **−$8.11** | −$56.97 |
+
+All three are `THEORETICAL_ONLY`. **The claim therefore fails twice over, for unrelated
+reasons: the legs never coexisted, and the structure would lose money even if they
+had.** Either is sufficient on its own.
+
+The rescue column is the one that decides whether a thin edge is worth attempting at
+all: on KXSOLD, winning was worth $33 and failing costs $388. An 11:1 adverse ratio
+means the structure needs a fill probability above ~92% just to break even on attempts,
+before any edge.
+
+`TAKER_SEQUENTIAL_OBSERVED` and `MAKER_EXPERIMENTAL` remain unimplemented. No result
+assumes a maker fill.
 
 ## Known failure modes
 
 1. **Cross-snapshot mixing** — found, fixed, gated, regression-tested. Was producing
    $33 of fictional profit.
+1b. **Atomic-fill assumption** — found, modelled, gated. Turns the same $33 into −$53.
 2. **Size-1 fee measurement** — found in my own analysis before it reached a conclusion;
    overstated the barrier by ~60%.
 3. **Detection multiplicity** — an N-rung ladder yields O(N²) structures over N books.
@@ -89,9 +108,19 @@ at the bid — is not implemented, so nothing here may be promoted to
 
 ## Minimum remaining obstacle to the next verdict
 
-To reach `EXECUTABLE_ARBITRAGE_OBSERVED`, one structure must show a positive net floor
-with **all legs quoted within 1 second**. On the evidence so far that requires a gross
-dislocation above roughly 1.3 c appearing simultaneously across both legs — observed
-zero times in 458 certificates. The cheapest way to look for it is a live poller on the
-handful of ladders with two-sided depth, capturing both legs in a single batch rather
-than reconstructing them from per-market snapshots.
+To reach `EXECUTABLE_ARBITRAGE_OBSERVED` a structure must clear **three** gates
+simultaneously, and no observed structure has cleared even two:
+
+1. positive net floor after fees — 3 of 458 certificates
+2. all legs quoted within 1 second — **0 of those 3**
+3. positive floor under sequential execution — **0 of those 3**
+
+Gate 3 is the harder one and it does not depend on better data collection. It requires a
+dislocation large enough to survive one adverse fill of the structure's own size, which
+on the measured books means roughly **3–4 c of gross edge** rather than the ~1.3 c that
+merely beats the fee. The 99th percentile of observed dislocation is +1 c and the
+maximum across 324 structures is +6 c.
+
+The cheapest next experiment is a live poller capturing both legs of the few ladders
+with two-sided depth in a single batch, which would at least produce simultaneous
+quotes and let gate 2 be tested honestly. Gate 3 would remain.
