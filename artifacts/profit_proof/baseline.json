@@ -1,0 +1,13 @@
+{
+  "git_sha": "5d300da0d29e790417d0a54f1bfb55b9a63f79e6",
+  "branch": "measure-before-selling",
+  "remote": "https://github.com/bobaoxu2001/prediction-market-value-lab.git",
+  "worktree": "clean",
+  "tests": "2628 passed, 1 skipped, 0 failed (pytest -rs, before this audit's changes)",
+  "implication_status": "REAL_DATA_VALIDATED; 725 stored-book certificates, 4038 live-quoted, 0 accepted",
+  "basket_status": "REAL_DATA_VALIDATED; 20/20 live weather partitions proven, 0 accepted",
+  "engineering_status_at_baseline": "REAL_DATA_VALIDATED",
+  "opportunity_status_at_baseline": "NOT_OBSERVED_WITHIN_REPORTED_COVERAGE",
+  "timestamp": "2026-09-18T08:39:13Z",
+  "note": "Baseline captured before the adversarial audit. The audit subsequently falsified the stored-book positive results; see falsification_report.md."
+}

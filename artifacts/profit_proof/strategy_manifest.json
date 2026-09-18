@@ -1,0 +1,17 @@
+{
+  "strategy_version": 1,
+  "frozen_at": "2026-09-18T08:39:13Z",
+  "git_sha": "5d300da0d29e790417d0a54f1bfb55b9a63f79e6",
+  "proof_rules": {
+    "implication": "exact set containment on half-lines; same venue, event, cutoff and settlement source required; >= vs > at equal strikes does not imply",
+    "basket": "pairwise disjoint and covering on a grid inferred from rung boundaries; gaps wider than one step refused; exactly one rung settles YES"
+  },
+  "fee_model": "Kalshi quadratic taker, rate x contracts x P x (1-P), ceiled to the cent on the whole order; per-market rate read from the venue; unknown rate refuses",
+  "execution_model": "TAKER_SEQUENTIAL not yet modelled; current figures assume ATOMIC_THEORETICAL fills and are therefore an upper bound",
+  "sizing_rule": "marginal: take sets while the marginal pair/basket cost is below the payoff per set; never average cost",
+  "minimum_edge_usd": 0.01,
+  "max_snapshot_skew_seconds": 1.0,
+  "max_quote_age_seconds": 300,
+  "min_independent_event_days_for_stability": 20,
+  "pre_registration_note": "These thresholds are fixed before forward evaluation. Changing any of them increments strategy_version and restarts the forward sample; prior data becomes development sample only."
+}

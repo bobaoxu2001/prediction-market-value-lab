@@ -463,6 +463,10 @@ def implication_scan(
     ),
     max_sets: int = typer.Option(10000, help="Size ceiling per structure"),
     min_notional: float = typer.Option(0.0, help="Minimum matched notional"),
+    max_snapshot_skew_seconds: float = typer.Option(
+        1.0, help="Max seconds between the two legs' quotes. A multi-leg floor is a "
+                  "claim about prices that existed at the same instant."
+    ),
     out: Path = typer.Option(None, help="Write certificates and inputs as JSON"),
     show: int = typer.Option(5, help="How many top structures to print"),
 ) -> None:
@@ -508,6 +512,7 @@ def implication_scan(
                 min_net_floor_usd=Decimal(str(min_net_floor)),
                 max_quote_age_seconds=max_quote_age_seconds,
                 min_notional_usd=Decimal(str(min_notional)),
+                max_snapshot_skew_seconds=max_snapshot_skew_seconds,
             )
         )
 
@@ -845,6 +850,9 @@ def basket_scan(
     max_quote_age_seconds: int = typer.Option(300, help="Freshness limit for pricing"),
     min_net_floor: float = typer.Option(0.01, help="Net floor a basket must clear"),
     max_sets: int = typer.Option(10000, help="Size ceiling per basket"),
+    max_snapshot_skew_seconds: float = typer.Option(
+        1.0, help="Max seconds between the earliest and latest rung quote"
+    ),
     out: Path = typer.Option(None, help="Write certificates and inputs as JSON"),
     show: int = typer.Option(5, help="How many baskets to print"),
 ) -> None:
@@ -875,6 +883,7 @@ def basket_scan(
                 min_net_floor_usd=Decimal(str(min_net_floor)),
                 max_quote_age_seconds=max_quote_age_seconds,
                 rungs_in_event=rungs_in_event.get(event),
+                max_snapshot_skew_seconds=max_snapshot_skew_seconds,
             )
         )
 

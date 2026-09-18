@@ -288,6 +288,11 @@ class BasketCertificate:
     accepted: bool = False
     rejection_reason: str = ""
     worst_book_age_seconds: int | None = None
+    #: Seconds between the earliest and latest rung quote. A basket floor is a claim
+    #: about N prices that existed together; rungs read minutes apart are N different
+    #: market states and the floor was never simultaneously purchasable.
+    snapshot_skew_seconds: float | None = None
+    book_observed_at: list[str] = field(default_factory=list)
     payoff_report: dict[str, object] | None = None
 
     def as_dict(self) -> dict[str, object]:
@@ -314,6 +319,8 @@ class BasketCertificate:
             "accepted": self.accepted,
             "rejection_reason": self.rejection_reason,
             "worst_book_age_seconds": self.worst_book_age_seconds,
+            "snapshot_skew_seconds": self.snapshot_skew_seconds,
+            "book_observed_at": list(self.book_observed_at),
             "payoff_report": self.payoff_report,
         }
 
@@ -362,6 +369,7 @@ def scan_basket(
     min_net_floor_usd: Decimal = Decimal("0.01"),
     max_quote_age_seconds: int = 300,
     rungs_in_event: int | None = None,
+    max_snapshot_skew_seconds: float = 1.0,
 ) -> list[BasketCertificate]:
     """Price both directions of one basket. Both, because either can be the mispriced one."""
     proof = prove_partition(buckets)
@@ -372,6 +380,7 @@ def scan_basket(
             max_sets=max_sets,
             min_net_floor_usd=min_net_floor_usd,
             max_quote_age_seconds=max_quote_age_seconds,
+            max_snapshot_skew_seconds=max_snapshot_skew_seconds,
         )
         cert.rungs_in_event = rungs_in_event
         if (
@@ -396,6 +405,7 @@ def _price_basket(
     max_sets: Decimal,
     min_net_floor_usd: Decimal,
     max_quote_age_seconds: int,
+    max_snapshot_skew_seconds: float = 1.0,
 ) -> BasketCertificate:
     n = len(buckets)
     side = Side.YES if direction is BasketDirection.ALL_YES else Side.NO
@@ -414,6 +424,10 @@ def _price_basket(
     ages = [age_seconds(b.book.observed_at) for b in buckets]
     known = [a for a in ages if a is not None]
     cert.worst_book_age_seconds = int(max(known)) if known else None
+    observed = [b.book.observed_at for b in buckets if b.book.observed_at]
+    cert.book_observed_at = [iso(o) for o in observed]
+    if len(observed) == len(buckets) and observed:
+        cert.snapshot_skew_seconds = (max(observed) - min(observed)).total_seconds()
 
     tops = [b.book.best_ask(side) for b in buckets]
     if all(t is not None for t in tops):
@@ -500,6 +514,13 @@ def _price_basket(
         reasons.append(
             f"oldest book is {cert.worst_book_age_seconds}s old, over the "
             f"{max_quote_age_seconds}s limit"
+        )
+    if cert.snapshot_skew_seconds is None:
+        reasons.append("snapshot skew unknown")
+    elif cert.snapshot_skew_seconds > max_snapshot_skew_seconds:
+        reasons.append(
+            f"rungs were quoted {cert.snapshot_skew_seconds:.0f}s apart, over the "
+            f"{max_snapshot_skew_seconds:.0f}s limit; they never coexisted"
         )
     cert.accepted = not reasons
     cert.rejection_reason = "; ".join(reasons)

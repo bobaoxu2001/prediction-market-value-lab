@@ -1,0 +1,58 @@
+{
+  "verdict": "NET_ARBITRAGE_OBSERVED",
+  "reason": "simultaneous_quotes: 0 of 2 net-positive structures have legs quoted within 1s; worst skew 455s",
+  "largest_uncertainty": "accepted_by_all_execution_gates: 0 structures passed depth, freshness, simultaneity and sizing",
+  "gates": [
+    {
+      "gate": "structural_proof",
+      "result": "PASS",
+      "detail": "456 of 458 certificates carry a settlement proof",
+      "guards": "STRUCTURAL_PROOF_ONLY"
+    },
+    {
+      "gate": "gross_edge_observed",
+      "result": "PASS",
+      "detail": "2 structures priced below their payoff floor before fees",
+      "guards": "GROSS_ARBITRAGE_OBSERVED"
+    },
+    {
+      "gate": "net_edge_after_fees",
+      "result": "PASS",
+      "detail": "2 structures clear the floor after fees",
+      "guards": "NET_ARBITRAGE_OBSERVED"
+    },
+    {
+      "gate": "simultaneous_quotes",
+      "result": "FAIL",
+      "detail": "0 of 2 net-positive structures have legs quoted within 1s; worst skew 455s",
+      "guards": "EXECUTABLE_ARBITRAGE_OBSERVED"
+    },
+    {
+      "gate": "accepted_by_all_execution_gates",
+      "result": "FAIL",
+      "detail": "0 structures passed depth, freshness, simultaneity and sizing",
+      "guards": "EXECUTABLE_ARBITRAGE_OBSERVED"
+    },
+    {
+      "gate": "forward_sample_size",
+      "result": "NOT_ESTABLISHED",
+      "detail": "0 independent event-days observed; 20 pre-registered as the minimum",
+      "guards": "STABLE_PROFIT_EVIDENCE"
+    }
+  ],
+  "metrics": {
+    "raw_net_positive_detections": 2,
+    "deduplicated_economic_exposures": 2,
+    "independent_event_days": 0,
+    "certificates": 458,
+    "structurally_proven": 456,
+    "gross_positive": 2,
+    "net_positive": 2,
+    "accepted": 0,
+    "total_guaranteed_profit_usd": "0",
+    "capital_required_usd": "0",
+    "worst_skew_among_net_positive_s": 454.775533
+  },
+  "git_sha": "5d300da0d29e790417d0a54f1bfb55b9a63f79e6",
+  "evaluated_at": "2026-09-18T08:39:00.582408Z"
+}

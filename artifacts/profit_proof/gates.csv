@@ -1,0 +1,7 @@
+gate,result,detail,guards
+structural_proof,PASS,456 of 458 certificates carry a settlement proof,STRUCTURAL_PROOF_ONLY
+gross_edge_observed,PASS,2 structures priced below their payoff floor before fees,GROSS_ARBITRAGE_OBSERVED
+net_edge_after_fees,PASS,2 structures clear the floor after fees,NET_ARBITRAGE_OBSERVED
+simultaneous_quotes,FAIL,0 of 2 net-positive structures have legs quoted within 1s; worst skew 455s,EXECUTABLE_ARBITRAGE_OBSERVED
+accepted_by_all_execution_gates,FAIL,"0 structures passed depth, freshness, simultaneity and sizing",EXECUTABLE_ARBITRAGE_OBSERVED
+forward_sample_size,NOT_ESTABLISHED,0 independent event-days observed; 20 pre-registered as the minimum,STABLE_PROFIT_EVIDENCE

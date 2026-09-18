@@ -352,6 +352,13 @@ class StructureCertificate:
     rejection_reason: str = ""
     book_observed_at: list[str] = field(default_factory=list)
     worst_book_age_seconds: int | None = None
+    #: Seconds between the earliest and latest quote in this structure.
+    #:
+    #: A multi-leg floor is a claim about prices that existed *at the same instant*.
+    #: Legs read hours apart are two different market states, and pricing a pair
+    #: across them invents an opportunity that was never simultaneously available.
+    #: Measured on every structure, gated on acceptance, and reported on rejection.
+    snapshot_skew_seconds: float | None = None
     payoff_report: dict[str, object] | None = None
 
     def as_dict(self) -> dict[str, object]:
@@ -376,6 +383,7 @@ class StructureCertificate:
             "rejection_reason": self.rejection_reason,
             "book_observed_at": list(self.book_observed_at),
             "worst_book_age_seconds": self.worst_book_age_seconds,
+            "snapshot_skew_seconds": self.snapshot_skew_seconds,
             "payoff_report": self.payoff_report,
         }
 
@@ -462,6 +470,7 @@ def scan_implication_family(
     min_net_floor_usd: Decimal = Decimal("0.01"),
     max_quote_age_seconds: int = 300,
     min_notional_usd: Decimal = ZERO,
+    max_snapshot_skew_seconds: float = 1.0,
 ) -> list[StructureCertificate]:
     """Price every provable implication pair in one ladder and certify the result.
 
@@ -495,6 +504,7 @@ def scan_implication_family(
                 min_net_floor_usd=min_net_floor_usd,
                 max_quote_age_seconds=max_quote_age_seconds,
                 min_notional_usd=min_notional_usd,
+                max_snapshot_skew_seconds=max_snapshot_skew_seconds,
             )
             certificates.append(cert)
     return certificates
@@ -509,6 +519,7 @@ def _price_structure(
     min_net_floor_usd: Decimal,
     max_quote_age_seconds: int,
     min_notional_usd: Decimal,
+    max_snapshot_skew_seconds: float = 1.0,
 ) -> StructureCertificate:
     """Buy YES on the weaker claim and NO on the stronger one, at real depth."""
     event_key = antecedent.market.platform_event_id or antecedent.market.series_ticker or ""
@@ -524,6 +535,10 @@ def _price_structure(
     cert.book_observed_at = [
         iso(consequent.book.observed_at), iso(antecedent.book.observed_at)
     ]
+    if consequent.book.observed_at and antecedent.book.observed_at:
+        cert.snapshot_skew_seconds = abs(
+            (consequent.book.observed_at - antecedent.book.observed_at).total_seconds()
+        )
 
     top_yes = consequent.book.best_ask(Side.YES)
     top_no = antecedent.book.best_ask(Side.NO)
@@ -646,6 +661,13 @@ def _price_structure(
         reasons.append(
             f"${quantize_usd(cert.total_cost_usd)} of matched depth is below the "
             f"${quantize_usd(min_notional_usd)} minimum"
+        )
+    if cert.snapshot_skew_seconds is None:
+        reasons.append("snapshot skew unknown")
+    elif cert.snapshot_skew_seconds > max_snapshot_skew_seconds:
+        reasons.append(
+            f"legs were quoted {cert.snapshot_skew_seconds:.0f}s apart, over the "
+            f"{max_snapshot_skew_seconds:.0f}s limit; they never coexisted"
         )
 
     cert.accepted = not reasons

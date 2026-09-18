@@ -1,0 +1,102 @@
+# Falsification report
+
+Adversarial audit of the deterministic-arbitrage claim. The brief was to try to break
+it, not to confirm it. It broke.
+
+## BUG-1 — every positive result was built from quotes that never coexisted
+
+**BUG.** Multi-leg structures were priced from books fetched independently per market
+via `latest_orderbook(session, market_id)`. Nothing required the legs to come from the
+same moment, and nothing measured how far apart they were.
+
+**IMPACT.** All three positive-net-floor structures in the stored-book scan were
+non-simultaneous:
+
+| structure | reported net floor | leg-to-leg skew |
+|---|---|---|
+| KXSOLD-26SEP1817 | **+$33.48 "guaranteed"** | **10,762 s = 2.99 hours** |
+| KXBTCD-26SEP1710 | +$26.29 | 454 s |
+| KXBTCD-26SEP1710 | +$3.74 | 455 s |
+
+The headline result — a $33.48 guaranteed profit on 4,700 sets — compared a Solana
+quote from 02:10 against one from 05:10. It was never purchasable. Across all 725
+certificates only 223 had legs within one second of each other.
+
+**WHY PREVIOUS TESTS MISSED IT.** Every fixture builds its books with `utcnow()` inside
+one test function, so fixture skew is microseconds. The suite could not have caught
+this: it only ever tested the simultaneous case, and the field that would have revealed
+the asynchronous one did not exist.
+
+**FIX.** `snapshot_skew_seconds` is computed on every certificate from the books' own
+`observed_at`, gated on acceptance at a default of 1.0 s, reported on rejection, and
+exposed as `--max-snapshot-skew-seconds`.
+
+**REGRESSION TEST.** `test_non_simultaneous_legs_are_refused` rebuilds the exact KXSOLD
+skew (10,762 s), asserts the arithmetic still shows a positive net floor, and asserts
+the structure is refused anyway.
+
+**HISTORICAL RESULTS INVALIDATED: YES.** Every previously reported positive net floor
+is withdrawn. Re-run under the gate, the stored-book scan accepts zero structures.
+
+### Sensitivity — profitability exists only in the stale window
+
+Quote-age relaxed to 24 h so staleness is not the binding gate; only the simultaneity
+limit varies:
+
+| max leg-to-leg skew | accepted structures |
+|---|---|
+| 1 s | **0** |
+| 100 s | **0** |
+| 250 s | **0** |
+| 500 s | 2 |
+| 1000 s | 2 |
+| unlimited | 2 |
+
+Profit appears only once legs quoted 250–500 s apart may be combined. This is
+`STALE_COMBINATION_RISK`, and it disqualifies the result as evidence of anything
+tradeable.
+
+## BUG-2 — the fee was measured at a size nobody trades
+
+**BUG.** The first profitability-frontier measurement computed the all-in fee at
+quantity 1, where Kalshi's ceil-to-the-cent rounding puts a floor of 1c on each leg
+regardless of the true rate.
+
+**IMPACT.** It reported a 2c fee floor per set and therefore overstated the economic
+barrier by roughly 60%. This was my own measurement, caught before it reached a
+conclusion — but it would have made the market look further from profitable than it is.
+
+**FIX.** Fees are computed at the accretive executable size, where the cent ceiling
+amortises. Measured floor: **0.63c – 1.31c per set**, median 1.21c.
+
+**REGRESSION TEST.** Existing fee tests cover the rounding; the frontier script now
+sizes first and prices second. No production code was wrong.
+
+## What survived the audit
+
+* The settlement mathematics. Payoff floors, implication containment including the
+  asymmetric `>=` vs `>` boundary, and grid-based partition proofs all hold.
+* Marginal sizing. Independently re-derived; average-cost sizing was already fixed and
+  the fix is load-bearing (a $94 swing on one real structure).
+* Fail-closed behaviour on incomplete partitions. `KXBTC-26SEP1709` offered 5 rungs of
+  a 168-rung event at $0.82 against a $1 floor that does not hold, and was refused.
+* Replay determinism. 725 of 725 certificates recompute identically offline.
+
+## Negative controls
+
+13 controls, each breaking exactly one condition, all refusing as required: reversed
+implication, mismatched settlement source, non-simultaneous legs, 10x fees, thin depth,
+empty book side, equally-stale books, and five ladder-promotion controls asserting that
+an unmeasured gate reads NOT_ESTABLISHED rather than PASS.
+
+## Not yet tested — and therefore not claimed
+
+* **Sequential execution.** All figures assume `ATOMIC_THEORETICAL` fills. Two-leg
+  Kalshi orders are not atomic; a worst-case sequential model is not implemented, so no
+  figure here is an executable-profit claim.
+* **Maker fills.** Not modelled. No result assumes one.
+* **Historical L2.** The store holds snapshots, not a replayable historical order book,
+  so `HISTORICAL_EXECUTION_PROOF_UNAVAILABLE`. Forward-collected snapshots are the only
+  admissible evidence.
+* **Forward sample.** 0 independent event-days under the frozen rules against a
+  pre-registered minimum of 20.
