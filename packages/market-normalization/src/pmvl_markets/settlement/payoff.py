@@ -77,6 +77,14 @@ class LinkageRelation(StrEnum):
     #: Inverted mapping: YES here means NO there. Used when one venue words the
     #: question as the negation of the other's.
     COMPLEMENTARY = "complementary"
+    #: One-directional: ``contract_a`` settling YES forces ``contract_b`` to YES,
+    #: but not the reverse. "BTC above $80k" implies "BTC above $70k".
+    #:
+    #: Weaker than IDENTICAL on purpose, and that weakness is the point: it prunes
+    #: exactly one joint state, (a=YES, b=NO), and leaves (a=NO, b=YES) reachable.
+    #: A structure built on it therefore has to earn its floor from the three states
+    #: that remain rather than from the two an equality would leave.
+    IMPLIES = "implies"
 
 
 class LinkageEvidence(StrEnum):
@@ -572,6 +580,15 @@ def _contradicts_linkage(
             if link.relation is LinkageRelation.IDENTICAL and a != b:
                 return True
             if link.relation is LinkageRelation.COMPLEMENTARY and a == b:
+                return True
+            if (
+                link.relation is LinkageRelation.IMPLIES
+                and a is SettlementResult.YES
+                and b is SettlementResult.NO
+            ):
+                # a implies b, so a true with b false cannot happen. Only this one
+                # ordering is pruned: (a=NO, b=YES) is entirely possible and must
+                # survive, because it is the state the structure actually profits in.
                 return True
             continue
 

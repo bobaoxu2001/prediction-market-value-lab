@@ -27,7 +27,7 @@ from pmvl_markets.execution.funding import BalanceSource, FundingLedger
 from pmvl_markets.execution.shadow_pairs import MarketBook, run_shadow_pairs
 from pmvl_markets.matching.cancellation import AttestationStore, draft_attestation
 from pmvl_shared.enums import MarketStatus, Platform
-from pmvl_shared.timeutil import utcnow
+from pmvl_shared.timeutil import iso, utcnow
 
 app = typer.Typer(
     add_completion=False,
@@ -250,3 +250,202 @@ def replay(
             for note in leg["notes"]:
                 console.print(f"        [dim]{note}[/dim]")
         console.print(f"    assessment: {journal['assessment']['blocking_reasons'] or 'all axes pass'}")
+
+
+# ---------------------------------------------------------------- implication
+def _strike_of(market) -> tuple[str, Decimal] | None:
+    """The comparator and the strike it applies to, or None when this is not a rung.
+
+    Kalshi puts an upward comparator's strike in ``floor_strike`` and a downward one's
+    in ``cap_strike``. Reading the wrong one silently produces a threshold that is
+    ``None``, which would then compare equal across a whole ladder and assert
+    implications that do not exist.
+    """
+    comparator = (market.strike_type or "").lower()
+    if comparator in {"greater", "greater_or_equal"}:
+        strike = market.floor_strike
+    elif comparator in {"less", "less_or_equal"}:
+        strike = market.cap_strike
+    else:
+        return None
+    if strike is None:
+        return None
+    return comparator, strike
+
+
+def _load_strike_families(max_age_hours: int, min_members: int = 2):
+    """Group booked, open markets into same-event threshold ladders."""
+    from collections import defaultdict
+
+    from sqlalchemy import select
+
+    from pmvl_markets.arbitrage.implication import StrikeContract
+    from pmvl_markets.arbitrage.pipeline import (
+        _market_from_row,
+        latest_orderbook,
+        orderbook_from_snapshot,
+    )
+    from pmvl_shared.db import session_scope
+    from pmvl_shared.db.models import Market, OrderbookSnapshot
+    from pmvl_shared.enums import DataProvenance
+
+    cutoff = utcnow() - timedelta(hours=max_age_hours)
+    families: dict[str, list] = defaultdict(list)
+    skipped = {"not_a_rung": 0, "no_book": 0}
+    with session_scope() as db:
+        booked = db.scalars(
+            select(OrderbookSnapshot.market_id)
+            .where(OrderbookSnapshot.observed_at > cutoff)
+            .distinct()
+        ).all()
+        rows = db.scalars(
+            select(Market).where(
+                Market.id.in_(booked),
+                Market.status == MarketStatus.OPEN.value,
+                Market.provenance != DataProvenance.DEMO.value,
+            )
+        ).all()
+        for row in rows:
+            market = _market_from_row(row)
+            rung = _strike_of(market)
+            if rung is None:
+                skipped["not_a_rung"] += 1
+                continue
+            snapshot = latest_orderbook(db, row.id)
+            if snapshot is None:
+                skipped["no_book"] += 1
+                continue
+            book = orderbook_from_snapshot(db, snapshot, row)
+            if book.is_empty:
+                skipped["no_book"] += 1
+                continue
+            comparator, strike = rung
+            key = f"{market.platform.value}:{market.platform_event_id or market.series_ticker}"
+            families[key].append(
+                StrikeContract(
+                    market=market, book=book, comparator=comparator,
+                    threshold=strike, market_id=row.id,
+                )
+            )
+    return (
+        {k: v for k, v in families.items() if len(v) >= min_members},
+        skipped,
+    )
+
+
+@app.command("implication-scan")
+def implication_scan(
+    max_age_hours: int = typer.Option(24, help="How old a stored book may be"),
+    max_quote_age_seconds: int = typer.Option(
+        300, help="How old a book may be and still be priced"
+    ),
+    min_net_floor: float = typer.Option(
+        0.01, help="Net floor a structure must clear, in dollars"
+    ),
+    max_sets: int = typer.Option(10000, help="Size ceiling per structure"),
+    min_notional: float = typer.Option(0.0, help="Minimum matched notional"),
+    out: Path = typer.Option(None, help="Write certificates and inputs as JSON"),
+    show: int = typer.Option(5, help="How many top structures to print"),
+) -> None:
+    """Find same-venue threshold structures whose payoff floor exceeds their cost.
+
+    Buys YES on the weaker claim and NO on the stronger one. Because the stronger
+    claim implies the weaker, the state that would leave the pair unpaid does not
+    exist, so the floor is $1 per set. The decision is made on that floor against real
+    ask depth and fees - never on a price anomaly.
+    """
+    from pmvl_markets.arbitrage.implication import ProofStatus, prove_implication, scan_implication_family
+
+    families, skipped = _load_strike_families(max_age_hours)
+    console.print(
+        f"[bold]{len(families)}[/bold] booked threshold families "
+        f"({sum(len(v) for v in families.values())} rungs); "
+        f"skipped {skipped['not_a_rung']} non-rung, {skipped['no_book']} unbooked"
+    )
+
+    certificates = []
+    proof_counts: dict[str, int] = {}
+    for _key, rungs in sorted(families.items()):
+        ordered = sorted(rungs, key=lambda c: c.threshold)
+        for i, weaker in enumerate(ordered):
+            for stronger in ordered[i + 1 :]:
+                p = prove_implication(stronger, weaker)
+                if not p.holds:
+                    p = prove_implication(weaker, stronger)
+                proof_counts[p.status.value] = proof_counts.get(p.status.value, 0) + 1
+        certificates.extend(
+            scan_implication_family(
+                rungs,
+                max_sets=Decimal(str(max_sets)),
+                min_net_floor_usd=Decimal(str(min_net_floor)),
+                max_quote_age_seconds=max_quote_age_seconds,
+                min_notional_usd=Decimal(str(min_notional)),
+            )
+        )
+
+    accepted = [c for c in certificates if c.accepted]
+    console.print(
+        f"pairs examined: {sum(proof_counts.values())}  "
+        + "  ".join(f"{k}={v}" for k, v in sorted(proof_counts.items()))
+    )
+    console.print(
+        f"[bold]certified structures:[/bold] {len(certificates)}   "
+        f"[bold green]accepted: {len(accepted)}[/bold green]"
+    )
+
+    # Rank by how close the structure came, not by net floor: every rejected pair has
+    # a net floor of zero, so sorting on it shows an arbitrary slice of the rejects
+    # and hides which ones nearly cleared.
+    def closeness(cert):
+        if cert.accepted:
+            return (0, -cert.net_floor_usd)
+        if cert.best_combined_ask is None:
+            return (2, Decimal("0"))
+        return (1, cert.best_combined_ask)
+
+    ranked = sorted(certificates, key=closeness)[:show]
+    priced = [c.best_combined_ask for c in certificates if c.best_combined_ask is not None]
+    if priced:
+        console.print(
+            f"cheapest combined ask across all structures: [bold]${min(priced)}[/bold] "
+            f"(a structure clears when this is under $1.00 net of fees)"
+        )
+    for cert in ranked:
+        mark = "[green]ACCEPT[/green]" if cert.accepted else "[yellow]reject[/yellow]"
+        console.print(
+            f"\n  {mark} {cert.event_key}  net_floor=${cert.net_floor_usd:.4f} "
+            f"qty={cert.quantity} cost=${cert.total_cost_usd:.2f} "
+            f"status={cert.structural_status}"
+        )
+        for leg in cert.legs:
+            console.print(
+                f"      {leg['role']:28} {leg['contract_key']:26} "
+                f"{leg['side']:3} {leg['predicate']:26} vwap={leg['vwap']}"
+            )
+        if not cert.accepted:
+            console.print(f"      [dim]{cert.rejection_reason}[/dim]")
+
+    if out:
+        out.parent.mkdir(parents=True, exist_ok=True)
+        out.write_text(
+            json.dumps(
+                {
+                    "generated_at": iso(utcnow()),
+                    "parameters": {
+                        "max_age_hours": max_age_hours,
+                        "max_quote_age_seconds": max_quote_age_seconds,
+                        "min_net_floor_usd": min_net_floor,
+                        "max_sets": max_sets,
+                        "min_notional_usd": min_notional,
+                    },
+                    "families": len(families),
+                    "rungs": sum(len(v) for v in families.values()),
+                    "proof_counts": proof_counts,
+                    "accepted": len(accepted),
+                    "certificates": [c.as_dict() for c in certificates],
+                },
+                indent=2,
+                default=str,
+            )
+        )
+        console.print(f"\n[green]wrote {out}[/green]")
