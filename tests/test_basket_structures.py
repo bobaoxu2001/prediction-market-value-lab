@@ -251,3 +251,53 @@ def test_interval_extraction_covers_every_comparator_kalshi_uses():
     # A comparator this route cannot reason about yields nothing rather than a guess.
     assert interval_for(_market("M", "custom", D("1"), D("2"))) is None
     assert interval_for(_market("M", "greater", None, None)) is None
+
+
+def test_a_nested_ladder_is_implications_not_a_partition():
+    """The two same-venue routes must not both claim the same structure.
+
+    `KXBTCMINMON` lists eighteen rungs all of the form "BTC minimum below X". They are
+    nested, not disjoint - every rung implies the next - so a partition proof has to
+    refuse them, and the implication route has to accept them. Getting this backwards
+    is expensive in one direction: treating a nested ladder as an exhaustive basket
+    would claim an all-NO floor of $(N-1) for a structure where every rung can settle
+    NO together.
+    """
+    from pmvl_markets.arbitrage.implication import (
+        ProofStatus,
+        StrikeContract,
+        prove_implication,
+    )
+
+    nested = [("L325", "less", None, D("325")), ("L350", "less", None, D("350"))]
+    buckets = _basket(nested)
+
+    # Not a partition: both rungs are unbounded below and they overlap.
+    assert prove_partition(buckets).proven is False
+
+    # But a clean implication: below 325 implies below 350.
+    rungs = [
+        StrikeContract(b.market, b.book, b.market.strike_type, b.market.cap_strike)
+        for b in buckets
+    ]
+    proof = prove_implication(rungs[0], rungs[1])
+    assert proof.status is ProofStatus.PROVEN
+
+
+def test_a_bucketed_partition_yields_no_implication_between_its_tails():
+    """And the converse: the tails of a partition point opposite ways."""
+    from pmvl_markets.arbitrage.implication import (
+        ProofStatus,
+        StrikeContract,
+        prove_implication,
+    )
+
+    buckets = _basket()
+    assert prove_partition(buckets).proven is True
+
+    low = next(b for b in buckets if b.market.strike_type == "less")
+    high = next(b for b in buckets if b.market.strike_type == "greater")
+    a = StrikeContract(high.market, high.book, "greater", high.market.floor_strike)
+    b = StrikeContract(low.market, low.book, "less", low.market.cap_strike)
+    assert prove_implication(a, b).status is ProofStatus.REFUTED
+    assert prove_implication(b, a).status is ProofStatus.REFUTED

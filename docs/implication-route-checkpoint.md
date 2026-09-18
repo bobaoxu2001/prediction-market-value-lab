@@ -134,13 +134,69 @@ Stored-book run: 20 baskets, 40 certificates, **10 partitions proven** (the comp
 six-rung weather baskets, grid=1), **0 accepted** — a rung lacked an ask, or the
 combined ask did not clear ($1.10 against a $1 floor on KXHIGHLAX-26SEP18).
 
+### Route B live result
+
+Command: `pmvl pair basket-scan --live --event-prefix KXHIGH --live-events 12 --max-rungs-per-event 8`
+
+10 complete weather baskets, 60 of 72 rungs quoted live, 20 certificates,
+**20 of 20 partitions proven** (grid=1, 6/6 rungs each), **0 accepted**.
+
+| event | direction | floor/set | combined ask | gap |
+|---|---|---|---|---|
+| KXHIGHMIA-26SEP18 | all_no | $5 | **$4.9800** | **−$0.0200** |
+| KXHIGHDEN-26SEP18 | all_no | $5 | $5.0200 | +$0.0200 |
+| KXHIGHCHI-26SEP18 | all_no | $5 | $5.0000 | ±$0.0000 |
+| KXHIGHAUS-26SEP18 | all_yes | $1 | $1.0500 | +$0.0500 |
+| KXHIGHLAX-26SEP18 | all_yes | $1 | $1.0700 | +$0.0700 |
+| KXHIGHCHI-26SEP18 | all_yes | $1 | $1.0800 | +$0.0800 |
+| KXHIGHMIA/NY-26SEP18 | all_yes | $1 | $1.0900 | +$0.0900 |
+
+One structure priced **below** its floor at top of book. It still loses:
+
+```
+event        KXHIGHMIA-26SEP18   all-NO basket
+partition    PROVEN, grid 1, 6 of 6 rungs
+assumption   observation reported on a grid of 1, inferred from rung boundaries
+
+  T92     (92, inf)   NO  qty 3  vwap 0.9900  1 level   fee $0.01
+  T85     (-inf, 85)  NO  qty 3  vwap 0.9900  1 level   fee $0.01
+  B91.5   [91, 92]    NO  qty 3  vwap 0.7200  1 level   fee $0.05
+  B89.5   [89, 90]    NO  qty 3  vwap 0.5067  2 levels  fee $0.06
+  B87.5   [87, 88]    NO  qty 3  vwap 0.8200  1 level   fee $0.04
+  B85.5   [85, 86]    NO  qty 3  vwap 0.9600  1 level   fee $0.01
+
+quantity      3 sets      (depth ran out; the 4th set costs $5 or more)
+payoff floor  $15.0000
+gross cost    $14.9600    <- 4c of gross edge
+fees           $0.1800    <- 4.5x the gross edge
+total cost    $15.1401
+NET FLOOR     -$0.1401    REJECTED
+```
+
+The structure is real, the partition is proven, the edge is real and 4 cents. Six legs
+of Kalshi taker fee cost 18 cents. This is what the route is for: the arithmetic is
+decided on the floor, and the floor says no.
+
 ## Next actions
 
-1. `--live` seeds ladders from prior book coverage; 200 of 1,864 requested rungs returned
-   a book on the wide sweep. Quote by event directly and record which rungs are unquoted.
-2. Cross-venue equivalence remains gated where it was; neither same-venue route touches it.
-3. Route B live sweep over complete weather baskets — the cheapest structures to quote in
-   full, at six rungs each.
+1. Implication `--live` still seeds from prior book coverage; 200 of 1,864 rungs returned
+   a book on the wide sweep. It should take `--event-prefix` the way basket-scan now does,
+   so today's ladders — which have no history to seed from — are reachable.
+2. Weather baskets are the liquid, completable structures and there are six cities per
+   day. A scheduled re-quote near each city's settlement would sample the window where
+   the books are thickest; nothing here polls, by design.
+3. `KXBTCMINMON-BTC-26SEP30` is 18 rungs all `less` — a nested ladder, not a partition.
+   The basket prover correctly refuses it; it belongs to the implication route, which
+   does handle `less`. Confirm it is being picked up there.
+4. Cross-venue equivalence remains gated where it was; neither same-venue route touches it.
+
+## Resource limits hit
+
+Kalshi's circuit breaker opened after 8 failures when the live basket path requested
+1,379 rungs in one pass - most of them rungs of 168-rung Bitcoin ladders that can never
+be completed within a request budget. Event selection now caps on the venue's true rung
+count, so only completable baskets are fetched. No retry was attempted into the open
+circuit.
 
 ## Boundaries held
 

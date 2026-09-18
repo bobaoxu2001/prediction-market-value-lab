@@ -675,7 +675,11 @@ async def _fetch_books_once(markets):
 
 
 def _load_baskets(
-    max_age_hours: int, live: bool, live_events: int, max_rungs_per_event: int = 20
+    max_age_hours: int,
+    live: bool,
+    live_events: int,
+    max_rungs_per_event: int = 20,
+    event_prefix: str = "",
 ):
     """Group booked, open markets into same-event outcome baskets.
 
@@ -704,25 +708,46 @@ def _load_baskets(
             .distinct()
             .scalar_subquery()
         )
-        events = db.execute(
-            select(Market.platform_event_id, func.count(Market.id))
+        # Size the event by every rung the venue lists, not by the rungs that happen
+        # to have a book. Counting booked rungs lets a 188-rung Bitcoin ladder through
+        # a "no larger than 8" cap because only 8 of its rungs were ever quoted - and
+        # the cap exists precisely to exclude ladders that cannot be completed.
+        ladder_rungs = (
+            select(
+                Market.platform_event_id.label("evt"),
+                func.count(Market.id).label("total"),
+            )
             .where(
+                Market.platform == Platform.KALSHI.value,
                 Market.status == MarketStatus.OPEN.value,
                 Market.provenance != DataProvenance.DEMO.value,
                 Market.platform_event_id.is_not(None),
-                Market.id.in_(recently_booked),
+                Market.strike_type.in_(
+                    ["greater", "greater_or_equal", "less", "less_or_equal", "between"]
+                ),
             )
             .group_by(Market.platform_event_id)
-            # Only baskets small enough to quote in full. A partition is all-or-nothing
-            # - a 170-rung Bitcoin ladder needs all 170 books before its floor means
-            # anything, which no sane request budget buys, and asking for them anyway
-            # tripped the provider's circuit breaker for no gain. Six-rung weather
-            # baskets are completable in one batch.
-            .having(
-                func.count(Market.id) >= 2,
-                func.count(Market.id) <= max_rungs_per_event,
+            .subquery()
+        )
+        events = db.execute(
+            select(ladder_rungs.c.evt, ladder_rungs.c.total)
+            .where(
+                ladder_rungs.c.total >= 2,
+                ladder_rungs.c.total <= max_rungs_per_event,
+                # Traded at least once recently: a ladder nobody quotes is not worth a
+                # request, and this is only a seed - the books themselves are fetched
+                # fresh when --live.
+                ladder_rungs.c.evt.like(f"{event_prefix}%")
+                if event_prefix
+                # Traded at least once recently: a ladder nobody quotes is not worth a
+                # request, and this is only a seed - the books themselves are fetched
+                # fresh when --live. An explicit prefix overrides it, because today's
+                # markets have no history yet and are exactly the ones worth quoting.
+                else ladder_rungs.c.evt.in_(
+                    select(Market.platform_event_id).where(Market.id.in_(recently_booked))
+                ),
             )
-            .order_by(func.count(Market.id).desc())
+            .order_by(ladder_rungs.c.total.desc())
             .limit(live_events if live else 10_000)
         ).all()
         event_ids = [e[0] for e in events]
@@ -786,6 +811,10 @@ def basket_scan(
     max_rungs_per_event: int = typer.Option(
         20, help="Skip baskets too large to quote in full; a partition needs every rung"
     ),
+    event_prefix: str = typer.Option(
+        "", help="Target events by id prefix, e.g. KXHIGHNY-26SEP18. Overrides the "
+                 "recently-booked seed, which cannot see markets listed today."
+    ),
     max_age_hours: int = typer.Option(24, help="How old a stored book may be"),
     max_quote_age_seconds: int = typer.Option(300, help="Freshness limit for pricing"),
     min_net_floor: float = typer.Option(0.01, help="Net floor a basket must clear"),
@@ -803,7 +832,7 @@ def basket_scan(
     from pmvl_markets.arbitrage.basket import scan_basket
 
     baskets, rung_total, rungs_in_event = _load_baskets(
-        max_age_hours, live, live_events, max_rungs_per_event
+        max_age_hours, live, live_events, max_rungs_per_event, event_prefix
     )
     console.print(
         f"[bold]{len(baskets)}[/bold] booked baskets "
