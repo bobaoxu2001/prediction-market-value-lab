@@ -213,6 +213,58 @@ Truncation loses none of them, and their jaccard is roughly double the 0.28 floo
 pairs are proposed correctly and fail later, at equivalence — so the prescreen is not
 what is stopping them either.
 
+### The full chain, measured end to end
+
+Two corrections above each named a single culprit, and each was measuring one link of a
+chain. Here is the whole thing, on the production path:
+
+| stage | survivors | what removes the rest |
+|---|---|---|
+| open markets | ~264,000 | — |
+| `load_matchable_markets` | **10,662** (9,075 K + 1,587 P) | `horizons_for` drops anything outside the ranking horizons — 96% |
+| candidates proposed | **1,860** | prescreen (cap of 4,000 never reached) |
+| not `INCOMPATIBLE` at verify | **14** | settlement terms genuinely differ — 99.2% |
+| `VERIFIED_EQUIVALENT_*` | **0** | — |
+| pairs with a book on both sides | 224 of 111,838 proposable universe-wide | ingest fetches 250 books per cycle |
+
+**The 99.2% rejection at verify is correct, and it is the real answer.** The venues
+largely do not list the same contracts. A representative rejected pair:
+
+```
+Kalshi      "Bitcoin price on Sep 17, 2026?"
+            threshold 84,799.99 | source cf_benchmarks | basis average
+Polymarket  "Will the price of Bitcoin be above $84,000 on September 18?"
+            threshold 84,000    | source uma_oracle    | basis close_at_cutoff
+```
+
+Four independent differences — strike, date, settlement source, measurement basis. Any
+one of them breaks the hedge. Buying both sides is not arbitrage; it is four
+simultaneous bets that happen to be about the same coin. The matcher refusing this is
+the system working, not failing.
+
+Top rejection reasons across the 1,846 incompatible verdicts: different thresholds
+(980), cutoffs differing by hours to days (992 + 233), threshold not established on
+both sides (829), low entity overlap (818), settlement source unidentifiable on one
+side (581), comparator unestablished (404), measurement basis stated on one side only
+(231).
+
+### Why the book budget, though real, is not the fix to reach for first
+
+A pair-aware order-book reserve was measured and is genuinely effective in isolation:
+with the same 250-book budget, selecting by *pair* rather than independently per venue
+delivers **366 complete pairs instead of 62**, a 6x improvement at zero extra API cost.
+The reason the current policy does so poorly is structural rather than a misjudgement —
+`select_for_orderbooks` runs once per venue over that venue's markets only, so it cannot
+see pairs, and picking the top 125 on each side independently almost never yields a
+pair.
+
+It was **not implemented**, because the measurement that justified it does not survive
+the rest of the chain. Such a reserve would have to be keyed on the persisted
+`market_matches` table, and that table would hold **14 rows** — every other candidate is
+correctly rejected upstream. Buying books for 14 pairs does not change anything. The fix
+is sound and should be revisited, but only after the stages above it admit enough pairs
+to make it matter.
+
 ### Gaps this exposes### Gaps this exposes
 
 1. **Recall ceiling of 0.098%.** 117 pairs out of 119,520 possible. "No opportunity"
@@ -503,7 +555,9 @@ Each gate below is currently **closed**. None may be opened by configuration.
 
 | # | Gate | Evidence today | Missing | Minimum action |
 |---|---|---|---|---|
-| 0 | A proposed pair can actually be priced | **224 of 111,838** proposable pairs have ever had a book on both sides; 86 within 24h | Order-book coverage: ingest fetches books for 500 of 250,018 open Kalshi markets (0.20%) | Fetch books for the markets the matcher actually pairs, instead of the current selection. This gate is upstream of every other one |
+| 0 | Two settlement-identical contracts exist to pair at all | **14 of 1,860** candidates survive verify; **0** reach `VERIFIED_EQUIVALENT_*` | The venues largely do not list the same contract — different strike, date, settlement source and measurement basis | Not a code fix. Either find the categories where terms do coincide, or accept that this pair universe is small |
+| 0b | Enough markets reach the matcher | 10,662 of ~264,000 | `load_matchable_markets` applies the ranking horizon filter, which `select_for_orderbooks` was already fixed *not* to apply for exactly this reason | Drop the horizon filter from the matching universe; matching is a claim about rules, not about holding period |
+| 0c | A matched pair can be priced | 224 of 111,838 proposable had books on both sides | Books are selected independently per venue, so pairs are rarely completed; 250 books/cycle | Pair-aware reserve, measured at 6x (366 vs 62) — but worth nothing until 0 and 0b admit more pairs |
 | 1 | A real pair reaches `VERIFIED_EQUIVALENT_*` | 0 of 117 | `threshold`, `operator`, `time`, `data_source`, `settlement_rule` all UNKNOWN on the closest candidates | Fix rule extraction so these components resolve; re-measure the funnel |
 | 2 | Cancellation terms attested on both venues | 0 attestations | A person has to read two rule pages per pair | Run `pair attest-draft`, confirm against published rules, sign `reviewed_by` |
 | 3 | Outcome↔token mapping verified | 49% of Polymarket markets | The other 51% are `Over/Under`, `Up/Down`, team names | Derive the mapping from the question text, not the label; or restrict to `Yes/No` markets |
