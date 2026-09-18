@@ -342,3 +342,53 @@ def test_marginal_sizing_beats_average_sizing_on_a_thin_top_of_book():
     assert cert.net_floor_usd > 0
     assert cert.structural_status == "guaranteed"
     assert cert.accepted is True
+
+
+def test_the_scanner_is_a_pure_function_of_its_serialised_inputs():
+    """Serialise the books, reload them, rescan: every number must land identically.
+
+    This is what makes a certificate checkable. If the verdict depended on anything
+    outside the saved inputs, a past result could never be audited - the book it was
+    priced against is gone minutes later, and a disagreement would be indistinguishable
+    from the market having moved.
+    """
+    import json
+
+    from pmvl_shared.schemas import NormalizedMarket, OrderBook
+
+    rungs = [
+        _rung("A", 60000, yes_ask="0.70", no_ask="0.31"),
+        _rung("B", 70000, yes_ask="0.40", no_ask="0.61"),
+        _rung("C", 80000, yes_ask="0.30", no_ask="0.48"),
+    ]
+    first = scan_implication_family(rungs)
+
+    wire = json.dumps([
+        {
+            "comparator": c.comparator,
+            "threshold": str(c.threshold),
+            "market": c.market.model_dump(mode="json"),
+            "book": c.book.model_dump(mode="json"),
+        }
+        for c in rungs
+    ])
+    restored = [
+        StrikeContract(
+            market=NormalizedMarket.model_validate(r["market"]),
+            book=OrderBook.model_validate(r["book"]),
+            comparator=r["comparator"],
+            threshold=D(r["threshold"]),
+        )
+        for r in json.loads(wire)
+    ]
+    second = scan_implication_family(restored)
+
+    assert len(first) == len(second)
+    for a, b in zip(first, second):
+        assert a.quantity == b.quantity
+        assert a.payoff_floor_usd == b.payoff_floor_usd
+        assert a.gross_cost_usd == b.gross_cost_usd
+        assert a.fees_usd == b.fees_usd
+        assert a.net_floor_usd == b.net_floor_usd
+        assert a.structural_status == b.structural_status
+        assert a.proof.status is b.proof.status

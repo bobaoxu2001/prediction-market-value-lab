@@ -333,8 +333,103 @@ def _load_strike_families(max_age_hours: int, min_members: int = 2):
     )
 
 
+async def _live_strike_families(max_events: int, max_rungs: int):
+    """Fetch fresh books for whole ladders, so every rung is quoted at once.
+
+    Whole ladders rather than individual markets: a structure needs both rungs, and
+    two books fetched minutes apart are not a pair - the second leg's price is a
+    different market state from the first's. Fetching an event together keeps the
+    cross-leg time skew to the width of one batch, which is then recorded.
+    """
+    from collections import defaultdict
+
+    from sqlalchemy import func, select
+
+    from pmvl_markets.arbitrage.implication import StrikeContract
+    from pmvl_markets.arbitrage.pipeline import _market_from_row
+    from pmvl_markets.providers.kalshi import KalshiProvider
+    from pmvl_shared.db import session_scope
+    from pmvl_shared.db.models import Market
+    from pmvl_shared.enums import DataProvenance
+
+    from pmvl_shared.db.models import OrderbookSnapshot
+
+    with session_scope() as db:
+        # Seed from ladders that are known to trade, then quote them fresh.
+        #
+        # Ranking by rung count instead picks the largest ladders, which on Kalshi are
+        # the far-dated crypto boards carrying two hundred strikes and no resting
+        # size: 240 rungs were requested that way and every one came back empty. Prior
+        # book coverage is the cheap proxy for "someone quotes this", and it is only a
+        # seed - every price used below is fetched fresh.
+        recently_booked = (
+            select(OrderbookSnapshot.market_id)
+            .where(OrderbookSnapshot.observed_at > utcnow() - timedelta(days=7))
+            .distinct()
+            .scalar_subquery()
+        )
+        events = db.execute(
+            select(Market.platform_event_id, func.count(Market.id).label("n"))
+            .where(
+                Market.platform == Platform.KALSHI.value,
+                Market.status == MarketStatus.OPEN.value,
+                Market.provenance != DataProvenance.DEMO.value,
+                Market.platform_event_id.is_not(None),
+                Market.id.in_(recently_booked),
+                Market.strike_type.in_(
+                    ["greater", "greater_or_equal", "less", "less_or_equal"]
+                ),
+            )
+            .group_by(Market.platform_event_id)
+            .having(func.count(Market.id) >= 2)
+            .order_by(func.count(Market.id).desc())
+            .limit(max_events)
+        ).all()
+        event_ids = [e[0] for e in events]
+        rows = db.scalars(
+            select(Market).where(
+                Market.platform_event_id.in_(event_ids),
+                Market.status == MarketStatus.OPEN.value,
+                Market.platform == Platform.KALSHI.value,
+            )
+        ).all()
+        markets = [_market_from_row(r) for r in rows]
+
+    by_event: dict[str, list] = defaultdict(list)
+    for m in markets:
+        if _strike_of(m) is not None:
+            by_event[m.platform_event_id or ""].append(m)
+    trimmed: list = []
+    for _evt, ms in by_event.items():
+        trimmed.extend(sorted(ms, key=lambda m: m.platform_market_id)[:max_rungs])
+
+    provider = KalshiProvider()
+    try:
+        books = await provider.get_orderbooks(trimmed)
+    finally:
+        await provider.aclose()
+
+    families: dict[str, list] = defaultdict(list)
+    for m in trimmed:
+        book = books.get(m.platform_market_id)
+        if book is None or book.is_empty:
+            continue
+        comparator, strike = _strike_of(m)
+        families[f"kalshi:{m.platform_event_id}"].append(
+            StrikeContract(market=m, book=book, comparator=comparator, threshold=strike)
+        )
+    return {k: v for k, v in families.items() if len(v) >= 2}, {
+        "requested": len(trimmed), "booked": sum(len(v) for v in families.values())
+    }
+
+
 @app.command("implication-scan")
 def implication_scan(
+    live: bool = typer.Option(
+        False, "--live", help="Fetch fresh public books instead of reading stored ones"
+    ),
+    live_events: int = typer.Option(6, help="How many ladders to quote when --live"),
+    live_rungs: int = typer.Option(40, help="Max rungs per ladder when --live"),
     max_age_hours: int = typer.Option(24, help="How old a stored book may be"),
     max_quote_age_seconds: int = typer.Option(
         300, help="How old a book may be and still be priced"
@@ -356,12 +451,19 @@ def implication_scan(
     """
     from pmvl_markets.arbitrage.implication import ProofStatus, prove_implication, scan_implication_family
 
-    families, skipped = _load_strike_families(max_age_hours)
-    console.print(
-        f"[bold]{len(families)}[/bold] booked threshold families "
-        f"({sum(len(v) for v in families.values())} rungs); "
-        f"skipped {skipped['not_a_rung']} non-rung, {skipped['no_book']} unbooked"
-    )
+    if live:
+        families, skipped = asyncio.run(_live_strike_families(live_events, live_rungs))
+        console.print(
+            f"[bold]{len(families)}[/bold] ladders quoted live "
+            f"({skipped['booked']} of {skipped['requested']} rungs returned a book)"
+        )
+    else:
+        families, skipped = _load_strike_families(max_age_hours)
+        console.print(
+            f"[bold]{len(families)}[/bold] booked threshold families "
+            f"({sum(len(v) for v in families.values())} rungs); "
+            f"skipped {skipped['not_a_rung']} non-rung, {skipped['no_book']} unbooked"
+        )
 
     certificates = []
     proof_counts: dict[str, int] = {}
@@ -442,6 +544,22 @@ def implication_scan(
                     "rungs": sum(len(v) for v in families.values()),
                     "proof_counts": proof_counts,
                     "accepted": len(accepted),
+                    # The inputs travel with the verdicts. A certificate that cannot
+                    # be recomputed is a claim, not a result: the books it was priced
+                    # against are gone minutes later, so without them nobody can
+                    # check the arithmetic or tell a fixed bug from a moved market.
+                    "inputs": {
+                        key: [
+                            {
+                                "comparator": c.comparator,
+                                "threshold": str(c.threshold),
+                                "market": c.market.model_dump(mode="json"),
+                                "book": c.book.model_dump(mode="json"),
+                            }
+                            for c in rungs
+                        ]
+                        for key, rungs in families.items()
+                    },
                     "certificates": [c.as_dict() for c in certificates],
                 },
                 indent=2,
@@ -449,3 +567,96 @@ def implication_scan(
             )
         )
         console.print(f"\n[green]wrote {out}[/green]")
+
+
+@app.command("implication-replay")
+def implication_replay(
+    path: Path = typer.Argument(..., help="A run exported by `implication-scan --out`"),
+    show: int = typer.Option(3, help="How many structures to print"),
+) -> None:
+    """Recompute an exported run from its saved inputs and diff against the verdicts.
+
+    This is the check that a certificate means something. It reprices every structure
+    from the books stored in the file - no network, no database - and compares the
+    result to what was recorded. A mismatch means the scanner is not a function of its
+    inputs, which would make every past verdict unreproducible.
+    """
+    from decimal import Decimal as Dec
+
+    from pmvl_markets.arbitrage.implication import StrikeContract, scan_implication_family
+    from pmvl_shared.schemas import NormalizedMarket, OrderBook
+
+    payload = json.loads(path.read_text())
+    params = payload.get("parameters", {})
+    inputs = payload.get("inputs")
+    if not inputs:
+        raise typer.BadParameter(
+            "this export predates input capture and cannot be replayed; re-run "
+            "implication-scan --out to produce a replayable file"
+        )
+
+    recomputed = []
+    for _key, rungs in sorted(inputs.items()):
+        contracts = [
+            StrikeContract(
+                market=NormalizedMarket.model_validate(r["market"]),
+                book=OrderBook.model_validate(r["book"]),
+                comparator=r["comparator"],
+                threshold=Dec(r["threshold"]),
+            )
+            for r in rungs
+        ]
+        recomputed.extend(
+            scan_implication_family(
+                contracts,
+                max_sets=Dec(str(params.get("max_sets", 10000))),
+                min_net_floor_usd=Dec(str(params.get("min_net_floor_usd", 0.01))),
+                max_quote_age_seconds=int(params.get("max_quote_age_seconds", 300)),
+                min_notional_usd=Dec(str(params.get("min_notional_usd", 0))),
+            )
+        )
+
+    original = payload.get("certificates", [])
+    console.print(
+        f"replayed [bold]{len(recomputed)}[/bold] structures from {path.name} "
+        f"(file recorded {len(original)})"
+    )
+
+    def fingerprint(cert: dict) -> tuple:
+        return (
+            cert["event_key"],
+            tuple(leg["contract_key"] for leg in cert["legs"]),
+            cert["quantity"],
+            cert["payoff_floor_usd"],
+            cert["gross_cost_usd"],
+            cert["net_floor_usd"],
+            cert["structural_status"],
+            cert["proof"]["status"],
+        )
+
+    # Book age is wall-clock, so an acceptance that hinged on freshness legitimately
+    # differs on replay. Everything else is a pure function of the saved inputs and
+    # must not move.
+    before = sorted(fingerprint(c) for c in original)
+    after = sorted(fingerprint(c.as_dict()) for c in recomputed)
+    if before == after:
+        console.print("[green]identical[/green]: every payoff floor, size and cost reproduced exactly")
+    else:
+        drift = [(b, a) for b, a in zip(before, after) if b != a]
+        console.print(f"[red]{len(drift)} structures did not reproduce[/red]")
+        for b, a in drift[:5]:
+            console.print(f"  recorded: {b}")
+            console.print(f"  replayed: {a}")
+        raise typer.Exit(1)
+
+    for cert in sorted(recomputed, key=lambda c: -c.net_floor_usd)[:show]:
+        console.print(
+            f"\n  {cert.event_key}  net_floor=${cert.net_floor_usd:.4f} "
+            f"qty={cert.quantity} status={cert.structural_status} "
+            f"accepted={cert.accepted}"
+        )
+        for leg in cert.legs:
+            console.print(
+                f"      {leg['role']:28} {leg['contract_key']:28} "
+                f"{leg['side']:3} {leg['predicate']}"
+            )
