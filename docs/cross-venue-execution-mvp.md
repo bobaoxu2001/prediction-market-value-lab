@@ -146,26 +146,80 @@ Observation window: `2026-09-16T01:56:05Z .. 2026-09-16T02:00:21Z` (books second
 ```
 markets_loaded             1,587 / 1,587    800 Kalshi + 787 Polymarket
 pairs_proposed                 0 / 629,600  prescreen found no shared tokens or entities
-rules_compared                 —            never reached
-...
 ```
 
-**A cold live scan of 1,587 markets across both venues proposed zero pairs.** Not zero
-opportunities — zero *comparisons*. The 117 pairs the database run found come from a
-set accumulated over time and biased toward markets this pipeline has already been
-interested in; the most-recently-closing markets on each venue, fetched fresh, have
-essentially no subject overlap under the current prescreen.
+A cold live scan of 1,587 markets proposed zero pairs. **That is a fact about the
+slice, not about the matcher** — see the correction below, which was measured after
+this document first claimed otherwise.
 
-This is the binding constraint on the whole product. The settlement engine, the cost
-model and the execution machinery are all downstream of a matcher that, on live data,
-proposes nothing.
+### Correction: the matcher is not the bottleneck; book coverage is
 
-### Gaps this exposes
+The two funnels above were both run on markets that happened to have a stored order
+book, and this document originally read their small numbers as the matcher's reach.
+That was wrong. Measured across the **entire** open universe:
+
+```
+open markets                    250,018 Kalshi x 14,349 Polymarket = 3,585,508,138 combos
+pairs the matcher proposes      111,838
+  distinct Kalshi markets in a pair      52,625 / 250,018   (21.05%)
+  distinct Polymarket markets in a pair     552 / 14,341    ( 3.85%)
+```
+
+So the matcher proposes over a hundred thousand pairs. What it cannot do is price
+them, because almost nothing has a book on both sides:
+
+| | Kalshi | Polymarket |
+|---|---|---|
+| open markets | 250,018 | 14,349 |
+| **have ever had an order book** | **500 (0.20%)** | 703 (4.90%) |
+| book within 7 days | 500 (0.20%) | 703 (4.90%) |
+| book within 24 hours | 325 (0.13%) | 360 (2.51%) |
+
+| proposable pairs | 111,838 |
+|---|---|
+| with a book on both sides, **ever** | **224** (0.200%) |
+| with a book on both sides within 24h | **86** (0.077%) |
+
+**That is the binding constraint.** Ingest fetches order books for one market in five
+hundred on Kalshi. A pair cannot be evaluated, let alone traded, without both books,
+so 99.8% of what the matcher finds is unpriceable — not rejected on the merits, just
+never quoted. The 86 pairs priceable today break down as 61 crypto/crypto, 19
+politics/other, 6 sports/other.
+
+Two further facts about the universe explain the shape of what does get proposed:
+
+* **230,195 of 250,018 open Kalshi markets are crypto** — auto-generated strike ladders
+  ("Ripple price at Aug 28, 2026 at 5pm EDT?", one row per strike). They dominate the
+  proposal set: crypto/crypto plus crypto/other is 97% of all proposed pairs, against
+  4 politics/politics and 2 sports/sports.
+* **`load_matchable_markets` returns 9,469 markets**, not 250,018, because
+  `horizons_for` drops anything outside the tracked resolution horizons. The production
+  matching universe is therefore far smaller than the raw open set.
+
+### Correction: truncation was not losing real matches
+
+This document previously named the top-40 truncation as the largest loss, on the
+strength of 245,576 discarded combinations. That number is a count of combinations, not
+of missed matches. Measured against the only ground truth available — the seven
+nomination pairs a human reads as identical — the true counterpart ranks **first** in
+its hit list, by raw shared-token count *and* by jaccard:
+
+| Kalshi market | rank / hits | inside top 40 | jaccard |
+|---|---|---|---|
+| `KXPRESNOMD-28-AOC` | 1 / 285 | yes | 0.583 |
+| the other six | 1 / 281–289 | yes | 0.545 |
+
+Truncation loses none of them, and their jaccard is roughly double the 0.28 floor. These
+pairs are proposed correctly and fail later, at equivalence — so the prescreen is not
+what is stopping them either.
+
+### Gaps this exposes### Gaps this exposes
 
 1. **Recall ceiling of 0.098%.** 117 pairs out of 119,520 possible. "No opportunity"
    is a statement about those 117, and about nothing else.
-2. **A live run proposed zero pairs from 800×787 fresh markets** (629,600 combinations).
-   See above. Recall, not economics, is what currently stops this system.
+2. **Order book coverage, at 0.20% of open Kalshi markets, is what stops this system.**
+   Not the matcher, and not the economics. 111,838 pairs are proposable and 224 have
+   ever been priceable on both sides.
 3. **Kalshi weather markets cannot match on entity.** The city lives in the series
    ticker, not the title — `"Will the maximum temperature be 86-87° on Sep 5, 2026?"`
    against Polymarket's `"...in Miami..."`. Entity comparison cannot succeed on text
@@ -449,7 +503,7 @@ Each gate below is currently **closed**. None may be opened by configuration.
 
 | # | Gate | Evidence today | Missing | Minimum action |
 |---|---|---|---|---|
-| 0 | The matcher proposes any pair at all on live data | **0 of 629,600** on a cold live scan; 117 of 119,520 from the DB | Recall. This gate is upstream of every other one and is currently the binding constraint | Fix the prescreen: Kalshi's entity often lives in the series ticker, not the title |
+| 0 | A proposed pair can actually be priced | **224 of 111,838** proposable pairs have ever had a book on both sides; 86 within 24h | Order-book coverage: ingest fetches books for 500 of 250,018 open Kalshi markets (0.20%) | Fetch books for the markets the matcher actually pairs, instead of the current selection. This gate is upstream of every other one |
 | 1 | A real pair reaches `VERIFIED_EQUIVALENT_*` | 0 of 117 | `threshold`, `operator`, `time`, `data_source`, `settlement_rule` all UNKNOWN on the closest candidates | Fix rule extraction so these components resolve; re-measure the funnel |
 | 2 | Cancellation terms attested on both venues | 0 attestations | A person has to read two rule pages per pair | Run `pair attest-draft`, confirm against published rules, sign `reviewed_by` |
 | 3 | Outcome↔token mapping verified | 49% of Polymarket markets | The other 51% are `Over/Under`, `Up/Down`, team names | Derive the mapping from the question text, not the label; or restrict to `Yes/No` markets |

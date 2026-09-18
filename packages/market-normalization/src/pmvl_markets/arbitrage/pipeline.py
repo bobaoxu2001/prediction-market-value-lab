@@ -12,7 +12,14 @@ from uuid import uuid4
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from pmvl_shared.enums import ArbitrageLabel, MarketStatus, Platform, RuleCompatibility, Side
+from pmvl_shared.enums import (
+    ArbitrageLabel,
+    DataProvenance,
+    MarketStatus,
+    Platform,
+    RuleCompatibility,
+    Side,
+)
 from pmvl_shared.logging_setup import get_logger
 from pmvl_shared.money import D, ZERO
 from pmvl_shared.schemas import ArbitrageResult, NormalizedMarket, OrderBook
@@ -68,6 +75,11 @@ def _load_books(
         select(Market).where(
             Market.status == MarketStatus.OPEN.value,
             Market.expected_resolution_time.is_not(None),
+            # Demo markets are synthetic and must never reach a scanner. They are
+            # excluded here explicitly rather than relying on their having no book:
+            # "has no orderbook" is a fact about ingest coverage that can change,
+            # and a seeded demo market that acquired one would be scanned as real.
+            Market.provenance != DataProvenance.DEMO.value,
         )
     ).all()
     out: list[tuple[Market, NormalizedMarket, OrderBook]] = []
@@ -102,6 +114,11 @@ def load_matchable_markets(
         select(Market).where(
             Market.status == MarketStatus.OPEN.value,
             Market.expected_resolution_time.is_not(None),
+            # Matching deliberately does not require a book, so unlike the scanner
+            # path nothing else would keep a demo market out. A demo market matched
+            # against a live one persists a MarketMatch that reads exactly like a
+            # real one, which is the specific way synthetic data becomes a claim.
+            Market.provenance != DataProvenance.DEMO.value,
         )
     ).all()
     out: list[tuple[Market, NormalizedMarket]] = []
