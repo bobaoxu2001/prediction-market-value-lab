@@ -1,0 +1,102 @@
+{
+  "pages_fetched": 400,
+  "markets_scanned": 400000,
+  "events_seen": 335848,
+  "events_too_wide_for_one_request": 10,
+  "events_with_two_or_more_two_sided_legs": 225,
+  "ranking": "two-sided legs, then leg count, then ticker",
+  "selected": [
+    {
+      "event": "KXNATGASD-26SEP2117",
+      "two_sided_legs": 60,
+      "legs": 60
+    },
+    {
+      "event": "KXPALLADIUMH-26SEP1808",
+      "two_sided_legs": 40,
+      "legs": 40
+    },
+    {
+      "event": "KXSILVERD-26SEP2117",
+      "two_sided_legs": 39,
+      "legs": 40
+    },
+    {
+      "event": "KXGOLDD-26SEP2117",
+      "two_sided_legs": 39,
+      "legs": 40
+    },
+    {
+      "event": "KXMLBHRR-26SEP181915PHINYM",
+      "two_sided_legs": 35,
+      "legs": 35
+    },
+    {
+      "event": "KXMLBTB-26SEP181915PHINYM",
+      "two_sided_legs": 30,
+      "legs": 31
+    },
+    {
+      "event": "KXWTIH-26SEP1808",
+      "two_sided_legs": 27,
+      "legs": 40
+    },
+    {
+      "event": "KXRAIN-26SEP19",
+      "two_sided_legs": 27,
+      "legs": 27
+    }
+  ],
+  "runners_up": [
+    {
+      "event": "KXGOLDH-26SEP1808",
+      "two_sided_legs": 26,
+      "legs": 40
+    },
+    {
+      "event": "KXSILVERH-26SEP1808",
+      "two_sided_legs": 25,
+      "legs": 40
+    },
+    {
+      "event": "KXMLBHRR-26SEP182010SEACOL",
+      "two_sided_legs": 25,
+      "legs": 25
+    },
+    {
+      "event": "KXMLBHRR-26SEP181905MILBAL",
+      "two_sided_legs": 25,
+      "legs": 25
+    },
+    {
+      "event": "KXCOPPERD-26SEP2117",
+      "two_sided_legs": 24,
+      "legs": 40
+    },
+    {
+      "event": "KXMLBTB-26SEP182010SEACOL",
+      "two_sided_legs": 23,
+      "legs": 23
+    },
+    {
+      "event": "KXMLBTB-26SEP181905MILBAL",
+      "two_sided_legs": 22,
+      "legs": 22
+    },
+    {
+      "event": "KXBRENTD-26SEP2117",
+      "two_sided_legs": 20,
+      "legs": 20
+    },
+    {
+      "event": "KXMLBHIT-26SEP181915PHINYM",
+      "two_sided_legs": 19,
+      "legs": 24
+    },
+    {
+      "event": "KXMLBHIT-26SEP182010SEACOL",
+      "two_sided_legs": 14,
+      "legs": 19
+    }
+  ]
+}

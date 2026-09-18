@@ -1,0 +1,13 @@
+{
+  "strategy_version": "1.0.0",
+  "cycles": 300,
+  "snapshots": 2400,
+  "rejections": 0,
+  "rejection_reasons": {},
+  "trades": 2076,
+  "legs_captured": 23700,
+  "two_sided_legs": 15681,
+  "skew_bound_ms_p50": 283.3,
+  "skew_bound_ms_p95": 420.0,
+  "skew_bound_ms_max": 1670.764
+}

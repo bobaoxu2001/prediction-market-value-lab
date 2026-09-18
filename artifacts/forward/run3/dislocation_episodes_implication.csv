@@ -1,0 +1,1 @@
+market,event,threshold_cents,started_at,ended_at,duration_seconds,snapshots,peak_gross_edge,peak_capacity_sets,peak_net_after_fees,capital_required,max_skew_bound_ms,sequential_net_floor,failure_rescue_floor,survives_sequencing

@@ -1,0 +1,95 @@
+{
+  "recording_version": "1.0.0",
+  "analysis_version": "1.1.0",
+  "structure": "complete set within a single market (YES ask + NO ask vs $1)",
+  "snapshots_read": 2400,
+  "degraded_snapshots_skipped": 0,
+  "market_observations": 16722,
+  "unpriceable_observations": 28278,
+  "markets": 61,
+  "event_days": 8,
+  "distinct_dates": 1,
+  "independence_note": "8 event-days across 1 calendar date(s). One session's events share their conditions and are not independent draws in time",
+  "gross_edge_per_set_percentiles": {
+    "n": "16722",
+    "p01": "-0.7200",
+    "p50": "-0.2800",
+    "p95": "-0.0800",
+    "p99": "-0.0600",
+    "max": "-0.0600"
+  },
+  "gross_edge_adjacent_rungs_only": {
+    "n": "3171",
+    "p01": "-0.7400",
+    "p50": "-0.0900",
+    "p95": "-0.0600",
+    "p99": "-0.0600",
+    "max": "-0.0600"
+  },
+  "candidate_pairs_refused": {
+    "refuted": 247200
+  },
+  "thresholds": {
+    "1": {
+      "observations_clearing": 0,
+      "near_misses_within_one_cent": 0,
+      "observation_rate": "0.000000",
+      "episodes": 0,
+      "episodes_surviving_sequential_execution": 0,
+      "median_duration_seconds": null,
+      "max_duration_seconds": null,
+      "max_capacity_sets": "0",
+      "max_net_after_fees_usd": "0",
+      "capital_at_max_capacity_usd": "0"
+    },
+    "2": {
+      "observations_clearing": 0,
+      "near_misses_within_one_cent": 0,
+      "observation_rate": "0.000000",
+      "episodes": 0,
+      "episodes_surviving_sequential_execution": 0,
+      "median_duration_seconds": null,
+      "max_duration_seconds": null,
+      "max_capacity_sets": "0",
+      "max_net_after_fees_usd": "0",
+      "capital_at_max_capacity_usd": "0"
+    },
+    "3": {
+      "observations_clearing": 0,
+      "near_misses_within_one_cent": 0,
+      "observation_rate": "0.000000",
+      "episodes": 0,
+      "episodes_surviving_sequential_execution": 0,
+      "median_duration_seconds": null,
+      "max_duration_seconds": null,
+      "max_capacity_sets": "0",
+      "max_net_after_fees_usd": "0",
+      "capital_at_max_capacity_usd": "0"
+    },
+    "4": {
+      "observations_clearing": 0,
+      "near_misses_within_one_cent": 0,
+      "observation_rate": "0.000000",
+      "episodes": 0,
+      "episodes_surviving_sequential_execution": 0,
+      "median_duration_seconds": null,
+      "max_duration_seconds": null,
+      "max_capacity_sets": "0",
+      "max_net_after_fees_usd": "0",
+      "capital_at_max_capacity_usd": "0"
+    },
+    "5": {
+      "observations_clearing": 0,
+      "near_misses_within_one_cent": 0,
+      "observation_rate": "0.000000",
+      "episodes": 0,
+      "episodes_surviving_sequential_execution": 0,
+      "median_duration_seconds": null,
+      "max_duration_seconds": null,
+      "max_capacity_sets": "0",
+      "max_net_after_fees_usd": "0",
+      "capital_at_max_capacity_usd": "0"
+    }
+  },
+  "structure_requested": "implication"
+}
