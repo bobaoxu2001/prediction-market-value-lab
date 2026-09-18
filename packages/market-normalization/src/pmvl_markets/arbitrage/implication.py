@@ -198,6 +198,20 @@ def implication_holds(
     )
 
 
+def _strike_free(title: str) -> str:
+    """The question with every number taken out of it.
+
+    Two rungs of a real ladder read identically once the strike is gone - "will the
+    temp in Miami be above 71.99" and "...above 72.99" collapse to the same string.
+    Two different questions that happen to share a strike do not: "will it rain in
+    Dallas" and "will it rain in Milwaukee" stay different, which is the whole point.
+    """
+    import re
+
+    stripped = re.sub(r"[\d.,]+", " ", title or "")
+    return " ".join(stripped.split()).casefold()
+
+
 def _same_or_insufficient(
     name: str, a: object, b: object, *, label_a: str = "", label_b: str = ""
 ) -> FieldCheck:
@@ -274,6 +288,66 @@ def prove_implication(
     )
     if not holds:
         return refuse(ProofStatus.REFUTED, why)
+
+    # --- does the strike actually distinguish these two contracts? ---------
+    # Two rungs of one ladder differ in their strike and in nothing else. When the
+    # strike field does not separate them, the threshold ordering is describing
+    # something other than the relationship between the contracts.
+    #
+    # This is not hypothetical. An event of 27 "will it rain in <city>" markets
+    # carries strike_type 'greater' and floor_strike 0 on every one of them, so
+    # `[X > 0] implies [X > 0]` holds for every pair of cities and the scan reports
+    # 351 mutual implications, each one priced as though rain in Dallas settled rain
+    # in Milwaukee. The top of that list showed a 78c "edge".
+    if (
+        antecedent.threshold == consequent.threshold
+        and antecedent.comparator == consequent.comparator
+    ):
+        checks.append(
+            FieldCheck(
+                "strike_discriminates", FieldVerdict.MISMATCH,
+                f"both contracts are {antecedent.comparator} {antecedent.threshold}, "
+                "so the strike says nothing about how they relate",
+            )
+        )
+        return refuse(
+            ProofStatus.REFUTED,
+            "these two contracts carry the same comparator and the same strike, which "
+            "makes the claim mutual rather than ordered. A ladder rung implies the one "
+            "below it because its strike is higher; identical strikes mean the strike "
+            "field is not what separates these contracts, and this route cannot see "
+            "what does",
+        )
+
+    a_observable = _strike_free(antecedent.market.title)
+    c_observable = _strike_free(consequent.market.title)
+    if a_observable and c_observable:
+        if a_observable != c_observable:
+            checks.append(
+                FieldCheck(
+                    "observable", FieldVerdict.MISMATCH,
+                    f"{a_observable[:60]!r} vs {c_observable[:60]!r}",
+                )
+            )
+            return refuse(
+                ProofStatus.REFUTED,
+                "with the strike numbers removed the two questions are not the same "
+                "question, so they measure different things and their strikes are not "
+                "on one scale",
+            )
+        checks.append(FieldCheck("observable", FieldVerdict.MATCH, a_observable[:80]))
+    else:
+        checks.append(
+            FieldCheck(
+                "observable", FieldVerdict.INSUFFICIENT,
+                "one or both contracts were recorded without a title",
+            )
+        )
+        return refuse(
+            ProofStatus.INSUFFICIENT_EVIDENCE,
+            "no title was recorded for one of the contracts, so there is no evidence "
+            "that the two strikes are measured on the same scale",
+        )
 
     # --- the terms the floor depends on ------------------------------------
     # Same observable, same instant, same source, same basis. Any one of these
