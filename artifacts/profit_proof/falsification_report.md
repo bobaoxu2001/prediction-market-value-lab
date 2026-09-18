@@ -95,6 +95,35 @@ amortises. Measured floor: **0.63c – 1.31c per set**, median 1.21c.
 **REGRESSION TEST.** Existing fee tests cover the rounding; the frontier script now
 sizes first and prices second. No production code was wrong.
 
+## BUG-3 — I destroyed a pre-existing test file
+
+**BUG.** `tests/test_execution_model.py` already existed, covering `publish=false`
+stateless recomputation. I created my sequential-execution tests at that path with
+`cat >` without checking, silently replacing 282 lines and 13 tests with 123 lines and
+8.
+
+**IMPACT.** 13 tests stopped running. Nothing failed, so nothing announced it: the
+suite went from 2,641 passing to 2,636 passing and read as a normal fluctuation. Had I
+reported that number without reconciling it, the audit would have quietly reduced
+coverage while claiming to increase it.
+
+**WHY PREVIOUS TESTS MISSED IT.** No test can catch this. A deleted test does not fail;
+it disappears. The only signal was the total count, which I nearly accepted because it
+was close to the expected value and still very large.
+
+**FIX.** The original file is restored from `5d300da`; my tests moved to
+`tests/test_sequential_execution_model.py`. Collected count reconciles exactly:
+2,642 at the pre-audit commit, minus 13 clobbered, plus 8 added = 2,637 observed;
+restored to 2,650.
+
+**REGRESSION TEST.** None possible for this class of error. The discipline is to
+reconcile the collected-test count against the expected delta on every run rather than
+to eyeball the pass count — which is now how the totals in this report are stated.
+
+**HISTORICAL RESULTS INVALIDATED: NO.** The clobbered file tested an unrelated
+publication path; no arbitrage finding depended on it. The suite figures quoted before
+this fix were nonetheless understated coverage and are corrected here.
+
 ## What survived the audit
 
 * The settlement mathematics. Payoff floors, implication containment including the
