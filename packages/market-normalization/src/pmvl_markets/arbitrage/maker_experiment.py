@@ -342,16 +342,21 @@ def evaluate_quote(
     through = sum((t.size for t in window if quote.through(t)), ZERO)
     touched_any = any(quote.at_level(t) or quote.through(t) for t in window)
 
-    #: A print past the quote can only happen once everything at the quote's price,
-    #: including the quote, has been taken. So the quote is full-size filled, and the
-    #: queue model must agree - a queue that has provably been cleared cannot still
-    #: be counted as standing in the way.
-    if through > 0:
-        traded_through_size = quote.size
-        queue_size = quote.size
-    else:
-        traded_through_size = ZERO
-        queue_size = max(ZERO, min(quote.size, at_level - quote.queue_ahead))
+    #: Every contract printed *past* the quote is one that, had the quote been there,
+    #: would have hit it first - so through-volume is a fill, bounded by the quote's
+    #: own size. It is not evidence of a fill for the *whole* size: a taker who sold
+    #: 24 contracts through a 3-deep queue tells you 21 would have been yours, not
+    #: 50. Reading "traded through" as "filled in full" overstates fills by whatever
+    #: the quote asked for beyond what actually traded, which on a thin book is most
+    #: of it.
+    through_size = min(through, quote.size)
+    #: FIFO with a static queue. The max keeps the two estimators ordered when the
+    #: tape and the book disagree - volume cannot print past a queue that is still
+    #: standing, so if it did, the recorded queue was already stale.
+    queue_size = min(
+        quote.size, max(through_size, max(ZERO, at_level + through - quote.queue_ahead))
+    )
+    traded_through_size = through_size
     touched_size = quote.size if touched_any else ZERO
 
     filled_size = {

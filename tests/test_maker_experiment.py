@@ -120,12 +120,44 @@ def test_the_queue_must_be_cleared_before_a_single_contract_is_ours():
     assert out.first_fill_at == T0 + timedelta(seconds=10)
 
 
-def test_a_print_past_the_quote_proves_the_level_was_cleared():
-    quote = _quote(queue_ahead=Decimal("300"))
+def test_a_print_past_the_quote_fills_only_what_actually_traded():
+    """Through-volume is a fill, bounded by what traded - not by what was asked for.
+
+    A taker who sold 5 contracts through a 300-deep queue tells you 5 would have been
+    yours. Reading "traded through" as "filled in full" credits the quote with 50 it
+    never got, which on a thin book is most of the position.
+    """
+    quote = _quote(queue_ahead=Decimal("300"), size=Decimal("50"))
     trades = [_trade(10, "0.39", "5", "no")]
     out = evaluate_quote(quote, trades, [_snap(0, {"M": _book()})], policy=POLICY)
-    assert out.filled_size[FillEstimator.TRADED_THROUGH] == quote.size
-    assert out.filled_size[FillEstimator.QUEUE_MODEL] == quote.size
+    assert out.filled_size[FillEstimator.TRADED_THROUGH] == Decimal("5")
+    assert out.filled_size[FillEstimator.QUEUE_MODEL] == Decimal("5")
+
+
+def test_through_volume_beyond_the_quote_size_is_capped_at_it():
+    quote = _quote(queue_ahead=Decimal("0"), size=Decimal("50"))
+    trades = [_trade(10, "0.39", "900", "no")]
+    out = evaluate_quote(quote, trades, [_snap(0, {"M": _book()})], policy=POLICY)
+    assert out.filled_size[FillEstimator.TRADED_THROUGH] == Decimal("50")
+    assert out.filled_size[FillEstimator.QUEUE_MODEL] == Decimal("50")
+
+
+def test_the_lower_bound_never_exceeds_the_queue_model():
+    """Two estimators that can cross are not a bracket."""
+    for at_level, through, queue in [
+        ("0", "10", "100"), ("50", "0", "10"), ("5", "5", "0"), ("0", "0", "0"),
+    ]:
+        quote = _quote(queue_ahead=Decimal(queue), size=Decimal("50"))
+        trades = []
+        if Decimal(at_level) > 0:
+            trades.append(_trade(5, "0.40", at_level, "no", tid="at"))
+        if Decimal(through) > 0:
+            trades.append(_trade(6, "0.39", through, "no", tid="thr"))
+        out = evaluate_quote(quote, trades, [_snap(0, {"M": _book()})], policy=POLICY)
+        assert (
+            out.filled_size[FillEstimator.TRADED_THROUGH]
+            <= out.filled_size[FillEstimator.QUEUE_MODEL]
+        ), (at_level, through, queue)
 
 
 def test_a_taker_on_our_own_side_cannot_fill_us():
