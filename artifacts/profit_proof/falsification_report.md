@@ -56,6 +56,29 @@ Profit appears only once legs quoted 250–500 s apart may be combined. This is
 `STALE_COMBINATION_RISK`, and it disqualifies the result as evidence of anything
 tradeable.
 
+## FINDING-2 — none of them survives non-atomic execution either
+
+Independent of simultaneity. Kalshi fills one order at a time, so a two-leg floor
+computed as though both land together is an upper bound on a trade the venue does not
+offer. Modelled worst case: leg one fills, the structure's own size is lifted off the
+remaining leg by whoever else saw the same dislocation, and the rest is completed
+against what is left — or unwound into the bid if it cannot be.
+
+| structure | atomic floor | sequential worst case | if the second leg vanishes |
+|---|---|---|---|
+| KXSOLD-26SEP1817 | **+$33.45** | **−$52.80** | −$387.82 |
+| KXBTCD-26SEP1710 (1,378) | +$3.74 | **−$19.26** | −$35.58 |
+| KXBTCD-26SEP1710 (2,302) | +$26.18 | **−$8.11** | −$56.97 |
+
+All three are `THEORETICAL_ONLY`. So the claim fails twice over and for unrelated
+reasons: the legs never coexisted, **and** the structure would lose money even if they
+had. Either alone is sufficient.
+
+A modelling error was caught here by its own test. The first version consumed whole
+price *levels*, so a single resting 5,000 lots counted as entirely gone while a thin
+two-level book survived — punishing exactly the depth that makes sequencing safe. The
+adverse move is a quantity, not a level.
+
 ## BUG-2 — the fee was measured at a size nobody trades
 
 **BUG.** The first profitability-frontier measurement computed the all-in fee at

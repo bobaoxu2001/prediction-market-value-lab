@@ -52,6 +52,9 @@ __all__ = [
     "Gate",
     "ProofBundle",
     "classify",
+    "net_floor_gate",
+    "simultaneity_gate",
+    "sequential_execution_gate",
 ]
 
 
@@ -197,6 +200,39 @@ def net_floor_gate(
         f"floor ${quantize_usd(payoff_floor)} - cost ${quantize_usd(executable_cost)} "
         f"- fees ${quantize_usd(fees)} = ${quantize_usd(net)}",
         guards=ProofLevel.NET_ARBITRAGE_OBSERVED,
+    )
+
+
+def sequential_execution_gate(
+    atomic: Decimal | None, sequential: Decimal | None
+) -> Gate:
+    """The rung that survives simultaneity and still fails.
+
+    Kalshi fills one order at a time, so every floor computed as though both legs land
+    together is an upper bound on a trade the venue does not offer. A structure whose
+    atomic floor is positive and whose sequential floor is not is THEORETICAL_ONLY: it
+    describes an opportunity that exists only for someone who can trade both legs in the
+    same instant, which is nobody here.
+    """
+    if atomic is None:
+        return Gate(
+            "sequential_execution", GateResult.NOT_ESTABLISHED,
+            "the structure could not be priced atomically",
+            guards=ProofLevel.EXECUTABLE_ARBITRAGE_OBSERVED,
+        )
+    if sequential is None:
+        return Gate(
+            "sequential_execution", GateResult.FAIL,
+            f"atomic floor ${quantize_usd(atomic)}, but no fill ordering completes the "
+            "structure once its own size is lifted from the remaining leg",
+            guards=ProofLevel.EXECUTABLE_ARBITRAGE_OBSERVED,
+        )
+    return Gate(
+        "sequential_execution",
+        GateResult.PASS if sequential > ZERO else GateResult.FAIL,
+        f"atomic ${quantize_usd(atomic)} -> sequential worst case "
+        f"${quantize_usd(sequential)}",
+        guards=ProofLevel.EXECUTABLE_ARBITRAGE_OBSERVED,
     )
 
 
