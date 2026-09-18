@@ -76,6 +76,19 @@ class DislocationObservation:
     capacity_sets: dict[int, Decimal]
     #: threshold in cents -> net dollars after both legs' taker fees at that size
     net_after_fees: dict[int, Decimal]
+    #: threshold in cents -> dollars that must be on deposit to take that size.
+    #: Capacity in contracts is not capacity in dollars, and a return quoted without
+    #: the capital it was earned on is a ratio rather than a number.
+    capital_required: dict[int, Decimal] = field(default_factory=dict)
+    #: How many rungs apart the two legs are; 1 is adjacent, 0 means not a ladder pair.
+    #:
+    #: It decides where the structure can possibly be near the money. A pair costs
+    #: `p_low + (1 - p_high)` at mid, which is `1 + (p_low - p_high)` - already over a
+    #: dollar before any spread, and over by the whole probability gap between the two
+    #: rungs. Distant rungs are not slightly unprofitable, they are structurally
+    #: unprofitable, and pooling them with adjacent ones buries the only sub-population
+    #: where an edge could exist under a median that says nothing.
+    rung_gap: int = 0
 
     def meets(self, threshold_cents: int) -> bool:
         return self.capacity_sets.get(threshold_cents, ZERO) > 0
@@ -90,10 +103,14 @@ class DislocationObservation:
             "yes_ask": str(self.yes_ask),
             "no_ask": str(self.no_ask),
             "gross_edge_per_set": str(self.gross_edge_per_set),
+            "rung_gap": self.rung_gap,
             "top_of_book_sets": str(self.top_of_book_sets),
             "capacity_sets": {str(k): str(v) for k, v in sorted(self.capacity_sets.items())},
             "net_after_fees_usd": {
                 str(k): str(v) for k, v in sorted(self.net_after_fees.items())
+            },
+            "capital_required_usd": {
+                str(k): str(v) for k, v in sorted(self.capital_required.items())
             },
         }
 
@@ -153,6 +170,7 @@ def observe_pair(
     skew_bound_ms: Decimal,
     ceiling: Decimal = Decimal("10000"),
     fee_rate: Decimal = KALSHI_TAKER_RATE,
+    rung_gap: int = 0,
 ) -> DislocationObservation | None:
     """Measure any two ask ladders whose pair settles for exactly $1 per set.
 
@@ -171,6 +189,7 @@ def observe_pair(
 
     capacity: dict[int, Decimal] = {}
     net: dict[int, Decimal] = {}
+    capital: dict[int, Decimal] = {}
     for cents in THRESHOLDS_CENTS:
         bar = ONE - CENT * cents
         sets, _ = _lockstep_capacity(
@@ -179,6 +198,7 @@ def observe_pair(
         capacity[cents] = sets
         if sets <= 0:
             net[cents] = ZERO
+            capital[cents] = ZERO
             continue
         first_cost = _walk_cost(first, sets)
         second_cost = _walk_cost(second, sets)
@@ -186,6 +206,7 @@ def observe_pair(
             Platform.KALSHI, sets, _vwap(first_cost, sets), rate=fee_rate
         ) + taker_fee(Platform.KALSHI, sets, _vwap(second_cost, sets), rate=fee_rate)
         net[cents] = quantize_usd(sets * ONE - first_cost - second_cost - fees)
+        capital[cents] = quantize_usd(first_cost + second_cost + fees)
 
     return DislocationObservation(
         market=market,
@@ -199,6 +220,8 @@ def observe_pair(
         top_of_book_sets=top_sets,
         capacity_sets=capacity,
         net_after_fees=net,
+        capital_required=capital,
+        rung_gap=rung_gap,
     )
 
 
@@ -278,6 +301,7 @@ class DislocationEpisode:
     peak_gross_edge: Decimal = ZERO
     peak_capacity_sets: Decimal = ZERO
     peak_net_after_fees: Decimal = ZERO
+    peak_capital_required: Decimal = ZERO
     max_skew_bound_ms: Decimal = ZERO
     sequential_net_floor: Decimal | None = None
     failure_rescue_floor: Decimal | None = None
@@ -304,6 +328,7 @@ class DislocationEpisode:
             "peak_gross_edge_per_set": str(self.peak_gross_edge),
             "peak_capacity_sets": str(self.peak_capacity_sets),
             "peak_net_after_fees_usd": str(self.peak_net_after_fees),
+            "capital_required_usd": str(self.peak_capital_required),
             "max_skew_bound_ms": str(self.max_skew_bound_ms),
             "sequential_net_floor_usd": (
                 None if self.sequential_net_floor is None else str(self.sequential_net_floor)
@@ -339,14 +364,19 @@ class HarvestReport:
     def episodes_at(self, cents: int) -> list[DislocationEpisode]:
         return [e for e in self.episodes if e.threshold_cents == cents]
 
-    def edge_percentiles(self) -> dict[str, str]:
-        values = sorted(o.gross_edge_per_set for o in self.observations)
+    def edge_percentiles(self, *, rung_gap: int | None = None) -> dict[str, str]:
+        values = sorted(
+            o.gross_edge_per_set
+            for o in self.observations
+            if rung_gap is None or o.rung_gap == rung_gap
+        )
         if not values:
             return {}
         def at(q: float) -> str:
             idx = min(len(values) - 1, int(q * (len(values) - 1) + 0.5))
             return str(values[idx])
         return {
+            "n": str(len(values)),
             "p01": at(0.01), "p50": at(0.50), "p95": at(0.95),
             "p99": at(0.99), "max": str(values[-1]),
         }
@@ -387,6 +417,9 @@ class HarvestReport:
                 "max_net_after_fees_usd": str(
                     max((e.peak_net_after_fees for e in eps), default=ZERO)
                 ),
+                "capital_at_max_capacity_usd": str(
+                    max((e.peak_capital_required for e in eps), default=ZERO)
+                ),
             }
         return {
             "recording_version": self.strategy_version,
@@ -399,6 +432,7 @@ class HarvestReport:
             "markets": self.markets,
             "independent_event_days": self.event_days,
             "gross_edge_per_set_percentiles": self.edge_percentiles(),
+            "gross_edge_adjacent_rungs_only": self.edge_percentiles(rung_gap=1),
             "candidate_pairs_refused": dict(sorted(self.pairs_refused.items())),
             "thresholds": per_threshold,
         }
@@ -469,6 +503,7 @@ def harvest(
                 if observation.capacity_sets[cents] > episode.peak_capacity_sets:
                     episode.peak_capacity_sets = observation.capacity_sets[cents]
                     episode.peak_net_after_fees = observation.net_after_fees[cents]
+                    episode.peak_capital_required = observation.capital_required[cents]
                     outcome = _sequential_for(book, observation.capacity_sets[cents], fee_rate)
                     episode.sequential_net_floor = outcome.sequential_net_floor
                     episode.failure_rescue_floor = outcome.failure_rescue_floor
@@ -546,7 +581,7 @@ def harvest_implication_pairs(
 
         seen_this_snapshot: set[tuple[str, int]] = set()
         for i, weaker in enumerate(rungs):
-            for stronger in rungs[i + 1 :]:
+            for gap, stronger in enumerate(rungs[i + 1 :], start=1):
                 #: The full proof, not the threshold predicate. The predicate answers
                 #: "does [X > a] imply [X > b]", which is true of any two half-lines
                 #: in the right order - including two that measure different things.
@@ -579,6 +614,7 @@ def harvest_implication_pairs(
                     skew_bound_ms=snapshot.skew_bound_ms,
                     ceiling=ceiling,
                     fee_rate=fee_rate,
+                    rung_gap=gap,
                 )
                 if observation is None:
                     report.unpriceable_observations += 1

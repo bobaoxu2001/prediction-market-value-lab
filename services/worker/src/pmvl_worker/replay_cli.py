@@ -263,7 +263,11 @@ def dislocation(
             row["max_net_after_fees_usd"],
         )
     console.print(table)
-    console.print(f"gross edge per set: {body['gross_edge_per_set_percentiles']}")
+    console.print(f"gross edge, all pairs:      {body['gross_edge_per_set_percentiles']}")
+    if body.get("gross_edge_adjacent_rungs_only"):
+        console.print(
+            f"gross edge, adjacent rungs: {body['gross_edge_adjacent_rungs_only']}"
+        )
     console.print(
         f"{body['market_observations']:,} market observations over "
         f"{body['markets']} markets, {body['independent_event_days']} event-days"
@@ -278,15 +282,16 @@ def dislocation(
         writer.writerow(
             ["market", "event", "threshold_cents", "started_at", "ended_at",
              "duration_seconds", "snapshots", "peak_gross_edge", "peak_capacity_sets",
-             "peak_net_after_fees", "max_skew_bound_ms", "sequential_net_floor",
-             "failure_rescue_floor", "survives_sequencing"]
+             "peak_net_after_fees", "capital_required", "max_skew_bound_ms",
+             "sequential_net_floor", "failure_rescue_floor", "survives_sequencing"]
         )
         for episode in report.episodes:
             row = episode.as_dict()
             writer.writerow([row[k] for k in (
                 "market", "event_ticker", "threshold_cents", "started_at", "ended_at",
                 "duration_seconds", "snapshots", "peak_gross_edge_per_set",
-                "peak_capacity_sets", "peak_net_after_fees_usd", "max_skew_bound_ms",
+                "peak_capacity_sets", "peak_net_after_fees_usd", "capital_required_usd",
+             "max_skew_bound_ms",
                 "sequential_net_floor_usd", "failure_rescue_floor_usd",
                 "survives_sequencing")])
 
@@ -295,15 +300,19 @@ def dislocation(
         writer = csv.writer(fh)
         writer.writerow(
             ["market", "event", "observed_at", "yes_ask", "no_ask", "gross_edge_per_set",
-             "top_of_book_sets", *[f"capacity_{c}c" for c in THRESHOLDS_CENTS],
-             *[f"net_{c}c" for c in THRESHOLDS_CENTS]]
+             "top_of_book_sets", "rung_gap",
+             *[f"capacity_{c}c" for c in THRESHOLDS_CENTS],
+             *[f"net_{c}c" for c in THRESHOLDS_CENTS],
+             *[f"capital_{c}c" for c in THRESHOLDS_CENTS]]
         )
         for obs in report.observations:
             writer.writerow(
                 [obs.market, obs.event_ticker, obs.observed_at.isoformat(),
                  obs.yes_ask, obs.no_ask, obs.gross_edge_per_set, obs.top_of_book_sets,
+                 obs.rung_gap,
                  *[obs.capacity_sets[c] for c in THRESHOLDS_CENTS],
-                 *[obs.net_after_fees[c] for c in THRESHOLDS_CENTS]]
+                 *[obs.net_after_fees[c] for c in THRESHOLDS_CENTS],
+                 *[obs.capital_required[c] for c in THRESHOLDS_CENTS]]
             )
     console.print(
         f"wrote {target}\nwrote {episodes} ({len(report.episodes)} episodes)\n"

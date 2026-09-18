@@ -442,3 +442,43 @@ def test_an_episode_in_one_event_is_not_ended_by_a_snapshot_of_another():
     assert len(episodes) == 1
     assert episodes[0].snapshots == 4
     assert episodes[0].duration_seconds == Decimal("30.0")
+
+
+def test_adjacent_rungs_are_reported_apart_from_distant_ones():
+    """A distant pair is not slightly unprofitable, it is structurally unprofitable.
+
+    The pair costs ``1 + (p_low - p_high)`` at mid, so the probability gap between
+    the two rungs is a floor on the loss before any spread is paid. Pooling distant
+    pairs with adjacent ones buries the only sub-population where an edge could exist
+    under a median that describes the ladder's shape rather than its mispricing.
+    """
+    from pmvl_markets.arbitrage.dislocation import harvest_implication_pairs
+
+    books = {
+        "R1": _book([_lv("0.90", "400")], [_lv("0.05", "400")], ticker="R1"),
+        "R2": _book([_lv("0.50", "400")], [_lv("0.45", "400")], ticker="R2"),
+        "R3": _book([_lv("0.05", "400")], [_lv("0.90", "400")], ticker="R3"),
+    }
+    markets = {
+        "R1": _rung("R1", "70"), "R2": _rung("R2", "80"), "R3": _rung("R3", "90"),
+    }
+    report = harvest_implication_pairs(
+        [_snap(0, books)], markets, strategy_version="t"
+    )
+    body = report.as_dict()
+    assert body["gross_edge_per_set_percentiles"]["n"] == "3"
+    assert body["gross_edge_adjacent_rungs_only"]["n"] == "2"
+    gaps = sorted(o.rung_gap for o in report.observations)
+    assert gaps == [1, 1, 2]
+
+
+def test_capacity_is_reported_with_the_capital_it_needs():
+    """Contracts are not dollars. A return without its capital is a ratio, not a number."""
+    obs = _obs(_book([_lv("0.50", "1000")], [_lv("0.44", "1000")]))
+    assert obs.capacity_sets[3] == Decimal("1000")
+    # 1000 sets at 94c plus fees
+    assert obs.capital_required[3] > Decimal("940")
+    assert obs.capital_required[3] < Decimal("1000")
+    # and a structure with no capacity needs no capital
+    flat = _obs(_book([_lv("0.55", "400")], [_lv("0.52", "400")]))
+    assert flat.capital_required[3] == Decimal("0")
