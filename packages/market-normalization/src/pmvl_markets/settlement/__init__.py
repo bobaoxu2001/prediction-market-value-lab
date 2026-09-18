@@ -12,6 +12,7 @@ one bug produces a certified loss.
 
 from .payoff import (
     ContractRule,
+    ExclusiveGroup,
     HeldLeg,
     LinkageEvidence,
     LinkageRelation,
@@ -25,6 +26,7 @@ from .payoff import (
 
 __all__ = [
     "ContractRule",
+    "ExclusiveGroup",
     "HeldLeg",
     "LinkageEvidence",
     "LinkageRelation",

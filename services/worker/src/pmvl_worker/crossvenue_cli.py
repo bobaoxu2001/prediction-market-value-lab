@@ -660,3 +660,169 @@ def implication_replay(
                 f"      {leg['role']:28} {leg['contract_key']:28} "
                 f"{leg['side']:3} {leg['predicate']}"
             )
+
+
+# --------------------------------------------------------------------- baskets
+def _load_baskets(max_age_hours: int, live: bool, live_events: int):
+    """Group booked, open markets into same-event outcome baskets.
+
+    Unlike the implication route this keeps ``between`` rungs - they are the interior
+    cells of the partition and the whole structure depends on having all of them.
+    """
+    from collections import defaultdict
+
+    from sqlalchemy import func, select
+
+    from pmvl_markets.arbitrage.basket import Bucket, interval_for
+    from pmvl_markets.arbitrage.pipeline import (
+        _market_from_row,
+        latest_orderbook,
+        orderbook_from_snapshot,
+    )
+    from pmvl_shared.db import session_scope
+    from pmvl_shared.db.models import Market, OrderbookSnapshot
+    from pmvl_shared.enums import DataProvenance
+
+    cutoff = utcnow() - timedelta(hours=max_age_hours)
+    with session_scope() as db:
+        recently_booked = (
+            select(OrderbookSnapshot.market_id)
+            .where(OrderbookSnapshot.observed_at > cutoff)
+            .distinct()
+            .scalar_subquery()
+        )
+        events = db.execute(
+            select(Market.platform_event_id, func.count(Market.id))
+            .where(
+                Market.status == MarketStatus.OPEN.value,
+                Market.provenance != DataProvenance.DEMO.value,
+                Market.platform_event_id.is_not(None),
+                Market.id.in_(recently_booked),
+            )
+            .group_by(Market.platform_event_id)
+            .having(func.count(Market.id) >= 2)
+            .order_by(func.count(Market.id).desc())
+            .limit(live_events if live else 10_000)
+        ).all()
+        event_ids = [e[0] for e in events]
+        rows = db.scalars(
+            select(Market).where(
+                Market.platform_event_id.in_(event_ids),
+                Market.status == MarketStatus.OPEN.value,
+                Market.provenance != DataProvenance.DEMO.value,
+            )
+        ).all()
+        markets = [_market_from_row(r) for r in rows]
+        stored: dict[str, Any] = {}
+        if not live:
+            for row in rows:
+                snapshot = latest_orderbook(db, row.id)
+                if snapshot is not None:
+                    stored[row.platform_market_id] = orderbook_from_snapshot(db, snapshot, row)
+
+    rungs = [m for m in markets if interval_for(m) is not None]
+    if live:
+        from pmvl_markets.providers.kalshi import KalshiProvider
+
+        kalshi = [m for m in rungs if m.platform is Platform.KALSHI]
+        provider = KalshiProvider()
+        try:
+            stored = asyncio.run(provider.get_orderbooks(kalshi))
+        finally:
+            asyncio.run(provider.aclose())
+
+    baskets: dict[str, list] = defaultdict(list)
+    for market in rungs:
+        book = stored.get(market.platform_market_id)
+        if book is None or book.is_empty:
+            continue
+        baskets[f"{market.platform.value}:{market.platform_event_id}"].append(
+            Bucket(market=market, book=book, interval=interval_for(market))
+        )
+    return {k: v for k, v in baskets.items() if len(v) >= 2}, len(rungs)
+
+
+@app.command("basket-scan")
+def basket_scan(
+    live: bool = typer.Option(False, "--live", help="Fetch fresh public books"),
+    live_events: int = typer.Option(40, help="How many events to quote when --live"),
+    max_age_hours: int = typer.Option(24, help="How old a stored book may be"),
+    max_quote_age_seconds: int = typer.Option(300, help="Freshness limit for pricing"),
+    min_net_floor: float = typer.Option(0.01, help="Net floor a basket must clear"),
+    max_sets: int = typer.Option(10000, help="Size ceiling per basket"),
+    out: Path = typer.Option(None, help="Write certificates and inputs as JSON"),
+    show: int = typer.Option(5, help="How many baskets to print"),
+) -> None:
+    """Find same-venue outcome baskets whose payoff floor exceeds their cost.
+
+    Prices both directions. Buying every YES pays $1 because exactly one rung wins;
+    buying every NO pays $(N-1) because every rung but the winner does. Both floors
+    need the rungs proven disjoint and covering, which is checked on an inferred
+    observation grid rather than assumed from a shared event ticker.
+    """
+    from pmvl_markets.arbitrage.basket import scan_basket
+
+    baskets, rung_total = _load_baskets(max_age_hours, live, live_events)
+    console.print(
+        f"[bold]{len(baskets)}[/bold] booked baskets "
+        f"({sum(len(v) for v in baskets.values())} of {rung_total} rungs have a book)"
+    )
+
+    certificates = []
+    for _key, buckets in sorted(baskets.items()):
+        certificates.extend(
+            scan_basket(
+                buckets,
+                max_sets=Decimal(str(max_sets)),
+                min_net_floor_usd=Decimal(str(min_net_floor)),
+                max_quote_age_seconds=max_quote_age_seconds,
+            )
+        )
+
+    proven = [c for c in certificates if c.proof.proven]
+    accepted = [c for c in certificates if c.accepted]
+    console.print(
+        f"certificates: {len(certificates)}  partition proven: {len(proven)}  "
+        f"[bold green]accepted: {len(accepted)}[/bold green]"
+    )
+
+    for cert in sorted(certificates, key=lambda c: -c.net_floor_usd)[:show]:
+        mark = "[green]ACCEPT[/green]" if cert.accepted else "[yellow]reject[/yellow]"
+        console.print(
+            f"\n  {mark} {cert.event_key} [{cert.direction}] rungs={cert.rung_count} "
+            f"floor/set=${cert.payoff_per_set} net_floor=${cert.net_floor_usd:.4f} "
+            f"qty={cert.quantity}"
+        )
+        console.print(
+            f"      partition: {'proven' if cert.proof.proven else 'NOT proven'} "
+            f"grid={cert.proof.grid_step}  combined_ask=${cert.combined_top_of_book}"
+        )
+        if not cert.accepted:
+            console.print(f"      [dim]{cert.rejection_reason[:160]}[/dim]")
+
+    if out:
+        out.parent.mkdir(parents=True, exist_ok=True)
+        out.write_text(json.dumps({
+            "generated_at": iso(utcnow()),
+            "live": live,
+            "parameters": {
+                "max_age_hours": max_age_hours,
+                "max_quote_age_seconds": max_quote_age_seconds,
+                "min_net_floor_usd": min_net_floor,
+                "max_sets": max_sets,
+            },
+            "baskets": len(baskets),
+            "accepted": len(accepted),
+            "inputs": {
+                key: [
+                    {
+                        "market": b.market.model_dump(mode="json"),
+                        "book": b.book.model_dump(mode="json"),
+                    }
+                    for b in buckets
+                ]
+                for key, buckets in baskets.items()
+            },
+            "certificates": [c.as_dict() for c in certificates],
+        }, indent=2, default=str))
+        console.print(f"\n[green]wrote {out}[/green]")

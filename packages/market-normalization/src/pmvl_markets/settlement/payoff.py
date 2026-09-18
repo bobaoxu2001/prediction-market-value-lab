@@ -206,6 +206,31 @@ class SettlementLinkage:
 
 
 @dataclass(frozen=True)
+class ExclusiveGroup:
+    """A claim that among N contracts exactly one settles YES.
+
+    Pairwise linkages cannot say this. "A excludes B" repeated over every pair permits
+    the all-NO state, which is precisely the state an exhaustive basket forbids and
+    precisely where the all-NO structure earns its floor - so the constraint has to be
+    N-way or it is not the constraint.
+
+    ``exhaustive=False`` weakens it to *at most* one, which permits all-NO. Use it when
+    the rungs are proven disjoint but their union has not been proven to cover every
+    outcome; the resulting floor is lower, and correctly so.
+    """
+
+    contract_keys: tuple[str, ...]
+    evidence: LinkageEvidence = LinkageEvidence.NONE
+    exhaustive: bool = True
+    covers_void: bool = False
+    note: str = ""
+
+    @property
+    def prunes(self) -> bool:
+        return self.evidence is LinkageEvidence.PROVEN
+
+
+@dataclass(frozen=True)
 class ScenarioPayoff:
     """One joint settlement state and what the whole basket pays in it."""
 
@@ -290,12 +315,41 @@ class PayoffReport:
 _MAX_SCENARIOS = 4096
 
 
+def _group_contradicted(
+    assignment: dict[str, SettlementResult], groups: list[ExclusiveGroup]
+) -> bool:
+    """True when this joint state breaks a proven exactly-one-YES claim."""
+    for group in groups:
+        results = [assignment[k] for k in group.contract_keys if k in assignment]
+        if len(results) != len(group.contract_keys):
+            continue
+        undecided = [r for r in results if r not in (SettlementResult.YES, SettlementResult.NO)]
+        if undecided:
+            # Part of the basket voided. Without a proof that void handling is common
+            # to the whole group, the surviving members are no longer constrained to
+            # sum to one and the state stays reachable.
+            if not group.covers_void:
+                continue
+            # Void handling proven common: either the whole basket voids together or
+            # none of it does. A partial void is then impossible.
+            if len(undecided) != len(results):
+                return True
+            continue
+        yes_count = sum(1 for r in results if r is SettlementResult.YES)
+        if group.exhaustive and yes_count != 1:
+            return True
+        if not group.exhaustive and yes_count > 1:
+            return True
+    return False
+
+
 def evaluate_payoff(
     legs: list[HeldLeg],
     rules: dict[str, ContractRule],
     linkages: list[SettlementLinkage] | None = None,
     *,
     extra_cost_usd: Decimal = ZERO,
+    groups: list[ExclusiveGroup] | None = None,
 ) -> PayoffReport:
     """Score a basket over its full settlement state space.
 
@@ -373,7 +427,25 @@ def evaluate_payoff(
             ],
         )
 
+    groups = list(groups or [])
+    pruning_groups: list[ExclusiveGroup] = []
+    known = set(contract_keys)
+    group_notes: list[str] = []
+    for group in groups:
+        if not set(group.contract_keys) <= known:
+            group_notes.append(
+                f"group {group.contract_keys[:2]}...: names a contract not in the basket"
+            )
+        elif not group.prunes:
+            group_notes.append(
+                f"group of {len(group.contract_keys)}: evidence is "
+                f"{group.evidence.value}, not proven"
+            )
+        else:
+            pruning_groups.append(group)
+
     pruning, ignored = _partition_linkages(linkages, contract_keys)
+    ignored.extend(group_notes)
     pruning, demoted = _demote_contradicted_void_claims(pruning, rules)
     ignored.extend(demoted)
 
@@ -399,7 +471,9 @@ def evaluate_payoff(
     pruned = 0
     for combo in itertools.product(*axes):
         assignment = dict(zip(contract_keys, combo))
-        if _contradicts_linkage(assignment, pruning):
+        if _contradicts_linkage(assignment, pruning) or _group_contradicted(
+            assignment, pruning_groups
+        ):
             pruned += 1
             continue
         payout = ZERO
