@@ -179,16 +179,25 @@ decided on the floor, and the floor says no.
 
 ## Next actions
 
-1. Implication `--live` still seeds from prior book coverage; 200 of 1,864 rungs returned
-   a book on the wide sweep. It should take `--event-prefix` the way basket-scan now does,
-   so today's ladders — which have no history to seed from — are reachable.
-2. Weather baskets are the liquid, completable structures and there are six cities per
+1. Weather baskets are the liquid, completable structures and there are six cities per
    day. A scheduled re-quote near each city's settlement would sample the window where
    the books are thickest; nothing here polls, by design.
-3. `KXBTCMINMON-BTC-26SEP30` is 18 rungs all `less` — a nested ladder, not a partition.
-   The basket prover correctly refuses it; it belongs to the implication route, which
-   does handle `less`. Confirm it is being picked up there.
-4. Cross-venue equivalence remains gated where it was; neither same-venue route touches it.
+2. Cross-venue equivalence remains gated where it was; neither same-venue route touches it.
+3. Fee structure is the binding economic constraint on both routes, not the spread. Six
+   legs of Kalshi taker fee cost 18c against a 4c basket edge; two legs cost 1.27c against
+   a 6c ladder edge that depth dilutes to 0.66c. A maker-side variant would change that
+   arithmetic and is not implemented — nothing here assumes a maker fill.
+
+## Confirmed on real data
+
+`KXBTCMINMON-BTC-26SEP30` is 18 rungs all `less` — nested, not a partition. The basket
+prover refuses it (18 rungs unbounded below, no upper tail) and the implication route
+produces **153 proven certificates** from it, exactly as the split intends. A bucketed
+partition's two tails, conversely, imply nothing in either direction. Both directions of
+that complementarity are pinned by tests.
+
+Live implication over today's Bitcoin ladder (`KXBTCD-26SEP1803`, 24 near-the-money rungs
+quoted): 276 pairs, **276 proven**, 0 accepted, cheapest combined ask **$1.0300**.
 
 ## Resource limits hit
 

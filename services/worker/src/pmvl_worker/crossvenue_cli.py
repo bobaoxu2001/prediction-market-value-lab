@@ -333,7 +333,7 @@ def _load_strike_families(max_age_hours: int, min_members: int = 2):
     )
 
 
-async def _live_strike_families(max_events: int, max_rungs: int):
+async def _live_strike_families(max_events: int, max_rungs: int, event_prefix: str = ""):
     """Fetch fresh books for whole ladders, so every rung is quoted at once.
 
     Whole ladders rather than individual markets: a structure needs both rungs, and
@@ -375,7 +375,14 @@ async def _live_strike_families(max_events: int, max_rungs: int):
                 Market.status == MarketStatus.OPEN.value,
                 Market.provenance != DataProvenance.DEMO.value,
                 Market.platform_event_id.is_not(None),
-                Market.id.in_(recently_booked),
+                (
+                    Market.platform_event_id.like(f"{event_prefix}%")
+                    if event_prefix
+                    # Prior book coverage is a cheap proxy for "someone quotes this",
+                    # but it cannot see a ladder listed today - which is exactly the
+                    # one worth quoting. An explicit prefix overrides the seed.
+                    else Market.id.in_(recently_booked)
+                ),
                 Market.strike_type.in_(
                     ["greater", "greater_or_equal", "less", "less_or_equal"]
                 ),
@@ -401,7 +408,20 @@ async def _live_strike_families(max_events: int, max_rungs: int):
             by_event[m.platform_event_id or ""].append(m)
     trimmed: list = []
     for _evt, ms in by_event.items():
-        trimmed.extend(sorted(ms, key=lambda m: m.platform_market_id)[:max_rungs])
+        # Take the middle of the ladder by strike, not the alphabetical head.
+        #
+        # Unlike a partition, an implication is pairwise: any two rungs with a proven
+        # ordering are a structure, so a 250-rung ladder does not have to be quoted in
+        # full. Which rungs are worth the request is then the whole question, and the
+        # near-the-money ones are where the two-sided depth is. Sorting by ticker takes
+        # the lowest strikes instead, which on an "above X" ladder are the ones priced
+        # at a near-certain YES with nothing resting on the other side.
+        ordered = sorted(ms, key=lambda m: _strike_of(m)[1])
+        if len(ordered) <= max_rungs:
+            trimmed.extend(ordered)
+            continue
+        start = (len(ordered) - max_rungs) // 2
+        trimmed.extend(ordered[start : start + max_rungs])
 
     provider = KalshiProvider()
     try:
@@ -430,6 +450,10 @@ def implication_scan(
     ),
     live_events: int = typer.Option(6, help="How many ladders to quote when --live"),
     live_rungs: int = typer.Option(40, help="Max rungs per ladder when --live"),
+    event_prefix: str = typer.Option(
+        "", help="Target ladders by event id prefix. Overrides the recently-booked "
+                 "seed, which cannot see ladders listed today."
+    ),
     max_age_hours: int = typer.Option(24, help="How old a stored book may be"),
     max_quote_age_seconds: int = typer.Option(
         300, help="How old a book may be and still be priced"
@@ -452,7 +476,9 @@ def implication_scan(
     from pmvl_markets.arbitrage.implication import ProofStatus, prove_implication, scan_implication_family
 
     if live:
-        families, skipped = asyncio.run(_live_strike_families(live_events, live_rungs))
+        families, skipped = asyncio.run(
+            _live_strike_families(live_events, live_rungs, event_prefix)
+        )
         console.print(
             f"[bold]{len(families)}[/bold] ladders quoted live "
             f"({skipped['booked']} of {skipped['requested']} rungs returned a book)"
