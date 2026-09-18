@@ -14,7 +14,7 @@ from rich.table import Table
 from pmvl_shared.config import get_settings
 from pmvl_shared.logging_setup import setup_logging
 
-from . import crossvenue_cli, execution_cli, jobs, proof_cli
+from . import crossvenue_cli, execution_cli, jobs, proof_cli, record_cli, replay_cli
 
 app = typer.Typer(
     add_completion=False,
@@ -27,6 +27,8 @@ app = typer.Typer(
 app.add_typer(execution_cli.app, name="exec")
 app.add_typer(crossvenue_cli.app, name="pair")
 app.add_typer(proof_cli.app, name="proof")
+app.add_typer(record_cli.app, name="record")
+app.add_typer(replay_cli.app, name="replay")
 console = Console()
 
 

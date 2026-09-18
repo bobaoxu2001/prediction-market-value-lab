@@ -1,0 +1,311 @@
+"""``pmvl replay`` - analysis, run only against recorded files.
+
+Every command here refuses to touch the network. A measurement that needs a live
+fetch cannot be re-run against the same data next week, and an experiment whose
+inputs move is not an experiment. The recording's hash chain is verified on load, so
+a run against an edited log fails instead of quietly reporting a better number.
+"""
+
+from __future__ import annotations
+
+import csv
+import json
+from decimal import Decimal
+from pathlib import Path
+
+import typer
+from rich.console import Console
+from rich.table import Table
+
+from pmvl_markets.arbitrage.dislocation import (
+    THRESHOLDS_CENTS,
+    harvest,
+    harvest_implication_pairs,
+)
+from pmvl_markets.arbitrage.maker_experiment import (
+    MARKOUT_HORIZONS,
+    FillEstimator,
+    QuotePolicy,
+    evaluate_quote,
+    generate_quotes,
+    run_experiment,
+)
+from pmvl_markets.recording import load_recording
+from pmvl_shared.enums import Side
+
+app = typer.Typer(add_completion=False, help="Offline replay of a forward recording.")
+console = Console()
+
+
+def _load(directory: Path):
+    recording = load_recording(directory)
+    if not recording.snapshots:
+        console.print(f"[red]no snapshots in {directory}")
+        raise typer.Exit(1)
+    version = recording.single_version
+    if version is None:
+        console.print(
+            f"[red]recording spans strategy versions {sorted(recording.strategy_versions)}; "
+            "these cycles answer different questions and must not be pooled"
+        )
+        raise typer.Exit(1)
+    console.print_json(data=recording.as_dict())
+    return recording, version
+
+
+@app.command("maker")
+def maker(
+    directory: Path = typer.Argument(Path("artifacts/forward"), help="Recording directory."),
+    side: str = typer.Option("yes", help="Side to quote."),
+    improve_ticks: int = typer.Option(0, help="0 joins the bid; 1 steps in front of it."),
+    size: int = typer.Option(50, help="Contracts per quote."),
+    lifetime: int = typer.Option(60, help="Seconds a quote rests before cancellation."),
+    min_spread: float = typer.Option(0.02, help="Minimum spread to quote into."),
+    latency_ms: int = typer.Option(
+        300, help="Assumed delay between seeing the book and the order resting on it."
+    ),
+    out: Path = typer.Option(None, help="Where to write the report. Defaults inside the recording."),
+) -> None:
+    """Measure fill probability, completion, markout and unconditional expectancy."""
+    recording, version = _load(directory)
+    policy = QuotePolicy(
+        side=Side(side),
+        improve_ticks=improve_ticks,
+        size=Decimal(size),
+        lifetime_seconds=lifetime,
+        min_spread=Decimal(str(min_spread)),
+        placement_latency_ms=latency_ms,
+        name=f"{'improve' if improve_ticks else 'join'}-{side}",
+    )
+    report = run_experiment(
+        recording.snapshots, recording.trades, policy, strategy_version=version
+    )
+    body = report.as_dict()
+
+    table = Table(title=f"maker experiment - {policy.name} (v{version})")
+    for column in ("estimator", "fills", "fill rate", "completion",
+                   "markout 60s | fill", "hedge cost | fill", "hedged pair PnL",
+                   "E[PnL] / quote 60s", "95% CI", "admissible"):
+        table.add_column(column, justify="right" if column != "estimator" else "left")
+    for estimator in FillEstimator:
+        row = body["estimators"][estimator.value]
+        ci = row["expectancy_per_quote_ci95"]
+        table.add_row(
+            estimator.value,
+            str(row["fills"]),
+            row["fill_rate"],
+            row["completion_rate"],
+            str(row["mean_markout_given_fill"]["60"]),
+            str(row["mean_hedge_cost_given_fill"]),
+            str(row["hedged_pair_pnl_per_contract"]),
+            row["expectancy_per_quote_usd"]["60"],
+            f"[{ci[0]}, {ci[1]}]" if ci else "-",
+            "yes" if row["admissible"] else "NO",
+        )
+    console.print(table)
+    console.print(
+        f"quotes placed: {body['quotes_placed']} across {body['markets']} markets, "
+        f"{body['independent_event_days']} independent event-days"
+    )
+
+    target = out or (directory / "maker_experiment.json")
+    target.write_text(json.dumps(body, indent=2) + "\n")
+
+    ledger = directory / "maker_quote_ledger.csv"
+    with ledger.open("w", newline="") as fh:
+        writer = csv.writer(fh)
+        writer.writerow(
+            ["market", "event", "placed_at", "price", "size", "queue_ahead",
+             "spread", "at_level_volume", "through_volume",
+             *[f"filled_{e.value}" for e in FillEstimator],
+             *[f"markout_{h}s" for h in MARKOUT_HORIZONS],
+             "liquidation_pnl"]
+        )
+        for outcome in report.outcomes:
+            quote = outcome.quote
+            writer.writerow(
+                [quote.market, quote.event_ticker, quote.placed_at.isoformat(),
+                 quote.price, quote.size, quote.queue_ahead, quote.spread_at_placement,
+                 outcome.relevant_volume_at_level, outcome.relevant_volume_through,
+                 *[outcome.filled_size[e] for e in FillEstimator],
+                 *[outcome.markout[h] for h in MARKOUT_HORIZONS],
+                 outcome.liquidation_pnl]
+            )
+    console.print(f"wrote {target}\nwrote {ledger} ({len(report.outcomes)} quotes, winners and losers)")
+
+
+@app.command("maker-sweep")
+def maker_sweep(
+    directory: Path = typer.Argument(Path("artifacts/forward"), help="Recording directory."),
+    size: int = typer.Option(50, help="Contracts per quote."),
+    lifetime: int = typer.Option(60, help="Seconds a quote rests before cancellation."),
+    latency_ms: int = typer.Option(300, help="Delay before the order rests on the book."),
+    out: Path = typer.Option(None, help="Where to write the combined report."),
+) -> None:
+    """Run every declared policy and report all of them, not the best of them.
+
+    Four policies are fixed here in the source: join or improve, on each side. They
+    are run together and reported together on purpose. Running four and quoting the
+    one that came out ahead is the same mistake as running four hundred - the best of
+    N looks good at N=4 too, and the only defence is that the other three are printed
+    next to it.
+    """
+    recording, version = _load(directory)
+    policies = [
+        QuotePolicy(
+            side=Side(side_name), improve_ticks=ticks, size=Decimal(size),
+            lifetime_seconds=lifetime, placement_latency_ms=latency_ms,
+            name=f"{'improve' if ticks else 'join'}-{side_name}",
+        )
+        for side_name in ("yes", "no")
+        for ticks in (0, 1)
+    ]
+
+    table = Table(title=f"maker policy sweep - {len(policies)} policies (v{version})")
+    for column in ("policy", "quotes", "fills", "fill rate", "markout 60s | fill",
+                   "hedged pair PnL", "E[PnL] / quote 60s", "95% CI"):
+        table.add_column(column, justify="right" if column != "policy" else "left")
+
+    reports = {}
+    for policy in policies:
+        report = run_experiment(
+            recording.snapshots, recording.trades, policy, strategy_version=version
+        )
+        body = report.as_dict()
+        reports[policy.name] = body
+        row = body["estimators"][FillEstimator.QUEUE_MODEL.value]
+        ci = row["expectancy_per_quote_ci95"]
+        table.add_row(
+            policy.name,
+            str(body["quotes_placed"]),
+            str(row["fills"]),
+            row["fill_rate"],
+            str(row["mean_markout_given_fill"]["60"]),
+            str(row["hedged_pair_pnl_per_contract"]),
+            row["expectancy_per_quote_usd"]["60"],
+            f"[{ci[0]}, {ci[1]}]" if ci else "-",
+        )
+    console.print(table)
+    console.print(
+        "[yellow]all four policies are reported because four were run; the best of "
+        "four is not a finding"
+    )
+
+    target = out or (directory / "maker_policy_sweep.json")
+    target.write_text(
+        json.dumps(
+            {
+                "policies_run": len(policies),
+                "multiplicity_note": (
+                    "every policy declared in the source was run and every one is "
+                    "reported. Selecting the strongest of these after the fact would "
+                    "need a multiplicity correction that none of these intervals carry"
+                ),
+                "estimator_used_in_table": FillEstimator.QUEUE_MODEL.value,
+                "reports": reports,
+            },
+            indent=2,
+        )
+        + "\n"
+    )
+    console.print(f"wrote {target}")
+
+
+@app.command("dislocation")
+def dislocation(
+    directory: Path = typer.Argument(Path("artifacts/forward"), help="Recording directory."),
+    ceiling: int = typer.Option(10000, help="Maximum sets considered per observation."),
+    structure: str = typer.Option(
+        "implication",
+        help="'implication' across ladder rungs, or 'complete-set' inside one market.",
+    ),
+    out: Path = typer.Option(None, help="Where to write the report."),
+) -> None:
+    """How often a synchronized dislocation clears 1c through 5c."""
+    recording, version = _load(directory)
+    if structure == "complete-set":
+        report = harvest(
+            recording.snapshots, strategy_version=version, ceiling=Decimal(ceiling)
+        )
+    elif structure == "implication":
+        if not recording.markets:
+            console.print(
+                "[red]this recording has no markets.jsonl, so no rung's rules are "
+                "known and no implication can be proven from it"
+            )
+            raise typer.Exit(1)
+        report = harvest_implication_pairs(
+            recording.snapshots,
+            recording.markets,
+            strategy_version=version,
+            ceiling=Decimal(ceiling),
+        )
+    else:
+        raise typer.BadParameter("structure must be 'implication' or 'complete-set'")
+    body = report.as_dict()
+    body["structure_requested"] = structure
+
+    table = Table(title=f"synchronized dislocation - {structure} (v{version})")
+    for column in ("threshold", "clearing", "near miss", "rate", "episodes",
+                   "survive seq", "median dur s", "max capacity", "max net"):
+        table.add_column(column, justify="right" if column != "threshold" else "left")
+    for cents in THRESHOLDS_CENTS:
+        row = body["thresholds"][str(cents)]
+        table.add_row(
+            f"{cents}c",
+            str(row["observations_clearing"]),
+            str(row["near_misses_within_one_cent"]),
+            row["observation_rate"],
+            str(row["episodes"]),
+            str(row["episodes_surviving_sequential_execution"]),
+            str(row["median_duration_seconds"]),
+            row["max_capacity_sets"],
+            row["max_net_after_fees_usd"],
+        )
+    console.print(table)
+    console.print(f"gross edge per set: {body['gross_edge_per_set_percentiles']}")
+    console.print(
+        f"{body['market_observations']:,} market observations over "
+        f"{body['markets']} markets, {body['independent_event_days']} event-days"
+    )
+
+    target = out or (directory / f"dislocation_report_{structure}.json")
+    target.write_text(json.dumps(body, indent=2) + "\n")
+
+    episodes = directory / f"dislocation_episodes_{structure}.csv"
+    with episodes.open("w", newline="") as fh:
+        writer = csv.writer(fh)
+        writer.writerow(
+            ["market", "event", "threshold_cents", "started_at", "ended_at",
+             "duration_seconds", "snapshots", "peak_gross_edge", "peak_capacity_sets",
+             "peak_net_after_fees", "max_skew_bound_ms", "sequential_net_floor",
+             "failure_rescue_floor", "survives_sequencing"]
+        )
+        for episode in report.episodes:
+            row = episode.as_dict()
+            writer.writerow([row[k] for k in (
+                "market", "event_ticker", "threshold_cents", "started_at", "ended_at",
+                "duration_seconds", "snapshots", "peak_gross_edge_per_set",
+                "peak_capacity_sets", "peak_net_after_fees_usd", "max_skew_bound_ms",
+                "sequential_net_floor_usd", "failure_rescue_floor_usd",
+                "survives_sequencing")])
+
+    ledger = directory / f"observation_ledger_{structure}.csv"
+    with ledger.open("w", newline="") as fh:
+        writer = csv.writer(fh)
+        writer.writerow(
+            ["market", "event", "observed_at", "yes_ask", "no_ask", "gross_edge_per_set",
+             "top_of_book_sets", *[f"capacity_{c}c" for c in THRESHOLDS_CENTS],
+             *[f"net_{c}c" for c in THRESHOLDS_CENTS]]
+        )
+        for obs in report.observations:
+            writer.writerow(
+                [obs.market, obs.event_ticker, obs.observed_at.isoformat(),
+                 obs.yes_ask, obs.no_ask, obs.gross_edge_per_set, obs.top_of_book_sets,
+                 *[obs.capacity_sets[c] for c in THRESHOLDS_CENTS],
+                 *[obs.net_after_fees[c] for c in THRESHOLDS_CENTS]]
+            )
+    console.print(
+        f"wrote {target}\nwrote {episodes} ({len(report.episodes)} episodes)\n"
+        f"wrote {ledger} ({len(report.observations)} observations, every one kept)"
+    )
