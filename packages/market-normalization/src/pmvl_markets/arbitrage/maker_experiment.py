@@ -507,6 +507,11 @@ class MakerExperimentReport:
     quotes_placed: int = 0
     markets: int = 0
     event_days: int = 0
+    #: Calendar dates covered. Eight events recorded in one afternoon are eight
+    #: event-days and *one* session: they share the macro conditions, the exchange's
+    #: state and whatever the market makers were doing that day. Reporting only the
+    #: event-day count would let a single session read as eight independent draws.
+    distinct_dates: int = 0
     outcomes: list[QuoteOutcome] = field(default_factory=list)
 
     def fills(self, estimator: FillEstimator) -> int:
@@ -643,7 +648,14 @@ class MakerExperimentReport:
             "policy": self.policy.as_dict(),
             "quotes_placed": self.quotes_placed,
             "markets": self.markets,
-            "independent_event_days": self.event_days,
+            "event_days": self.event_days,
+            "distinct_dates": self.distinct_dates,
+            "independence_note": (
+                f"{self.event_days} event-days across {self.distinct_dates} calendar "
+                "date(s). Events recorded in one session are not independent draws in "
+                "time; the interval resamples market-days and does not price the "
+                "common-session factor"
+            ),
             "markout_horizons_seconds": list(MARKOUT_HORIZONS),
             "estimators": {},
             "inadmissible": {
@@ -740,5 +752,6 @@ def run_experiment(
         quotes_placed=len(quotes),
         markets=len({q.market for q in quotes}),
         event_days=len(event_days),
+        distinct_dates=len({q.placed_at.date() for q in quotes}),
         outcomes=outcomes,
     )

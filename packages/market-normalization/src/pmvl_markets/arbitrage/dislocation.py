@@ -348,6 +348,7 @@ class HarvestReport:
     market_observations: int = 0
     markets: int = 0
     event_days: int = 0
+    distinct_dates: int = 0
     observations: list[DislocationObservation] = field(default_factory=list)
     episodes: list[DislocationEpisode] = field(default_factory=list)
     #: proof status -> how many candidate pairs it turned away. Kept because "we
@@ -430,7 +431,13 @@ class HarvestReport:
             "market_observations": self.market_observations,
             "unpriceable_observations": self.unpriceable_observations,
             "markets": self.markets,
-            "independent_event_days": self.event_days,
+            "event_days": self.event_days,
+            "distinct_dates": self.distinct_dates,
+            "independence_note": (
+                f"{self.event_days} event-days across {self.distinct_dates} calendar "
+                "date(s). One session's events share their conditions and are not "
+                "independent draws in time"
+            ),
             "gross_edge_per_set_percentiles": self.edge_percentiles(),
             "gross_edge_adjacent_rungs_only": self.edge_percentiles(rung_gap=1),
             "candidate_pairs_refused": dict(sorted(self.pairs_refused.items())),
@@ -522,6 +529,7 @@ def harvest(
     report.episodes.extend(open_episodes.values())
     report.markets = len(markets)
     report.event_days = len(event_days)
+    report.distinct_dates = len({d for _, d in event_days})
     return report
 
 
@@ -669,6 +677,7 @@ def harvest_implication_pairs(
     report.episodes.extend(open_episodes.values())
     report.markets = len(seen_pairs)
     report.event_days = len(event_days)
+    report.distinct_dates = len({d for _, d in event_days})
     return report
 
 

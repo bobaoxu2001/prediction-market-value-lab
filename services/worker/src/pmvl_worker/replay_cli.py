@@ -53,6 +53,34 @@ def _load(directory: Path):
     return recording, version
 
 
+def _write_quote_ledger(path: Path, report) -> None:
+    """Every quote the policy placed, filled or not.
+
+    The unfilled ones are most of the file and all of the denominator. A ledger of
+    only the fills would make the fill rate unrecoverable from the artifact, which is
+    the one number a reader most needs to check.
+    """
+    with path.open("w", newline="") as fh:
+        writer = csv.writer(fh)
+        writer.writerow(
+            ["market", "event", "placed_at", "price", "size", "queue_ahead",
+             "spread", "at_level_volume", "through_volume",
+             *[f"filled_{e.value}" for e in FillEstimator],
+             *[f"markout_{h}s" for h in MARKOUT_HORIZONS],
+             "hedge_cost", "liquidation_pnl"]
+        )
+        for outcome in report.outcomes:
+            quote = outcome.quote
+            writer.writerow(
+                [quote.market, quote.event_ticker, quote.placed_at.isoformat(),
+                 quote.price, quote.size, quote.queue_ahead, quote.spread_at_placement,
+                 outcome.relevant_volume_at_level, outcome.relevant_volume_through,
+                 *[outcome.filled_size[e] for e in FillEstimator],
+                 *[outcome.markout[h] for h in MARKOUT_HORIZONS],
+                 outcome.hedge_cost, outcome.liquidation_pnl]
+            )
+
+
 @app.command("maker")
 def maker(
     directory: Path = typer.Argument(Path("artifacts/forward"), help="Recording directory."),
@@ -105,32 +133,15 @@ def maker(
     console.print(table)
     console.print(
         f"quotes placed: {body['quotes_placed']} across {body['markets']} markets, "
-        f"{body['independent_event_days']} independent event-days"
+        f"{body['event_days']} event-days across {body['distinct_dates']} date(s)"
     )
 
-    target = out or (directory / "maker_experiment.json")
+    target = out or (directory / f"maker_experiment_{policy.name}.json")
     target.write_text(json.dumps(body, indent=2) + "\n")
 
-    ledger = directory / "maker_quote_ledger.csv"
-    with ledger.open("w", newline="") as fh:
-        writer = csv.writer(fh)
-        writer.writerow(
-            ["market", "event", "placed_at", "price", "size", "queue_ahead",
-             "spread", "at_level_volume", "through_volume",
-             *[f"filled_{e.value}" for e in FillEstimator],
-             *[f"markout_{h}s" for h in MARKOUT_HORIZONS],
-             "liquidation_pnl"]
-        )
-        for outcome in report.outcomes:
-            quote = outcome.quote
-            writer.writerow(
-                [quote.market, quote.event_ticker, quote.placed_at.isoformat(),
-                 quote.price, quote.size, quote.queue_ahead, quote.spread_at_placement,
-                 outcome.relevant_volume_at_level, outcome.relevant_volume_through,
-                 *[outcome.filled_size[e] for e in FillEstimator],
-                 *[outcome.markout[h] for h in MARKOUT_HORIZONS],
-                 outcome.liquidation_pnl]
-            )
+    ledger = directory / f"maker_quote_ledger_{policy.name}.csv"
+    _write_quote_ledger(ledger, report)
+
     console.print(f"wrote {target}\nwrote {ledger} ({len(report.outcomes)} quotes, winners and losers)")
 
 
@@ -173,6 +184,7 @@ def maker_sweep(
         )
         body = report.as_dict()
         reports[policy.name] = body
+        _write_quote_ledger(directory / f"maker_quote_ledger_{policy.name}.csv", report)
         row = body["estimators"][FillEstimator.QUEUE_MODEL.value]
         ci = row["expectancy_per_quote_ci95"]
         table.add_row(
@@ -270,7 +282,8 @@ def dislocation(
         )
     console.print(
         f"{body['market_observations']:,} market observations over "
-        f"{body['markets']} markets, {body['independent_event_days']} event-days"
+        f"{body['markets']} markets, {body['event_days']} event-days "
+        f"across {body['distinct_dates']} date(s)"
     )
 
     target = out or (directory / f"dislocation_report_{structure}.json")

@@ -313,7 +313,8 @@ def test_report_names_the_touched_estimator_as_inadmissible():
     body = report.as_dict()
     assert body["estimators"][FillEstimator.TOUCHED.value]["admissible"] is False
     assert body["estimators"][FillEstimator.QUEUE_MODEL.value]["admissible"] is True
-    assert body["independent_event_days"] == 1
+    assert body["event_days"] == 1
+    assert body["distinct_dates"] == 1
 
 
 def test_an_empty_recording_yields_zero_expectancy_not_an_error():
@@ -480,3 +481,30 @@ def test_completion_requires_the_whole_declared_size_not_a_single_contract():
                          [_snap(0, {"M": _book()})], policy=POLICY)
     assert out.filled_size[FillEstimator.QUEUE_MODEL] == Decimal("1")
     assert out.filled_size[FillEstimator.QUEUE_MODEL] < quote.size
+
+
+def test_events_recorded_in_one_session_are_not_counted_as_separate_days():
+    """Eight events in one afternoon are eight event-days and one session.
+
+    Reporting only the event-day count lets a single session read as eight
+    independent draws in time, which it is not - they share the macro conditions,
+    the exchange's state and whatever the market makers were doing that day.
+    """
+    books = {f"M{i}": _book() for i in range(3)}
+    snaps = [
+        EventSnapshot(
+            event_ticker=f"EV{i}",
+            platform=Platform.KALSHI,
+            request_sent_at=T0 + timedelta(minutes=i),
+            response_received_at=T0 + timedelta(minutes=i, milliseconds=200),
+            capture_mode=CaptureMode.SINGLE_REQUEST,
+            books=books,
+            requested_tickers=tuple(books),
+        )
+        for i in range(4)
+    ]
+    report = run_experiment(snaps, [], QuotePolicy(), strategy_version="t")
+    body = report.as_dict()
+    assert body["event_days"] == 4
+    assert body["distinct_dates"] == 1
+    assert "not independent draws in time" in body["independence_note"]
