@@ -42,6 +42,15 @@ data/raw/**
 data/processed/**
 !data/processed/.gitkeep
 
+# Raw forward recordings: full L2 ladders and the tape, several MB per hour per
+# event. The same bargain as the research archive - the evidence is durable and
+# local, the *findings* are committed. Every derived file below is tracked,
+# including the ledgers that hold the losing observations, because a repository
+# that kept only the summary would be unable to show that the losers were kept.
+artifacts/forward/**/snapshots.jsonl
+artifacts/forward/**/markets.jsonl
+artifacts/forward/**/trades.jsonl
+
 # --- customer records (never commit) ---
 #
 # Founding Pilot fulfilment is manual, so the member ledger is a file rather than
