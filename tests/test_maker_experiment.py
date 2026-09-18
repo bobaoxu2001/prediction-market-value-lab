@@ -435,3 +435,48 @@ def test_prints_that_landed_while_the_order_was_still_in_flight_do_not_fill_it()
     instant = QuotePolicy(placement_latency_ms=0)
     optimistic = evaluate_quote(quote, [in_flight], [_snap(0, {"M": _book()})], policy=instant)
     assert optimistic.filled_size[FillEstimator.QUEUE_MODEL] == Decimal("50")
+
+
+# ------------------------------------------------------------ negative controls
+def test_a_quote_that_would_cross_the_spread_is_not_a_maker_quote():
+    """Improving past the ask is taking, not making, and must not be generated."""
+    tight = _book(yes_bid="0.40", yes_ask="0.42")
+    assert generate_quotes([_snap(0, {"M": tight})], QuotePolicy(improve_ticks=2)) == []
+    assert len(generate_quotes([_snap(0, {"M": tight})], QuotePolicy(improve_ticks=1))) == 1
+
+
+def test_a_quote_far_below_the_market_is_never_filled_by_prints_above_it():
+    """A bid at 10c cannot be filled by a taker selling at 40c."""
+    quote = _quote(price=Decimal("0.10"), queue_ahead=Decimal("0"))
+    trades = [_trade(i, "0.40", "1000", "no", tid=f"x{i}") for i in range(1, 50)]
+    out = evaluate_quote(quote, trades, [_snap(0, {"M": _book()})], policy=POLICY)
+    assert all(out.filled_size[e] == Decimal("0") for e in FillEstimator)
+
+
+def test_an_empty_tape_fills_nothing_under_any_estimator():
+    quote = _quote(queue_ahead=Decimal("0"))
+    out = evaluate_quote(quote, [], [_snap(0, {"M": _book()})], policy=POLICY)
+    assert all(out.filled_size[e] == Decimal("0") for e in FillEstimator)
+    assert out.first_fill_at is None
+
+
+def test_a_book_with_no_bid_on_the_quoted_side_generates_nothing():
+    one_sided = OrderBook(
+        platform=Platform.KALSHI,
+        platform_market_id="M",
+        observed_at=T0,
+        yes_bids=[],
+        yes_asks=[_lv("0.45", "300")],
+        no_bids=[_lv("0.55", "300")],
+        no_asks=[],
+    )
+    assert generate_quotes([_snap(0, {"M": one_sided})], QuotePolicy()) == []
+
+
+def test_completion_requires_the_whole_declared_size_not_a_single_contract():
+    """A 1-lot fill on a 50-lot quote is a fill, and it is not a completion."""
+    quote = _quote(queue_ahead=Decimal("0"), size=Decimal("50"))
+    out = evaluate_quote(quote, [_trade(5, "0.39", "1", "no")],
+                         [_snap(0, {"M": _book()})], policy=POLICY)
+    assert out.filled_size[FillEstimator.QUEUE_MODEL] == Decimal("1")
+    assert out.filled_size[FillEstimator.QUEUE_MODEL] < quote.size

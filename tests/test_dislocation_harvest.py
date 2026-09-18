@@ -482,3 +482,31 @@ def test_capacity_is_reported_with_the_capital_it_needs():
     # and a structure with no capacity needs no capital
     flat = _obs(_book([_lv("0.55", "400")], [_lv("0.52", "400")]))
     assert flat.capital_required[3] == Decimal("0")
+
+
+# ------------------------------------------------------------ negative controls
+def test_a_book_priced_exactly_at_a_dollar_clears_nothing():
+    """Parity is not an edge. The boundary has to be exclusive or every flat book clears."""
+    obs = _obs(_book([_lv("0.50", "400")], [_lv("0.50", "400")]))
+    assert obs.gross_edge_per_set == Decimal("0.00")
+    assert all(obs.capacity_sets[c] == 0 for c in THRESHOLDS_CENTS)
+
+
+def test_a_one_cent_edge_does_not_clear_the_two_cent_bar():
+    obs = _obs(_book([_lv("0.50", "400")], [_lv("0.49", "400")]))
+    assert obs.capacity_sets[1] == Decimal("400")
+    assert obs.capacity_sets[2] == Decimal("0")
+
+
+def test_zero_sized_levels_produce_no_capacity():
+    obs = _obs(_book([_lv("0.50", "0")], [_lv("0.44", "400")]))
+    assert all(obs.capacity_sets[c] == 0 for c in THRESHOLDS_CENTS)
+    assert obs.top_of_book_sets == Decimal("0")
+
+
+def test_the_same_pair_seen_twice_is_one_market_not_two():
+    """Repeat observations of one structure must not inflate the pair count."""
+    hit = _book([_lv("0.50", "400")], [_lv("0.44", "400")])
+    report = harvest([_snap(i * 5, {"M": hit}) for i in range(5)], strategy_version="t")
+    assert report.market_observations == 5
+    assert report.markets == 1
