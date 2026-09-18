@@ -10,7 +10,10 @@ from __future__ import annotations
 import asyncio
 import time
 from dataclasses import dataclass, field
-from typing import Any, Mapping
+from typing import Any, Mapping, Sequence, TypeAlias
+
+#: A mapping, or a sequence of pairs when a key must repeat.
+QueryParams: TypeAlias = "Mapping[str, Any] | Sequence[tuple[str, Any]] | None"
 
 import httpx
 from tenacity import (
@@ -166,14 +169,14 @@ class HttpClient:
     def circuit_open(self) -> bool:
         return self._breaker.is_open
 
-    def _cache_key(self, path: str, params: Mapping[str, Any] | None) -> str:
-        return f"{path}?{sorted((params or {}).items())}"
+    def _cache_key(self, path: str, params: QueryParams) -> str:
+        return f"{path}?{sorted(_pairs(params))}"
 
     async def get_json(
         self,
         path: str,
         *,
-        params: Mapping[str, Any] | None = None,
+        params: QueryParams = None,
         cost: float = 1.0,
         use_cache: bool = True,
         allow_404: bool = False,
@@ -182,6 +185,13 @@ class HttpClient:
 
         ``allow_404`` returns ``None`` instead of raising - used for endpoints that
         legitimately 404 (a token with no book yet, a market with no resolution).
+
+        ``params`` may be a mapping or a sequence of pairs. The sequence form is not
+        a convenience: Kalshi's batch orderbook endpoint takes a *repeated* ``tickers``
+        key, and answering a comma-joined value with a single empty book keyed by the
+        joined string - which is what it does - is indistinguishable from "none of
+        these markets has a book". A mapping cannot express the repeated key, so the
+        sequence form is what makes a synchronized multi-leg read possible at all.
         """
         key = self._cache_key(path, params)
         if use_cache and self._cache_ttl > 0:
@@ -201,7 +211,7 @@ class HttpClient:
             async with self._semaphore:
                 self.stats["requests"] += 1
                 try:
-                    resp = await self._client.get(path, params=dict(params or {}))
+                    resp = await self._client.get(path, params=_pairs(params))
                 except (httpx.TimeoutException, httpx.TransportError) as exc:
                     raise RetryableProviderError(f"{self.name} transport: {exc}") from exc
 
@@ -244,6 +254,15 @@ class HttpClient:
         if use_cache and self._cache_ttl > 0:
             self._cache[key] = (time.monotonic(), data)
         return data
+
+
+def _pairs(params: Any) -> list[tuple[str, Any]]:
+    """Normalise either param form to the list httpx wants, preserving repeats."""
+    if params is None:
+        return []
+    if isinstance(params, Mapping):
+        return list(params.items())
+    return [(str(k), v) for k, v in params]
 
 
 def _retry_after_seconds(resp: httpx.Response) -> float | None:

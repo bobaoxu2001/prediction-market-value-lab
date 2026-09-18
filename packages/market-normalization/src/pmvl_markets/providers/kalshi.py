@@ -20,6 +20,7 @@ Docs: https://docs.kalshi.com/getting_started/orderbook_responses
 from __future__ import annotations
 
 import asyncio
+from dataclasses import dataclass
 from datetime import datetime
 from decimal import Decimal
 from typing import Any, Iterable, Sequence
@@ -186,6 +187,36 @@ def tick_from_price_ranges(payload: dict[str, Any]) -> Decimal:
         return min(steps)
     structure = payload.get("price_level_structure", "linear_cent")
     return Decimal("0.001") if "deci_cent" in str(structure) else Decimal("0.01")
+
+
+#: Observed ceiling on the batch orderbook endpoint: 100 tickers answered, 188
+#: rejected with ``Field validation for 'Tickers' failed on the 'max' tag``.
+MAX_BATCH_TICKERS = 100
+
+
+@dataclass(frozen=True)
+class SynchronizedBooks:
+    """The result of one batch read, including the case where there wasn't one.
+
+    ``ok=False`` is a first-class outcome. Callers that need simultaneity must record
+    the failure and move on; they must not retry into a per-market fetch and keep the
+    word "synchronized".
+    """
+
+    requested: tuple[str, ...]
+    books: dict[str, OrderBook]
+    sent_at: datetime
+    received_at: datetime
+    ok: bool
+    detail: str
+
+    @property
+    def roundtrip_ms(self) -> float:
+        return (self.received_at - self.sent_at).total_seconds() * 1000.0
+
+    @property
+    def missing(self) -> tuple[str, ...]:
+        return tuple(t for t in self.requested if t not in self.books)
 
 
 class KalshiProvider:
@@ -624,6 +655,90 @@ class KalshiProvider:
         if not data:
             return None
         return self.parse_orderbook(market.platform_market_id, data)
+
+    async def get_orderbooks_synchronized(
+        self, tickers: Sequence[str], *, depth: int | None = None
+    ) -> "SynchronizedBooks":
+        """Read every ticker's book inside one request, or report that it did not.
+
+        There is no fallback here on purpose. ``get_orderbooks`` below will happily
+        fetch market by market when the batch misbehaves, and that is the right
+        trade-off when the caller only wants coverage - but it is exactly the wrong
+        one when the caller intends to compare legs against each other, because the
+        result is a set of quotes taken at different times that looks identical to a
+        set taken at the same time. This method returns the failure instead.
+
+        The tickers go out as a *repeated* ``tickers`` parameter. Comma-joining them,
+        which is what the older code did, returns HTTP 200 with a single empty book
+        whose ticker is the joined string - so every leg reads as "no liquidity" and
+        every caller falls back to one request per market. That encoding bug is why
+        nothing in this repository has ever held a genuinely simultaneous multi-leg
+        quote.
+        """
+        requested = tuple(dict.fromkeys(tickers))
+        if not requested:
+            return SynchronizedBooks(
+                requested=(), books={}, sent_at=utcnow(), received_at=utcnow(),
+                ok=False, detail="no tickers requested",
+            )
+        if len(requested) > MAX_BATCH_TICKERS:
+            return SynchronizedBooks(
+                requested=requested, books={}, sent_at=utcnow(), received_at=utcnow(),
+                ok=False,
+                detail=(
+                    f"{len(requested)} tickers exceeds the venue's batch maximum of "
+                    f"{MAX_BATCH_TICKERS}; this set has no synchronous read"
+                ),
+            )
+
+        settings = get_settings()
+        params: list[tuple[str, Any]] = [("tickers", t) for t in requested]
+        params.append(("depth", depth or settings.orderbook_depth))
+
+        sent_at = utcnow()
+        try:
+            data = await self._client.get_json(
+                "/markets/orderbooks", params=params, use_cache=False, allow_404=True
+            )
+        except ProviderError as exc:
+            return SynchronizedBooks(
+                requested=requested, books={}, sent_at=sent_at, received_at=utcnow(),
+                ok=False, detail=f"request failed: {exc}",
+            )
+        received_at = utcnow()
+
+        entries = (data or {}).get("orderbooks")
+        if not isinstance(entries, list):
+            return SynchronizedBooks(
+                requested=requested, books={}, sent_at=sent_at, received_at=received_at,
+                ok=False, detail="response carried no orderbooks array",
+            )
+
+        wanted = set(requested)
+        books: dict[str, OrderBook] = {}
+        unexpected: list[str] = []
+        for entry in entries:
+            ticker = entry.get("ticker") or entry.get("market_ticker")
+            if ticker not in wanted:
+                unexpected.append(str(ticker)[:120])
+                continue
+            book = self.parse_orderbook(ticker, entry)
+            #: One response, one instant. Stamping each book with its own ``utcnow``
+            #: would manufacture a skew that the capture does not have.
+            books[ticker] = book.model_copy(update={"observed_at": received_at})
+
+        if unexpected:
+            return SynchronizedBooks(
+                requested=requested, books={}, sent_at=sent_at, received_at=received_at,
+                ok=False,
+                detail=f"response contained {len(unexpected)} unrequested tickers, "
+                       f"first {unexpected[0]!r}",
+            )
+
+        return SynchronizedBooks(
+            requested=requested, books=books, sent_at=sent_at, received_at=received_at,
+            ok=True, detail="",
+        )
 
     async def get_orderbooks(
         self, markets: list[NormalizedMarket]
