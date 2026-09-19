@@ -126,14 +126,25 @@ class PooledPolicyResult:
     markout_distribution: dict[str, Any] = field(default_factory=dict)
 
     @property
+    def binding_level(self) -> str:
+        """Which interval the decision actually used - named, never assumed.
+
+        The pre-registration says the date-level interval binds. When the study lands
+        on one date that interval does not exist, and the decision falls back to the
+        session level. That fallback is real and defensible - it is still twenty
+        draws of something - but it answers a narrower question, so it is named in
+        the output rather than applied quietly. A verdict that cannot say which
+        interval produced it is a verdict that reads stronger than it is.
+        """
+        return "date" if self.date_ci95 is not None else "session"
+
+    @property
     def verdict_positive(self) -> bool:
-        """Family-wise lower bound above zero, on the binding (date-level) interval."""
         binding = self.date_ci_family or self.session_ci_family
         return binding is not None and binding[0] > ZERO
 
     @property
     def verdict_negative(self) -> bool:
-        """Per-policy 95% upper bound below zero, on the binding interval."""
         binding = self.date_ci95 or self.session_ci95
         return binding is not None and binding[1] < ZERO
 
@@ -152,7 +163,7 @@ class PooledPolicyResult:
             "session_cluster_ci_family_wise": ci(self.session_ci_family),
             "date_cluster_ci95": ci(self.date_ci95),
             "date_cluster_ci_family_wise": ci(self.date_ci_family),
-            "binding_interval": "date" if self.date_ci95 else "session",
+            "binding_interval": self.binding_level,
             "distinct_markets_across_sessions": self.distinct_markets,
             "mean_consecutive_session_overlap": (
                 None
@@ -193,6 +204,16 @@ class StudyReport:
     def complete(self) -> bool:
         return self.completed_sessions >= self.planned_sessions
 
+    @property
+    def date_factor_sampled(self) -> bool:
+        """Were there enough dates to resample the day at all?
+
+        One date is one draw. Everything the study says is then conditional on that
+        day, however many sessions it holds - twenty half-hours of one afternoon
+        cannot tell you what a different afternoon does.
+        """
+        return len(self.dates) >= 2
+
     def verdict(self) -> tuple[str, str]:
         """(verdict, why). Only decided at the planned session count."""
         if not self.complete:
@@ -209,10 +230,20 @@ class StudyReport:
                 f"family-wise lower bound above zero for {names}",
             )
         if self.results and all(r.verdict_negative for r in self.results):
+            level = self.results[0].binding_level
+            scope = (
+                f"across {len(self.dates)} calendar dates"
+                if self.date_factor_sampled
+                else (
+                    f"on the single date {self.dates[0] if self.dates else 'recorded'}, "
+                    "so the day factor is unsampled and nothing here extends to a "
+                    "different day"
+                )
+            )
             return (
                 "CURRENT_MARKET_MICROSTRUCTURE_DOES_NOT_SUPPORT_PROFITABLE_EXECUTION",
-                "every declared policy's 95% upper bound is below zero on the binding "
-                "interval",
+                f"every declared policy's 95% upper bound is below zero on the "
+                f"{level}-level interval, {scope}",
             )
         return (
             "INSUFFICIENT_EVIDENCE",
@@ -228,6 +259,13 @@ class StudyReport:
             "completed_sessions": self.completed_sessions,
             "distinct_dates": len(self.dates),
             "dates": self.dates,
+            "date_factor_sampled": self.date_factor_sampled,
+            "generalisation_limit": (
+                "the day factor is resampled"
+                if self.date_factor_sampled
+                else "one calendar date: every interval here is conditional on that "
+                     "day, and the study does not speak to a different one"
+            ),
             "estimator": self.estimator,
             "markout_horizon_seconds": self.horizon,
             "bootstrap": {

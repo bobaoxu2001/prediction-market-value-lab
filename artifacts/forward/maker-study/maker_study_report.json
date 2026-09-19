@@ -1,8 +1,8 @@
 {
   "verdict": "INTERIM_NOT_A_DECISION",
-  "why": "4 of 20 sessions recorded; the pre-registration decides once, at the planned count",
+  "why": "10 of 20 sessions recorded; the pre-registration decides once, at the planned count",
   "planned_sessions": 20,
-  "completed_sessions": 4,
+  "completed_sessions": 10,
   "distinct_dates": 1,
   "dates": [
     "2026-09-19"
@@ -16,7 +16,7 @@
     "family_size": 4,
     "family_wise_confidence": "98.75%"
   },
-  "independence_note": "4 sessions across 1 calendar date(s). Sessions sharing a date share that date's conditions, so the date-level interval binds and the session-level one is the optimistic bound",
+  "independence_note": "10 sessions across 1 calendar date(s). Sessions sharing a date share that date's conditions, so the date-level interval binds and the session-level one is the optimistic bound",
   "policies": [
     {
       "policy": {
@@ -30,31 +30,49 @@
         "taker_fee_rate_on_unwind": "0.07",
         "placement_latency_ms": 300
       },
-      "sessions": 4,
+      "sessions": 10,
       "dates": 1,
-      "quotes_placed": 1259,
+      "quotes_placed": 3715,
       "fills": {
-        "TRADED_THROUGH": 567,
-        "QUEUE_MODEL": 622,
-        "TOUCHED": 622
+        "TRADED_THROUGH": 848,
+        "QUEUE_MODEL": 925,
+        "TOUCHED": 925
       },
-      "mean_pnl_per_quote_usd": "-0.1516",
+      "mean_pnl_per_quote_usd": "-0.0623",
       "session_cluster_ci95": [
-        "-0.1993",
-        "-0.0974"
+        "-0.1160",
+        "-0.0230"
       ],
       "session_cluster_ci_family_wise": [
-        "-0.2052",
-        "-0.0960"
+        "-0.1335",
+        "-0.0147"
       ],
       "date_cluster_ci95": null,
       "date_cluster_ci_family_wise": null,
       "binding_interval": "session",
-      "distinct_markets_across_sessions": 32,
-      "mean_consecutive_session_overlap": "0.6693",
+      "distinct_markets_across_sessions": 84,
+      "mean_consecutive_session_overlap": "0.5408",
+      "markout_distribution": {
+        "fills_with_a_markout": 879,
+        "p01": "-0.2050",
+        "p05": "-0.0850",
+        "p25": "-0.0200",
+        "p50": "0.0000",
+        "p75": "0.0150",
+        "p95": "0.0750",
+        "p99": "0.1950",
+        "min": "-0.3550",
+        "max": "0.3150",
+        "mean": "-0.0033",
+        "mean_excluding_worst_one_percent": "-0.0009",
+        "mean_of_middle_ninety_percent": "-0.0037",
+        "losing_fills": 399,
+        "winning_fills": 374,
+        "flat_fills": 106
+      },
       "overlap_note": "Jaccard overlap between the market sets of consecutive sessions. Near 1 means the sessions recorded the same books at different times, so the session-level interval is measuring autocorrelation rather than independent variation and should be read as the optimistic bound even before the date-level one is considered",
-      "hedged_pair_pnl_per_contract": "-0.0282",
-      "mean_markout_given_fill_60s": "-0.0046",
+      "hedged_pair_pnl_per_contract": "-0.0277",
+      "mean_markout_given_fill_60s": "-0.0033",
       "per_session": [
         {
           "session": 1,
@@ -79,6 +97,42 @@
           "date": "2026-09-19",
           "mean_pnl_per_quote": "-0.0998",
           "quotes": 329
+        },
+        {
+          "session": 5,
+          "date": "2026-09-19",
+          "mean_pnl_per_quote": "-0.1291",
+          "quotes": 202
+        },
+        {
+          "session": 6,
+          "date": "2026-09-19",
+          "mean_pnl_per_quote": "-0.0176",
+          "quotes": 471
+        },
+        {
+          "session": 7,
+          "date": "2026-09-19",
+          "mean_pnl_per_quote": "-0.0027",
+          "quotes": 416
+        },
+        {
+          "session": 8,
+          "date": "2026-09-19",
+          "mean_pnl_per_quote": "-0.0096",
+          "quotes": 494
+        },
+        {
+          "session": 9,
+          "date": "2026-09-19",
+          "mean_pnl_per_quote": "-0.0002",
+          "quotes": 448
+        },
+        {
+          "session": 10,
+          "date": "2026-09-19",
+          "mean_pnl_per_quote": "-0.0003",
+          "quotes": 425
         }
       ]
     },
@@ -94,31 +148,49 @@
         "taker_fee_rate_on_unwind": "0.07",
         "placement_latency_ms": 300
       },
-      "sessions": 4,
+      "sessions": 10,
       "dates": 1,
-      "quotes_placed": 1259,
+      "quotes_placed": 3715,
       "fills": {
-        "TRADED_THROUGH": 282,
-        "QUEUE_MODEL": 312,
-        "TOUCHED": 312
+        "TRADED_THROUGH": 443,
+        "QUEUE_MODEL": 494,
+        "TOUCHED": 494
       },
-      "mean_pnl_per_quote_usd": "-0.1518",
+      "mean_pnl_per_quote_usd": "-0.0586",
       "session_cluster_ci95": [
-        "-0.1796",
-        "-0.1175"
+        "-0.1105",
+        "-0.0176"
       ],
       "session_cluster_ci_family_wise": [
-        "-0.1804",
-        "-0.1146"
+        "-0.1270",
+        "-0.0092"
       ],
       "date_cluster_ci95": null,
       "date_cluster_ci_family_wise": null,
       "binding_interval": "session",
-      "distinct_markets_across_sessions": 32,
-      "mean_consecutive_session_overlap": "0.6693",
+      "distinct_markets_across_sessions": 84,
+      "mean_consecutive_session_overlap": "0.5408",
+      "markout_distribution": {
+        "fills_with_a_markout": 470,
+        "p01": "-0.2600",
+        "p05": "-0.1150",
+        "p25": "-0.0350",
+        "p50": "-0.0050",
+        "p75": "0.0150",
+        "p95": "0.0900",
+        "p99": "0.1950",
+        "min": "-0.3800",
+        "max": "0.3150",
+        "mean": "-0.0090",
+        "mean_excluding_worst_one_percent": "-0.0065",
+        "mean_of_middle_ninety_percent": "-0.0087",
+        "losing_fills": 254,
+        "winning_fills": 173,
+        "flat_fills": 43
+      },
       "overlap_note": "Jaccard overlap between the market sets of consecutive sessions. Near 1 means the sessions recorded the same books at different times, so the session-level interval is measuring autocorrelation rather than independent variation and should be read as the optimistic bound even before the date-level one is considered",
-      "hedged_pair_pnl_per_contract": "-0.0363",
-      "mean_markout_given_fill_60s": "-0.0129",
+      "hedged_pair_pnl_per_contract": "-0.0370",
+      "mean_markout_given_fill_60s": "-0.0090",
       "per_session": [
         {
           "session": 1,
@@ -143,6 +215,42 @@
           "date": "2026-09-19",
           "mean_pnl_per_quote": "-0.1813",
           "quotes": 329
+        },
+        {
+          "session": 5,
+          "date": "2026-09-19",
+          "mean_pnl_per_quote": "-0.1254",
+          "quotes": 202
+        },
+        {
+          "session": 6,
+          "date": "2026-09-19",
+          "mean_pnl_per_quote": "0.0224",
+          "quotes": 471
+        },
+        {
+          "session": 7,
+          "date": "2026-09-19",
+          "mean_pnl_per_quote": "-0.0028",
+          "quotes": 416
+        },
+        {
+          "session": 8,
+          "date": "2026-09-19",
+          "mean_pnl_per_quote": "-0.0145",
+          "quotes": 494
+        },
+        {
+          "session": 9,
+          "date": "2026-09-19",
+          "mean_pnl_per_quote": "-0.0023",
+          "quotes": 448
+        },
+        {
+          "session": 10,
+          "date": "2026-09-19",
+          "mean_pnl_per_quote": "-0.0061",
+          "quotes": 425
         }
       ]
     },
@@ -158,31 +266,49 @@
         "taker_fee_rate_on_unwind": "0.07",
         "placement_latency_ms": 300
       },
-      "sessions": 4,
+      "sessions": 10,
       "dates": 1,
-      "quotes_placed": 1259,
+      "quotes_placed": 3715,
       "fills": {
-        "TRADED_THROUGH": 336,
-        "QUEUE_MODEL": 357,
-        "TOUCHED": 567
+        "TRADED_THROUGH": 496,
+        "QUEUE_MODEL": 529,
+        "TOUCHED": 848
       },
-      "mean_pnl_per_quote_usd": "-0.1216",
+      "mean_pnl_per_quote_usd": "-0.0493",
       "session_cluster_ci95": [
-        "-0.1667",
-        "-0.0941"
+        "-0.0900",
+        "-0.0185"
       ],
       "session_cluster_ci_family_wise": [
-        "-0.1675",
-        "-0.0925"
+        "-0.1039",
+        "-0.0126"
       ],
       "date_cluster_ci95": null,
       "date_cluster_ci_family_wise": null,
       "binding_interval": "session",
-      "distinct_markets_across_sessions": 32,
-      "mean_consecutive_session_overlap": "0.6693",
+      "distinct_markets_across_sessions": 84,
+      "mean_consecutive_session_overlap": "0.5408",
+      "markout_distribution": {
+        "fills_with_a_markout": 498,
+        "p01": "-0.2250",
+        "p05": "-0.1050",
+        "p25": "-0.0300",
+        "p50": "0.0000",
+        "p75": "0.0200",
+        "p95": "0.0950",
+        "p99": "0.1850",
+        "min": "-0.3450",
+        "max": "0.3250",
+        "mean": "-0.0045",
+        "mean_excluding_worst_one_percent": "-0.0022",
+        "mean_of_middle_ninety_percent": "-0.0041",
+        "losing_fills": 234,
+        "winning_fills": 239,
+        "flat_fills": 25
+      },
       "overlap_note": "Jaccard overlap between the market sets of consecutive sessions. Near 1 means the sessions recorded the same books at different times, so the session-level interval is measuring autocorrelation rather than independent variation and should be read as the optimistic bound even before the date-level one is considered",
-      "hedged_pair_pnl_per_contract": "-0.0295",
-      "mean_markout_given_fill_60s": "-0.0067",
+      "hedged_pair_pnl_per_contract": "-0.0291",
+      "mean_markout_given_fill_60s": "-0.0045",
       "per_session": [
         {
           "session": 1,
@@ -207,6 +333,42 @@
           "date": "2026-09-19",
           "mean_pnl_per_quote": "-0.1079",
           "quotes": 329
+        },
+        {
+          "session": 5,
+          "date": "2026-09-19",
+          "mean_pnl_per_quote": "-0.0549",
+          "quotes": 202
+        },
+        {
+          "session": 6,
+          "date": "2026-09-19",
+          "mean_pnl_per_quote": "-0.0106",
+          "quotes": 471
+        },
+        {
+          "session": 7,
+          "date": "2026-09-19",
+          "mean_pnl_per_quote": "-0.0004",
+          "quotes": 416
+        },
+        {
+          "session": 8,
+          "date": "2026-09-19",
+          "mean_pnl_per_quote": "-0.0339",
+          "quotes": 494
+        },
+        {
+          "session": 9,
+          "date": "2026-09-19",
+          "mean_pnl_per_quote": "0.0038",
+          "quotes": 448
+        },
+        {
+          "session": 10,
+          "date": "2026-09-19",
+          "mean_pnl_per_quote": "0.0030",
+          "quotes": 425
         }
       ]
     },
@@ -222,31 +384,49 @@
         "taker_fee_rate_on_unwind": "0.07",
         "placement_latency_ms": 300
       },
-      "sessions": 4,
+      "sessions": 10,
       "dates": 1,
-      "quotes_placed": 1259,
+      "quotes_placed": 3715,
       "fills": {
-        "TRADED_THROUGH": 166,
-        "QUEUE_MODEL": 176,
-        "TOUCHED": 282
+        "TRADED_THROUGH": 275,
+        "QUEUE_MODEL": 291,
+        "TOUCHED": 443
       },
-      "mean_pnl_per_quote_usd": "-0.1154",
+      "mean_pnl_per_quote_usd": "-0.0428",
       "session_cluster_ci95": [
-        "-0.1265",
-        "-0.1019"
+        "-0.0833",
+        "-0.0109"
       ],
       "session_cluster_ci_family_wise": [
-        "-0.1288",
-        "-0.0996"
+        "-0.0944",
+        "-0.0029"
       ],
       "date_cluster_ci95": null,
       "date_cluster_ci_family_wise": null,
       "binding_interval": "session",
-      "distinct_markets_across_sessions": 32,
-      "mean_consecutive_session_overlap": "0.6693",
+      "distinct_markets_across_sessions": 84,
+      "mean_consecutive_session_overlap": "0.5408",
+      "markout_distribution": {
+        "fills_with_a_markout": 277,
+        "p01": "-0.2600",
+        "p05": "-0.1300",
+        "p25": "-0.0450",
+        "p50": "-0.0050",
+        "p75": "0.0200",
+        "p95": "0.1000",
+        "p99": "0.2050",
+        "min": "-0.3700",
+        "max": "0.3250",
+        "mean": "-0.0110",
+        "mean_excluding_worst_one_percent": "-0.0087",
+        "mean_of_middle_ninety_percent": "-0.0110",
+        "losing_fills": 152,
+        "winning_fills": 113,
+        "flat_fills": 12
+      },
       "overlap_note": "Jaccard overlap between the market sets of consecutive sessions. Near 1 means the sessions recorded the same books at different times, so the session-level interval is measuring autocorrelation rather than independent variation and should be read as the optimistic bound even before the date-level one is considered",
-      "hedged_pair_pnl_per_contract": "-0.0418",
-      "mean_markout_given_fill_60s": "-0.0181",
+      "hedged_pair_pnl_per_contract": "-0.0426",
+      "mean_markout_given_fill_60s": "-0.0110",
       "per_session": [
         {
           "session": 1,
@@ -271,6 +451,42 @@
           "date": "2026-09-19",
           "mean_pnl_per_quote": "-0.1310",
           "quotes": 329
+        },
+        {
+          "session": 5,
+          "date": "2026-09-19",
+          "mean_pnl_per_quote": "-0.0906",
+          "quotes": 202
+        },
+        {
+          "session": 6,
+          "date": "2026-09-19",
+          "mean_pnl_per_quote": "0.0298",
+          "quotes": 471
+        },
+        {
+          "session": 7,
+          "date": "2026-09-19",
+          "mean_pnl_per_quote": "0.0001",
+          "quotes": 416
+        },
+        {
+          "session": 8,
+          "date": "2026-09-19",
+          "mean_pnl_per_quote": "-0.0200",
+          "quotes": 494
+        },
+        {
+          "session": 9,
+          "date": "2026-09-19",
+          "mean_pnl_per_quote": "0.0013",
+          "quotes": 448
+        },
+        {
+          "session": 10,
+          "date": "2026-09-19",
+          "mean_pnl_per_quote": "-0.0006",
+          "quotes": 425
         }
       ]
     }

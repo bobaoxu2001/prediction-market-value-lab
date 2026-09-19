@@ -169,6 +169,146 @@
         "skew_bound_ms_p95": 422.6,
         "skew_bound_ms_max": 1712.664
       }
+    },
+    {
+      "session": 6,
+      "started_at": "2026-09-19T11:17:18.545004+00:00",
+      "ended_at": "2026-09-19T11:47:35.593847+00:00",
+      "date": "2026-09-19",
+      "events": [
+        "KXWTAMATCH-26SEP19LIASAI",
+        "KXRAIN-26SEP19",
+        "KXWTAMATCH-26SEP19QUEBLI",
+        "KXLOLMAP-26SEP190500JDGIG-3",
+        "KXMLBSPREAD-26SEP191605MILBAL",
+        "KXMLBSPREAD-26SEP191910DETCWS",
+        "KXMLBHR-26SEP191610PHINYM",
+        "KXMLBHR-26SEP191840CHCCIN"
+      ],
+      "stats": {
+        "cycles": 97,
+        "snapshots": 776,
+        "rejections": 0,
+        "rejection_reasons": {},
+        "trades": 7702,
+        "legs_captured": 7275,
+        "two_sided_legs": 5161,
+        "skew_bound_ms_p50": 325.3,
+        "skew_bound_ms_p95": 520.9,
+        "skew_bound_ms_max": 1202.568
+      }
+    },
+    {
+      "session": 7,
+      "started_at": "2026-09-19T11:47:35.625261+00:00",
+      "ended_at": "2026-09-19T12:17:50.043307+00:00",
+      "date": "2026-09-19",
+      "events": [
+        "KXRAIN-26SEP19",
+        "KXWTAMATCH-26SEP19QUEBLI",
+        "KXMLBSPREAD-26SEP191605MILBAL",
+        "KXMLBSPREAD-26SEP191910DETCWS",
+        "KXMLBHR-26SEP191610PHINYM",
+        "KXMLBF5-26SEP192010NYYAZ",
+        "KXMLBHR-26SEP191840CHCCIN",
+        "KXWTAMATCH-26SEP19STEJOV"
+      ],
+      "stats": {
+        "cycles": 95,
+        "snapshots": 760,
+        "rejections": 0,
+        "rejection_reasons": {},
+        "trades": 3162,
+        "legs_captured": 7220,
+        "two_sided_legs": 5156,
+        "skew_bound_ms_p50": 342.0,
+        "skew_bound_ms_p95": 571.8,
+        "skew_bound_ms_max": 6642.754
+      }
+    },
+    {
+      "session": 8,
+      "started_at": "2026-09-19T12:17:50.074605+00:00",
+      "ended_at": "2026-09-19T12:48:15.997146+00:00",
+      "date": "2026-09-19",
+      "events": [
+        "KXRAIN-26SEP19",
+        "KXWTAMATCH-26SEP19QUEBLI",
+        "KXLOLMAP-26SEP190500JDGIG-4",
+        "KXMLBSPREAD-26SEP191605MILBAL",
+        "KXMLBSPREAD-26SEP191910DETCWS",
+        "KXMLBHR-26SEP191610PHINYM",
+        "KXMLBHR-26SEP191840CHCCIN",
+        "KXMLBF5-26SEP192010NYYAZ"
+      ],
+      "stats": {
+        "cycles": 95,
+        "snapshots": 760,
+        "rejections": 0,
+        "rejection_reasons": {},
+        "trades": 4738,
+        "legs_captured": 7220,
+        "two_sided_legs": 5099,
+        "skew_bound_ms_p50": 303.8,
+        "skew_bound_ms_p95": 531.7,
+        "skew_bound_ms_max": 1559.824
+      }
+    },
+    {
+      "session": 9,
+      "started_at": "2026-09-19T12:48:16.011835+00:00",
+      "ended_at": "2026-09-19T13:18:32.405008+00:00",
+      "date": "2026-09-19",
+      "events": [
+        "KXRAIN-26SEP19",
+        "KXWTAMATCH-26SEP19QUEBLI",
+        "KXMLBTOTAL-26SEP191605MILBAL",
+        "KXMLBTOTAL-26SEP191910DETCWS",
+        "KXMLBTOTAL-26SEP192040MIASD",
+        "KXMLBSPREAD-26SEP191605MILBAL",
+        "KXMLBSPREAD-26SEP191910DETCWS",
+        "KXMLBHR-26SEP191610PHINYM"
+      ],
+      "stats": {
+        "cycles": 70,
+        "snapshots": 560,
+        "rejections": 0,
+        "rejection_reasons": {},
+        "trades": 3449,
+        "legs_captured": 6370,
+        "two_sided_legs": 5266,
+        "skew_bound_ms_p50": 300.1,
+        "skew_bound_ms_p95": 518.7,
+        "skew_bound_ms_max": 1493.863
+      }
+    },
+    {
+      "session": 10,
+      "started_at": "2026-09-19T13:18:32.421572+00:00",
+      "ended_at": "2026-09-19T13:49:03.698564+00:00",
+      "date": "2026-09-19",
+      "events": [
+        "KXRAIN-26SEP19",
+        "KXMLBTOTAL-26SEP191605MILBAL",
+        "KXWTAMATCH-26SEP19QUEBLI",
+        "KXMLBTOTAL-26SEP191910DETCWS",
+        "KXMLBTOTAL-26SEP191810ATHCLE",
+        "KXMLBTOTAL-26SEP191840CHCCIN",
+        "KXMLBTOTAL-26SEP192040MIASD",
+        "KXMLBSPREAD-26SEP191605MILBAL"
+      ],
+      "stats": {
+        "cycles": 64,
+        "snapshots": 512,
+        "rejections": 0,
+        "rejection_reasons": {},
+        "trades": 3635,
+        "legs_captured": 5760,
+        "two_sided_legs": 5248,
+        "skew_bound_ms_p50": 412.9,
+        "skew_bound_ms_p95": 741.6,
+        "skew_bound_ms_max": 2426.218
+      }
     }
   ]
 }

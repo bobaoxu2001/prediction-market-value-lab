@@ -275,3 +275,26 @@ def test_no_fills_means_no_distribution_rather_than_a_zero_one():
     from pmvl_markets.arbitrage.maker_study import _markout_shape
 
     assert _markout_shape([]) == {}
+
+
+def test_a_verdict_names_the_interval_that_produced_it():
+    """A verdict that cannot say which interval it used reads stronger than it is."""
+    same_day = [_session(i, "2026-09-19", base=T0 + timedelta(hours=i), fill=True)
+                for i in range(1, 5)]
+    study = pool_sessions(same_day, planned_sessions=4)
+    body = study.as_dict()
+    assert body["date_factor_sampled"] is False
+    assert "one calendar date" in body["generalisation_limit"]
+    verdict, why = study.verdict()
+    if verdict == "CURRENT_MARKET_MICROSTRUCTURE_DOES_NOT_SUPPORT_PROFITABLE_EXECUTION":
+        assert "session-level interval" in why
+        assert "day factor is unsampled" in why
+
+
+def test_a_multi_date_study_says_so_instead():
+    spread = [_session(i, f"2026-09-{19 + i}", base=T0 + timedelta(days=i), fill=True)
+              for i in range(1, 5)]
+    study = pool_sessions(spread, planned_sessions=4)
+    body = study.as_dict()
+    assert body["date_factor_sampled"] is True
+    assert body["policies"][0]["binding_interval"] == "date"
