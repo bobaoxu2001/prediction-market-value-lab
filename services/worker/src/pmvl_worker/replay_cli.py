@@ -302,7 +302,7 @@ def maker_study(
     )
     for column in ("policy", "quotes", "fills", "mean E[PnL]/quote",
                    "session CI95", "date CI95", "family-wise (date)",
-                   "hedged pair", "markout 60s"):
+                   "hedged pair", "markout 60s", "markets", "overlap"):
         table.add_column(column, justify="right" if column != "policy" else "left")
     for row in body["policies"]:
         def fmt(ci):
@@ -317,6 +317,8 @@ def maker_study(
             fmt(row["date_cluster_ci_family_wise"]),
             str(row["hedged_pair_pnl_per_contract"]),
             str(row["mean_markout_given_fill_60s"]),
+            str(row["distinct_markets_across_sessions"]),
+            str(row["mean_consecutive_session_overlap"]),
         )
     console.print(table)
     console.print(f"\n[bold]{body['verdict']}[/bold]: {body['why']}")

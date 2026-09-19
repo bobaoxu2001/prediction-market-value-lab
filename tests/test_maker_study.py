@@ -197,3 +197,45 @@ def test_the_binding_interval_is_named_in_the_output():
               for i in range(1, 4)]
     body = pool_sessions(spread, planned_sessions=3).as_dict()
     assert body["policies"][0]["binding_interval"] == "date"
+
+
+# ------------------------------------------------- how different were the sessions
+def test_sessions_recording_the_same_books_are_flagged_as_overlapping():
+    """Twenty sessions on one set of books are one recording cut into twenty pieces.
+
+    The frozen universe plus a top-by-volume rule can hand consecutive sessions the
+    same events an hour apart. The session-level interval would then be measuring
+    autocorrelation, not independent variation, and nothing in the design rules it
+    out - so it is measured.
+    """
+    sessions = [_session(i, f"2026-09-{19 + i}", base=T0 + timedelta(days=i), fill=True)
+                for i in range(1, 4)]
+    row = pool_sessions(sessions, planned_sessions=3).results[0]
+    assert row.distinct_markets == 1
+    assert row.mean_consecutive_overlap == Decimal("1.0000")
+
+
+def test_sessions_on_different_books_show_no_overlap():
+    def one(index: int, market: str) -> SessionResult:
+        base = T0 + timedelta(days=index)
+        snaps = [
+            EventSnapshot(
+                event_ticker="EV",
+                platform=Platform.KALSHI,
+                request_sent_at=base + timedelta(seconds=i * 60),
+                response_received_at=base + timedelta(seconds=i * 60, milliseconds=200),
+                capture_mode=CaptureMode.SINGLE_REQUEST,
+                books={market: _book()},
+                requested_tickers=(market,),
+                sequence=i,
+            )
+            for i in range(4)
+        ]
+        return SessionResult(
+            session=index, date=f"2026-09-{19 + index}", started_at=base.isoformat(),
+            report=run_experiment(snaps, [], QuotePolicy(), strategy_version="t"),
+        )
+
+    row = pool_sessions([one(1, "A"), one(2, "B"), one(3, "C")], planned_sessions=3).results[0]
+    assert row.distinct_markets == 3
+    assert row.mean_consecutive_overlap == Decimal("0.0000")

@@ -110,6 +110,14 @@ class PooledPolicyResult:
     per_session_mean: list[tuple[int, str, Decimal, int]]
     hedged_pair_pnl: Decimal | None
     mean_markout: Decimal | None
+    #: How much the sessions actually differ. A frozen universe plus a top-by-volume
+    #: rule can hand consecutive sessions the *same* books an hour apart, in which
+    #: case twenty sessions are closer to one long recording cut into twenty pieces
+    #: than to twenty draws - and the session-level interval would be describing
+    #: autocorrelation rather than independent variation. Measured rather than
+    #: assumed, because the design cannot rule it out.
+    distinct_markets: int = 0
+    mean_consecutive_overlap: Decimal | None = None
 
     @property
     def verdict_positive(self) -> bool:
@@ -139,6 +147,19 @@ class PooledPolicyResult:
             "date_cluster_ci95": ci(self.date_ci95),
             "date_cluster_ci_family_wise": ci(self.date_ci_family),
             "binding_interval": "date" if self.date_ci95 else "session",
+            "distinct_markets_across_sessions": self.distinct_markets,
+            "mean_consecutive_session_overlap": (
+                None
+                if self.mean_consecutive_overlap is None
+                else str(self.mean_consecutive_overlap)
+            ),
+            "overlap_note": (
+                "Jaccard overlap between the market sets of consecutive sessions. "
+                "Near 1 means the sessions recorded the same books at different times, "
+                "so the session-level interval is measuring autocorrelation rather "
+                "than independent variation and should be read as the optimistic bound "
+                "even before the date-level one is considered"
+            ),
             "hedged_pair_pnl_per_contract": (
                 None if self.hedged_pair_pnl is None else str(self.hedged_pair_pnl)
             ),
@@ -270,6 +291,16 @@ def pool_sessions(
             for m in _markout_values(s.report, estimator, horizon)
         ]
 
+        ordered_group = sorted(group, key=lambda x: x.session)
+        market_sets = [
+            {o.quote.market for o in s.report.outcomes} for s in ordered_group
+        ]
+        overlaps = [
+            Decimal(len(a & b)) / Decimal(len(a | b))
+            for a, b in zip(market_sets, market_sets[1:])
+            if a or b
+        ]
+
         report.results.append(
             PooledPolicyResult(
                 policy=group[0].report.policy,
@@ -304,6 +335,12 @@ def pool_sessions(
                 mean_markout=(
                     quantize_usd(sum(markouts, ZERO) / Decimal(len(markouts)))
                     if markouts
+                    else None
+                ),
+                distinct_markets=len(set().union(*market_sets)) if market_sets else 0,
+                mean_consecutive_overlap=(
+                    quantize_usd(sum(overlaps, ZERO) / Decimal(len(overlaps)))
+                    if overlaps
                     else None
                 ),
             )

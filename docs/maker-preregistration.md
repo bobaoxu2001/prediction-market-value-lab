@@ -89,6 +89,16 @@ looking for one.
   20 land on fewer than 20 dates, the date-level interval is the binding one and the
   session-level interval is reported as the optimistic bound.
 
+## Added after pre-registration, before session 1
+
+One diagnostic, which changes no threshold and no decision: **Jaccard overlap between
+the market sets of consecutive sessions**, plus the count of distinct markets across
+the study. The design cannot rule out that a frozen universe and a top-by-volume rule
+hand consecutive sessions the same books an hour apart, in which case the session-level
+interval measures autocorrelation rather than independent variation. That is worth
+knowing and it is not knowable in advance, so it is measured and reported rather than
+assumed away. It does not enter the decision rule above.
+
 ## What this study cannot settle
 
 Holding to settlement, other venues, other asset classes, and any strategy with a view
