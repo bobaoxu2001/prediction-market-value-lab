@@ -508,3 +508,41 @@ def test_events_recorded_in_one_session_are_not_counted_as_separate_days():
     assert body["event_days"] == 4
     assert body["distinct_dates"] == 1
     assert "not independent draws in time" in body["independence_note"]
+
+
+def test_trading_through_a_no_quote_runs_the_other_way_along_the_yes_axis():
+    """The sign of "through" flips with the side, and at-level tests cannot catch it.
+
+    A NO bid at 0.31 is a YES ask at 0.69. A taker buying YES lifts the cheapest ask
+    first, so a print at yes=0.70 means our 0.69 was already gone - *higher* is
+    through for a NO quote, where *lower* is through for a YES one. Verified against a
+    real fill: KXRAIN-26SEP19-DEN, three prints at 0.70 totalling 13.99 against a
+    50-lot quote.
+    """
+    no_quote = _quote(side=Side.NO, price=Decimal("0.31"), queue_ahead=Decimal("0"))
+    assert no_quote.yes_price == Decimal("0.69")
+
+    above = _trade(10, "0.70", "13.99", "yes")
+    below = _trade(11, "0.68", "13.99", "yes")
+    assert no_quote.through(above) is True
+    assert no_quote.through(below) is False
+
+    yes_quote = _quote(side=Side.YES, price=Decimal("0.69"), queue_ahead=Decimal("0"))
+    assert yes_quote.through(above) is False
+    assert yes_quote.through(below) is True
+
+
+def test_a_fractional_fill_is_carried_as_a_fraction_not_rounded():
+    """The venue prints fractional contracts; rounding them is a silent size error."""
+    quote = _quote(side=Side.NO, price=Decimal("0.31"), queue_ahead=Decimal("0"),
+                   size=Decimal("50"))
+    trades = [
+        _trade(10, "0.70", "4.00", "yes", tid="a"),
+        _trade(10, "0.70", "4.99", "yes", tid="b"),
+        _trade(10, "0.70", "5.00", "yes", tid="c"),
+    ]
+    out = evaluate_quote(quote, trades, [_snap(0, {"M": _book()})], policy=POLICY)
+    assert out.relevant_volume_through == Decimal("13.99")
+    assert out.filled_size[FillEstimator.QUEUE_MODEL] == Decimal("13.99")
+    #: and the inadmissible estimator claims all fifty from fourteen that traded
+    assert out.filled_size[FillEstimator.TOUCHED] == Decimal("50")
