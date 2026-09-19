@@ -372,6 +372,37 @@ def maker_study(
     target.write_text(json.dumps(body, indent=2) + "\n")
     console.print(f"wrote {target}")
 
+    if not filtered:
+        #: One row per quote per policy, session and date attached. The unfilled ones
+        #: are most of the file and all of the denominator; a summary alone would make
+        #: the fill rate unrecoverable from the artifact, and the losers unverifiable.
+        ledger = directory / "study_quote_ledger.csv"
+        with ledger.open("w", newline="") as fh:
+            writer = csv.writer(fh)
+            writer.writerow(
+                ["policy", "session", "date", "market", "event", "placed_at",
+                 "price", "size", "queue_ahead", "spread",
+                 "at_level_volume", "through_volume",
+                 *[f"filled_{e.value}" for e in FillEstimator],
+                 *[f"markout_{h}s" for h in MARKOUT_HORIZONS],
+                 "hedge_cost", "liquidation_pnl"]
+            )
+            rows = 0
+            for result in results:
+                for outcome in result.report.outcomes:
+                    q = outcome.quote
+                    writer.writerow(
+                        [result.report.policy.name, result.session, result.date,
+                         q.market, q.event_ticker, q.placed_at.isoformat(),
+                         q.price, q.size, q.queue_ahead, q.spread_at_placement,
+                         outcome.relevant_volume_at_level, outcome.relevant_volume_through,
+                         *[outcome.filled_size[e] for e in FillEstimator],
+                         *[outcome.markout[h] for h in MARKOUT_HORIZONS],
+                         outcome.hedge_cost, outcome.liquidation_pnl]
+                    )
+                    rows += 1
+        console.print(f"wrote {ledger} ({rows} quotes across all policies and sessions)")
+
 
 @app.command("dislocation")
 def dislocation(

@@ -732,5 +732,12 @@
         }
       ]
     }
-  ]
+  ],
+  "analysis": "pre-registered primary",
+  "filters": {
+    "max_skew_ms": null,
+    "min_session_snapshots": null,
+    "snapshots_dropped": 0,
+    "sessions_dropped": []
+  }
 }
