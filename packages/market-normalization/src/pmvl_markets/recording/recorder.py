@@ -11,6 +11,7 @@ result I liked".
 from __future__ import annotations
 
 import asyncio
+import time
 from dataclasses import dataclass, field
 from datetime import datetime, timedelta
 from pathlib import Path
@@ -49,6 +50,13 @@ class RecorderConfig:
     trade_watch: tuple[str, ...] = ()
     max_trade_watch: int = 24
     record_trades: bool = True
+    #: Ceiling on the share of each cycle spent pulling prints. The tape is worth
+    #: having but it is not what the cadence is for: a hundred trade requests on a
+    #: busy evening take longer than the whole interval, and the book capture - the
+    #: thing the study actually measures - starves. Observed: sessions that opened
+    #: with 950 snapshots in half an hour ended with eight, while the trade count
+    #: went *up*.
+    trade_budget_fraction: float = 0.5
 
 
 @dataclass
@@ -57,6 +65,10 @@ class RecorderStats:
     snapshots: int = 0
     rejections: int = 0
     trades: int = 0
+    #: Cycles in which the tape pull hit its time budget and stopped early. A high
+    #: count means the watchlist is wider than the cadence can carry, which is worth
+    #: knowing before it shows up as a session with eight snapshots in it.
+    trade_budget_exhausted: int = 0
     legs_captured: int = 0
     two_sided_legs: int = 0
     skew_bounds_ms: list[float] = field(default_factory=list)
@@ -70,6 +82,7 @@ class RecorderStats:
             "rejections": self.rejections,
             "rejection_reasons": dict(sorted(self.rejection_reasons.items())),
             "trades": self.trades,
+            "trade_budget_exhausted_cycles": self.trade_budget_exhausted,
             "legs_captured": self.legs_captured,
             "two_sided_legs": self.two_sided_legs,
             "skew_bound_ms_p50": _pct(skews, 0.50),
@@ -138,6 +151,11 @@ class SynchronizedRecorder:
         self._legs: dict[str, list[str]] = {}
         self._seen_trades: set[str] = set()
         self._trade_floor: dict[str, datetime] = {}
+        #: Where the last cycle ran out of trade budget. The next one resumes there,
+        #: so a watchlist too long to finish in one cycle is still covered over
+        #: several - rather than the first N tickers being polled forever and the
+        #: rest never at all.
+        self._trade_cursor = 0
 
         config.out_dir.mkdir(parents=True, exist_ok=True)
         self.books_log = AppendOnlyLog(config.out_dir / "snapshots.jsonl")
@@ -293,7 +311,20 @@ class SynchronizedRecorder:
         the exchange's tape to find them - and missing prints is not a neutral error
         here, it biases fill measurement downward.
         """
-        for ticker in self._watchlist(snapshots):
+        watchlist = self._watchlist(snapshots)
+        if not watchlist:
+            return
+        budget = self._config.interval_seconds * self._config.trade_budget_fraction
+        started = time.monotonic()
+        rotated = watchlist[self._trade_cursor % len(watchlist):] + watchlist[
+            : self._trade_cursor % len(watchlist)
+        ]
+
+        polled = 0
+        for ticker in rotated:
+            if time.monotonic() - started >= budget:
+                break
+            polled += 1
             floor = self._trade_floor.get(ticker)
             params: dict[str, Any] = {"ticker": ticker, "limit": 200}
             if floor is not None:
@@ -320,6 +351,10 @@ class SynchronizedRecorder:
                 #: Step back a second: ``min_ts`` is inclusive at second resolution
                 #: and prints inside the same second would otherwise be lost.
                 self._trade_floor[ticker] = newest - timedelta(seconds=1)
+
+        self._trade_cursor = (self._trade_cursor + polled) % max(1, len(watchlist))
+        if polled < len(rotated):
+            self.stats.trade_budget_exhausted += 1
 
     def _reject(
         self,

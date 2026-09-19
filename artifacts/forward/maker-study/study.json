@@ -309,6 +309,288 @@
         "skew_bound_ms_p95": 741.6,
         "skew_bound_ms_max": 2426.218
       }
+    },
+    {
+      "session": 11,
+      "started_at": "2026-09-19T13:49:03.719403+00:00",
+      "ended_at": "2026-09-19T14:19:26.677049+00:00",
+      "date": "2026-09-19",
+      "events": [
+        "KXRAIN-26SEP19",
+        "KXMLBTOTAL-26SEP191605MILBAL",
+        "KXWTAMATCH-26SEP19QUEBLI",
+        "KXMLBSPREAD-26SEP191605MILBAL",
+        "KXMLBTOTAL-26SEP191910DETCWS",
+        "KXMLBTOTAL-26SEP191810ATHCLE",
+        "KXMLBTOTAL-26SEP191840CHCCIN",
+        "KXMLBTOTAL-26SEP192040MIASD"
+      ],
+      "stats": {
+        "cycles": 60,
+        "snapshots": 480,
+        "rejections": 0,
+        "rejection_reasons": {},
+        "trades": 3774,
+        "legs_captured": 5400,
+        "two_sided_legs": 4920,
+        "skew_bound_ms_p50": 471.1,
+        "skew_bound_ms_p95": 860.4,
+        "skew_bound_ms_max": 3308.281
+      }
+    },
+    {
+      "session": 12,
+      "started_at": "2026-09-19T14:19:26.693254+00:00",
+      "ended_at": "2026-09-19T14:49:58.676543+00:00",
+      "date": "2026-09-19",
+      "events": [
+        "KXRAIN-26SEP19",
+        "KXWTAMATCH-26SEP19QUEBLI",
+        "KXMLBTOTAL-26SEP191605MILBAL",
+        "KXMLBSPREAD-26SEP191605MILBAL",
+        "KXMLBTOTAL-26SEP191910DETCWS",
+        "KXMLBTOTAL-26SEP191610BOSTB",
+        "KXMLBTOTAL-26SEP191810ATHCLE",
+        "KXMLBTOTAL-26SEP191910ATLHOU"
+      ],
+      "stats": {
+        "cycles": 56,
+        "snapshots": 448,
+        "rejections": 0,
+        "rejection_reasons": {},
+        "trades": 3732,
+        "legs_captured": 5040,
+        "two_sided_legs": 4592,
+        "skew_bound_ms_p50": 486.5,
+        "skew_bound_ms_p95": 932.1,
+        "skew_bound_ms_max": 1841.15
+      }
+    },
+    {
+      "session": 13,
+      "started_at": "2026-09-19T14:49:58.695073+00:00",
+      "ended_at": "2026-09-19T15:20:27.396839+00:00",
+      "date": "2026-09-19",
+      "events": [
+        "KXRAIN-26SEP19",
+        "KXWTAMATCH-26SEP19QUEBLI",
+        "KXMLBTOTAL-26SEP191605MILBAL",
+        "KXMLBSPREAD-26SEP191605MILBAL",
+        "KXMLBTOTAL-26SEP191910DETCWS",
+        "KXMLBTOTAL-26SEP191910ATLHOU",
+        "KXMLBTOTAL-26SEP191610BOSTB",
+        "KXMLBTOTAL-26SEP191810ATHCLE"
+      ],
+      "stats": {
+        "cycles": 61,
+        "snapshots": 488,
+        "rejections": 0,
+        "rejection_reasons": {},
+        "trades": 3907,
+        "legs_captured": 5490,
+        "two_sided_legs": 4904,
+        "skew_bound_ms_p50": 440.1,
+        "skew_bound_ms_p95": 822.8,
+        "skew_bound_ms_max": 1526.894
+      }
+    },
+    {
+      "session": 14,
+      "started_at": "2026-09-19T15:20:27.419129+00:00",
+      "ended_at": "2026-09-19T16:01:59.122616+00:00",
+      "date": "2026-09-19",
+      "events": [
+        "KXRAIN-26SEP19",
+        "KXWTAMATCH-26SEP19QUEBLI",
+        "KXMLBTOTAL-26SEP191605MILBAL",
+        "KXMLBSPREAD-26SEP191605MILBAL",
+        "KXMLBTOTAL-26SEP191910DETCWS",
+        "KXMLBTOTAL-26SEP191910ATLHOU",
+        "KXMLBTOTAL-26SEP191610BOSTB",
+        "KXMLBTOTAL-26SEP191810ATHCLE"
+      ],
+      "stats": {
+        "cycles": 21,
+        "snapshots": 168,
+        "rejections": 0,
+        "rejection_reasons": {},
+        "trades": 3805,
+        "legs_captured": 1890,
+        "two_sided_legs": 1638,
+        "skew_bound_ms_p50": 380.8,
+        "skew_bound_ms_p95": 747.3,
+        "skew_bound_ms_max": 1241.033
+      }
+    },
+    {
+      "session": 15,
+      "started_at": "2026-09-19T16:01:59.142661+00:00",
+      "ended_at": "2026-09-19T16:48:07.347541+00:00",
+      "date": "2026-09-19",
+      "events": [
+        "KXWTAMATCH-26SEP19QUEBLI",
+        "KXRAIN-26SEP19",
+        "KXMLBTOTAL-26SEP191610BOSTB",
+        "KXMLBTOTAL-26SEP191910DETCWS",
+        "KXMLBSPREAD-26SEP191605MILBAL",
+        "KXMLBTOTAL-26SEP191605MILBAL",
+        "KXMLBTOTAL-26SEP191910ATLHOU",
+        "KXMLBSPREAD-26SEP192010SEACOL"
+      ],
+      "stats": {
+        "cycles": 16,
+        "snapshots": 126,
+        "rejections": 2,
+        "rejection_reasons": {
+          "REQUEST_FAILED": 2
+        },
+        "trades": 5043,
+        "legs_captured": 1338,
+        "two_sided_legs": 1130,
+        "skew_bound_ms_p50": 345.2,
+        "skew_bound_ms_p95": 514.2,
+        "skew_bound_ms_max": 30872.633
+      }
+    },
+    {
+      "session": 16,
+      "started_at": "2026-09-19T16:48:07.377590+00:00",
+      "ended_at": "2026-09-19T17:25:29.107016+00:00",
+      "date": "2026-09-19",
+      "events": [
+        "KXWTAMATCH-26SEP19QUEBLI",
+        "KXRAIN-26SEP19",
+        "KXMLBTOTAL-26SEP191910DETCWS",
+        "KXMLBTOTAL-26SEP191610BOSTB",
+        "KXMLBTOTAL-26SEP191605MILBAL",
+        "KXMLBSPREAD-26SEP191605MILBAL",
+        "KXMLBTOTAL-26SEP191910ATLHOU",
+        "KXLOLMAP-26SEP191100MKOIKC-2"
+      ],
+      "stats": {
+        "cycles": 8,
+        "snapshots": 64,
+        "rejections": 0,
+        "rejection_reasons": {},
+        "trades": 5246,
+        "legs_captured": 648,
+        "two_sided_legs": 540,
+        "skew_bound_ms_p50": 303.7,
+        "skew_bound_ms_p95": 422.7,
+        "skew_bound_ms_max": 604.428
+      }
+    },
+    {
+      "session": 17,
+      "started_at": "2026-09-19T17:25:29.120749+00:00",
+      "ended_at": "2026-09-19T17:59:23.791436+00:00",
+      "date": "2026-09-19",
+      "events": [
+        "KXWTAMATCH-26SEP19QUEBLI",
+        "KXRAIN-26SEP19",
+        "KXMLBTOTAL-26SEP191910DETCWS",
+        "KXMLBTOTAL-26SEP191610BOSTB",
+        "KXMLBTOTAL-26SEP191605MILBAL",
+        "KXMLBSPREAD-26SEP191605MILBAL",
+        "KXMLBHR-26SEP191610PHINYM",
+        "KXMLBHR-26SEP191410DETCWS"
+      ],
+      "stats": {
+        "cycles": 1,
+        "snapshots": 8,
+        "rejections": 0,
+        "rejection_reasons": {},
+        "trades": 4955,
+        "legs_captured": 119,
+        "two_sided_legs": 85,
+        "skew_bound_ms_p50": 297.4,
+        "skew_bound_ms_p95": 355.7,
+        "skew_bound_ms_max": 355.694
+      }
+    },
+    {
+      "session": 18,
+      "started_at": "2026-09-19T17:59:23.802524+00:00",
+      "ended_at": "2026-09-19T18:33:34.931753+00:00",
+      "date": "2026-09-19",
+      "events": [
+        "KXWTAMATCH-26SEP19QUEBLI",
+        "KXMLBTOTAL-26SEP191910DETCWS",
+        "KXRAIN-26SEP19",
+        "KXMLBTOTAL-26SEP191610BOSTB",
+        "KXMLBTOTAL-26SEP191605MILBAL",
+        "KXMLBHR-26SEP191410DETCWS",
+        "KXMLBHR-26SEP191610PHINYM",
+        "KXMLBSPREAD-26SEP191605MILBAL"
+      ],
+      "stats": {
+        "cycles": 3,
+        "snapshots": 24,
+        "rejections": 0,
+        "rejection_reasons": {},
+        "trades": 7498,
+        "legs_captured": 357,
+        "two_sided_legs": 252,
+        "skew_bound_ms_p50": 320.8,
+        "skew_bound_ms_p95": 396.5,
+        "skew_bound_ms_max": 416.418
+      }
+    },
+    {
+      "session": 19,
+      "started_at": "2026-09-19T18:33:34.945005+00:00",
+      "ended_at": "2026-09-19T19:08:54.417293+00:00",
+      "date": "2026-09-19",
+      "events": [
+        "KXMLBTOTAL-26SEP191910DETCWS",
+        "KXRAIN-26SEP19",
+        "KXMLBHR-26SEP191410DETCWS",
+        "KXMLBTOTAL-26SEP191610BOSTB",
+        "KXMLBTOTAL-26SEP191605MILBAL",
+        "KXMLBHR-26SEP191610PHINYM",
+        "KXMLBSPREAD-26SEP191910DETCWS",
+        "KXMLBSPREAD-26SEP191605MILBAL"
+      ],
+      "stats": {
+        "cycles": 5,
+        "snapshots": 40,
+        "rejections": 0,
+        "rejection_reasons": {},
+        "trades": 7461,
+        "legs_captured": 705,
+        "two_sided_legs": 485,
+        "skew_bound_ms_p50": 291.5,
+        "skew_bound_ms_p95": 353.6,
+        "skew_bound_ms_max": 394.269
+      }
+    },
+    {
+      "session": 20,
+      "started_at": "2026-09-19T19:08:54.429198+00:00",
+      "ended_at": "2026-09-19T20:03:19.502566+00:00",
+      "date": "2026-09-19",
+      "events": [
+        "KXWTAMATCH-26SEP19PODBAD",
+        "KXMLBTOTAL-26SEP191910DETCWS",
+        "KXRAIN-26SEP19",
+        "KXMLBHR-26SEP191410DETCWS",
+        "KXMLBTOTAL-26SEP191610BOSTB",
+        "KXMLBHR-26SEP191610PHINYM",
+        "KXMLBSPREAD-26SEP191910DETCWS",
+        "KXMLBTOTAL-26SEP191605MILBAL"
+      ],
+      "stats": {
+        "cycles": 8,
+        "snapshots": 64,
+        "rejections": 0,
+        "rejection_reasons": {},
+        "trades": 10365,
+        "legs_captured": 1096,
+        "two_sided_legs": 727,
+        "skew_bound_ms_p50": 293.2,
+        "skew_bound_ms_p95": 357.9,
+        "skew_bound_ms_max": 944497.307
+      }
     }
   ]
 }

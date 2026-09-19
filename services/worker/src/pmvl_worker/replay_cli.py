@@ -230,9 +230,22 @@ def maker_study(
     size: int = typer.Option(50, help="Contracts per quote."),
     lifetime: int = typer.Option(60, help="Seconds a quote rests before cancellation."),
     latency_ms: int = typer.Option(300, help="Delay before the order rests on the book."),
+    max_skew_ms: float = typer.Option(
+        0.0,
+        help="Sensitivity: drop snapshots whose skew bound exceeds this. 0 keeps all.",
+    ),
+    min_session_snapshots: int = typer.Option(
+        0,
+        help="Sensitivity: drop sessions that captured fewer snapshots than this.",
+    ),
     out: Path = typer.Option(None, help="Where to write the pooled report."),
 ) -> None:
     """Pool every session and resample sessions and dates, not quotes.
+
+    The two sensitivity options default to off, so the bare command is the
+    pre-registered analysis and nothing else. Passing either produces a *labelled*
+    sensitivity run: the report records what was dropped and why, so a filtered
+    result can never be mistaken for the primary one.
 
     The pre-registration decides once, at the planned session count. Run before then
     and this prints interim numbers labelled as not a decision, because a study that
@@ -256,6 +269,8 @@ def maker_study(
 
     results: list[SessionResult] = []
     versions: set[str] = set()
+    dropped_snapshots = 0
+    dropped_sessions: list[int] = []
     for record in manifest["sessions"]:
         session_dir = directory / f"session-{record['session']:02d}"
         if not (session_dir / "snapshots.jsonl").exists():
@@ -265,6 +280,13 @@ def maker_study(
             )
             continue
         recording = load_recording(session_dir)
+        if max_skew_ms > 0:
+            kept = [s for s in recording.snapshots if float(s.skew_bound_ms) <= max_skew_ms]
+            dropped_snapshots += len(recording.snapshots) - len(kept)
+            recording.snapshots = kept
+        if min_session_snapshots and len(recording.snapshots) < min_session_snapshots:
+            dropped_sessions.append(record["session"])
+            continue
         version = recording.single_version
         if version is None:
             console.print(
@@ -295,6 +317,23 @@ def maker_study(
 
     study = pool_sessions(results, planned_sessions=manifest["planned_sessions"])
     body = study.as_dict()
+    filtered = bool(max_skew_ms) or bool(min_session_snapshots)
+    body["analysis"] = (
+        "pre-registered primary"
+        if not filtered
+        else "SENSITIVITY - not the pre-registered primary analysis"
+    )
+    body["filters"] = {
+        "max_skew_ms": max_skew_ms or None,
+        "min_session_snapshots": min_session_snapshots or None,
+        "snapshots_dropped": dropped_snapshots,
+        "sessions_dropped": dropped_sessions,
+    }
+    if filtered:
+        console.print(
+            f"[yellow]SENSITIVITY RUN - dropped {dropped_snapshots} snapshots and "
+            f"sessions {dropped_sessions}; this is not the pre-registered analysis"
+        )
 
     table = Table(
         title=f"maker study - {body['completed_sessions']}/{body['planned_sessions']} "
@@ -324,7 +363,12 @@ def maker_study(
     console.print(f"\n[bold]{body['verdict']}[/bold]: {body['why']}")
     console.print(body["independence_note"])
 
-    target = out or (directory / "maker_study_report.json")
+    default_name = (
+        "maker_study_report.json"
+        if not filtered
+        else f"maker_study_sensitivity_skew{int(max_skew_ms)}_min{min_session_snapshots}.json"
+    )
+    target = out or (directory / default_name)
     target.write_text(json.dumps(body, indent=2) + "\n")
     console.print(f"wrote {target}")
 

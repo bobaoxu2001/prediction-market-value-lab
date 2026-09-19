@@ -125,6 +125,9 @@ class HttpClient:
         self.name = name
         self.base_url = base_url.rstrip("/")
         self._limiter = RateLimiter(rate_per_second)
+        #: (sent_at, received_at) epoch seconds of the last successful GET, measured
+        #: around the socket rather than around the rate limiter.
+        self.last_request_window: tuple[float | None, float | None] = (None, None)
         self._breaker = CircuitBreaker(
             threshold=settings.circuit_breaker_threshold,
             reset_seconds=settings.circuit_breaker_reset_seconds,
@@ -210,6 +213,12 @@ class HttpClient:
             await self._limiter.acquire(cost)
             async with self._semaphore:
                 self.stats["requests"] += 1
+                #: Stamped *after* the rate limiter, because the limiter queue is
+                #: local. A caller measuring simultaneity from before the acquire
+                #: reads its own backlog as though the venue had taken that long -
+                #: which produced a "944 second" leg-skew bound on a request the
+                #: venue answered in under a second.
+                window["sent"] = time.time()
                 try:
                     resp = await self._client.get(path, params=_pairs(params))
                 except (httpx.TimeoutException, httpx.TransportError) as exc:
@@ -227,12 +236,15 @@ class HttpClient:
                 raise RetryableProviderError(f"{self.name} {resp.status_code} on {path}")
             if resp.status_code >= 400:
                 raise ProviderError(f"{self.name} {resp.status_code} on {path}: {resp.text[:200]}")
+            window["received"] = time.time()
             if not resp.content:
                 return None
             try:
                 return resp.json()
             except ValueError as exc:
                 raise ProviderError(f"{self.name} returned non-JSON for {path}") from exc
+
+        window: dict[str, float] = {}
 
         try:
             async for attempt in AsyncRetrying(
@@ -253,6 +265,9 @@ class HttpClient:
         self._breaker.record_success()
         if use_cache and self._cache_ttl > 0:
             self._cache[key] = (time.monotonic(), data)
+        #: Last successful request's wall-clock window, for callers that need to
+        #: bound how far apart two things in one response could have been read.
+        self.last_request_window = (window.get("sent"), window.get("received"))
         return data
 
 

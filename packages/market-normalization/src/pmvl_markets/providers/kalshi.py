@@ -21,7 +21,7 @@ from __future__ import annotations
 
 import asyncio
 from dataclasses import dataclass
-from datetime import datetime
+from datetime import datetime, timezone
 from decimal import Decimal
 from typing import Any, Iterable, Sequence
 
@@ -706,6 +706,16 @@ class KalshiProvider:
                 ok=False, detail=f"request failed: {exc}",
             )
         received_at = utcnow()
+
+        #: Prefer the window measured around the socket. Timing the call from here
+        #: includes however long the request sat in this process's own rate-limiter
+        #: queue, which has nothing to do with how far apart the venue read the legs -
+        #: and on a busy cycle that backlog reported a 944-second "skew bound" for a
+        #: request the venue answered in under a second.
+        socket_sent, socket_received = self._client.last_request_window
+        if socket_sent is not None and socket_received is not None:
+            sent_at = datetime.fromtimestamp(socket_sent, tz=timezone.utc)
+            received_at = datetime.fromtimestamp(socket_received, tz=timezone.utc)
 
         entries = (data or {}).get("orderbooks")
         if not isinstance(entries, list):

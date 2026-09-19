@@ -362,3 +362,65 @@ def test_the_recording_version_and_the_analysis_version_are_separate_numbers():
     assert ANALYSIS_VERSION != STRATEGY_VERSION
     assert _snapshot().as_dict()["strategy_version"] == STRATEGY_VERSION
     assert "analysis" not in _snapshot().as_dict()
+
+
+@pytest.mark.asyncio
+async def test_the_tape_pull_cannot_starve_the_book_capture(tmp_path: Path):
+    """The cadence is what the study measures; the tape is not allowed to eat it.
+
+    Observed in a real 20-session study: sessions opened at 950 snapshots per half
+    hour and ended at eight, while the trade count went *up*. A hundred trade
+    requests on a busy evening take longer than the whole interval, and the book
+    capture starves without anything reporting that it did.
+    """
+    provider = _SlowTradeProvider({"EV": [f"EV-{i}" for i in range(40)]})
+    rec = SynchronizedRecorder(
+        provider,
+        RecorderConfig(
+            event_tickers=("EV",), out_dir=tmp_path, interval_seconds=0.2,
+            trade_budget_fraction=0.5, max_trade_watch=40,
+        ),
+    )
+    await rec.capture_once()
+
+    assert len(provider.trade_calls) < 40          # stopped early
+    assert rec.stats.trade_budget_exhausted == 1   # and said so
+
+
+@pytest.mark.asyncio
+async def test_the_watchlist_rotates_so_every_leg_is_eventually_polled(tmp_path: Path):
+    """Cutting the list off at the budget must not poll the first N tickers forever."""
+    provider = _SlowTradeProvider({"EV": [f"EV-{i}" for i in range(40)]})
+    rec = SynchronizedRecorder(
+        provider,
+        RecorderConfig(
+            event_tickers=("EV",), out_dir=tmp_path, interval_seconds=0.2,
+            trade_budget_fraction=0.5, max_trade_watch=40,
+        ),
+    )
+    for _ in range(6):
+        await rec.capture_once()
+
+    first_cycle = set(provider.trade_calls[: rec.stats.trade_budget_exhausted])
+    assert len(set(provider.trade_calls)) > len(first_cycle)
+
+
+class _SlowTradeProvider(_FakeProvider):
+    """Like the fake, but each trade fetch costs real time."""
+
+    async def _sleep(self):
+        import asyncio
+
+        await asyncio.sleep(0.02)
+
+    @property
+    def _client(self):
+        outer = self
+
+        class _C(_FakeProvider._Client):
+            async def get_json(self, path, *, params=None, **kw):
+                if path == "/markets/trades":
+                    await outer._sleep()
+                return await super().get_json(path, params=params, **kw)
+
+        return _C(outer)
