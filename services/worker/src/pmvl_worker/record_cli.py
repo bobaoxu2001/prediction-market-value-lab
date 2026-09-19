@@ -12,6 +12,7 @@ from __future__ import annotations
 import asyncio
 import json
 from collections import defaultdict
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
@@ -160,6 +161,12 @@ async def _discover(
         "ranking": rank_by,
         "selected": qualified[:count],
         "runners_up": qualified[count : count + 10],
+        #: Every event that passed, not just the ones taken. A study that repeats the
+        #: selection over many sessions has to be able to freeze the universe it
+        #: selects from; a census that recorded only the winners would let each
+        #: session's universe drift with the market and make "the same experiment,
+        #: twenty times" untrue in a way nobody could check afterwards.
+        "qualified_universe": qualified,
     }
     return [row["event"] for row in qualified[:count]], census
 
@@ -263,6 +270,160 @@ def forward(
         json.dumps({"strategy_version": STRATEGY_VERSION, **summary}, indent=2) + "\n"
     )
     console.print(f"\nwrote {out}/recording_summary.json")
+
+
+@app.command("census")
+def census_cmd(
+    rank: str = typer.Option("volume", help="Rank by 'volume' or 'two-sided'."),
+    top: int = typer.Option(8, help="How many events the ranking would take."),
+    series: list[str] = typer.Option([], "--series", help="Restrict the scan to these series."),
+    out: Path = typer.Option(..., help="Where to freeze the universe."),
+) -> None:
+    """Scan the market once and write the qualifying universe, recording nothing.
+
+    Split out from `forward` so that a multi-session study can fix its universe
+    before the first session runs. Re-discovering per session would let the pool of
+    candidate events drift with the market, and twenty sessions drawn from twenty
+    different universes are not twenty repetitions of one experiment.
+    """
+
+    async def _run() -> dict[str, Any]:
+        provider = KalshiProvider()
+        try:
+            _, body = await _discover(provider, top, list(series), rank_by=rank)
+            return body
+        finally:
+            await provider.aclose()
+
+    body = asyncio.run(_run())
+    body["frozen_at"] = datetime.now(timezone.utc).isoformat()
+    out.parent.mkdir(parents=True, exist_ok=True)
+    out.write_text(json.dumps(body, indent=2) + "\n")
+    console.print(
+        f"scanned {body['markets_scanned']:,} open markets across "
+        f"{body['events_seen']:,} events\n"
+        f"{body['events_qualified']:,} qualified "
+        f"({body['events_two_sided_but_never_traded']:,} quoted but never traded, "
+        f"{body['events_too_wide_for_one_request']:,} too wide for one request)\n"
+        f"pagination exhausted: {body['pagination_exhausted']}\n"
+        f"wrote {out}"
+    )
+
+
+def _series_of(event: str) -> str:
+    """The series a Kalshi event ticker belongs to: everything before the first dash."""
+    return event.split("-", 1)[0]
+
+
+@app.command("sessions")
+def sessions(
+    universe: Path = typer.Option(..., help="Frozen census whose series define the universe."),
+    count: int = typer.Option(20, help="Sessions to record."),
+    duration: float = typer.Option(1800.0, help="Seconds of capture per session."),
+    interval: float = typer.Option(10.0, help="Seconds between capture cycles."),
+    top: int = typer.Option(8, help="Events per session."),
+    watch: int = typer.Option(100, help="Max legs whose prints are pulled per cycle."),
+    depth: int = typer.Option(25, help="Book levels per leg."),
+    out: Path = typer.Option(..., help="Study directory."),
+) -> None:
+    """Record N non-overlapping sessions against a frozen universe of series.
+
+    The universe is fixed by ``--universe`` and the per-session selection is
+    mechanical: the top ``--top`` currently-open events inside those series by 24h
+    volume. Events roll over daily, so freezing the *series* rather than the events is
+    what makes twenty sessions repetitions of one experiment rather than twenty
+    different ones.
+
+    A session that captures nothing is still a session. It is recorded with whatever
+    it got and the study moves on; re-rolling a bad session is how a study quietly
+    becomes a search.
+    """
+    frozen = json.loads(universe.read_text())
+    series = sorted({_series_of(row["event"]) for row in frozen.get("qualified_universe", [])})
+    if not series:
+        raise typer.BadParameter(
+            f"{universe} carries no qualified universe; re-run `pmvl record census`"
+        )
+
+    out.mkdir(parents=True, exist_ok=True)
+    manifest_path = out / "study.json"
+    manifest: dict[str, Any] = (
+        json.loads(manifest_path.read_text())
+        if manifest_path.exists()
+        else {
+            "strategy_version": STRATEGY_VERSION,
+            "universe": str(universe),
+            "universe_frozen_at": frozen.get("frozen_at"),
+            "series": series,
+            "planned_sessions": count,
+            "session_seconds": duration,
+            "interval_seconds": interval,
+            "events_per_session": top,
+            "sessions": [],
+        }
+    )
+    done = len(manifest["sessions"])
+    console.print(
+        f"[bold]{len(series)}[/bold] series in the frozen universe; "
+        f"{done} of {count} sessions already recorded"
+    )
+
+    async def _one(index: int) -> dict[str, Any]:
+        provider = KalshiProvider()
+        started = datetime.now(timezone.utc)
+        session_dir = out / f"session-{index:02d}"
+        try:
+            events, census = await _discover(provider, top, series, rank_by="volume")
+            session_dir.mkdir(parents=True, exist_ok=True)
+            (session_dir / "selection.json").write_text(json.dumps(census, indent=2) + "\n")
+            if not events:
+                return {
+                    "session": index, "started_at": started.isoformat(),
+                    "date": started.date().isoformat(), "events": [],
+                    "note": "no event in the frozen universe was open and two-sided",
+                    "stats": {},
+                }
+            config = RecorderConfig(
+                event_tickers=tuple(events),
+                out_dir=session_dir,
+                interval_seconds=interval,
+                duration_seconds=duration,
+                depth=depth,
+                record_trades=True,
+                max_trade_watch=watch,
+            )
+            recorder = SynchronizedRecorder(provider, config)
+            await recorder.prepare()
+            stats = await recorder.run()
+            return {
+                "session": index,
+                "started_at": started.isoformat(),
+                "ended_at": datetime.now(timezone.utc).isoformat(),
+                "date": started.date().isoformat(),
+                "events": events,
+                "stats": stats.as_dict(),
+            }
+        finally:
+            await provider.aclose()
+
+    for index in range(done + 1, count + 1):
+        console.print(f"\n[bold]session {index}/{count}[/bold] starting {datetime.now(timezone.utc).isoformat()}")
+        record = asyncio.run(_one(index))
+        manifest["sessions"].append(record)
+        manifest_path.write_text(json.dumps(manifest, indent=2) + "\n")
+        stats = record.get("stats") or {}
+        console.print(
+            f"  events={len(record['events'])} snapshots={stats.get('snapshots', 0)} "
+            f"trades={stats.get('trades', 0)} rejections={stats.get('rejections', 0)} "
+            f"skew_max_ms={stats.get('skew_bound_ms_max')}"
+        )
+
+    dates = sorted({r["date"] for r in manifest["sessions"]})
+    console.print(
+        f"\n[bold]{len(manifest['sessions'])}[/bold] sessions across "
+        f"[bold]{len(dates)}[/bold] calendar date(s): {dates}"
+    )
+    console.print(f"wrote {manifest_path}")
 
 
 @app.command("verify")

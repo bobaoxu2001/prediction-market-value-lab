@@ -30,6 +30,7 @@ from pmvl_markets.arbitrage.maker_experiment import (
     generate_quotes,
     run_experiment,
 )
+from pmvl_markets.arbitrage.maker_study import SessionResult, pool_sessions
 from pmvl_markets.recording import load_recording
 from pmvl_shared.enums import Side
 
@@ -220,6 +221,109 @@ def maker_sweep(
         )
         + "\n"
     )
+    console.print(f"wrote {target}")
+
+
+@app.command("maker-study")
+def maker_study(
+    directory: Path = typer.Argument(..., help="Study directory written by `pmvl record sessions`."),
+    size: int = typer.Option(50, help="Contracts per quote."),
+    lifetime: int = typer.Option(60, help="Seconds a quote rests before cancellation."),
+    latency_ms: int = typer.Option(300, help="Delay before the order rests on the book."),
+    out: Path = typer.Option(None, help="Where to write the pooled report."),
+) -> None:
+    """Pool every session and resample sessions and dates, not quotes.
+
+    The pre-registration decides once, at the planned session count. Run before then
+    and this prints interim numbers labelled as not a decision, because a study that
+    can stop the moment it likes an interim is a search with extra steps.
+    """
+    manifest_path = directory / "study.json"
+    if not manifest_path.exists():
+        console.print(f"[red]no study manifest at {manifest_path}")
+        raise typer.Exit(1)
+    manifest = json.loads(manifest_path.read_text())
+
+    policies = [
+        QuotePolicy(
+            side=Side(side_name), improve_ticks=ticks, size=Decimal(size),
+            lifetime_seconds=lifetime, placement_latency_ms=latency_ms,
+            name=f"{'improve' if ticks else 'join'}-{side_name}",
+        )
+        for side_name in ("yes", "no")
+        for ticks in (0, 1)
+    ]
+
+    results: list[SessionResult] = []
+    versions: set[str] = set()
+    for record in manifest["sessions"]:
+        session_dir = directory / f"session-{record['session']:02d}"
+        if not (session_dir / "snapshots.jsonl").exists():
+            console.print(
+                f"session {record['session']}: no snapshots recorded - counted as a "
+                "session with zero quotes, not skipped"
+            )
+            continue
+        recording = load_recording(session_dir)
+        version = recording.single_version
+        if version is None:
+            console.print(
+                f"[red]session {record['session']} spans strategy versions "
+                f"{sorted(recording.strategy_versions)}; refusing to pool it"
+            )
+            raise typer.Exit(1)
+        versions.add(version)
+        for policy in policies:
+            results.append(
+                SessionResult(
+                    session=record["session"],
+                    date=record["date"],
+                    started_at=record["started_at"],
+                    report=run_experiment(
+                        recording.snapshots, recording.trades, policy,
+                        strategy_version=version,
+                    ),
+                )
+            )
+
+    if len(versions) > 1:
+        console.print(f"[red]study spans strategy versions {sorted(versions)}")
+        raise typer.Exit(1)
+    if not results:
+        console.print("[red]no session in this study carries a recording")
+        raise typer.Exit(1)
+
+    study = pool_sessions(results, planned_sessions=manifest["planned_sessions"])
+    body = study.as_dict()
+
+    table = Table(
+        title=f"maker study - {body['completed_sessions']}/{body['planned_sessions']} "
+        f"sessions over {body['distinct_dates']} date(s)"
+    )
+    for column in ("policy", "quotes", "fills", "mean E[PnL]/quote",
+                   "session CI95", "date CI95", "family-wise (date)",
+                   "hedged pair", "markout 60s"):
+        table.add_column(column, justify="right" if column != "policy" else "left")
+    for row in body["policies"]:
+        def fmt(ci):
+            return f"[{ci[0]}, {ci[1]}]" if ci else "-"
+        table.add_row(
+            row["policy"]["name"],
+            str(row["quotes_placed"]),
+            str(row["fills"]["QUEUE_MODEL"]),
+            row["mean_pnl_per_quote_usd"],
+            fmt(row["session_cluster_ci95"]),
+            fmt(row["date_cluster_ci95"]),
+            fmt(row["date_cluster_ci_family_wise"]),
+            str(row["hedged_pair_pnl_per_contract"]),
+            str(row["mean_markout_given_fill_60s"]),
+        )
+    console.print(table)
+    console.print(f"\n[bold]{body['verdict']}[/bold]: {body['why']}")
+    console.print(body["independence_note"])
+
+    target = out or (directory / "maker_study_report.json")
+    target.write_text(json.dumps(body, indent=2) + "\n")
     console.print(f"wrote {target}")
 
 
