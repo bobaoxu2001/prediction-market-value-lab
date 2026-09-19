@@ -1,0 +1,158 @@
+{
+  "frozen_at": "2026-09-19T08:45:56.009526+00:00",
+  "kind": "union of two censuses, taken at different hours of the trading week",
+  "why": "A single census fixes the universe to whichever markets happened to be awake when it ran. The 2026-09-19 scan landed at 08:37 UTC on a Saturday - the quietest hour of the week for US markets - and returned an almost entirely Asian-session universe: KBO baseball and WTA tennis. A study running ten hours from there would spend its middle sessions with nothing open, and the emptiness would be an artefact of the census clock rather than a fact about the market. Unioning a US-active hour with an Asia-active one fixes a universe that has something open around the clock, and it is still frozen: it was built before session 1 and cannot move.",
+  "sources": [
+    {
+      "file": "artifacts/forward/selection-2026-09-18.json",
+      "taken_at": "2026-09-18T11:30Z",
+      "series": [
+        "KXGOLDH",
+        "KXLOLMAP",
+        "KXMLBF5SPREAD",
+        "KXMLBHIT",
+        "KXMLBHR",
+        "KXMLBSB",
+        "KXMLBSPREAD",
+        "KXMLBTOTAL",
+        "KXRAIN",
+        "KXTEMPCHIHS",
+        "KXTEMPMIAH",
+        "KXTEMPNYCHS",
+        "KXWTAMATCH"
+      ]
+    },
+    {
+      "file": "artifacts/forward/universe-2026-09-19.json",
+      "taken_at": "2026-09-19T08:43:39.985301+00:00",
+      "series": [
+        "KXKBOGAME",
+        "KXMLBF5",
+        "KXMLBF5SPREAD",
+        "KXMLBHIT",
+        "KXMLBHR",
+        "KXMLBHRR",
+        "KXMLBKS",
+        "KXMLBRBI",
+        "KXMLBSPREAD",
+        "KXMLBTB",
+        "KXMLBTEAMTOTAL",
+        "KXMLBTOTAL",
+        "KXTEMPCHIHS",
+        "KXTEMPLAXHS",
+        "KXTEMPMIAH",
+        "KXTEMPNYCHS",
+        "KXWTAMATCH"
+      ]
+    }
+  ],
+  "series": [
+    "KXGOLDH",
+    "KXKBOGAME",
+    "KXLOLMAP",
+    "KXMLBF5",
+    "KXMLBF5SPREAD",
+    "KXMLBHIT",
+    "KXMLBHR",
+    "KXMLBHRR",
+    "KXMLBKS",
+    "KXMLBRBI",
+    "KXMLBSB",
+    "KXMLBSPREAD",
+    "KXMLBTB",
+    "KXMLBTEAMTOTAL",
+    "KXMLBTOTAL",
+    "KXRAIN",
+    "KXTEMPCHIHS",
+    "KXTEMPLAXHS",
+    "KXTEMPMIAH",
+    "KXTEMPNYCHS",
+    "KXWTAMATCH"
+  ],
+  "qualified_universe": [
+    {
+      "event": "KXGOLDH-FROZEN",
+      "series": "KXGOLDH"
+    },
+    {
+      "event": "KXKBOGAME-FROZEN",
+      "series": "KXKBOGAME"
+    },
+    {
+      "event": "KXLOLMAP-FROZEN",
+      "series": "KXLOLMAP"
+    },
+    {
+      "event": "KXMLBF5-FROZEN",
+      "series": "KXMLBF5"
+    },
+    {
+      "event": "KXMLBF5SPREAD-FROZEN",
+      "series": "KXMLBF5SPREAD"
+    },
+    {
+      "event": "KXMLBHIT-FROZEN",
+      "series": "KXMLBHIT"
+    },
+    {
+      "event": "KXMLBHR-FROZEN",
+      "series": "KXMLBHR"
+    },
+    {
+      "event": "KXMLBHRR-FROZEN",
+      "series": "KXMLBHRR"
+    },
+    {
+      "event": "KXMLBKS-FROZEN",
+      "series": "KXMLBKS"
+    },
+    {
+      "event": "KXMLBRBI-FROZEN",
+      "series": "KXMLBRBI"
+    },
+    {
+      "event": "KXMLBSB-FROZEN",
+      "series": "KXMLBSB"
+    },
+    {
+      "event": "KXMLBSPREAD-FROZEN",
+      "series": "KXMLBSPREAD"
+    },
+    {
+      "event": "KXMLBTB-FROZEN",
+      "series": "KXMLBTB"
+    },
+    {
+      "event": "KXMLBTEAMTOTAL-FROZEN",
+      "series": "KXMLBTEAMTOTAL"
+    },
+    {
+      "event": "KXMLBTOTAL-FROZEN",
+      "series": "KXMLBTOTAL"
+    },
+    {
+      "event": "KXRAIN-FROZEN",
+      "series": "KXRAIN"
+    },
+    {
+      "event": "KXTEMPCHIHS-FROZEN",
+      "series": "KXTEMPCHIHS"
+    },
+    {
+      "event": "KXTEMPLAXHS-FROZEN",
+      "series": "KXTEMPLAXHS"
+    },
+    {
+      "event": "KXTEMPMIAH-FROZEN",
+      "series": "KXTEMPMIAH"
+    },
+    {
+      "event": "KXTEMPNYCHS-FROZEN",
+      "series": "KXTEMPNYCHS"
+    },
+    {
+      "event": "KXWTAMATCH-FROZEN",
+      "series": "KXWTAMATCH"
+    }
+  ]
+}

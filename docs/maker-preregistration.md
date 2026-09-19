@@ -23,8 +23,20 @@ admissible fill estimator, net of fees, over the pre-registered universe.
 ## Universe, frozen
 
 The candidate universe is the **set of series** that qualified in the census frozen at
-`artifacts/forward/universe-2026-09-19.json`: at least two two-sided legs, non-zero 24h
-volume, and few enough legs to be captured in one request.
+`artifacts/forward/universe-study-frozen.json`: at least two two-sided legs, non-zero
+24h volume, and few enough legs to be captured in one request.
+
+That file is the **union of two censuses taken at different hours of the trading week**,
+and the reason is worth stating. The first scan for this study ran at 08:37 UTC on a
+Saturday - the quietest hour of the week for US markets - and returned an almost
+entirely Asian-session universe of KBO baseball and WTA tennis. A ten-hour study
+starting from it would have spent its middle sessions with nothing open, and that
+emptiness would have been an artefact of when the census clock happened to fire rather
+than a fact about the market. Unioning it with the 2026-09-18 11:30 UTC census gives a
+universe with something open around the clock. Amended **before session 1**, with no
+session data in existence and none seen: the only recording made before this point is a
+90-second smoke test of the runner, which used the narrow universe and a duration
+matching no part of this study, and which is discarded rather than pooled.
 
 Series rather than events, deliberately. Events roll over - a baseball game listed today
 has expired by tomorrow - so freezing events would deplete the universe within a day and
