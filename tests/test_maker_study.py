@@ -239,3 +239,39 @@ def test_sessions_on_different_books_show_no_overlap():
     row = pool_sessions([one(1, "A"), one(2, "B"), one(3, "C")], planned_sessions=3).results[0]
     assert row.distinct_markets == 3
     assert row.mean_consecutive_overlap == Decimal("0.0000")
+
+
+# ------------------------------------------------ is the loss broad or tail-driven?
+def test_a_tail_driven_mean_is_distinguishable_from_a_broad_one():
+    """The same mean, two different findings, and the trimmed means separate them."""
+    from pmvl_markets.arbitrage.maker_study import _markout_shape
+
+    broad = [Decimal("-0.01")] * 100
+    tail = [Decimal("0.00")] * 99 + [Decimal("-1.00")]
+
+    b = _markout_shape(broad)
+    t = _markout_shape(tail)
+    assert b["mean"] == "-0.0100"
+    assert t["mean"] == "-0.0100"
+    # trimming changes nothing for the broad loss and everything for the tail
+    assert b["mean_of_middle_ninety_percent"] == "-0.0100"
+    assert t["mean_of_middle_ninety_percent"] == "0.0000"
+    assert t["mean_excluding_worst_one_percent"] == "0.0000"
+
+
+def test_the_distribution_counts_winners_losers_and_flats_separately():
+    from pmvl_markets.arbitrage.maker_study import _markout_shape
+
+    shape = _markout_shape(
+        [Decimal("-0.02"), Decimal("-0.01"), Decimal("0.00"), Decimal("0.03")]
+    )
+    assert shape["losing_fills"] == 2
+    assert shape["winning_fills"] == 1
+    assert shape["flat_fills"] == 1
+    assert shape["fills_with_a_markout"] == 4
+
+
+def test_no_fills_means_no_distribution_rather_than_a_zero_one():
+    from pmvl_markets.arbitrage.maker_study import _markout_shape
+
+    assert _markout_shape([]) == {}

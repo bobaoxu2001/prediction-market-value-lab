@@ -118,6 +118,12 @@ class PooledPolicyResult:
     #: assumed, because the design cannot rule it out.
     distinct_markets: int = 0
     mean_consecutive_overlap: Decimal | None = None
+    #: The shape of the per-fill markout, not just its mean. A mean dragged down by a
+    #: handful of resolution jumps and a mean produced by a small persistent tilt on
+    #: ordinary fills are the same number and completely different findings: the first
+    #: says "avoid the tail", the second says the quote is priced wrong. Trimmed means
+    #: separate them.
+    markout_distribution: dict[str, Any] = field(default_factory=dict)
 
     @property
     def verdict_positive(self) -> bool:
@@ -153,6 +159,7 @@ class PooledPolicyResult:
                 if self.mean_consecutive_overlap is None
                 else str(self.mean_consecutive_overlap)
             ),
+            "markout_distribution": self.markout_distribution,
             "overlap_note": (
                 "Jaccard overlap between the market sets of consecutive sessions. "
                 "Near 1 means the sessions recorded the same books at different times, "
@@ -291,6 +298,8 @@ def pool_sessions(
             for m in _markout_values(s.report, estimator, horizon)
         ]
 
+        distribution = _markout_shape(markouts)
+
         ordered_group = sorted(group, key=lambda x: x.session)
         market_sets = [
             {o.quote.market for o in s.report.outcomes} for s in ordered_group
@@ -337,6 +346,7 @@ def pool_sessions(
                     if markouts
                     else None
                 ),
+                markout_distribution=distribution,
                 distinct_markets=len(set().union(*market_sets)) if market_sets else 0,
                 mean_consecutive_overlap=(
                     quantize_usd(sum(overlaps, ZERO) / Decimal(len(overlaps)))
@@ -363,6 +373,40 @@ def _hedged_values(
         for o in report.outcomes
         if o.filled(estimator) and o.hedge_cost is not None
     ]
+
+
+def _markout_shape(values: Sequence[Decimal]) -> dict[str, Any]:
+    """Percentiles, win/loss counts and trimmed means for the per-fill markout.
+
+    The trimmed means are the point. If the middle 90% loses at the same rate as the
+    whole sample, the maker is being adversely selected on ordinary fills rather than
+    occasionally run over, and no amount of tail management fixes it.
+    """
+    if not values:
+        return {}
+    ordered = sorted(values)
+    n = len(ordered)
+
+    def at(q: float) -> str:
+        return str(ordered[min(n - 1, int(q * (n - 1)))])
+
+    def mean(xs: Sequence[Decimal]) -> str | None:
+        return str(quantize_usd(sum(xs, ZERO) / Decimal(len(xs)))) if xs else None
+
+    losing = sum(1 for v in ordered if v < 0)
+    winning = sum(1 for v in ordered if v > 0)
+    return {
+        "fills_with_a_markout": n,
+        "p01": at(0.01), "p05": at(0.05), "p25": at(0.25), "p50": at(0.50),
+        "p75": at(0.75), "p95": at(0.95), "p99": at(0.99),
+        "min": str(ordered[0]), "max": str(ordered[-1]),
+        "mean": mean(ordered),
+        "mean_excluding_worst_one_percent": mean(ordered[int(0.01 * n):]),
+        "mean_of_middle_ninety_percent": mean(ordered[int(0.05 * n): int(0.95 * n)]),
+        "losing_fills": losing,
+        "winning_fills": winning,
+        "flat_fills": n - losing - winning,
+    }
 
 
 def _markout_values(

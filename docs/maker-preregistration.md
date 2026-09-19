@@ -103,13 +103,22 @@ looking for one.
 
 ## Added after pre-registration, before session 1
 
-One diagnostic, which changes no threshold and no decision: **Jaccard overlap between
-the market sets of consecutive sessions**, plus the count of distinct markets across
-the study. The design cannot rule out that a frozen universe and a top-by-volume rule
+Two diagnostics, neither of which changes a threshold or a decision.
+
+**Jaccard overlap between the market sets of consecutive sessions**, plus the count of
+distinct markets across the study. The design cannot rule out that a frozen universe and a top-by-volume rule
 hand consecutive sessions the same books an hour apart, in which case the session-level
 interval measures autocorrelation rather than independent variation. That is worth
 knowing and it is not knowable in advance, so it is measured and reported rather than
 assumed away. It does not enter the decision rule above.
+
+**The shape of the per-fill markout** - percentiles, win/loss/flat counts, and means
+with the worst 1% and the outer 10% trimmed. A mean dragged down by a handful of
+resolution jumps and a mean produced by a small persistent tilt on ordinary fills are
+the same number and completely different findings: the first says avoid the tail, the
+second says the quote is priced wrong and no tail management fixes it. Added at session
+5, from the interim data, and reported for every policy - it describes a result, it does
+not decide one.
 
 ## What this study cannot settle
 
