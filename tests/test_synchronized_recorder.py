@@ -428,3 +428,56 @@ class _SlowTradeProvider(_FakeProvider):
                 return await super().get_json(path, params=params, **kw)
 
         return _C(outer)
+
+
+@pytest.mark.asyncio
+async def test_a_full_page_of_prints_is_flagged_as_lost_data(tmp_path: Path):
+    """A poll that fills its page has dropped the older prints in the same window.
+
+    The venue returns the most recent first and the cursor then advances past what
+    was missed, so those prints are gone. Missing prints under-count fills, which
+    pulls a maker result toward zero - a silent bias in the direction that makes a
+    negative finding harder to see, which is the worst direction for it to be silent.
+
+    Measured on a real study: the sessions whose cadence collapsed polled slowly
+    enough that three of them hit the page limit exactly.
+    """
+    from pmvl_markets.recording.recorder import TRADE_PAGE_LIMIT
+
+    provider = _FullPageProvider({"EV": ["EV-A"]})
+    rec = SynchronizedRecorder(
+        provider, RecorderConfig(event_tickers=("EV",), out_dir=tmp_path)
+    )
+    await rec.capture_once()
+
+    assert rec.stats.trade_polls_at_limit == 1
+    assert rec.stats.as_dict()["trade_polls_at_row_limit"] == 1
+    assert rec.stats.trades == TRADE_PAGE_LIMIT
+
+
+class _FullPageProvider(_FakeProvider):
+    """Answers every trade poll with a completely full page."""
+
+    @property
+    def _client(self):
+        outer = self
+
+        class _C(_FakeProvider._Client):
+            async def get_json(self, path, *, params=None, **kw):
+                if path == "/markets/trades":
+                    outer.trade_calls.append(dict(params or {})["ticker"])
+                    return {
+                        "trades": [
+                            {
+                                "trade_id": f"t{i}",
+                                "created_time": "2026-09-20T12:00:00Z",
+                                "yes_price_dollars": "0.40",
+                                "count_fp": "1",
+                                "taker_side": "no",
+                            }
+                            for i in range(200)
+                        ]
+                    }
+                return await super().get_json(path, params=params, **kw)
+
+        return _C(outer)

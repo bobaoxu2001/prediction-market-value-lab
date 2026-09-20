@@ -122,6 +122,16 @@ healthy ones - and each still carries equal weight as one bootstrap cluster, whi
 what sensitivity B tests. Fixed in `6ad09a4`: the tape now has a time budget and a
 rotating cursor, and cycles that hit the budget are counted.
 
+**The starvation also lost prints, which I only found while running the replication.**
+Polling slowly and polling a busy market are the truncation-prone combination: the venue
+returns the most recent 200 prints first, and the cursor then advances past whatever was
+missed. Sessions 17, 18 and 20 hit that page limit exactly - session 20 shows 241 prints
+inside a single 225-second cycle window against a 200-row page. Those sessions lost
+trades, which **under-counts fills**, which pulls a maker result toward zero. So the
+starved sessions were diluting the finding rather than carrying it - which is exactly
+what sensitivity B showed when dropping them made the result stronger. The recorder now
+counts polls that come back holding a full page, so this cannot be silent again.
+
 **The skew bound was measured in the wrong place.** It was timed from before the
 rate-limiter acquire, so it counted this process's own backlog as venue latency. That is
 the "944-second skew" in session 20 - a request the venue answered in under a second. The

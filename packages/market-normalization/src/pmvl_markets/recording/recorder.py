@@ -35,6 +35,10 @@ from .writer import AppendOnlyLog
 
 log = get_logger(__name__)
 
+#: Rows per trade poll. A poll that fills this page has lost the older prints in its
+#: window, so the number is also the detector's threshold.
+TRADE_PAGE_LIMIT = 200
+
 __all__ = ["RecorderConfig", "RecorderStats", "SynchronizedRecorder", "resolve_event_legs"]
 
 
@@ -69,6 +73,12 @@ class RecorderStats:
     #: count means the watchlist is wider than the cadence can carry, which is worth
     #: knowing before it shows up as a session with eight snapshots in it.
     trade_budget_exhausted: int = 0
+    #: Polls that came back holding exactly the row limit. The venue returns the most
+    #: recent prints first, so a full page means older ones in the same window were
+    #: dropped - and the cursor then advances past them, losing them for good. Missing
+    #: prints under-count fills, which pulls a maker result *toward* zero, so this is
+    #: a silent bias in the direction that makes a negative finding harder to see.
+    trade_polls_at_limit: int = 0
     legs_captured: int = 0
     two_sided_legs: int = 0
     skew_bounds_ms: list[float] = field(default_factory=list)
@@ -83,6 +93,7 @@ class RecorderStats:
             "rejection_reasons": dict(sorted(self.rejection_reasons.items())),
             "trades": self.trades,
             "trade_budget_exhausted_cycles": self.trade_budget_exhausted,
+            "trade_polls_at_row_limit": self.trade_polls_at_limit,
             "legs_captured": self.legs_captured,
             "two_sided_legs": self.two_sided_legs,
             "skew_bound_ms_p50": _pct(skews, 0.50),
@@ -326,7 +337,7 @@ class SynchronizedRecorder:
                 break
             polled += 1
             floor = self._trade_floor.get(ticker)
-            params: dict[str, Any] = {"ticker": ticker, "limit": 200}
+            params: dict[str, Any] = {"ticker": ticker, "limit": TRADE_PAGE_LIMIT}
             if floor is not None:
                 params["min_ts"] = int(floor.timestamp())
             try:
@@ -337,6 +348,13 @@ class SynchronizedRecorder:
                 log.debug("trade fetch failed for %s: %s", ticker, exc)
                 continue
             rows = (data or {}).get("trades") or []
+            if len(rows) >= TRADE_PAGE_LIMIT:
+                self.stats.trade_polls_at_limit += 1
+                log.warning(
+                    "trade poll for %s returned a full page (%d); older prints in this "
+                    "window were dropped and the cursor is about to advance past them",
+                    ticker, len(rows),
+                )
             newest = floor
             for row in rows:
                 trade = _parse_trade(ticker, row)
