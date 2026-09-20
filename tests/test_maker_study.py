@@ -25,7 +25,7 @@ from pmvl_markets.arbitrage.maker_study import (
     pool_sessions,
 )
 from pmvl_markets.recording.schema import CaptureMode, EventSnapshot, TradeRecord
-from pmvl_shared.enums import Platform
+from pmvl_shared.enums import Platform, Side
 from pmvl_shared.schemas import BookLevel, OrderBook
 
 UTC = timezone.utc
@@ -298,3 +298,102 @@ def test_a_multi_date_study_says_so_instead():
     body = study.as_dict()
     assert body["date_factor_sampled"] is True
     assert body["policies"][0]["binding_interval"] == "date"
+
+
+# -------------------------------------------------------------- replication
+def _study(means: dict[str, float], *, sessions: int = 6, spread: float = 0.002):
+    """A study whose per-policy means are what the caller asked for.
+
+    Built by hand rather than by running the experiment, because these tests are
+    about the comparison rule and not about the fill model.
+    """
+    from pmvl_markets.arbitrage.maker_study import PooledPolicyResult, StudyReport
+
+    report = StudyReport(
+        planned_sessions=sessions, completed_sessions=sessions,
+        dates=["2026-09-19"], estimator="QUEUE_MODEL", horizon=60,
+    )
+    for name, mean in means.items():
+        side = Side.NO if name.endswith("-no") else Side.YES
+        report.results.append(
+            PooledPolicyResult(
+                policy=QuotePolicy(side=side, improve_ticks=0, name=name),
+                sessions=sessions, dates=1, quotes=1000,
+                fills={"QUEUE_MODEL": 100},
+                mean_pnl_per_quote=Decimal(str(mean)),
+                session_ci95=(Decimal(str(mean - spread)), Decimal(str(mean + spread))),
+                session_ci_family=(Decimal(str(mean - spread * 1.3)),
+                                   Decimal(str(mean + spread * 1.3))),
+                date_ci95=None, date_ci_family=None,
+                per_session_mean=[], hedged_pair_pnl=None, mean_markout=None,
+            )
+        )
+    return report
+
+
+FOUR = ["join-yes", "join-no", "improve-yes", "improve-no"]
+
+
+def test_a_second_day_that_agrees_replicates():
+    from pmvl_markets.arbitrage.maker_study import compare_days
+
+    day1 = _study({n: -0.04 for n in FOUR}, spread=0.02)
+    day2 = _study({n: -0.045 for n in FOUR}, spread=0.02)
+    rep = compare_days(day1, day2, day_one_label="d1", day_two_label="d2")
+    verdict, why = rep.verdict()
+    assert verdict == "REPLICATED"
+    assert "4 of 4" in why
+
+
+def test_a_second_day_that_comes_out_positive_fails_to_replicate():
+    """The only outcome that overturns the first study gets its own flag."""
+    from pmvl_markets.arbitrage.maker_study import compare_days
+
+    day1 = _study({n: -0.04 for n in FOUR}, spread=0.02)
+    day2 = _study({n: 0.05 for n in FOUR}, spread=0.01)
+    rep = compare_days(day1, day2, day_one_label="d1", day_two_label="d2")
+    verdict, why = rep.verdict()
+    assert verdict == "FAILED_TO_REPLICATE"
+    assert len(rep.contradicting) == 4
+    assert "entirely above zero" in why
+
+
+def test_one_policy_going_positive_is_enough_to_fail():
+    """A rule that needed all four to flip would defend the first result."""
+    from pmvl_markets.arbitrage.maker_study import compare_days
+
+    day1 = _study({n: -0.04 for n in FOUR}, spread=0.02)
+    means = {n: -0.045 for n in FOUR}
+    means["join-no"] = 0.06
+    day2 = _study(means, spread=0.01)
+    assert compare_days(day1, day2, day_one_label="d1", day_two_label="d2").verdict()[0] \
+        == "FAILED_TO_REPLICATE"
+
+
+def test_negative_but_far_outside_the_first_interval_is_inconclusive():
+    """Same sign is not the same finding: a ten-fold larger loss did not replicate."""
+    from pmvl_markets.arbitrage.maker_study import compare_days
+
+    day1 = _study({n: -0.04 for n in FOUR}, spread=0.005)
+    day2 = _study({n: -0.40 for n in FOUR}, spread=0.005)
+    verdict, why = compare_days(day1, day2, day_one_label="d1", day_two_label="d2").verdict()
+    assert verdict == "INCONCLUSIVE"
+    assert "0 of 4 means inside" in why
+
+
+def test_the_report_says_why_the_days_were_not_pooled():
+    from pmvl_markets.arbitrage.maker_study import compare_days
+
+    day1 = _study({n: -0.04 for n in FOUR})
+    day2 = _study({n: -0.04 for n in FOUR})
+    body = compare_days(day1, day2, day_one_label="d1", day_two_label="d2").as_dict()
+    assert "different recorder versions" in body["not_pooled_because"]
+    assert "REPLICATED needs all four" in body["rule"]
+
+
+def test_nothing_to_compare_is_inconclusive_not_replicated():
+    from pmvl_markets.arbitrage.maker_study import compare_days
+
+    empty = _study({})
+    assert compare_days(empty, empty, day_one_label="d1", day_two_label="d2").verdict()[0] \
+        == "INCONCLUSIVE"

@@ -30,7 +30,11 @@ from pmvl_markets.arbitrage.maker_experiment import (
     generate_quotes,
     run_experiment,
 )
-from pmvl_markets.arbitrage.maker_study import SessionResult, pool_sessions
+from pmvl_markets.arbitrage.maker_study import (
+    SessionResult,
+    compare_days,
+    pool_sessions,
+)
 from pmvl_markets.recording import load_recording
 from pmvl_shared.enums import Side
 
@@ -221,6 +225,112 @@ def maker_sweep(
         )
         + "\n"
     )
+    console.print(f"wrote {target}")
+
+
+def _run_study(directory: Path, policies, *, size, lifetime, latency_ms):
+    """Pool one study directory. Shared by the study and replication commands."""
+    manifest_path = directory / "study.json"
+    if not manifest_path.exists():
+        console.print(f"[red]no study manifest at {manifest_path}")
+        raise typer.Exit(1)
+    manifest = json.loads(manifest_path.read_text())
+
+    results: list[SessionResult] = []
+    versions: set[str] = set()
+    for record in manifest["sessions"]:
+        session_dir = directory / f"session-{record['session']:02d}"
+        if not (session_dir / "snapshots.jsonl").exists():
+            continue
+        recording = load_recording(session_dir)
+        version = recording.single_version
+        if version is None:
+            console.print(
+                f"[red]{directory} session {record['session']} spans strategy versions "
+                f"{sorted(recording.strategy_versions)}; refusing to pool it"
+            )
+            raise typer.Exit(1)
+        versions.add(version)
+        for policy in policies:
+            results.append(
+                SessionResult(
+                    session=record["session"], date=record["date"],
+                    started_at=record["started_at"],
+                    report=run_experiment(
+                        recording.snapshots, recording.trades, policy,
+                        strategy_version=version,
+                    ),
+                )
+            )
+    if len(versions) > 1:
+        console.print(f"[red]{directory} spans recorder versions {sorted(versions)}")
+        raise typer.Exit(1)
+    if not results:
+        console.print(f"[red]no session in {directory} carries a recording")
+        raise typer.Exit(1)
+    return pool_sessions(results, planned_sessions=manifest["planned_sessions"]), versions.pop()
+
+
+@app.command("maker-replication")
+def maker_replication(
+    day_one: Path = typer.Argument(..., help="The first study directory."),
+    day_two: Path = typer.Argument(..., help="The second study directory."),
+    size: int = typer.Option(50, help="Contracts per quote."),
+    lifetime: int = typer.Option(60, help="Seconds a quote rests before cancellation."),
+    latency_ms: int = typer.Option(300, help="Delay before the order rests on the book."),
+    out: Path = typer.Option(None, help="Where to write the replication report."),
+) -> None:
+    """Apply the pre-registered comparison between two days. Compares, never pools.
+
+    Pooling would answer "what is the average across these days", which two days
+    cannot support - and here it is barred outright, because the days were recorded
+    under different recorder versions. Comparison answers "did the finding hold up",
+    which is the question a second day can actually settle.
+    """
+    policies = [
+        QuotePolicy(
+            side=Side(side_name), improve_ticks=ticks, size=Decimal(size),
+            lifetime_seconds=lifetime, placement_latency_ms=latency_ms,
+            name=f"{'improve' if ticks else 'join'}-{side_name}",
+        )
+        for side_name in ("yes", "no")
+        for ticks in (0, 1)
+    ]
+    one, version_one = _run_study(day_one, policies, size=size, lifetime=lifetime,
+                                  latency_ms=latency_ms)
+    two, version_two = _run_study(day_two, policies, size=size, lifetime=lifetime,
+                                  latency_ms=latency_ms)
+
+    report = compare_days(
+        one, two,
+        day_one_label=f"{day_one.name} ({', '.join(one.dates)}, recorder {version_one})",
+        day_two_label=f"{day_two.name} ({', '.join(two.dates)}, recorder {version_two})",
+    )
+    body = report.as_dict()
+    body["day_one_sessions"] = one.completed_sessions
+    body["day_two_sessions"] = two.completed_sessions
+    body["recorder_versions"] = {"day_one": version_one, "day_two": version_two}
+
+    table = Table(title=f"replication - {body['day_one']} vs {body['day_two']}")
+    for column in ("policy", "day 1 mean", "day 1 CI95", "day 2 mean", "day 2 CI95",
+                   "negative", "inside d1", "positive d2"):
+        table.add_column(column, justify="right" if column != "policy" else "left")
+    for row in body["policies"]:
+        def ci(v):
+            return f"[{v[0]}, {v[1]}]" if v else "-"
+        table.add_row(
+            row["policy"], row["day_one_mean"], ci(row["day_one_ci95"]),
+            row["day_two_mean"], ci(row["day_two_ci95"]),
+            "yes" if row["day_two_mean_negative"] else "NO",
+            "yes" if row["inside_day_one_interval"] else "no",
+            "YES" if row["day_two_excludes_zero_above"] else "no",
+        )
+    console.print(table)
+    console.print(f"\n[bold]{body['verdict']}[/bold]: {body['why']}")
+    console.print(f"not pooled: {body['not_pooled_because']}")
+
+    target = out or (day_two / "replication_report.json")
+    target.write_text(json.dumps(body, indent=2) + "\n")
     console.print(f"wrote {target}")
 
 

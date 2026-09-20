@@ -39,6 +39,8 @@ __all__ = [
     "SessionResult",
     "PooledPolicyResult",
     "StudyReport",
+    "ReplicationReport",
+    "compare_days",
     "pool_sessions",
 ]
 
@@ -455,3 +457,118 @@ def _markout_values(
         for o in report.outcomes
         if o.filled(estimator) and o.markout.get(horizon) is not None
     ]
+
+
+# ---------------------------------------------------------------- replication
+@dataclass
+class ReplicationReport:
+    """Does a second day's result agree with the first day's, by a rule fixed first.
+
+    Comparison rather than pooling, and not only because the two days were recorded
+    under different recorder versions. Pooling answers "what is the average across
+    these days", which two days cannot support. Comparison answers "did the finding
+    hold up", which is the question a second day is actually able to settle.
+    """
+
+    day_one_label: str
+    day_two_label: str
+    per_policy: list[dict[str, Any]] = field(default_factory=list)
+
+    @property
+    def negative_on_day_two(self) -> int:
+        return sum(1 for r in self.per_policy if r["day_two_mean_negative"])
+
+    @property
+    def contained(self) -> int:
+        return sum(1 for r in self.per_policy if r["inside_day_one_interval"])
+
+    @property
+    def contradicting(self) -> list[str]:
+        """Policies whose day-2 interval sits entirely above zero."""
+        return [r["policy"] for r in self.per_policy if r["day_two_excludes_zero_above"]]
+
+    def verdict(self) -> tuple[str, str]:
+        n = len(self.per_policy)
+        if not n:
+            return "INCONCLUSIVE", "no policy could be compared"
+        if self.contradicting:
+            return (
+                "FAILED_TO_REPLICATE",
+                f"day two's interval lies entirely above zero for "
+                f"{', '.join(self.contradicting)}",
+            )
+        if self.negative_on_day_two == n and self.contained >= 3:
+            return (
+                "REPLICATED",
+                f"all {n} policies negative on day two, and {self.contained} of {n} "
+                "day-two means fall inside day one's interval",
+            )
+        return (
+            "INCONCLUSIVE",
+            f"{self.negative_on_day_two} of {n} policies negative on day two, "
+            f"{self.contained} of {n} means inside day one's interval - the "
+            "pre-registered rule needs all negative and at least three contained",
+        )
+
+    def as_dict(self) -> dict[str, Any]:
+        verdict, why = self.verdict()
+        return {
+            "verdict": verdict,
+            "why": why,
+            "day_one": self.day_one_label,
+            "day_two": self.day_two_label,
+            "rule": (
+                "REPLICATED needs all four policies negative on day two and at least "
+                "three of four day-two means inside day one's 95% session-level "
+                "interval; FAILED_TO_REPLICATE needs any day-two interval entirely "
+                "above zero; anything else is INCONCLUSIVE"
+            ),
+            "not_pooled_because": (
+                "the two days were recorded under different recorder versions, and a "
+                "1.0.0 skew bound is inflated relative to a 1.1.0 one while a 1.0.0 "
+                "session's snapshot count depended on how busy the tape was"
+            ),
+            "policies": self.per_policy,
+        }
+
+
+def compare_days(
+    day_one: StudyReport,
+    day_two: StudyReport,
+    *,
+    day_one_label: str,
+    day_two_label: str,
+) -> ReplicationReport:
+    """Apply the pre-registered comparison, policy by policy."""
+    one = {r.policy.name: r for r in day_one.results}
+    report = ReplicationReport(day_one_label=day_one_label, day_two_label=day_two_label)
+
+    for result in sorted(day_two.results, key=lambda r: r.policy.name):
+        prior = one.get(result.policy.name)
+        if prior is None:
+            continue
+        interval = prior.session_ci95
+        mean = result.mean_pnl_per_quote
+        own = result.session_ci95
+        report.per_policy.append(
+            {
+                "policy": result.policy.name,
+                "day_one_mean": str(prior.mean_pnl_per_quote),
+                "day_one_ci95": (
+                    None if interval is None else [str(interval[0]), str(interval[1])]
+                ),
+                "day_two_mean": str(mean),
+                "day_two_ci95": None if own is None else [str(own[0]), str(own[1])],
+                "day_two_sessions": result.sessions,
+                "day_two_quotes": result.quotes,
+                "day_two_mean_negative": mean < ZERO,
+                "inside_day_one_interval": (
+                    interval is not None and interval[0] <= mean <= interval[1]
+                ),
+                #: The only outcome that would overturn the first study, kept as its
+                #: own flag so it cannot be lost inside a summary count.
+                "day_two_excludes_zero_above": own is not None and own[0] > ZERO,
+                "day_two_excludes_zero_below": own is not None and own[1] < ZERO,
+            }
+        )
+    return report
