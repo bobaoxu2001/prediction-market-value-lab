@@ -350,18 +350,22 @@ async def test_the_rules_are_recorded_with_the_prices(tmp_path: Path):
     assert all(b["market"]["strike_type"] == "greater" for b in bodies)
 
 
-def test_the_recording_version_and_the_analysis_version_are_separate_numbers():
+def test_a_snapshot_is_stamped_with_the_recorder_version_and_nothing_else():
     """A recording is evidence and does not change; the rules for reading it do.
 
-    Bumping one number for both would mean a corrected analysis rule invalidates the
-    recording it corrects - and re-reading old evidence under a fixed rule is exactly
-    what recording it offline was for.
+    The two versions move independently - bumping one for both would mean a corrected
+    analysis rule invalidates the recording it corrects, and re-reading old evidence
+    under a fixed rule is exactly what recording it offline was for. What makes them
+    independent is that a snapshot carries only the recorder's version and a report
+    carries both; whether the two numbers happen to be equal on a given day says
+    nothing, and asserting they differ would fail the moment they coincided.
     """
     from pmvl_markets.recording.schema import ANALYSIS_VERSION, STRATEGY_VERSION
 
-    assert ANALYSIS_VERSION != STRATEGY_VERSION
-    assert _snapshot().as_dict()["strategy_version"] == STRATEGY_VERSION
-    assert "analysis" not in _snapshot().as_dict()
+    body = _snapshot().as_dict()
+    assert body["strategy_version"] == STRATEGY_VERSION
+    assert not any("analysis" in key for key in body)
+    assert isinstance(ANALYSIS_VERSION, str) and ANALYSIS_VERSION
 
 
 @pytest.mark.asyncio

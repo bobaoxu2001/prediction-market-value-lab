@@ -47,7 +47,14 @@ __all__ = [
 #:
 #: 1.0.0 - first synchronized forward recorder. Single-request capture, per-leg books
 #:         and prints, market rules captured at the start of the run.
-STRATEGY_VERSION = "1.0.0"
+#: 1.1.0 - `skew_bound_ms` is measured around the socket instead of around the rate
+#:         limiter, so it no longer counts this process's own backlog as venue
+#:         latency; and the tape pull has a time budget, so it can no longer starve
+#:         the book capture. Both change what a recorded line *means*: a 1.0.0 skew
+#:         bound is inflated relative to a 1.1.0 one, and a 1.0.0 session's snapshot
+#:         count depends on how busy the tape was. Recordings either side of this
+#:         line are not pooled into one estimate.
+STRATEGY_VERSION = "1.1.0"
 
 #: What the *analysis* did with those lines. Kept separate on purpose. A recording is
 #: evidence and does not change; the rules for reading it do, and re-reading an old
