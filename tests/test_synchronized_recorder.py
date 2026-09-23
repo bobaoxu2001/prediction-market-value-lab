@@ -448,16 +448,20 @@ async def test_a_full_page_of_prints_is_flagged_as_lost_data(tmp_path: Path):
     rec = SynchronizedRecorder(
         provider, RecorderConfig(event_tickers=("EV",), out_dir=tmp_path)
     )
-    await rec.capture_once()   # backfill: no floor yet, nothing to have lost
-    await rec.capture_once()   # incremental: a full page here is dropped prints
+    from pmvl_markets.recording.recorder import TRADE_MAX_PAGES
+
+    await rec.capture_once()   # backfill: no floor yet, one page, nothing to have lost
+    await rec.capture_once()   # incremental: pages until the cap, then counts the rest
 
     assert rec.stats.trade_polls_at_limit == 1
     assert rec.stats.as_dict()["trade_polls_at_row_limit"] == 1
-    assert rec.stats.trades == TRADE_PAGE_LIMIT
+    assert rec.stats.trades == TRADE_PAGE_LIMIT * (1 + TRADE_MAX_PAGES)
 
 
 class _FullPageProvider(_FakeProvider):
-    """Answers every trade poll with a completely full page."""
+    """A tape that never runs out: every page is full and always has a next cursor."""
+
+    pages_served = 0
 
     @property
     def _client(self):
@@ -466,18 +470,54 @@ class _FullPageProvider(_FakeProvider):
         class _C(_FakeProvider._Client):
             async def get_json(self, path, *, params=None, **kw):
                 if path == "/markets/trades":
-                    outer.trade_calls.append(dict(params or {})["ticker"])
+                    q = dict(params or {})
+                    outer.trade_calls.append(q["ticker"])
+                    page = outer.pages_served
+                    outer.pages_served += 1
                     return {
+                        "cursor": f"c{page + 1}",
                         "trades": [
                             {
-                                "trade_id": f"t{i}",
+                                "trade_id": f"p{page}-t{i}",
                                 "created_time": "2026-09-20T12:00:00Z",
                                 "yes_price_dollars": "0.40",
                                 "count_fp": "1",
                                 "taker_side": "no",
                             }
                             for i in range(200)
-                        ]
+                        ],
+                    }
+                return await super().get_json(path, params=params, **kw)
+
+        return _C(outer)
+
+
+class _ThreePageProvider(_FakeProvider):
+    """Two full pages then a short one: a busy ticker that paging fully recovers."""
+
+    @property
+    def _client(self):
+        outer = self
+
+        class _C(_FakeProvider._Client):
+            async def get_json(self, path, *, params=None, **kw):
+                if path == "/markets/trades":
+                    q = dict(params or {})
+                    page = int((q.get("cursor") or "c0")[1:])
+                    size = 200 if page < 2 else 39
+                    outer.trade_calls.append(q["ticker"])
+                    return {
+                        "cursor": f"c{page + 1}" if page < 2 else "",
+                        "trades": [
+                            {
+                                "trade_id": f"p{page}-t{i}",
+                                "created_time": "2026-09-20T12:00:00Z",
+                                "yes_price_dollars": "0.40",
+                                "count_fp": "1",
+                                "taker_side": "no",
+                            }
+                            for i in range(size)
+                        ],
                     }
                 return await super().get_json(path, params=params, **kw)
 
@@ -501,3 +541,26 @@ async def test_the_first_poll_filling_its_page_is_backfill_not_loss(tmp_path: Pa
 
     await rec.capture_once()
     assert rec.stats.trade_polls_at_limit == 1   # second: a floor exists, so it counts
+
+
+
+@pytest.mark.asyncio
+async def test_a_busy_ticker_is_recovered_by_following_the_cursor(tmp_path: Path):
+    """239 prints in one wait against a 200-row page: measured, on day 3.
+
+    One page would keep the newest 200 and the floor would then advance past the
+    other 39 - the oldest prints of exactly the market most likely to fill a quote.
+    Following the cursor keeps all of them and counts nothing as lost.
+    """
+    provider = _ThreePageProvider({"EV": ["EV-A"]})
+    rec = SynchronizedRecorder(
+        provider, RecorderConfig(event_tickers=("EV",), out_dir=tmp_path)
+    )
+    await rec.capture_once()                     # backfill: first page only
+    backfill = rec.stats.trades
+    rec._trade_floor["EV-A"] = rec._trade_floor.get("EV-A") or datetime(2026, 1, 1, tzinfo=UTC)
+    await rec.capture_once()                     # incremental: follows the cursor
+
+    assert backfill == 200
+    assert rec.stats.trade_polls_at_limit == 0   # nothing lost
+    assert rec.stats.trades >= 200 + 239 - 200   # the pages beyond the first arrived

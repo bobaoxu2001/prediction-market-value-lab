@@ -39,6 +39,10 @@ log = get_logger(__name__)
 #: window, so the number is also the detector's threshold.
 TRADE_PAGE_LIMIT = 200
 
+#: Pages followed per ticker per poll before giving up and counting the rest as lost.
+#: Ten pages is two thousand prints in one wait, several times the busiest observed.
+TRADE_MAX_PAGES = 10
+
 __all__ = ["RecorderConfig", "RecorderStats", "SynchronizedRecorder", "resolve_event_legs"]
 
 
@@ -337,29 +341,20 @@ class SynchronizedRecorder:
                 break
             polled += 1
             floor = self._trade_floor.get(ticker)
-            params: dict[str, Any] = {"ticker": ticker, "limit": TRADE_PAGE_LIMIT}
-            if floor is not None:
-                params["min_ts"] = int(floor.timestamp())
-            try:
-                data = await self._provider._client.get_json(
-                    "/markets/trades", params=params, use_cache=False, allow_404=True
-                )
-            except Exception as exc:  # provider errors are recorded, not raised
-                log.debug("trade fetch failed for %s: %s", ticker, exc)
+            rows, exhausted = await self._pull_trades(ticker, floor)
+            if rows is None:
                 continue
-            rows = (data or {}).get("trades") or []
             #: Only an *incremental* poll can lose anything. The first poll for a
-            #: ticker has no floor and deliberately reaches back as far as the page
-            #: allows, so a full page there is the backfill working, not data going
+            #: ticker has no floor and deliberately reaches back as far as the pages
+            #: allow, so running out there is the backfill working, not data going
             #: missing - and counting it would bury the real signal under one false
             #: positive per ticker per run.
-            if floor is not None and len(rows) >= TRADE_PAGE_LIMIT:
+            if floor is not None and exhausted:
                 self.stats.trade_polls_at_limit += 1
                 log.warning(
-                    "trade poll for %s returned a full page (%d) since %s; older "
-                    "prints in that window were dropped and the cursor is about to "
-                    "advance past them",
-                    ticker, len(rows), floor.isoformat(),
+                    "trade poll for %s still full after %d pages since %s; older "
+                    "prints in that window were dropped",
+                    ticker, TRADE_MAX_PAGES, floor.isoformat(),
                 )
             newest = floor
             for row in rows:
@@ -379,6 +374,49 @@ class SynchronizedRecorder:
         self._trade_cursor = (self._trade_cursor + polled) % max(1, len(watchlist))
         if polled < len(rotated):
             self.stats.trade_budget_exhausted += 1
+
+    async def _pull_trades(
+        self, ticker: str, floor: datetime | None
+    ) -> tuple[list[dict[str, Any]] | None, bool]:
+        """Every print since ``floor``, following the cursor until the pages run out.
+
+        One page is not enough. Once the tape pull has a time budget the watchlist
+        rotates, so a ticker can wait a minute between polls, and the busiest ticker in
+        a session has been measured putting 239 prints into one such wait against a
+        200-row page. The venue returns newest first and the floor then advances past
+        whatever did not fit, so a single page silently loses the oldest prints of
+        exactly the markets most likely to fill a quote.
+
+        With a floor, ``min_ts`` bounds the walk server-side, so following the cursor
+        terminates on its own. Without one - the opening backfill - only the first page
+        is taken, because reaching back through a ticker's whole history is not the
+        point. Returns (rows, still_full_after_the_page_cap); ``None`` on a failure.
+        """
+        collected: list[dict[str, Any]] = []
+        cursor: str | None = None
+        pages = 0
+        while True:
+            params: dict[str, Any] = {"ticker": ticker, "limit": TRADE_PAGE_LIMIT}
+            if floor is not None:
+                params["min_ts"] = int(floor.timestamp())
+            if cursor:
+                params["cursor"] = cursor
+            try:
+                data = await self._provider._client.get_json(
+                    "/markets/trades", params=params, use_cache=False, allow_404=True
+                )
+            except Exception as exc:  # provider errors are recorded, not raised
+                log.debug("trade fetch failed for %s: %s", ticker, exc)
+                return (collected or None), False
+            rows = (data or {}).get("trades") or []
+            collected.extend(rows)
+            pages += 1
+            cursor = (data or {}).get("cursor") or None
+            full = len(rows) >= TRADE_PAGE_LIMIT
+            if floor is None or not full or not cursor:
+                return collected, False
+            if pages >= TRADE_MAX_PAGES:
+                return collected, True
 
     def _reject(
         self,
