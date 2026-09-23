@@ -397,3 +397,12 @@ def test_nothing_to_compare_is_inconclusive_not_replicated():
     empty = _study({})
     assert compare_days(empty, empty, day_one_label="d1", day_two_label="d2").verdict()[0] \
         == "INCONCLUSIVE"
+
+
+def test_the_same_session_number_on_two_days_is_two_sessions():
+    """Each day numbers its sessions from 1; "session 3" twice is not one session."""
+    a = _session(3, "2026-09-20", base=T0, fill=True)
+    b = _session(3, "2026-09-23", base=T0 + timedelta(days=3), fill=True)
+    study = pool_sessions([a, b], planned_sessions=40)
+    assert study.completed_sessions == 2
+    assert study.results[0].dates == 2

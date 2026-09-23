@@ -486,6 +486,96 @@ def daily_scan(
     console.print(f"appended to {ledger}")
 
 
+@app.command("maker-days")
+def maker_days(
+    directories: list[Path] = typer.Argument(..., help="Day directories to pool."),
+    planned_days: int = typer.Option(20, help="Eligible days the pre-registration targets."),
+    size: int = typer.Option(50, help="Contracts per quote."),
+    lifetime: int = typer.Option(60, help="Seconds a quote rests before cancellation."),
+    latency_ms: int = typer.Option(300, help="Delay before the order rests on the book."),
+    out: Path = typer.Option(None, help="Where to write the pooled report."),
+) -> None:
+    """Pool whole days and resample calendar dates, per the multi-day pre-registration.
+
+    This is the only analysis that ever puts an interval on the *day* factor. Every
+    earlier result was conditional on one afternoon, however many sessions it held.
+
+    Refuses to mix recorder versions. Day 1 was recorded under 1.0.0, whose skew
+    bound counted local queueing and whose tape starved in busy hours; it was
+    excluded from this study before day 3 existed, and not because of its result.
+
+    Before the planned number of days the verdict is labelled an interim and decides
+    nothing. The study does not stop early on a good interim.
+    """
+    policies = [
+        QuotePolicy(
+            side=Side(side_name), improve_ticks=ticks, size=Decimal(size),
+            lifetime_seconds=lifetime, placement_latency_ms=latency_ms,
+            name=f"{'improve' if ticks else 'join'}-{side_name}",
+        )
+        for side_name in ("yes", "no")
+        for ticks in (0, 1)
+    ]
+    results: list[SessionResult] = []
+    versions: dict[str, set[str]] = {}
+    for directory in directories:
+        manifest = json.loads((directory / "study.json").read_text())
+        for record in manifest["sessions"]:
+            session_dir = directory / f"session-{record['session']:02d}"
+            if not (session_dir / "snapshots.jsonl").exists():
+                continue
+            recording = load_recording(session_dir)
+            version = recording.single_version
+            if version is None:
+                console.print(f"[red]{session_dir} spans recorder versions; refusing")
+                raise typer.Exit(1)
+            versions.setdefault(version, set()).add(directory.name)
+            for policy in policies:
+                results.append(SessionResult(
+                    #: Sessions are numbered 1-20 within each day, so session 3 of two
+                    #: different days would collide as one cluster. The day's position
+                    #: goes into the id to keep them apart.
+                    session=record["session"] + 100 * directories.index(directory),
+                    date=record["date"], started_at=record["started_at"],
+                    report=run_experiment(recording.snapshots, recording.trades, policy,
+                                          strategy_version=version),
+                ))
+    if len(versions) > 1:
+        console.print(
+            f"[red]these directories span recorder versions "
+            f"{ {v: sorted(d) for v, d in versions.items()} } - not poolable"
+        )
+        raise typer.Exit(1)
+
+    dates = sorted({r.date for r in results})
+    study = pool_sessions(results, planned_sessions=planned_days * 20)
+    body = study.as_dict()
+    body["planned_days"] = planned_days
+    body["days_pooled"] = len(dates)
+    if len(dates) < planned_days:
+        body["verdict"] = "INTERIM_NOT_A_DECISION"
+        body["why"] = (f"{len(dates)} of {planned_days} eligible days; the multi-day "
+                       "pre-registration decides once, at the planned count")
+
+    table = Table(title=f"maker - {len(dates)} day(s) pooled, date-level clustering")
+    for column in ("policy", "quotes", "fills", "mean E[PnL]/quote", "date CI95",
+                   "session CI95", "hedged pair"):
+        table.add_column(column, justify="right" if column != "policy" else "left")
+    for row in body["policies"]:
+        def fmt(ci):
+            return f"[{ci[0]}, {ci[1]}]" if ci else "-"
+        table.add_row(row["policy"]["name"], str(row["quotes_placed"]),
+                      str(row["fills"]["QUEUE_MODEL"]), row["mean_pnl_per_quote_usd"],
+                      fmt(row["date_cluster_ci95"]), fmt(row["session_cluster_ci95"]),
+                      str(row["hedged_pair_pnl_per_contract"]))
+    console.print(table)
+    console.print(f"\n[bold]{body['verdict']}[/bold]: {body['why']}")
+    console.print(f"dates pooled: {dates}")
+    target = out or Path("artifacts/forward/maker_days_report.json")
+    target.write_text(json.dumps(body, indent=2) + "\n")
+    console.print(f"wrote {target}")
+
+
 @app.command("maker-replication")
 def maker_replication(
     day_one: Path = typer.Argument(..., help="The first study directory."),

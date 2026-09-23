@@ -302,7 +302,10 @@ def pool_sessions(
 
     report = StudyReport(
         planned_sessions=planned_sessions,
-        completed_sessions=len({s.session for s in sessions}),
+        #: A session is identified by its date *and* its number. Days each number
+        #: their sessions from 1, so counting numbers alone would make two days'
+        #: "session 3" one session and understate how much was recorded.
+        completed_sessions=len({(s.date, s.session) for s in sessions}),
         dates=dates,
         estimator=estimator.value,
         horizon=horizon,
