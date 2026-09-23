@@ -10,6 +10,8 @@ from __future__ import annotations
 
 import csv
 import json
+from typing import Any
+from datetime import datetime, timezone
 from decimal import Decimal
 from pathlib import Path
 
@@ -269,6 +271,121 @@ def _run_study(directory: Path, policies, *, size, lifetime, latency_ms):
         console.print(f"[red]no session in {directory} carries a recording")
         raise typer.Exit(1)
     return pool_sessions(results, planned_sessions=manifest["planned_sessions"]), versions.pop()
+
+
+@app.command("daily-scan")
+def daily_scan(
+    directory: Path = typer.Argument(..., help="A day directory written by `pmvl record sessions`."),
+    ledger: Path = typer.Option(
+        Path("artifacts/forward/edge_watch.csv"),
+        help="Rolling one-line-per-day ledger, appended to.",
+    ),
+) -> None:
+    """Scan one recorded day for a deterministic route, and write the answer down.
+
+    Runs every day the recorder produces, including the days that find nothing -
+    especially those. A watchdog that only speaks when it sees something cannot be
+    told apart from a broken one, so this appends a line whether or not anything
+    clears, and the line says how much was looked at.
+
+    It answers one question: did a synchronized, fee-paying, sequentially-survivable
+    route exist today. Not "was the market interesting"; the threshold is the one the
+    audit established - roughly 1.3c to beat fees and 3-4c to survive a single
+    adverse fill - and it is not adjustable from the command line.
+    """
+    from pmvl_markets.arbitrage.dislocation import (
+        THRESHOLDS_CENTS,
+        harvest,
+        harvest_implication_pairs,
+    )
+
+    manifest_path = directory / "study.json"
+    if not manifest_path.exists():
+        console.print(f"[red]no study manifest at {manifest_path}")
+        raise typer.Exit(1)
+    manifest = json.loads(manifest_path.read_text())
+
+    snapshots = []
+    markets: dict[str, Any] = {}
+    versions: set[str] = set()
+    for record in manifest["sessions"]:
+        session_dir = directory / f"session-{record['session']:02d}"
+        if not (session_dir / "snapshots.jsonl").exists():
+            continue
+        recording = load_recording(session_dir)
+        version = recording.single_version
+        if version is not None:
+            versions.add(version)
+        snapshots.extend(recording.snapshots)
+        markets.update(recording.markets)
+
+    if not snapshots:
+        console.print(f"[yellow]{directory} holds no snapshots")
+        raise typer.Exit(1)
+
+    date = manifest["sessions"][0]["date"] if manifest["sessions"] else "unknown"
+    version = sorted(versions)[0] if len(versions) == 1 else "|".join(sorted(versions))
+
+    pairs = harvest_implication_pairs(snapshots, markets, strategy_version=version)
+    sets = harvest(snapshots, strategy_version=version)
+
+    #: A route only counts if it clears the fee barrier *and* survives being filled
+    #: one leg at a time. Either alone has already been shown to mean nothing.
+    survivors = [
+        e
+        for report in (pairs, sets)
+        for e in report.episodes
+        if e.threshold_cents >= 3 and e.survives_sequencing
+    ]
+
+    table = Table(title=f"edge watch - {date} ({version})")
+    for column in ("structure", "observations", "unpriceable",
+                   *[f">={c}c" for c in THRESHOLDS_CENTS], "best edge", "survivors"):
+        table.add_column(column, justify="right" if column != "structure" else "left")
+    for name, report in (("implication", pairs), ("complete-set", sets)):
+        body = report.as_dict()
+        best = body["gross_edge_per_set_percentiles"].get("max", "-")
+        table.add_row(
+            name, str(body["market_observations"]), str(body["unpriceable_observations"]),
+            *[str(body["thresholds"][str(c)]["observations_clearing"]) for c in THRESHOLDS_CENTS],
+            best,
+            str(sum(1 for e in report.episodes
+                    if e.threshold_cents >= 3 and e.survives_sequencing)),
+        )
+    console.print(table)
+
+    if survivors:
+        console.print(
+            f"\n[bold red]{len(survivors)} route(s) cleared 3c AND survived sequential "
+            "execution today. This has not happened before; verify before believing it."
+        )
+        for e in survivors[:5]:
+            console.print(f"   {e.as_dict()}")
+    else:
+        console.print(
+            "\n[green]no route cleared 3c with a positive sequential floor - "
+            "the same answer as every day so far"
+        )
+
+    ledger.parent.mkdir(parents=True, exist_ok=True)
+    new = not ledger.exists()
+    with ledger.open("a", newline="") as fh:
+        writer = csv.writer(fh)
+        if new:
+            writer.writerow(
+                ["date", "recorder_version", "snapshots", "pair_observations",
+                 "set_observations", "pair_best_edge", "set_best_edge",
+                 "clearing_3c", "survivors_3c", "scanned_at"]
+            )
+        writer.writerow([
+            date, version, len(snapshots),
+            pairs.as_dict()["market_observations"], sets.as_dict()["market_observations"],
+            pairs.edge_percentiles().get("max", ""), sets.edge_percentiles().get("max", ""),
+            sum(r.as_dict()["thresholds"]["3"]["observations_clearing"] for r in (pairs, sets)),
+            len(survivors),
+            datetime.now(timezone.utc).isoformat(),
+        ])
+    console.print(f"appended to {ledger}")
 
 
 @app.command("maker-replication")

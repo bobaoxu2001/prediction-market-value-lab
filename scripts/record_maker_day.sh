@@ -49,4 +49,12 @@ echo "=== $DAY starting $(date -u +%FT%TZ) ==="
     --count 20 --duration 1800 --interval 10 --watch 100 --top 8 \
     --out "$OUT"
 
+echo "=== $DAY recorded $(date -u +%FT%TZ) ==="
+
+# Scan the day the moment it is recorded, and write the answer down either way.
+# A watchdog that only runs when someone remembers to run it is not a watchdog,
+# and one that only speaks on a positive cannot be told apart from a broken one.
+.venv/bin/pmvl replay daily-scan "$OUT" || \
+    echo "$(date -u +%FT%TZ) $DAY scan failed" >> artifacts/forward/maker-daily/skipped.log
+
 echo "=== $DAY finished $(date -u +%FT%TZ) ==="
