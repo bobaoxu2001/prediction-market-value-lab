@@ -1,0 +1,1247 @@
+{
+  "verdict": "INTERIM_NOT_A_DECISION",
+  "why": "2 of 20 eligible days; the multi-day pre-registration decides once, at the planned count",
+  "planned_sessions": 400,
+  "completed_sessions": 40,
+  "distinct_dates": 2,
+  "dates": [
+    "2026-09-20",
+    "2026-09-23"
+  ],
+  "date_factor_sampled": true,
+  "generalisation_limit": "the day factor is resampled",
+  "estimator": "QUEUE_MODEL",
+  "markout_horizon_seconds": 60,
+  "bootstrap": {
+    "iterations": 10000,
+    "seed": 20260919,
+    "unit": "session, and separately calendar date",
+    "family_size": 4,
+    "family_wise_confidence": "98.75%"
+  },
+  "independence_note": "40 sessions across 2 calendar date(s). Sessions sharing a date share that date's conditions, so the date-level interval binds and the session-level one is the optimistic bound",
+  "policies": [
+    {
+      "policy": {
+        "name": "improve-no",
+        "side": "no",
+        "improve_ticks": 1,
+        "size": "50",
+        "lifetime_seconds": 60,
+        "min_spread": "0.02",
+        "maker_fee_rate": "0",
+        "taker_fee_rate_on_unwind": "0.07",
+        "placement_latency_ms": 300,
+        "tick": "0.01"
+      },
+      "sessions": 40,
+      "dates": 2,
+      "quotes_placed": 37358,
+      "fills": {
+        "TRADED_THROUGH": 4132,
+        "QUEUE_MODEL": 4618,
+        "TOUCHED": 4618
+      },
+      "mean_pnl_per_quote_usd": "-0.0140",
+      "session_cluster_ci95": [
+        "-0.0266",
+        "-0.0033"
+      ],
+      "session_cluster_ci_family_wise": [
+        "-0.0301",
+        "-0.0003"
+      ],
+      "date_cluster_ci95": [
+        "-0.0258",
+        "-0.0062"
+      ],
+      "date_cluster_ci_family_wise": [
+        "-0.0258",
+        "-0.0062"
+      ],
+      "binding_interval": "date",
+      "distinct_markets_across_sessions": 417,
+      "mean_consecutive_session_overlap": "0.6343",
+      "markout_distribution": {
+        "fills_with_a_markout": 4455,
+        "p01": "-0.1750",
+        "p05": "-0.0750",
+        "p25": "-0.0100",
+        "p50": "0.0000",
+        "p75": "0.0100",
+        "p95": "0.0650",
+        "p99": "0.1750",
+        "min": "-0.5550",
+        "max": "0.5200",
+        "mean": "0.0004",
+        "mean_excluding_worst_one_percent": "0.0028",
+        "mean_of_middle_ninety_percent": "0.0002",
+        "losing_fills": 1629,
+        "winning_fills": 2012,
+        "flat_fills": 814
+      },
+      "overlap_note": "Jaccard overlap between the market sets of consecutive sessions. Near 1 means the sessions recorded the same books at different times, so the session-level interval is measuring autocorrelation rather than independent variation and should be read as the optimistic bound even before the date-level one is considered",
+      "hedged_pair_pnl_per_contract": "-0.0279",
+      "mean_markout_given_fill_60s": "0.0004",
+      "per_session": [
+        {
+          "session": 1,
+          "date": "2026-09-20",
+          "mean_pnl_per_quote": "-0.0041",
+          "quotes": 835
+        },
+        {
+          "session": 2,
+          "date": "2026-09-20",
+          "mean_pnl_per_quote": "-0.0512",
+          "quotes": 735
+        },
+        {
+          "session": 3,
+          "date": "2026-09-20",
+          "mean_pnl_per_quote": "0.0045",
+          "quotes": 788
+        },
+        {
+          "session": 4,
+          "date": "2026-09-20",
+          "mean_pnl_per_quote": "-0.0132",
+          "quotes": 1473
+        },
+        {
+          "session": 5,
+          "date": "2026-09-20",
+          "mean_pnl_per_quote": "0.0003",
+          "quotes": 1495
+        },
+        {
+          "session": 6,
+          "date": "2026-09-20",
+          "mean_pnl_per_quote": "0.0061",
+          "quotes": 1546
+        },
+        {
+          "session": 7,
+          "date": "2026-09-20",
+          "mean_pnl_per_quote": "-0.0019",
+          "quotes": 1889
+        },
+        {
+          "session": 8,
+          "date": "2026-09-20",
+          "mean_pnl_per_quote": "-0.0008",
+          "quotes": 1730
+        },
+        {
+          "session": 9,
+          "date": "2026-09-20",
+          "mean_pnl_per_quote": "-0.0008",
+          "quotes": 1767
+        },
+        {
+          "session": 10,
+          "date": "2026-09-20",
+          "mean_pnl_per_quote": "-0.0010",
+          "quotes": 1504
+        },
+        {
+          "session": 11,
+          "date": "2026-09-20",
+          "mean_pnl_per_quote": "-0.0031",
+          "quotes": 785
+        },
+        {
+          "session": 12,
+          "date": "2026-09-20",
+          "mean_pnl_per_quote": "-0.0031",
+          "quotes": 1379
+        },
+        {
+          "session": 13,
+          "date": "2026-09-20",
+          "mean_pnl_per_quote": "-0.0113",
+          "quotes": 719
+        },
+        {
+          "session": 14,
+          "date": "2026-09-20",
+          "mean_pnl_per_quote": "-0.0039",
+          "quotes": 874
+        },
+        {
+          "session": 15,
+          "date": "2026-09-20",
+          "mean_pnl_per_quote": "-0.0025",
+          "quotes": 730
+        },
+        {
+          "session": 16,
+          "date": "2026-09-20",
+          "mean_pnl_per_quote": "0.0017",
+          "quotes": 653
+        },
+        {
+          "session": 17,
+          "date": "2026-09-20",
+          "mean_pnl_per_quote": "-0.0129",
+          "quotes": 233
+        },
+        {
+          "session": 18,
+          "date": "2026-09-20",
+          "mean_pnl_per_quote": "-0.0224",
+          "quotes": 351
+        },
+        {
+          "session": 19,
+          "date": "2026-09-20",
+          "mean_pnl_per_quote": "-0.0259",
+          "quotes": 1195
+        },
+        {
+          "session": 20,
+          "date": "2026-09-20",
+          "mean_pnl_per_quote": "-0.0135",
+          "quotes": 1759
+        },
+        {
+          "session": 101,
+          "date": "2026-09-23",
+          "mean_pnl_per_quote": "-0.0783",
+          "quotes": 817
+        },
+        {
+          "session": 102,
+          "date": "2026-09-23",
+          "mean_pnl_per_quote": "0.0077",
+          "quotes": 1414
+        },
+        {
+          "session": 103,
+          "date": "2026-09-23",
+          "mean_pnl_per_quote": "0.0755",
+          "quotes": 1307
+        },
+        {
+          "session": 104,
+          "date": "2026-09-23",
+          "mean_pnl_per_quote": "-0.1352",
+          "quotes": 1148
+        },
+        {
+          "session": 105,
+          "date": "2026-09-23",
+          "mean_pnl_per_quote": "-0.0850",
+          "quotes": 848
+        },
+        {
+          "session": 106,
+          "date": "2026-09-23",
+          "mean_pnl_per_quote": "-0.0814",
+          "quotes": 379
+        },
+        {
+          "session": 107,
+          "date": "2026-09-23",
+          "mean_pnl_per_quote": "-0.0046",
+          "quotes": 779
+        },
+        {
+          "session": 108,
+          "date": "2026-09-23",
+          "mean_pnl_per_quote": "-0.0111",
+          "quotes": 742
+        },
+        {
+          "session": 109,
+          "date": "2026-09-23",
+          "mean_pnl_per_quote": "0.0027",
+          "quotes": 336
+        },
+        {
+          "session": 110,
+          "date": "2026-09-23",
+          "mean_pnl_per_quote": "-0.0231",
+          "quotes": 630
+        },
+        {
+          "session": 111,
+          "date": "2026-09-23",
+          "mean_pnl_per_quote": "-0.0352",
+          "quotes": 596
+        },
+        {
+          "session": 112,
+          "date": "2026-09-23",
+          "mean_pnl_per_quote": "-0.0013",
+          "quotes": 584
+        },
+        {
+          "session": 113,
+          "date": "2026-09-23",
+          "mean_pnl_per_quote": "-0.0116",
+          "quotes": 639
+        },
+        {
+          "session": 114,
+          "date": "2026-09-23",
+          "mean_pnl_per_quote": "-0.0080",
+          "quotes": 603
+        },
+        {
+          "session": 115,
+          "date": "2026-09-23",
+          "mean_pnl_per_quote": "-0.0297",
+          "quotes": 705
+        },
+        {
+          "session": 116,
+          "date": "2026-09-23",
+          "mean_pnl_per_quote": "-0.0224",
+          "quotes": 681
+        },
+        {
+          "session": 117,
+          "date": "2026-09-23",
+          "mean_pnl_per_quote": "-0.0293",
+          "quotes": 685
+        },
+        {
+          "session": 118,
+          "date": "2026-09-23",
+          "mean_pnl_per_quote": "-0.0028",
+          "quotes": 744
+        },
+        {
+          "session": 119,
+          "date": "2026-09-23",
+          "mean_pnl_per_quote": "-0.0392",
+          "quotes": 658
+        },
+        {
+          "session": 120,
+          "date": "2026-09-23",
+          "mean_pnl_per_quote": "-0.0453",
+          "quotes": 623
+        }
+      ]
+    },
+    {
+      "policy": {
+        "name": "improve-yes",
+        "side": "yes",
+        "improve_ticks": 1,
+        "size": "50",
+        "lifetime_seconds": 60,
+        "min_spread": "0.02",
+        "maker_fee_rate": "0",
+        "taker_fee_rate_on_unwind": "0.07",
+        "placement_latency_ms": 300,
+        "tick": "0.01"
+      },
+      "sessions": 40,
+      "dates": 2,
+      "quotes_placed": 37358,
+      "fills": {
+        "TRADED_THROUGH": 2813,
+        "QUEUE_MODEL": 3227,
+        "TOUCHED": 3227
+      },
+      "mean_pnl_per_quote_usd": "-0.0190",
+      "session_cluster_ci95": [
+        "-0.0294",
+        "-0.0097"
+      ],
+      "session_cluster_ci_family_wise": [
+        "-0.0327",
+        "-0.0072"
+      ],
+      "date_cluster_ci95": [
+        "-0.0307",
+        "-0.0112"
+      ],
+      "date_cluster_ci_family_wise": [
+        "-0.0307",
+        "-0.0112"
+      ],
+      "binding_interval": "date",
+      "distinct_markets_across_sessions": 417,
+      "mean_consecutive_session_overlap": "0.6343",
+      "markout_distribution": {
+        "fills_with_a_markout": 3102,
+        "p01": "-0.1350",
+        "p05": "-0.0750",
+        "p25": "-0.0250",
+        "p50": "-0.0050",
+        "p75": "0.0100",
+        "p95": "0.0750",
+        "p99": "0.1900",
+        "min": "-0.7350",
+        "max": "0.6450",
+        "mean": "-0.0035",
+        "mean_excluding_worst_one_percent": "-0.0012",
+        "mean_of_middle_ninety_percent": "-0.0055",
+        "losing_fills": 1673,
+        "winning_fills": 1090,
+        "flat_fills": 339
+      },
+      "overlap_note": "Jaccard overlap between the market sets of consecutive sessions. Near 1 means the sessions recorded the same books at different times, so the session-level interval is measuring autocorrelation rather than independent variation and should be read as the optimistic bound even before the date-level one is considered",
+      "hedged_pair_pnl_per_contract": "-0.0303",
+      "mean_markout_given_fill_60s": "-0.0035",
+      "per_session": [
+        {
+          "session": 1,
+          "date": "2026-09-20",
+          "mean_pnl_per_quote": "-0.0264",
+          "quotes": 835
+        },
+        {
+          "session": 2,
+          "date": "2026-09-20",
+          "mean_pnl_per_quote": "-0.0677",
+          "quotes": 735
+        },
+        {
+          "session": 3,
+          "date": "2026-09-20",
+          "mean_pnl_per_quote": "-0.0498",
+          "quotes": 788
+        },
+        {
+          "session": 4,
+          "date": "2026-09-20",
+          "mean_pnl_per_quote": "-0.0220",
+          "quotes": 1473
+        },
+        {
+          "session": 5,
+          "date": "2026-09-20",
+          "mean_pnl_per_quote": "0.0021",
+          "quotes": 1495
+        },
+        {
+          "session": 6,
+          "date": "2026-09-20",
+          "mean_pnl_per_quote": "0.0009",
+          "quotes": 1546
+        },
+        {
+          "session": 7,
+          "date": "2026-09-20",
+          "mean_pnl_per_quote": "-0.0012",
+          "quotes": 1889
+        },
+        {
+          "session": 8,
+          "date": "2026-09-20",
+          "mean_pnl_per_quote": "-0.0004",
+          "quotes": 1730
+        },
+        {
+          "session": 9,
+          "date": "2026-09-20",
+          "mean_pnl_per_quote": "-0.0006",
+          "quotes": 1767
+        },
+        {
+          "session": 10,
+          "date": "2026-09-20",
+          "mean_pnl_per_quote": "0.0001",
+          "quotes": 1504
+        },
+        {
+          "session": 11,
+          "date": "2026-09-20",
+          "mean_pnl_per_quote": "-0.0044",
+          "quotes": 785
+        },
+        {
+          "session": 12,
+          "date": "2026-09-20",
+          "mean_pnl_per_quote": "-0.0038",
+          "quotes": 1379
+        },
+        {
+          "session": 13,
+          "date": "2026-09-20",
+          "mean_pnl_per_quote": "-0.0055",
+          "quotes": 719
+        },
+        {
+          "session": 14,
+          "date": "2026-09-20",
+          "mean_pnl_per_quote": "-0.0099",
+          "quotes": 874
+        },
+        {
+          "session": 15,
+          "date": "2026-09-20",
+          "mean_pnl_per_quote": "-0.0159",
+          "quotes": 730
+        },
+        {
+          "session": 16,
+          "date": "2026-09-20",
+          "mean_pnl_per_quote": "-0.0349",
+          "quotes": 653
+        },
+        {
+          "session": 17,
+          "date": "2026-09-20",
+          "mean_pnl_per_quote": "-0.0172",
+          "quotes": 233
+        },
+        {
+          "session": 18,
+          "date": "2026-09-20",
+          "mean_pnl_per_quote": "-0.0136",
+          "quotes": 351
+        },
+        {
+          "session": 19,
+          "date": "2026-09-20",
+          "mean_pnl_per_quote": "-0.0325",
+          "quotes": 1195
+        },
+        {
+          "session": 20,
+          "date": "2026-09-20",
+          "mean_pnl_per_quote": "-0.0033",
+          "quotes": 1759
+        },
+        {
+          "session": 101,
+          "date": "2026-09-23",
+          "mean_pnl_per_quote": "-0.0155",
+          "quotes": 817
+        },
+        {
+          "session": 102,
+          "date": "2026-09-23",
+          "mean_pnl_per_quote": "-0.0313",
+          "quotes": 1414
+        },
+        {
+          "session": 103,
+          "date": "2026-09-23",
+          "mean_pnl_per_quote": "-0.0362",
+          "quotes": 1307
+        },
+        {
+          "session": 104,
+          "date": "2026-09-23",
+          "mean_pnl_per_quote": "0.0649",
+          "quotes": 1148
+        },
+        {
+          "session": 105,
+          "date": "2026-09-23",
+          "mean_pnl_per_quote": "-0.1059",
+          "quotes": 848
+        },
+        {
+          "session": 106,
+          "date": "2026-09-23",
+          "mean_pnl_per_quote": "-0.2028",
+          "quotes": 379
+        },
+        {
+          "session": 107,
+          "date": "2026-09-23",
+          "mean_pnl_per_quote": "-0.0606",
+          "quotes": 779
+        },
+        {
+          "session": 108,
+          "date": "2026-09-23",
+          "mean_pnl_per_quote": "-0.0214",
+          "quotes": 742
+        },
+        {
+          "session": 109,
+          "date": "2026-09-23",
+          "mean_pnl_per_quote": "-0.0324",
+          "quotes": 336
+        },
+        {
+          "session": 110,
+          "date": "2026-09-23",
+          "mean_pnl_per_quote": "-0.0187",
+          "quotes": 630
+        },
+        {
+          "session": 111,
+          "date": "2026-09-23",
+          "mean_pnl_per_quote": "-0.0047",
+          "quotes": 596
+        },
+        {
+          "session": 112,
+          "date": "2026-09-23",
+          "mean_pnl_per_quote": "-0.0174",
+          "quotes": 584
+        },
+        {
+          "session": 113,
+          "date": "2026-09-23",
+          "mean_pnl_per_quote": "-0.0224",
+          "quotes": 639
+        },
+        {
+          "session": 114,
+          "date": "2026-09-23",
+          "mean_pnl_per_quote": "0.0026",
+          "quotes": 603
+        },
+        {
+          "session": 115,
+          "date": "2026-09-23",
+          "mean_pnl_per_quote": "-0.0092",
+          "quotes": 705
+        },
+        {
+          "session": 116,
+          "date": "2026-09-23",
+          "mean_pnl_per_quote": "-0.0212",
+          "quotes": 681
+        },
+        {
+          "session": 117,
+          "date": "2026-09-23",
+          "mean_pnl_per_quote": "-0.0693",
+          "quotes": 685
+        },
+        {
+          "session": 118,
+          "date": "2026-09-23",
+          "mean_pnl_per_quote": "-0.0360",
+          "quotes": 744
+        },
+        {
+          "session": 119,
+          "date": "2026-09-23",
+          "mean_pnl_per_quote": "-0.0244",
+          "quotes": 658
+        },
+        {
+          "session": 120,
+          "date": "2026-09-23",
+          "mean_pnl_per_quote": "-0.0633",
+          "quotes": 623
+        }
+      ]
+    },
+    {
+      "policy": {
+        "name": "join-no",
+        "side": "no",
+        "improve_ticks": 0,
+        "size": "50",
+        "lifetime_seconds": 60,
+        "min_spread": "0.02",
+        "maker_fee_rate": "0",
+        "taker_fee_rate_on_unwind": "0.07",
+        "placement_latency_ms": 300,
+        "tick": "0.01"
+      },
+      "sessions": 40,
+      "dates": 2,
+      "quotes_placed": 37358,
+      "fills": {
+        "TRADED_THROUGH": 1830,
+        "QUEUE_MODEL": 2000,
+        "TOUCHED": 4132
+      },
+      "mean_pnl_per_quote_usd": "-0.0070",
+      "session_cluster_ci95": [
+        "-0.0196",
+        "0.0030"
+      ],
+      "session_cluster_ci_family_wise": [
+        "-0.0233",
+        "0.0058"
+      ],
+      "date_cluster_ci95": [
+        "-0.0146",
+        "-0.0021"
+      ],
+      "date_cluster_ci_family_wise": [
+        "-0.0146",
+        "-0.0021"
+      ],
+      "binding_interval": "date",
+      "distinct_markets_across_sessions": 417,
+      "mean_consecutive_session_overlap": "0.6343",
+      "markout_distribution": {
+        "fills_with_a_markout": 1923,
+        "p01": "-0.2150",
+        "p05": "-0.1000",
+        "p25": "-0.0200",
+        "p50": "0.0050",
+        "p75": "0.0200",
+        "p95": "0.1050",
+        "p99": "0.2150",
+        "min": "-0.5250",
+        "max": "0.5050",
+        "mean": "0.0011",
+        "mean_excluding_worst_one_percent": "0.0041",
+        "mean_of_middle_ninety_percent": "0.0006",
+        "losing_fills": 790,
+        "winning_fills": 1015,
+        "flat_fills": 118
+      },
+      "overlap_note": "Jaccard overlap between the market sets of consecutive sessions. Near 1 means the sessions recorded the same books at different times, so the session-level interval is measuring autocorrelation rather than independent variation and should be read as the optimistic bound even before the date-level one is considered",
+      "hedged_pair_pnl_per_contract": "-0.0340",
+      "mean_markout_given_fill_60s": "0.0011",
+      "per_session": [
+        {
+          "session": 1,
+          "date": "2026-09-20",
+          "mean_pnl_per_quote": "0.0080",
+          "quotes": 835
+        },
+        {
+          "session": 2,
+          "date": "2026-09-20",
+          "mean_pnl_per_quote": "-0.0381",
+          "quotes": 735
+        },
+        {
+          "session": 3,
+          "date": "2026-09-20",
+          "mean_pnl_per_quote": "0.0345",
+          "quotes": 788
+        },
+        {
+          "session": 4,
+          "date": "2026-09-20",
+          "mean_pnl_per_quote": "-0.0262",
+          "quotes": 1473
+        },
+        {
+          "session": 5,
+          "date": "2026-09-20",
+          "mean_pnl_per_quote": "0.0077",
+          "quotes": 1495
+        },
+        {
+          "session": 6,
+          "date": "2026-09-20",
+          "mean_pnl_per_quote": "0.0112",
+          "quotes": 1546
+        },
+        {
+          "session": 7,
+          "date": "2026-09-20",
+          "mean_pnl_per_quote": "-0.0009",
+          "quotes": 1889
+        },
+        {
+          "session": 8,
+          "date": "2026-09-20",
+          "mean_pnl_per_quote": "0.0002",
+          "quotes": 1730
+        },
+        {
+          "session": 9,
+          "date": "2026-09-20",
+          "mean_pnl_per_quote": "-0.0001",
+          "quotes": 1767
+        },
+        {
+          "session": 10,
+          "date": "2026-09-20",
+          "mean_pnl_per_quote": "0.0001",
+          "quotes": 1504
+        },
+        {
+          "session": 11,
+          "date": "2026-09-20",
+          "mean_pnl_per_quote": "0.0018",
+          "quotes": 785
+        },
+        {
+          "session": 12,
+          "date": "2026-09-20",
+          "mean_pnl_per_quote": "-0.0005",
+          "quotes": 1379
+        },
+        {
+          "session": 13,
+          "date": "2026-09-20",
+          "mean_pnl_per_quote": "-0.0085",
+          "quotes": 719
+        },
+        {
+          "session": 14,
+          "date": "2026-09-20",
+          "mean_pnl_per_quote": "-0.0000",
+          "quotes": 874
+        },
+        {
+          "session": 15,
+          "date": "2026-09-20",
+          "mean_pnl_per_quote": "0.0007",
+          "quotes": 730
+        },
+        {
+          "session": 16,
+          "date": "2026-09-20",
+          "mean_pnl_per_quote": "0.0077",
+          "quotes": 653
+        },
+        {
+          "session": 17,
+          "date": "2026-09-20",
+          "mean_pnl_per_quote": "-0.0064",
+          "quotes": 233
+        },
+        {
+          "session": 18,
+          "date": "2026-09-20",
+          "mean_pnl_per_quote": "-0.0155",
+          "quotes": 351
+        },
+        {
+          "session": 19,
+          "date": "2026-09-20",
+          "mean_pnl_per_quote": "-0.0095",
+          "quotes": 1195
+        },
+        {
+          "session": 20,
+          "date": "2026-09-20",
+          "mean_pnl_per_quote": "-0.0129",
+          "quotes": 1759
+        },
+        {
+          "session": 101,
+          "date": "2026-09-23",
+          "mean_pnl_per_quote": "-0.0600",
+          "quotes": 817
+        },
+        {
+          "session": 102,
+          "date": "2026-09-23",
+          "mean_pnl_per_quote": "0.0033",
+          "quotes": 1414
+        },
+        {
+          "session": 103,
+          "date": "2026-09-23",
+          "mean_pnl_per_quote": "0.0691",
+          "quotes": 1307
+        },
+        {
+          "session": 104,
+          "date": "2026-09-23",
+          "mean_pnl_per_quote": "-0.1468",
+          "quotes": 1148
+        },
+        {
+          "session": 105,
+          "date": "2026-09-23",
+          "mean_pnl_per_quote": "-0.0221",
+          "quotes": 848
+        },
+        {
+          "session": 106,
+          "date": "2026-09-23",
+          "mean_pnl_per_quote": "0.0107",
+          "quotes": 379
+        },
+        {
+          "session": 107,
+          "date": "2026-09-23",
+          "mean_pnl_per_quote": "0.0116",
+          "quotes": 779
+        },
+        {
+          "session": 108,
+          "date": "2026-09-23",
+          "mean_pnl_per_quote": "-0.0127",
+          "quotes": 742
+        },
+        {
+          "session": 109,
+          "date": "2026-09-23",
+          "mean_pnl_per_quote": "-0.0003",
+          "quotes": 336
+        },
+        {
+          "session": 110,
+          "date": "2026-09-23",
+          "mean_pnl_per_quote": "-0.0114",
+          "quotes": 630
+        },
+        {
+          "session": 111,
+          "date": "2026-09-23",
+          "mean_pnl_per_quote": "-0.0199",
+          "quotes": 596
+        },
+        {
+          "session": 112,
+          "date": "2026-09-23",
+          "mean_pnl_per_quote": "0.0067",
+          "quotes": 584
+        },
+        {
+          "session": 113,
+          "date": "2026-09-23",
+          "mean_pnl_per_quote": "-0.0058",
+          "quotes": 639
+        },
+        {
+          "session": 114,
+          "date": "2026-09-23",
+          "mean_pnl_per_quote": "-0.0025",
+          "quotes": 603
+        },
+        {
+          "session": 115,
+          "date": "2026-09-23",
+          "mean_pnl_per_quote": "-0.0277",
+          "quotes": 705
+        },
+        {
+          "session": 116,
+          "date": "2026-09-23",
+          "mean_pnl_per_quote": "0.0012",
+          "quotes": 681
+        },
+        {
+          "session": 117,
+          "date": "2026-09-23",
+          "mean_pnl_per_quote": "-0.0241",
+          "quotes": 685
+        },
+        {
+          "session": 118,
+          "date": "2026-09-23",
+          "mean_pnl_per_quote": "-0.0008",
+          "quotes": 744
+        },
+        {
+          "session": 119,
+          "date": "2026-09-23",
+          "mean_pnl_per_quote": "-0.0208",
+          "quotes": 658
+        },
+        {
+          "session": 120,
+          "date": "2026-09-23",
+          "mean_pnl_per_quote": "-0.0154",
+          "quotes": 623
+        }
+      ]
+    },
+    {
+      "policy": {
+        "name": "join-yes",
+        "side": "yes",
+        "improve_ticks": 0,
+        "size": "50",
+        "lifetime_seconds": 60,
+        "min_spread": "0.02",
+        "maker_fee_rate": "0",
+        "taker_fee_rate_on_unwind": "0.07",
+        "placement_latency_ms": 300,
+        "tick": "0.01"
+      },
+      "sessions": 40,
+      "dates": 2,
+      "quotes_placed": 37358,
+      "fills": {
+        "TRADED_THROUGH": 1421,
+        "QUEUE_MODEL": 1566,
+        "TOUCHED": 2813
+      },
+      "mean_pnl_per_quote_usd": "-0.0132",
+      "session_cluster_ci95": [
+        "-0.0223",
+        "-0.0060"
+      ],
+      "session_cluster_ci_family_wise": [
+        "-0.0251",
+        "-0.0042"
+      ],
+      "date_cluster_ci95": [
+        "-0.0231",
+        "-0.0067"
+      ],
+      "date_cluster_ci_family_wise": [
+        "-0.0231",
+        "-0.0067"
+      ],
+      "binding_interval": "date",
+      "distinct_markets_across_sessions": 417,
+      "mean_consecutive_session_overlap": "0.6343",
+      "markout_distribution": {
+        "fills_with_a_markout": 1492,
+        "p01": "-0.1950",
+        "p05": "-0.0900",
+        "p25": "-0.0250",
+        "p50": "-0.0050",
+        "p75": "0.0150",
+        "p95": "0.0950",
+        "p99": "0.2050",
+        "min": "-0.7250",
+        "max": "0.5750",
+        "mean": "-0.0048",
+        "mean_excluding_worst_one_percent": "-0.0021",
+        "mean_of_middle_ninety_percent": "-0.0063",
+        "losing_fills": 833,
+        "winning_fills": 583,
+        "flat_fills": 76
+      },
+      "overlap_note": "Jaccard overlap between the market sets of consecutive sessions. Near 1 means the sessions recorded the same books at different times, so the session-level interval is measuring autocorrelation rather than independent variation and should be read as the optimistic bound even before the date-level one is considered",
+      "hedged_pair_pnl_per_contract": "-0.0343",
+      "mean_markout_given_fill_60s": "-0.0048",
+      "per_session": [
+        {
+          "session": 1,
+          "date": "2026-09-20",
+          "mean_pnl_per_quote": "-0.0129",
+          "quotes": 835
+        },
+        {
+          "session": 2,
+          "date": "2026-09-20",
+          "mean_pnl_per_quote": "-0.0555",
+          "quotes": 735
+        },
+        {
+          "session": 3,
+          "date": "2026-09-20",
+          "mean_pnl_per_quote": "-0.0530",
+          "quotes": 788
+        },
+        {
+          "session": 4,
+          "date": "2026-09-20",
+          "mean_pnl_per_quote": "-0.0120",
+          "quotes": 1473
+        },
+        {
+          "session": 5,
+          "date": "2026-09-20",
+          "mean_pnl_per_quote": "0.0025",
+          "quotes": 1495
+        },
+        {
+          "session": 6,
+          "date": "2026-09-20",
+          "mean_pnl_per_quote": "0.0047",
+          "quotes": 1546
+        },
+        {
+          "session": 7,
+          "date": "2026-09-20",
+          "mean_pnl_per_quote": "-0.0003",
+          "quotes": 1889
+        },
+        {
+          "session": 8,
+          "date": "2026-09-20",
+          "mean_pnl_per_quote": "-0.0001",
+          "quotes": 1730
+        },
+        {
+          "session": 9,
+          "date": "2026-09-20",
+          "mean_pnl_per_quote": "0.0001",
+          "quotes": 1767
+        },
+        {
+          "session": 10,
+          "date": "2026-09-20",
+          "mean_pnl_per_quote": "0.0001",
+          "quotes": 1504
+        },
+        {
+          "session": 11,
+          "date": "2026-09-20",
+          "mean_pnl_per_quote": "-0.0025",
+          "quotes": 785
+        },
+        {
+          "session": 12,
+          "date": "2026-09-20",
+          "mean_pnl_per_quote": "-0.0026",
+          "quotes": 1379
+        },
+        {
+          "session": 13,
+          "date": "2026-09-20",
+          "mean_pnl_per_quote": "-0.0017",
+          "quotes": 719
+        },
+        {
+          "session": 14,
+          "date": "2026-09-20",
+          "mean_pnl_per_quote": "-0.0077",
+          "quotes": 874
+        },
+        {
+          "session": 15,
+          "date": "2026-09-20",
+          "mean_pnl_per_quote": "-0.0077",
+          "quotes": 730
+        },
+        {
+          "session": 16,
+          "date": "2026-09-20",
+          "mean_pnl_per_quote": "-0.0256",
+          "quotes": 653
+        },
+        {
+          "session": 17,
+          "date": "2026-09-20",
+          "mean_pnl_per_quote": "-0.0095",
+          "quotes": 233
+        },
+        {
+          "session": 18,
+          "date": "2026-09-20",
+          "mean_pnl_per_quote": "-0.0188",
+          "quotes": 351
+        },
+        {
+          "session": 19,
+          "date": "2026-09-20",
+          "mean_pnl_per_quote": "-0.0120",
+          "quotes": 1195
+        },
+        {
+          "session": 20,
+          "date": "2026-09-20",
+          "mean_pnl_per_quote": "0.0056",
+          "quotes": 1759
+        },
+        {
+          "session": 101,
+          "date": "2026-09-23",
+          "mean_pnl_per_quote": "-0.0368",
+          "quotes": 817
+        },
+        {
+          "session": 102,
+          "date": "2026-09-23",
+          "mean_pnl_per_quote": "0.0103",
+          "quotes": 1414
+        },
+        {
+          "session": 103,
+          "date": "2026-09-23",
+          "mean_pnl_per_quote": "-0.0296",
+          "quotes": 1307
+        },
+        {
+          "session": 104,
+          "date": "2026-09-23",
+          "mean_pnl_per_quote": "0.0325",
+          "quotes": 1148
+        },
+        {
+          "session": 105,
+          "date": "2026-09-23",
+          "mean_pnl_per_quote": "-0.0820",
+          "quotes": 848
+        },
+        {
+          "session": 106,
+          "date": "2026-09-23",
+          "mean_pnl_per_quote": "-0.2148",
+          "quotes": 379
+        },
+        {
+          "session": 107,
+          "date": "2026-09-23",
+          "mean_pnl_per_quote": "-0.0588",
+          "quotes": 779
+        },
+        {
+          "session": 108,
+          "date": "2026-09-23",
+          "mean_pnl_per_quote": "-0.0094",
+          "quotes": 742
+        },
+        {
+          "session": 109,
+          "date": "2026-09-23",
+          "mean_pnl_per_quote": "-0.0241",
+          "quotes": 336
+        },
+        {
+          "session": 110,
+          "date": "2026-09-23",
+          "mean_pnl_per_quote": "-0.0111",
+          "quotes": 630
+        },
+        {
+          "session": 111,
+          "date": "2026-09-23",
+          "mean_pnl_per_quote": "-0.0011",
+          "quotes": 596
+        },
+        {
+          "session": 112,
+          "date": "2026-09-23",
+          "mean_pnl_per_quote": "-0.0078",
+          "quotes": 584
+        },
+        {
+          "session": 113,
+          "date": "2026-09-23",
+          "mean_pnl_per_quote": "-0.0117",
+          "quotes": 639
+        },
+        {
+          "session": 114,
+          "date": "2026-09-23",
+          "mean_pnl_per_quote": "0.0027",
+          "quotes": 603
+        },
+        {
+          "session": 115,
+          "date": "2026-09-23",
+          "mean_pnl_per_quote": "-0.0060",
+          "quotes": 705
+        },
+        {
+          "session": 116,
+          "date": "2026-09-23",
+          "mean_pnl_per_quote": "-0.0060",
+          "quotes": 681
+        },
+        {
+          "session": 117,
+          "date": "2026-09-23",
+          "mean_pnl_per_quote": "-0.0439",
+          "quotes": 685
+        },
+        {
+          "session": 118,
+          "date": "2026-09-23",
+          "mean_pnl_per_quote": "-0.0199",
+          "quotes": 744
+        },
+        {
+          "session": 119,
+          "date": "2026-09-23",
+          "mean_pnl_per_quote": "-0.0117",
+          "quotes": 658
+        },
+        {
+          "session": 120,
+          "date": "2026-09-23",
+          "mean_pnl_per_quote": "-0.0604",
+          "quotes": 623
+        }
+      ]
+    }
+  ],
+  "planned_days": 20,
+  "days_pooled": 2
+}

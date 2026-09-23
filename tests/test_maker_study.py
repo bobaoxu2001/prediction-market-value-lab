@@ -124,12 +124,12 @@ def test_one_session_yields_no_interval_rather_than_a_narrow_one():
 def test_many_sessions_on_one_date_give_no_date_level_interval():
     """Twenty half-hours in one afternoon are one draw of the day."""
     sessions = [
-        _session(i, "2026-09-19", base=T0 + timedelta(hours=i), fill=True)
-        for i in range(1, 6)
+        _session(i, "2026-09-19", base=T0 + timedelta(hours=i), fill=i % 3 == 0)
+        for i in range(1, 13)
     ]
-    study = pool_sessions(sessions, planned_sessions=5)
+    study = pool_sessions(sessions, planned_sessions=12)
     row = study.results[0]
-    assert row.session_ci95 is not None  # five sessions to resample
+    assert row.session_ci95 is not None  # twelve sessions to resample
     assert row.date_ci95 is None         # but only one date
     assert row.dates == 1
     assert "date-level interval binds" in study.as_dict()["independence_note"]
@@ -137,10 +137,10 @@ def test_many_sessions_on_one_date_give_no_date_level_interval():
 
 def test_the_family_wise_interval_is_never_narrower_than_the_per_policy_one():
     sessions = [
-        _session(i, f"2026-09-{19 + i}", base=T0 + timedelta(days=i), fill=i % 2 == 0)
-        for i in range(1, 7)
+        _session(i, f"2026-10-{i:02d}", base=T0 + timedelta(days=i), fill=i % 2 == 0)
+        for i in range(1, 13)
     ]
-    study = pool_sessions(sessions, planned_sessions=6)
+    study = pool_sessions(sessions, planned_sessions=12)
     row = study.results[0]
     assert row.session_ci95 is not None and row.session_ci_family is not None
     assert row.session_ci_family[0] <= row.session_ci95[0]
@@ -193,9 +193,9 @@ def test_the_binding_interval_is_named_in_the_output():
     body = pool_sessions(same_day, planned_sessions=3).as_dict()
     assert body["policies"][0]["binding_interval"] == "session"
 
-    spread = [_session(i, f"2026-09-{19 + i}", base=T0 + timedelta(days=i), fill=True)
-              for i in range(1, 4)]
-    body = pool_sessions(spread, planned_sessions=3).as_dict()
+    spread = [_session(i, f"2026-10-{i:02d}", base=T0 + timedelta(days=i), fill=True)
+              for i in range(1, 13)]
+    body = pool_sessions(spread, planned_sessions=12).as_dict()
     assert body["policies"][0]["binding_interval"] == "date"
 
 
@@ -292,9 +292,9 @@ def test_a_verdict_names_the_interval_that_produced_it():
 
 
 def test_a_multi_date_study_says_so_instead():
-    spread = [_session(i, f"2026-09-{19 + i}", base=T0 + timedelta(days=i), fill=True)
-              for i in range(1, 5)]
-    study = pool_sessions(spread, planned_sessions=4)
+    spread = [_session(i, f"2026-10-{i:02d}", base=T0 + timedelta(days=i), fill=True)
+              for i in range(1, 13)]
+    study = pool_sessions(spread, planned_sessions=12)
     body = study.as_dict()
     assert body["date_factor_sampled"] is True
     assert body["policies"][0]["binding_interval"] == "date"
@@ -406,3 +406,38 @@ def test_the_same_session_number_on_two_days_is_two_sessions():
     study = pool_sessions([a, b], planned_sessions=40)
     assert study.completed_sessions == 2
     assert study.results[0].dates == 2
+
+
+
+def test_two_dates_do_not_make_a_confidence_interval():
+    """The flaw found on the first two-day pooling, pinned.
+
+    Resampling two clusters can only produce three averages, so the percentile
+    "interval" comes out as exactly the range of the two day means - measured to four
+    decimals on every policy. It is not too wide to decide; it is spuriously narrow,
+    because it can never exceed the two observations it was built from. Below the
+    cluster minimum the interval is withheld, and the verdict falls back to a level
+    that has enough clusters to support one.
+    """
+    from pmvl_markets.arbitrage.maker_study import MIN_CLUSTERS_FOR_INTERVAL
+
+    two_days = [
+        _session(i, "2026-09-20" if i <= 12 else "2026-09-23",
+                 base=T0 + timedelta(hours=i), fill=i % 2 == 0)
+        for i in range(1, 25)
+    ]
+    row = pool_sessions(two_days, planned_sessions=24).results[0]
+    assert row.dates == 2 < MIN_CLUSTERS_FOR_INTERVAL
+    assert row.date_ci95 is None
+    assert row.session_ci95 is not None   # 24 sessions is enough
+    assert row.binding_level == "session"
+
+
+def test_below_the_cluster_minimum_no_interval_is_reported_at_all():
+    from pmvl_markets.arbitrage.maker_study import MIN_CLUSTERS_FOR_INTERVAL
+
+    few = [_session(i, f"2026-10-{i:02d}", base=T0 + timedelta(days=i), fill=True)
+           for i in range(1, MIN_CLUSTERS_FOR_INTERVAL)]
+    row = pool_sessions(few, planned_sessions=len(few)).results[0]
+    assert row.session_ci95 is None
+    assert row.date_ci95 is None

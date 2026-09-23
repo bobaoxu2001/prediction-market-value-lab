@@ -51,6 +51,19 @@ BOOTSTRAP_SEED = 20260919
 FAMILY_SIZE = 4
 PRIMARY_HORIZON = 60
 
+#: Fewest clusters for which a percentile interval is reported at all.
+#:
+#: With k clusters, resampling them with replacement can only produce the handful of
+#: averages those k clusters can form. At k = 2 there are exactly three - both of the
+#: first, one of each, both of the second - so the "95% interval" is simply the
+#: range of the two cluster means. It was measured doing exactly that on the first
+#: two-day pooling, to four decimal places, for all four policies. That is not an
+#: interval that is too wide to decide anything; it is one that is spuriously
+#: narrow, because it can never be wider than the two things it was built from.
+#: Below this count the interval is withheld and the per-cluster means are the
+#: whole of what is reported.
+MIN_CLUSTERS_FOR_INTERVAL = 10
+
 
 @dataclass(frozen=True)
 class SessionResult:
@@ -84,7 +97,7 @@ def _cluster_bootstrap(
     Empty clusters are kept in the draw. A session that placed no quotes is still a
     session, and dropping it would quietly raise the effective cluster count.
     """
-    if len(clusters) < 2:
+    if len(clusters) < MIN_CLUSTERS_FOR_INTERVAL:
         return []
     rng = random.Random(seed)
     means: list[Decimal] = []
