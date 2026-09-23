@@ -348,12 +348,18 @@ class SynchronizedRecorder:
                 log.debug("trade fetch failed for %s: %s", ticker, exc)
                 continue
             rows = (data or {}).get("trades") or []
-            if len(rows) >= TRADE_PAGE_LIMIT:
+            #: Only an *incremental* poll can lose anything. The first poll for a
+            #: ticker has no floor and deliberately reaches back as far as the page
+            #: allows, so a full page there is the backfill working, not data going
+            #: missing - and counting it would bury the real signal under one false
+            #: positive per ticker per run.
+            if floor is not None and len(rows) >= TRADE_PAGE_LIMIT:
                 self.stats.trade_polls_at_limit += 1
                 log.warning(
-                    "trade poll for %s returned a full page (%d); older prints in this "
-                    "window were dropped and the cursor is about to advance past them",
-                    ticker, len(rows),
+                    "trade poll for %s returned a full page (%d) since %s; older "
+                    "prints in that window were dropped and the cursor is about to "
+                    "advance past them",
+                    ticker, len(rows), floor.isoformat(),
                 )
             newest = floor
             for row in rows:

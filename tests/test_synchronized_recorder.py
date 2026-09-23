@@ -448,7 +448,8 @@ async def test_a_full_page_of_prints_is_flagged_as_lost_data(tmp_path: Path):
     rec = SynchronizedRecorder(
         provider, RecorderConfig(event_tickers=("EV",), out_dir=tmp_path)
     )
-    await rec.capture_once()
+    await rec.capture_once()   # backfill: no floor yet, nothing to have lost
+    await rec.capture_once()   # incremental: a full page here is dropped prints
 
     assert rec.stats.trade_polls_at_limit == 1
     assert rec.stats.as_dict()["trade_polls_at_row_limit"] == 1
@@ -481,3 +482,22 @@ class _FullPageProvider(_FakeProvider):
                 return await super().get_json(path, params=params, **kw)
 
         return _C(outer)
+
+
+@pytest.mark.asyncio
+async def test_the_first_poll_filling_its_page_is_backfill_not_loss(tmp_path: Path):
+    """The opening poll has no floor and reaches back as far as the page allows.
+
+    A full page there is the backfill working. Counting it would fire once per
+    ticker per run and bury the real signal - which is exactly what it did on the
+    first cycle of a live study before this guard existed.
+    """
+    provider = _FullPageProvider({"EV": ["EV-A"]})
+    rec = SynchronizedRecorder(
+        provider, RecorderConfig(event_tickers=("EV",), out_dir=tmp_path)
+    )
+    await rec.capture_once()
+    assert rec.stats.trade_polls_at_limit == 0   # first poll: no floor, no claim
+
+    await rec.capture_once()
+    assert rec.stats.trade_polls_at_limit == 1   # second: a floor exists, so it counts
