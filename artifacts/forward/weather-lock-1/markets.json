@@ -1,0 +1,308 @@
+{
+  "day": "26SEP23",
+  "cities": {
+    "KXHIGHNY": "KNYC",
+    "KXHIGHCHI": "KMDW",
+    "KXHIGHMIA": "KMIA",
+    "KXHIGHAUS": "KAUS",
+    "KXHIGHDEN": "KDEN",
+    "KXHIGHLAX": "KLAX",
+    "KXHIGHPHIL": "KPHL"
+  },
+  "markets": {
+    "KXHIGHNY-26SEP23-T72": {
+      "strike_type": "greater",
+      "floor_strike": 72,
+      "cap_strike": null,
+      "event_ticker": "KXHIGHNY-26SEP23",
+      "rules_primary": "If the maximum temperature recorded at New York City (CLINYC) for Sep 23, 2026, is greater than 72\u00b0 fahrenheit according to The Weather Company, then the market resolves to Yes."
+    },
+    "KXHIGHNY-26SEP23-T65": {
+      "strike_type": "less",
+      "floor_strike": null,
+      "cap_strike": 65,
+      "event_ticker": "KXHIGHNY-26SEP23",
+      "rules_primary": "If the maximum temperature recorded at New York City (CLINYC) for Sep 23, 2026, is less than 65\u00b0 fahrenheit according to The Weather Company, then the market resolves to Yes."
+    },
+    "KXHIGHNY-26SEP23-B71.5": {
+      "strike_type": "between",
+      "floor_strike": 71,
+      "cap_strike": 72,
+      "event_ticker": "KXHIGHNY-26SEP23",
+      "rules_primary": "If the maximum temperature recorded at New York City (CLINYC) for Sep 23, 2026, is between 71-72\u00b0 fahrenheit according to The Weather Company, then the market resolves to Yes."
+    },
+    "KXHIGHNY-26SEP23-B69.5": {
+      "strike_type": "between",
+      "floor_strike": 69,
+      "cap_strike": 70,
+      "event_ticker": "KXHIGHNY-26SEP23",
+      "rules_primary": "If the maximum temperature recorded at New York City (CLINYC) for Sep 23, 2026, is between 69-70\u00b0 fahrenheit according to The Weather Company, then the market resolves to Yes."
+    },
+    "KXHIGHNY-26SEP23-B67.5": {
+      "strike_type": "between",
+      "floor_strike": 67,
+      "cap_strike": 68,
+      "event_ticker": "KXHIGHNY-26SEP23",
+      "rules_primary": "If the maximum temperature recorded at New York City (CLINYC) for Sep 23, 2026, is between 67-68\u00b0 fahrenheit according to The Weather Company, then the market resolves to Yes."
+    },
+    "KXHIGHNY-26SEP23-B65.5": {
+      "strike_type": "between",
+      "floor_strike": 65,
+      "cap_strike": 66,
+      "event_ticker": "KXHIGHNY-26SEP23",
+      "rules_primary": "If the maximum temperature recorded at New York City (CLINYC) for Sep 23, 2026, is between 65-66\u00b0 fahrenheit according to The Weather Company, then the market resolves to Yes."
+    },
+    "KXHIGHCHI-26SEP23-T70": {
+      "strike_type": "greater",
+      "floor_strike": 70,
+      "cap_strike": null,
+      "event_ticker": "KXHIGHCHI-26SEP23",
+      "rules_primary": "If the maximum temperature recorded at Chicago (CLIMDW) for Sep 23, 2026, is greater than 70\u00b0 fahrenheit according to The Weather Company, then the market resolves to Yes."
+    },
+    "KXHIGHCHI-26SEP23-T63": {
+      "strike_type": "less",
+      "floor_strike": null,
+      "cap_strike": 63,
+      "event_ticker": "KXHIGHCHI-26SEP23",
+      "rules_primary": "If the maximum temperature recorded at Chicago (CLIMDW) for Sep 23, 2026, is less than 63\u00b0 fahrenheit according to The Weather Company, then the market resolves to Yes."
+    },
+    "KXHIGHCHI-26SEP23-B69.5": {
+      "strike_type": "between",
+      "floor_strike": 69,
+      "cap_strike": 70,
+      "event_ticker": "KXHIGHCHI-26SEP23",
+      "rules_primary": "If the maximum temperature recorded at Chicago (CLIMDW) for Sep 23, 2026, is between 69-70\u00b0 fahrenheit according to The Weather Company, then the market resolves to Yes."
+    },
+    "KXHIGHCHI-26SEP23-B67.5": {
+      "strike_type": "between",
+      "floor_strike": 67,
+      "cap_strike": 68,
+      "event_ticker": "KXHIGHCHI-26SEP23",
+      "rules_primary": "If the maximum temperature recorded at Chicago (CLIMDW) for Sep 23, 2026, is between 67-68\u00b0 fahrenheit according to The Weather Company, then the market resolves to Yes."
+    },
+    "KXHIGHCHI-26SEP23-B65.5": {
+      "strike_type": "between",
+      "floor_strike": 65,
+      "cap_strike": 66,
+      "event_ticker": "KXHIGHCHI-26SEP23",
+      "rules_primary": "If the maximum temperature recorded at Chicago (CLIMDW) for Sep 23, 2026, is between 65-66\u00b0 fahrenheit according to The Weather Company, then the market resolves to Yes."
+    },
+    "KXHIGHCHI-26SEP23-B63.5": {
+      "strike_type": "between",
+      "floor_strike": 63,
+      "cap_strike": 64,
+      "event_ticker": "KXHIGHCHI-26SEP23",
+      "rules_primary": "If the maximum temperature recorded at Chicago (CLIMDW) for Sep 23, 2026, is between 63-64\u00b0 fahrenheit according to The Weather Company, then the market resolves to Yes."
+    },
+    "KXHIGHMIA-26SEP23-T89": {
+      "strike_type": "greater",
+      "floor_strike": 89,
+      "cap_strike": null,
+      "event_ticker": "KXHIGHMIA-26SEP23",
+      "rules_primary": "If the maximum temperature recorded at Miami (CLIMIA) for Sep 23, 2026, is greater than 89\u00b0 fahrenheit according to The Weather Company, then the market resolves to Yes."
+    },
+    "KXHIGHMIA-26SEP23-T82": {
+      "strike_type": "less",
+      "floor_strike": null,
+      "cap_strike": 82,
+      "event_ticker": "KXHIGHMIA-26SEP23",
+      "rules_primary": "If the maximum temperature recorded at Miami (CLIMIA) for Sep 23, 2026, is less than 82\u00b0 fahrenheit according to The Weather Company, then the market resolves to Yes."
+    },
+    "KXHIGHMIA-26SEP23-B88.5": {
+      "strike_type": "between",
+      "floor_strike": 88,
+      "cap_strike": 89,
+      "event_ticker": "KXHIGHMIA-26SEP23",
+      "rules_primary": "If the maximum temperature recorded at Miami (CLIMIA) for Sep 23, 2026, is between 88-89\u00b0 fahrenheit according to The Weather Company, then the market resolves to Yes."
+    },
+    "KXHIGHMIA-26SEP23-B86.5": {
+      "strike_type": "between",
+      "floor_strike": 86,
+      "cap_strike": 87,
+      "event_ticker": "KXHIGHMIA-26SEP23",
+      "rules_primary": "If the maximum temperature recorded at Miami (CLIMIA) for Sep 23, 2026, is between 86-87\u00b0 fahrenheit according to The Weather Company, then the market resolves to Yes."
+    },
+    "KXHIGHMIA-26SEP23-B84.5": {
+      "strike_type": "between",
+      "floor_strike": 84,
+      "cap_strike": 85,
+      "event_ticker": "KXHIGHMIA-26SEP23",
+      "rules_primary": "If the maximum temperature recorded at Miami (CLIMIA) for Sep 23, 2026, is between 84-85\u00b0 fahrenheit according to The Weather Company, then the market resolves to Yes."
+    },
+    "KXHIGHMIA-26SEP23-B82.5": {
+      "strike_type": "between",
+      "floor_strike": 82,
+      "cap_strike": 83,
+      "event_ticker": "KXHIGHMIA-26SEP23",
+      "rules_primary": "If the maximum temperature recorded at Miami (CLIMIA) for Sep 23, 2026, is between 82-83\u00b0 fahrenheit according to The Weather Company, then the market resolves to Yes."
+    },
+    "KXHIGHAUS-26SEP23-T96": {
+      "strike_type": "less",
+      "floor_strike": null,
+      "cap_strike": 96,
+      "event_ticker": "KXHIGHAUS-26SEP23",
+      "rules_primary": "If the maximum temperature recorded at Austin (CLIAUS) for Sep 23, 2026, is less than 96\u00b0 fahrenheit according to The Weather Company, then the market resolves to Yes."
+    },
+    "KXHIGHAUS-26SEP23-T103": {
+      "strike_type": "greater",
+      "floor_strike": 103,
+      "cap_strike": null,
+      "event_ticker": "KXHIGHAUS-26SEP23",
+      "rules_primary": "If the maximum temperature recorded at Austin (CLIAUS) for Sep 23, 2026, is greater than 103\u00b0 fahrenheit according to The Weather Company, then the market resolves to Yes."
+    },
+    "KXHIGHAUS-26SEP23-B98.5": {
+      "strike_type": "between",
+      "floor_strike": 98,
+      "cap_strike": 99,
+      "event_ticker": "KXHIGHAUS-26SEP23",
+      "rules_primary": "If the maximum temperature recorded at Austin (CLIAUS) for Sep 23, 2026, is between 98-99\u00b0 fahrenheit according to The Weather Company, then the market resolves to Yes."
+    },
+    "KXHIGHAUS-26SEP23-B96.5": {
+      "strike_type": "between",
+      "floor_strike": 96,
+      "cap_strike": 97,
+      "event_ticker": "KXHIGHAUS-26SEP23",
+      "rules_primary": "If the maximum temperature recorded at Austin (CLIAUS) for Sep 23, 2026, is between 96-97\u00b0 fahrenheit according to The Weather Company, then the market resolves to Yes."
+    },
+    "KXHIGHAUS-26SEP23-B102.5": {
+      "strike_type": "between",
+      "floor_strike": 102,
+      "cap_strike": 103,
+      "event_ticker": "KXHIGHAUS-26SEP23",
+      "rules_primary": "If the maximum temperature recorded at Austin (CLIAUS) for Sep 23, 2026, is between 102-103\u00b0 fahrenheit according to The Weather Company, then the market resolves to Yes."
+    },
+    "KXHIGHAUS-26SEP23-B100.5": {
+      "strike_type": "between",
+      "floor_strike": 100,
+      "cap_strike": 101,
+      "event_ticker": "KXHIGHAUS-26SEP23",
+      "rules_primary": "If the maximum temperature recorded at Austin (CLIAUS) for Sep 23, 2026, is between 100-101\u00b0 fahrenheit according to The Weather Company, then the market resolves to Yes."
+    },
+    "KXHIGHDEN-26SEP23-T83": {
+      "strike_type": "greater",
+      "floor_strike": 83,
+      "cap_strike": null,
+      "event_ticker": "KXHIGHDEN-26SEP23",
+      "rules_primary": "If the maximum temperature recorded at Denver (CLIDEN) for Sep 23, 2026, is greater than 83\u00b0 fahrenheit according to The Weather Company, then the market resolves to Yes."
+    },
+    "KXHIGHDEN-26SEP23-T76": {
+      "strike_type": "less",
+      "floor_strike": null,
+      "cap_strike": 76,
+      "event_ticker": "KXHIGHDEN-26SEP23",
+      "rules_primary": "If the maximum temperature recorded at Denver (CLIDEN) for Sep 23, 2026, is less than 76\u00b0 fahrenheit according to The Weather Company, then the market resolves to Yes."
+    },
+    "KXHIGHDEN-26SEP23-B82.5": {
+      "strike_type": "between",
+      "floor_strike": 82,
+      "cap_strike": 83,
+      "event_ticker": "KXHIGHDEN-26SEP23",
+      "rules_primary": "If the maximum temperature recorded at Denver (CLIDEN) for Sep 23, 2026, is between 82-83\u00b0 fahrenheit according to The Weather Company, then the market resolves to Yes."
+    },
+    "KXHIGHDEN-26SEP23-B80.5": {
+      "strike_type": "between",
+      "floor_strike": 80,
+      "cap_strike": 81,
+      "event_ticker": "KXHIGHDEN-26SEP23",
+      "rules_primary": "If the maximum temperature recorded at Denver (CLIDEN) for Sep 23, 2026, is between 80-81\u00b0 fahrenheit according to The Weather Company, then the market resolves to Yes."
+    },
+    "KXHIGHDEN-26SEP23-B78.5": {
+      "strike_type": "between",
+      "floor_strike": 78,
+      "cap_strike": 79,
+      "event_ticker": "KXHIGHDEN-26SEP23",
+      "rules_primary": "If the maximum temperature recorded at Denver (CLIDEN) for Sep 23, 2026, is between 78-79\u00b0 fahrenheit according to The Weather Company, then the market resolves to Yes."
+    },
+    "KXHIGHDEN-26SEP23-B76.5": {
+      "strike_type": "between",
+      "floor_strike": 76,
+      "cap_strike": 77,
+      "event_ticker": "KXHIGHDEN-26SEP23",
+      "rules_primary": "If the maximum temperature recorded at Denver (CLIDEN) for Sep 23, 2026, is between 76-77\u00b0 fahrenheit according to The Weather Company, then the market resolves to Yes."
+    },
+    "KXHIGHLAX-26SEP23-T85": {
+      "strike_type": "greater",
+      "floor_strike": 85,
+      "cap_strike": null,
+      "event_ticker": "KXHIGHLAX-26SEP23",
+      "rules_primary": "If the maximum temperature recorded at Los Angeles (CLILAX) for Sep 23, 2026, is greater than 85\u00b0 fahrenheit according to The Weather Company, then the market resolves to Yes."
+    },
+    "KXHIGHLAX-26SEP23-T78": {
+      "strike_type": "less",
+      "floor_strike": null,
+      "cap_strike": 78,
+      "event_ticker": "KXHIGHLAX-26SEP23",
+      "rules_primary": "If the maximum temperature recorded at Los Angeles (CLILAX) for Sep 23, 2026, is less than 78\u00b0 fahrenheit according to The Weather Company, then the market resolves to Yes."
+    },
+    "KXHIGHLAX-26SEP23-B84.5": {
+      "strike_type": "between",
+      "floor_strike": 84,
+      "cap_strike": 85,
+      "event_ticker": "KXHIGHLAX-26SEP23",
+      "rules_primary": "If the maximum temperature recorded at Los Angeles (CLILAX) for Sep 23, 2026, is between 84-85\u00b0 fahrenheit according to The Weather Company, then the market resolves to Yes."
+    },
+    "KXHIGHLAX-26SEP23-B82.5": {
+      "strike_type": "between",
+      "floor_strike": 82,
+      "cap_strike": 83,
+      "event_ticker": "KXHIGHLAX-26SEP23",
+      "rules_primary": "If the maximum temperature recorded at Los Angeles (CLILAX) for Sep 23, 2026, is between 82-83\u00b0 fahrenheit according to The Weather Company, then the market resolves to Yes."
+    },
+    "KXHIGHLAX-26SEP23-B80.5": {
+      "strike_type": "between",
+      "floor_strike": 80,
+      "cap_strike": 81,
+      "event_ticker": "KXHIGHLAX-26SEP23",
+      "rules_primary": "If the maximum temperature recorded at Los Angeles (CLILAX) for Sep 23, 2026, is between 80-81\u00b0 fahrenheit according to The Weather Company, then the market resolves to Yes."
+    },
+    "KXHIGHLAX-26SEP23-B78.5": {
+      "strike_type": "between",
+      "floor_strike": 78,
+      "cap_strike": 79,
+      "event_ticker": "KXHIGHLAX-26SEP23",
+      "rules_primary": "If the maximum temperature recorded at Los Angeles (CLILAX) for Sep 23, 2026, is between 78-79\u00b0 fahrenheit according to The Weather Company, then the market resolves to Yes."
+    },
+    "KXHIGHPHIL-26SEP23-T71": {
+      "strike_type": "greater",
+      "floor_strike": 71,
+      "cap_strike": null,
+      "event_ticker": "KXHIGHPHIL-26SEP23",
+      "rules_primary": "If the maximum temperature recorded at Philadelphia (CLIPHL) for Sep 23, 2026, is greater than 71\u00b0 fahrenheit according to The Weather Company, then the market resolves to Yes."
+    },
+    "KXHIGHPHIL-26SEP23-T64": {
+      "strike_type": "less",
+      "floor_strike": null,
+      "cap_strike": 64,
+      "event_ticker": "KXHIGHPHIL-26SEP23",
+      "rules_primary": "If the maximum temperature recorded at Philadelphia (CLIPHL) for Sep 23, 2026, is less than 64\u00b0 fahrenheit according to The Weather Company, then the market resolves to Yes."
+    },
+    "KXHIGHPHIL-26SEP23-B70.5": {
+      "strike_type": "between",
+      "floor_strike": 70,
+      "cap_strike": 71,
+      "event_ticker": "KXHIGHPHIL-26SEP23",
+      "rules_primary": "If the maximum temperature recorded at Philadelphia (CLIPHL) for Sep 23, 2026, is between 70-71\u00b0 fahrenheit according to The Weather Company, then the market resolves to Yes."
+    },
+    "KXHIGHPHIL-26SEP23-B68.5": {
+      "strike_type": "between",
+      "floor_strike": 68,
+      "cap_strike": 69,
+      "event_ticker": "KXHIGHPHIL-26SEP23",
+      "rules_primary": "If the maximum temperature recorded at Philadelphia (CLIPHL) for Sep 23, 2026, is between 68-69\u00b0 fahrenheit according to The Weather Company, then the market resolves to Yes."
+    },
+    "KXHIGHPHIL-26SEP23-B66.5": {
+      "strike_type": "between",
+      "floor_strike": 66,
+      "cap_strike": 67,
+      "event_ticker": "KXHIGHPHIL-26SEP23",
+      "rules_primary": "If the maximum temperature recorded at Philadelphia (CLIPHL) for Sep 23, 2026, is between 66-67\u00b0 fahrenheit according to The Weather Company, then the market resolves to Yes."
+    },
+    "KXHIGHPHIL-26SEP23-B64.5": {
+      "strike_type": "between",
+      "floor_strike": 64,
+      "cap_strike": 65,
+      "event_ticker": "KXHIGHPHIL-26SEP23",
+      "rules_primary": "If the maximum temperature recorded at Philadelphia (CLIPHL) for Sep 23, 2026, is between 64-65\u00b0 fahrenheit according to The Weather Company, then the market resolves to Yes."
+    }
+  }
+}

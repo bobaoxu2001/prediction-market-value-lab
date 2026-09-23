@@ -50,6 +50,8 @@ data/processed/**
 artifacts/forward/**/snapshots.jsonl
 artifacts/forward/**/markets.jsonl
 artifacts/forward/**/trades.jsonl
+artifacts/forward/**/books.jsonl
+artifacts/forward/**/observations.jsonl
 
 # --- customer records (never commit) ---
 #
