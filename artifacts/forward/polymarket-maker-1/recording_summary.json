@@ -1,0 +1,14 @@
+{
+  "strategy_version": "1.1.0",
+  "venue": "polymarket",
+  "cycles": 179,
+  "snapshots": 179,
+  "book_failures": 0,
+  "trades": 7232,
+  "tape_requests": 2397,
+  "tape_pages_full": 1432,
+  "tape_splits": 193,
+  "markets_with_lost_prints": 0,
+  "skew_bound_ms_p50": 1371.253,
+  "skew_bound_ms_max": 11584.362
+}

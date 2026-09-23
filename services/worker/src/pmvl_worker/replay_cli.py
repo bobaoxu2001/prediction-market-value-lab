@@ -296,9 +296,13 @@ def polymarket_maker(
     recording, version = _load(directory)
     mapping = json.loads((directory / "polymarket_markets.json").read_text())
     complement: dict[str, str] = {}
+    condition: dict[str, str] = {}
     for m in mapping["markets"]:
         complement[m["yes"]] = m["no"]
         complement[m["no"]] = m["yes"]
+        #: both tokens of one market are one cluster - they move in opposite
+        #: directions and are one draw of the market, not two
+        condition[m["yes"]] = condition[m["no"]] = m["condition"]
 
     def hedge_for(quote):
         other = complement.get(quote.market)
@@ -328,9 +332,8 @@ def polymarket_maker(
         )
 
     table = Table(title=f"polymarket maker (v{version}, zero fees)")
-    for column in ("policy", "quotes", "excluded", "fills", "fill rate", "completion",
-                   "markout 60s | fill", "hedge cost", "hedged pair", "E[PnL]/quote",
-                   "95% CI"):
+    for column in ("policy", "quotes", "excluded", "fills", "fill rate",
+                   "hedged pair", "mark E@60", "mark E@300", "EXIT E@60", "EXIT E@300"):
         table.add_column(column, justify="right" if column != "policy" else "left")
 
     reports = {}
@@ -347,22 +350,19 @@ def polymarket_maker(
         report = run_experiment(
             recording.snapshots, tape, policy,
             strategy_version=version, hedge_for=hedge_for,
-            tape_complete_through=horizon,
+            tape_complete_through=horizon, cluster_of=condition,
         )
         body = report.as_dict()
         reports[policy.name] = body
         _write_quote_ledger(directory / f"maker_quote_ledger_{policy.name}.csv", report)
         row = body["estimators"][FillEstimator.QUEUE_MODEL.value]
-        ci = row["expectancy_per_quote_ci95"]
         table.add_row(
             policy.name, str(body["quotes_placed"]),
             str(body["quotes_excluded_tape_incomplete"]), str(row["fills"]),
-            row["fill_rate"], row["completion_rate"],
-            str(row["mean_markout_given_fill"]["60"]),
-            str(row["mean_hedge_cost_given_fill"]),
-            str(row["hedged_pair_pnl_per_contract"]),
-            row["expectancy_per_quote_usd"]["60"],
-            f"[{ci[0]}, {ci[1]}]" if ci else "-",
+            row["fill_rate"], str(row["hedged_pair_pnl_per_contract"]),
+            row["expectancy_per_quote_usd"]["60"], row["expectancy_per_quote_usd"]["300"],
+            row["exit_expectancy_per_quote_usd"]["60"],
+            row["exit_expectancy_per_quote_usd"]["300"],
         )
     console.print(table)
     target = out or (directory / "polymarket_maker_report.json")

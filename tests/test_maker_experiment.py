@@ -588,3 +588,42 @@ def test_without_a_horizon_nothing_is_excluded():
     report = run_experiment(snaps, [], QuotePolicy(), strategy_version="t")
     assert report.quotes_excluded_tape_incomplete == 0
     assert report.quotes_placed == 6
+
+
+def test_exit_pnl_closes_the_position_at_the_ask_that_was_really_there():
+    """A mid-mark is not money. Closing through the book is.
+
+    Filled buying YES at 0.40; the other side's ask 300 seconds later is 0.55, so
+    closing then settles for $1 at a total cost of 0.95 - a realizable +0.05 that
+    pays the exit spread, unlike the markout.
+    """
+    quote = _quote(queue_ahead=Decimal("0"))
+    trades = [_trade(5, "0.39", "60", "no")]
+    later = _book(yes_bid="0.45", yes_ask="0.47")        # NO ask = 1 - 0.45 = 0.55
+    snaps = [_snap(0, {"M": _book()}), _snap(310, {"M": later})]
+    out = evaluate_quote(quote, trades, snaps, policy=QuotePolicy(taker_fee_rate=Decimal("0")))
+    assert out.exit_pnl[300] == Decimal("0.0500")
+
+
+def test_exit_pnl_is_none_when_nothing_was_there_to_close_into():
+    """No book at the horizon is no measurement, not a zero."""
+    quote = _quote(queue_ahead=Decimal("0"))
+    out = evaluate_quote(quote, [_trade(5, "0.39", "60", "no")],
+                         [_snap(0, {"M": _book()})], policy=POLICY)
+    assert out.exit_pnl[300] is None
+
+
+def test_two_tokens_of_one_market_are_one_cluster_not_two():
+    """YES and NO move in exactly opposite directions: one draw of the market.
+
+    Clustering them apart counts that draw twice and narrows the interval, which is
+    the direction that makes a result look better established than it is.
+    """
+    books = {"YES_T": _book(), "NO_T": _book()}
+    snaps = [_snap(i * 60, books) for i in range(6)]
+    split = run_experiment(snaps, [], QuotePolicy(), strategy_version="t")
+    joined = run_experiment(snaps, [], QuotePolicy(), strategy_version="t",
+                            cluster_of={"YES_T": "M", "NO_T": "M"})
+    # two token clusters is enough for an interval; one market cluster is not
+    assert split.cluster_bootstrap_ci(FillEstimator.QUEUE_MODEL, horizon=60) is not None
+    assert joined.cluster_bootstrap_ci(FillEstimator.QUEUE_MODEL, horizon=60) is None

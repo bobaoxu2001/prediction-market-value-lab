@@ -185,6 +185,12 @@ class QuoteOutcome:
     liquidation_pnl: Decimal | None
     hedge_cost: Decimal | None
     hedge_available: bool
+    #: horizon seconds -> per-contract PnL of holding the fill that long and *then*
+    #: closing it with the hedging leg, at that leg's ask at the time. Unlike the
+    #: markout, which marks the position at a mid nobody can trade at, this is money
+    #: that could have been taken out: it pays the exit spread and settles for $1.
+    #: At a horizon of zero it is the hedged pair.
+    exit_pnl: dict[int, Decimal | None] = field(default_factory=dict)
 
     def filled(self, estimator: FillEstimator) -> bool:
         return self.filled_size.get(estimator, ZERO) > 0
@@ -392,6 +398,13 @@ def evaluate_quote(
     hedge_cost, hedge_available = _hedge(
         quote, index, reference, target, taker_rate=policy.taker_fee_rate
     )
+    exit_pnl: dict[int, Decimal | None] = {}
+    for horizon in MARKOUT_HORIZONS:
+        later, ok = _hedge(
+            quote, index, reference + timedelta(seconds=horizon), target,
+            taker_rate=policy.taker_fee_rate,
+        )
+        exit_pnl[horizon] = quantize_usd(ONE - quote.price - later) if ok and later is not None else None
 
     return QuoteOutcome(
         quote=quote,
@@ -403,6 +416,7 @@ def evaluate_quote(
         liquidation_pnl=liquidation,
         hedge_cost=hedge_cost,
         hedge_available=hedge_available,
+        exit_pnl=exit_pnl,
     )
 
 
@@ -515,6 +529,12 @@ class MakerExperimentReport:
     #: Counted, never silently discarded - a large number here means the recording
     #: ended before its prints were indexed, not that the market was quiet.
     quotes_excluded_tape_incomplete: int = 0
+    #: token -> the market it belongs to, when those differ. On Polymarket a market's
+    #: YES and NO are separate tokens that move in exactly opposite directions, so
+    #: they are one cluster, not two - clustering them apart counts one draw twice and
+    #: narrows the interval. Empty means each quoted market is its own cluster, which
+    #: is right on Kalshi.
+    cluster_of: dict[str, str] = field(default_factory=dict)
     markets: int = 0
     event_days: int = 0
     #: Calendar dates covered. Eight events recorded in one afternoon are eight
@@ -567,6 +587,25 @@ class MakerExperimentReport:
             return None
         return quantize_usd(sum(values, ZERO) / Decimal(len(values)))
 
+    def exit_expectancy_per_quote(
+        self, estimator: FillEstimator, *, horizon: int
+    ) -> Decimal:
+        """Realizable PnL per quote placed: hold the fill, then close it for $1.
+
+        Unfilled quotes contribute zero, exactly as in the markout expectancy - the
+        difference is only in how a filled position is valued. The markout marks it at
+        a mid; this closes it through the book at the ask that was actually there.
+        """
+        if not self.quotes_placed:
+            return ZERO
+        total = ZERO
+        for o in self.outcomes:
+            size = o.filled_size.get(estimator, ZERO)
+            value = o.exit_pnl.get(horizon)
+            if size > 0 and value is not None:
+                total += value * size
+        return quantize_usd(total / Decimal(self.quotes_placed))
+
     def mean_hedge_cost_given_fill(self, estimator: FillEstimator) -> Decimal | None:
         values = [
             o.hedge_cost
@@ -618,7 +657,7 @@ class MakerExperimentReport:
         clusters: dict[tuple[str, str], list[Decimal]] = {}
         for outcome in self.outcomes:
             key = (
-                outcome.quote.market,
+                self.cluster_of.get(outcome.quote.market, outcome.quote.market),
                 outcome.quote.placed_at.date().isoformat(),
             )
             clusters.setdefault(key, []).append(outcome.pnl(estimator, horizon=horizon))
@@ -716,6 +755,10 @@ class MakerExperimentReport:
                 ),
                 "hedge_availability": str(round(self.hedge_availability(estimator), 4)),
                 "hedged_pair_pnl_per_contract": _s(self.hedged_pair_pnl(estimator)),
+                "exit_expectancy_per_quote_usd": {
+                    str(h): str(self.exit_expectancy_per_quote(estimator, horizon=h))
+                    for h in MARKOUT_HORIZONS
+                },
                 "expectancy_per_quote_ci95": _ci(
                     self.cluster_bootstrap_ci(estimator, horizon=MARKOUT_HORIZONS[1])
                 ),
@@ -748,6 +791,7 @@ def run_experiment(
     strategy_version: str,
     hedge_for: "Callable[[MakerQuote], tuple[str, Side] | None] | None" = None,
     tape_complete_through: datetime | None = None,
+    cluster_of: dict[str, str] | None = None,
 ) -> MakerExperimentReport:
     """Place every quote the policy dictates and score all of them.
 
@@ -782,6 +826,7 @@ def run_experiment(
         policy=policy,
         strategy_version=strategy_version,
         quotes_excluded_tape_incomplete=excluded,
+        cluster_of=dict(cluster_of or {}),
         quotes_placed=len(quotes),
         markets=len({q.market for q in quotes}),
         event_days=len(event_days),

@@ -1,0 +1,286 @@
+{
+  "venue": "polymarket",
+  "fees": "zero (measured)",
+  "reports": {
+    "poly-join": {
+      "recording_version": "1.1.0",
+      "analysis_version": "1.2.0",
+      "policy": {
+        "name": "poly-join",
+        "side": "yes",
+        "improve_ticks": 0,
+        "size": "50",
+        "lifetime_seconds": 60,
+        "min_spread": "0.002",
+        "maker_fee_rate": "0",
+        "taker_fee_rate_on_unwind": "0",
+        "placement_latency_ms": 300,
+        "tick": "0.001"
+      },
+      "quotes_placed": 798,
+      "quotes_excluded_tape_incomplete": 0,
+      "markets": 38,
+      "event_days": 1,
+      "distinct_dates": 1,
+      "independence_note": "1 event-days across 1 calendar date(s). Events recorded in one session are not independent draws in time; the interval resamples market-days and does not price the common-session factor",
+      "markout_horizons_seconds": [
+        30,
+        60,
+        300
+      ],
+      "estimators": {
+        "TRADED_THROUGH": {
+          "fills": 49,
+          "fill_rate": "0.0614",
+          "completion_rate": "0.7959",
+          "mean_markout_given_fill": {
+            "30": "-0.0016",
+            "60": "-0.0138",
+            "300": "0.0093"
+          },
+          "mean_liquidation_given_fill": null,
+          "mean_hedge_cost_given_fill": "0.5165",
+          "hedge_availability": "1.0000",
+          "hedged_pair_pnl_per_contract": "0.0011",
+          "exit_expectancy_per_quote_usd": {
+            "30": "-0.0812",
+            "60": "-0.0430",
+            "300": "0.0632"
+          },
+          "expectancy_per_quote_ci95": [
+            "-0.1342",
+            "-0.0003"
+          ],
+          "unconditional_pnl_usd": {
+            "30": "-5.8026",
+            "60": "-36.6736",
+            "300": "9.0531"
+          },
+          "expectancy_per_quote_usd": {
+            "30": "-0.0073",
+            "60": "-0.0460",
+            "300": "0.0113"
+          },
+          "admissible": true
+        },
+        "QUEUE_MODEL": {
+          "fills": 50,
+          "fill_rate": "0.0627",
+          "completion_rate": "0.8000",
+          "mean_markout_given_fill": {
+            "30": "-0.0020",
+            "60": "-0.0139",
+            "300": "0.0089"
+          },
+          "mean_liquidation_given_fill": null,
+          "mean_hedge_cost_given_fill": "0.5124",
+          "hedge_availability": "1.0000",
+          "hedged_pair_pnl_per_contract": "0.0005",
+          "exit_expectancy_per_quote_usd": {
+            "30": "-0.0827",
+            "60": "-0.0446",
+            "300": "0.0626"
+          },
+          "expectancy_per_quote_ci95": [
+            "-0.1344",
+            "-0.0009"
+          ],
+          "unconditional_pnl_usd": {
+            "30": "-6.7026",
+            "60": "-37.7486",
+            "300": "8.8281"
+          },
+          "expectancy_per_quote_usd": {
+            "30": "-0.0084",
+            "60": "-0.0473",
+            "300": "0.0111"
+          },
+          "admissible": true
+        },
+        "TOUCHED": {
+          "fills": 89,
+          "fill_rate": "0.1115",
+          "completion_rate": "1.0000",
+          "mean_markout_given_fill": {
+            "30": "0.0005",
+            "60": "-0.0067",
+            "300": "0.0069"
+          },
+          "mean_liquidation_given_fill": null,
+          "mean_hedge_cost_given_fill": "0.4836",
+          "hedge_availability": "0.9775",
+          "hedged_pair_pnl_per_contract": "0.0001",
+          "exit_expectancy_per_quote_usd": {
+            "30": "-0.0844",
+            "60": "-0.0445",
+            "300": "0.0759"
+          },
+          "expectancy_per_quote_ci95": [
+            "-0.1024",
+            "0.0067"
+          ],
+          "unconditional_pnl_usd": {
+            "30": "2.1500",
+            "60": "-27.0750",
+            "300": "22.2250"
+          },
+          "expectancy_per_quote_usd": {
+            "30": "0.0027",
+            "60": "-0.0339",
+            "300": "0.0279"
+          },
+          "admissible": false
+        }
+      },
+      "inadmissible": {
+        "TOUCHED": "a print at the quoted price is not a fill; reported only so the gap to the admissible estimators is visible"
+      },
+      "not_measured": {
+        "own_order_impact": "the quote was never sent, so nothing here captures how the book would have reacted to it - other makers stepping in front, or takers declining to cross a larger displayed size",
+        "queue_cancellations": "the queue ahead is treated as static. Cancellations ahead of the quote would move it up and raise the true fill rate, so the queue model understates fills - the conservative direction, but it is an approximation and not a measurement",
+        "partial_fill_timing": "a fill is priced from the first moment the queue clears; a fill that accumulated over the quote's life is marked from that first moment rather than from each contract's own timestamp",
+        "settlement_holding": "every number here assumes the position is marked or flattened inside five minutes. Holding to settlement is a different strategy with a different risk and is not measured"
+      }
+    },
+    "poly-improve": {
+      "recording_version": "1.1.0",
+      "analysis_version": "1.2.0",
+      "policy": {
+        "name": "poly-improve",
+        "side": "yes",
+        "improve_ticks": 1,
+        "size": "50",
+        "lifetime_seconds": 60,
+        "min_spread": "0.002",
+        "maker_fee_rate": "0",
+        "taker_fee_rate_on_unwind": "0",
+        "placement_latency_ms": 300,
+        "tick": "0.001"
+      },
+      "quotes_placed": 798,
+      "quotes_excluded_tape_incomplete": 0,
+      "markets": 38,
+      "event_days": 1,
+      "distinct_dates": 1,
+      "independence_note": "1 event-days across 1 calendar date(s). Events recorded in one session are not independent draws in time; the interval resamples market-days and does not price the common-session factor",
+      "markout_horizons_seconds": [
+        30,
+        60,
+        300
+      ],
+      "estimators": {
+        "TRADED_THROUGH": {
+          "fills": 103,
+          "fill_rate": "0.1291",
+          "completion_rate": "0.7282",
+          "mean_markout_given_fill": {
+            "30": "-0.0001",
+            "60": "-0.0058",
+            "300": "0.0041"
+          },
+          "mean_liquidation_given_fill": null,
+          "mean_hedge_cost_given_fill": "0.5035",
+          "hedge_availability": "0.9806",
+          "hedged_pair_pnl_per_contract": "-0.0014",
+          "exit_expectancy_per_quote_usd": {
+            "30": "-0.0909",
+            "60": "-0.0543",
+            "300": "0.0516"
+          },
+          "expectancy_per_quote_ci95": [
+            "-0.1351",
+            "0.0018"
+          ],
+          "unconditional_pnl_usd": {
+            "30": "-5.1495",
+            "60": "-37.7108",
+            "300": "7.0333"
+          },
+          "expectancy_per_quote_usd": {
+            "30": "-0.0065",
+            "60": "-0.0473",
+            "300": "0.0088"
+          },
+          "admissible": true
+        },
+        "QUEUE_MODEL": {
+          "fills": 109,
+          "fill_rate": "0.1366",
+          "completion_rate": "0.7339",
+          "mean_markout_given_fill": {
+            "30": "-0.0001",
+            "60": "-0.0054",
+            "300": "0.0038"
+          },
+          "mean_liquidation_given_fill": null,
+          "mean_hedge_cost_given_fill": "0.5028",
+          "hedge_availability": "0.9817",
+          "hedged_pair_pnl_per_contract": "-0.0013",
+          "exit_expectancy_per_quote_usd": {
+            "30": "-0.0908",
+            "60": "-0.0544",
+            "300": "0.0507"
+          },
+          "expectancy_per_quote_ci95": [
+            "-0.1351",
+            "0.0020"
+          ],
+          "unconditional_pnl_usd": {
+            "30": "-5.0431",
+            "60": "-37.6417",
+            "300": "6.3833"
+          },
+          "expectancy_per_quote_usd": {
+            "30": "-0.0063",
+            "60": "-0.0472",
+            "300": "0.0080"
+          },
+          "admissible": true
+        },
+        "TOUCHED": {
+          "fills": 109,
+          "fill_rate": "0.1366",
+          "completion_rate": "1.0000",
+          "mean_markout_given_fill": {
+            "30": "-0.0001",
+            "60": "-0.0054",
+            "300": "0.0038"
+          },
+          "mean_liquidation_given_fill": null,
+          "mean_hedge_cost_given_fill": "0.5028",
+          "hedge_availability": "0.9817",
+          "hedged_pair_pnl_per_contract": "-0.0013",
+          "exit_expectancy_per_quote_usd": {
+            "30": "-0.0909",
+            "60": "-0.0493",
+            "300": "0.0632"
+          },
+          "expectancy_per_quote_ci95": [
+            "-0.1031",
+            "0.0058"
+          ],
+          "unconditional_pnl_usd": {
+            "30": "-0.3000",
+            "60": "-28.0500",
+            "300": "15.0250"
+          },
+          "expectancy_per_quote_usd": {
+            "30": "-0.0004",
+            "60": "-0.0352",
+            "300": "0.0188"
+          },
+          "admissible": false
+        }
+      },
+      "inadmissible": {
+        "TOUCHED": "a print at the quoted price is not a fill; reported only so the gap to the admissible estimators is visible"
+      },
+      "not_measured": {
+        "own_order_impact": "the quote was never sent, so nothing here captures how the book would have reacted to it - other makers stepping in front, or takers declining to cross a larger displayed size",
+        "queue_cancellations": "the queue ahead is treated as static. Cancellations ahead of the quote would move it up and raise the true fill rate, so the queue model understates fills - the conservative direction, but it is an approximation and not a measurement",
+        "partial_fill_timing": "a fill is priced from the first moment the queue clears; a fill that accumulated over the quote's life is marked from that first moment rather than from each contract's own timestamp",
+        "settlement_holding": "every number here assumes the position is marked or flattened inside five minutes. Holding to settlement is a different strategy with a different risk and is not measured"
+      }
+    }
+  }
+}
