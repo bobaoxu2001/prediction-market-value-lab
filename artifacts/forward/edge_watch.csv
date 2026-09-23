@@ -1,0 +1,3 @@
+date,recorder_version,snapshots,pair_observations,set_observations,pair_best_edge,set_best_edge,clearing_3c,survivors_3c,scanned_at
+2026-09-20,1.1.0,26655,491625,263419,-0.0200,-0.0100,0,0,2026-09-23T02:14:49.626166+00:00
+2026-09-19,1.0.0,10398,99631,67747,-0.0300,-0.0100,0,0,2026-09-23T02:16:08.021313+00:00

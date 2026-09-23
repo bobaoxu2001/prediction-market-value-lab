@@ -270,6 +270,61 @@ class HttpClient:
         self.last_request_window = (window.get("sent"), window.get("received"))
         return data
 
+    async def post_json_readonly(self, path: str, payload: Any) -> Any:
+        """POST to an allowlisted *read* endpoint. Refuses anything else.
+
+        Exists for one reason: Polymarket returns a batch of orderbooks only from a
+        POST, because the request carries a list of token ids in its body. Reading
+        four hundred books in one request instead of four hundred is the difference
+        between a snapshot and a collage, which is the failure this whole phase was
+        built to remove.
+
+        The path is checked against a frozen allowlist before anything is sent, so
+        this cannot become a general-purpose write channel by being called with a
+        different argument.
+        """
+        if path not in READ_ONLY_POST_PATHS:
+            raise NotAReadOnlyEndpoint(
+                f"{path!r} is not an allowlisted read-only POST path; this client "
+                f"sends POST only to {sorted(READ_ONLY_POST_PATHS)}"
+            )
+
+        await self._limiter.acquire(1.0)
+        async with self._semaphore:
+            self.stats["requests"] += 1
+            sent = time.time()
+            try:
+                resp = await self._client.post(path, json=payload)
+            except (httpx.TimeoutException, httpx.TransportError) as exc:
+                self.stats["errors"] += 1
+                raise ProviderError(f"{self.name} transport: {exc}") from exc
+            received = time.time()
+
+        if resp.status_code >= 400:
+            self.stats["errors"] += 1
+            raise ProviderError(
+                f"{self.name} {resp.status_code} on {path}: {resp.text[:200]}"
+            )
+        self.last_request_window = (sent, received)
+        try:
+            return resp.json()
+        except ValueError as exc:
+            raise ProviderError(f"{self.name} returned non-JSON for {path}") from exc
+
+
+#: The only POST paths this client may ever send. Polymarket's batch orderbook read
+#: is a POST because it carries a list of token ids in a body, not because it changes
+#: anything - but "the market data client cannot POST" was a structural guarantee that
+#: it could not place an order, and replacing it with "POST is fine now" would throw
+#: that away for one endpoint's convenience. So the guarantee becomes "it may POST to
+#: exactly these paths", which is checkable, and a new entry is a visible edit here
+#: rather than a call site nobody reviews.
+READ_ONLY_POST_PATHS = frozenset({"/books"})
+
+
+class NotAReadOnlyEndpoint(RuntimeError):
+    """A POST was attempted to a path that is not on the read-only allowlist."""
+
 
 def _pairs(params: Any) -> list[tuple[str, Any]]:
     """Normalise either param form to the list httpx wants, preserving repeats."""

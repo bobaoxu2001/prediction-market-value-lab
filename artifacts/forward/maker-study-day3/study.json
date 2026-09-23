@@ -1,0 +1,64 @@
+{
+  "strategy_version": "1.1.0",
+  "universe": "artifacts/forward/universe-study-frozen.json",
+  "universe_frozen_at": "2026-09-19T08:45:56.009526+00:00",
+  "series": [
+    "KXGOLDH",
+    "KXKBOGAME",
+    "KXLOLMAP",
+    "KXMLBF5",
+    "KXMLBF5SPREAD",
+    "KXMLBHIT",
+    "KXMLBHR",
+    "KXMLBHRR",
+    "KXMLBKS",
+    "KXMLBRBI",
+    "KXMLBSB",
+    "KXMLBSPREAD",
+    "KXMLBTB",
+    "KXMLBTEAMTOTAL",
+    "KXMLBTOTAL",
+    "KXRAIN",
+    "KXTEMPCHIHS",
+    "KXTEMPLAXHS",
+    "KXTEMPMIAH",
+    "KXTEMPNYCHS",
+    "KXWTAMATCH"
+  ],
+  "planned_sessions": 20,
+  "session_seconds": 1800.0,
+  "interval_seconds": 10.0,
+  "events_per_session": 8,
+  "sessions": [
+    {
+      "session": 1,
+      "started_at": "2026-09-23T01:49:40.969133+00:00",
+      "ended_at": "2026-09-23T02:19:58.988562+00:00",
+      "date": "2026-09-23",
+      "events": [
+        "KXRAIN-26SEP22",
+        "KXMLBTOTAL-26SEP221940MIACHC",
+        "KXMLBTOTAL-26SEP222005NYMTEX",
+        "KXMLBTOTAL-26SEP221905TBNYYG2",
+        "KXMLBTOTAL-26SEP222040AZCOL",
+        "KXMLBHR-26SEP221940MIACHC",
+        "KXMLBSPREAD-26SEP221940MIACHC",
+        "KXMLBSPREAD-26SEP221905TBNYYG2"
+      ],
+      "stats": {
+        "cycles": 168,
+        "snapshots": 1344,
+        "rejections": 0,
+        "rejection_reasons": {},
+        "trades": 13942,
+        "trade_budget_exhausted_cycles": 168,
+        "trade_polls_at_row_limit": 27,
+        "legs_captured": 17304,
+        "two_sided_legs": 8033,
+        "skew_bound_ms_p50": 522.5,
+        "skew_bound_ms_p95": 1253.8,
+        "skew_bound_ms_max": 3496.066
+      }
+    }
+  ]
+}

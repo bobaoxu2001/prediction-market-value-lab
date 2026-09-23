@@ -1,0 +1,92 @@
+{
+  "verdict": "INCONCLUSIVE",
+  "why": "4 of 4 policies negative on day two, 0 of 4 means inside day one's interval - the pre-registered rule needs all negative and at least three contained",
+  "day_one": "maker-study (2026-09-19, recorder 1.0.0)",
+  "day_two": "maker-study-day2 (2026-09-20, recorder 1.1.0)",
+  "rule": "REPLICATED needs all four policies negative on day two and at least three of four day-two means inside day one's 95% session-level interval; FAILED_TO_REPLICATE needs any day-two interval entirely above zero; anything else is INCONCLUSIVE",
+  "not_pooled_because": "the two days were recorded under different recorder versions, and a 1.0.0 skew bound is inflated relative to a 1.1.0 one while a 1.0.0 session's snapshot count depended on how busy the tape was",
+  "policies": [
+    {
+      "policy": "improve-no",
+      "day_one_mean": "-0.0434",
+      "day_one_ci95": [
+        "-0.0822",
+        "-0.0124"
+      ],
+      "day_two_mean": "-0.0062",
+      "day_two_ci95": [
+        "-0.0116",
+        "-0.0021"
+      ],
+      "day_two_sessions": 20,
+      "day_two_quotes": 22440,
+      "day_two_mean_negative": true,
+      "inside_day_one_interval": false,
+      "day_two_excludes_zero_above": false,
+      "day_two_excludes_zero_below": true
+    },
+    {
+      "policy": "improve-yes",
+      "day_one_mean": "-0.0498",
+      "day_one_ci95": [
+        "-0.0874",
+        "-0.0205"
+      ],
+      "day_two_mean": "-0.0112",
+      "day_two_ci95": [
+        "-0.0195",
+        "-0.0052"
+      ],
+      "day_two_sessions": 20,
+      "day_two_quotes": 22440,
+      "day_two_mean_negative": true,
+      "inside_day_one_interval": false,
+      "day_two_excludes_zero_above": false,
+      "day_two_excludes_zero_below": true
+    },
+    {
+      "policy": "join-no",
+      "day_one_mean": "-0.0347",
+      "day_one_ci95": [
+        "-0.0636",
+        "-0.0116"
+      ],
+      "day_two_mean": "-0.0021",
+      "day_two_ci95": [
+        "-0.0079",
+        "0.0034"
+      ],
+      "day_two_sessions": 20,
+      "day_two_quotes": 22440,
+      "day_two_mean_negative": true,
+      "inside_day_one_interval": false,
+      "day_two_excludes_zero_above": false,
+      "day_two_excludes_zero_below": false
+    },
+    {
+      "policy": "join-yes",
+      "day_one_mean": "-0.0323",
+      "day_one_ci95": [
+        "-0.0608",
+        "-0.0092"
+      ],
+      "day_two_mean": "-0.0067",
+      "day_two_ci95": [
+        "-0.0135",
+        "-0.0019"
+      ],
+      "day_two_sessions": 20,
+      "day_two_quotes": 22440,
+      "day_two_mean_negative": true,
+      "inside_day_one_interval": false,
+      "day_two_excludes_zero_above": false,
+      "day_two_excludes_zero_below": true
+    }
+  ],
+  "day_one_sessions": 20,
+  "day_two_sessions": 20,
+  "recorder_versions": {
+    "day_one": "1.0.0",
+    "day_two": "1.1.0"
+  }
+}
