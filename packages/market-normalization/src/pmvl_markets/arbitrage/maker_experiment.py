@@ -38,7 +38,7 @@ from dataclasses import dataclass, field
 from datetime import datetime, timedelta
 from decimal import Decimal
 from enum import StrEnum
-from typing import Any, Iterable, Sequence
+from typing import Any, Callable, Iterable, Sequence
 
 from pmvl_shared.enums import Platform, Side
 from pmvl_shared.money import ONE, ZERO, quantize_usd
@@ -735,12 +735,23 @@ def run_experiment(
     policy: QuotePolicy,
     *,
     strategy_version: str,
+    hedge_for: "Callable[[MakerQuote], tuple[str, Side] | None] | None" = None,
 ) -> MakerExperimentReport:
-    """Place every quote the policy dictates and score all of them."""
+    """Place every quote the policy dictates and score all of them.
+
+    ``hedge_for`` names the leg that closes a fill, when it is not simply the other
+    side of the same book. On Kalshi it is: buying YES and buying NO in one market
+    pays exactly $1. On Polymarket the two sides are separate tokens with separate
+    books, so the closing leg is the *complement token*, and nothing in the quote
+    itself says which one that is - the caller holds that mapping.
+    """
     quotes = generate_quotes(snapshots, policy)
     index = ReplayIndex(trades, snapshots)
     outcomes = [
-        evaluate_quote(q, trades, snapshots, policy=policy, index=index)
+        evaluate_quote(
+            q, trades, snapshots, policy=policy, index=index,
+            hedge=hedge_for(q) if hedge_for else None,
+        )
         for q in quotes
     ]
     event_days = {
