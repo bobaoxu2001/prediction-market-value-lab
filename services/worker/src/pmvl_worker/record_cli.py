@@ -10,6 +10,7 @@ writes the refusals to the same file as the captures.
 from __future__ import annotations
 
 import asyncio
+import csv
 import json
 from collections import defaultdict
 from datetime import datetime, timezone
@@ -20,7 +21,11 @@ import typer
 from rich.console import Console
 from rich.table import Table
 
+from decimal import Decimal
+
 from pmvl_markets.providers.kalshi import MAX_BATCH_TICKERS, KalshiProvider
+from pmvl_markets.providers.polymarket import PolymarketProvider
+from pmvl_shared.money import ONE
 from pmvl_markets.recording import (
     STRATEGY_VERSION,
     RecorderConfig,
@@ -424,6 +429,117 @@ def sessions(
         f"[bold]{len(dates)}[/bold] calendar date(s): {dates}"
     )
     console.print(f"wrote {manifest_path}")
+
+
+@app.command("polymarket-sets")
+def polymarket_sets(
+    markets: int = typer.Option(2000, help="How many active markets to scan."),
+    chunk: int = typer.Option(200, help="Markets per batch request (400 books)."),
+    ledger: Path = typer.Option(
+        Path("artifacts/forward/edge_watch_polymarket.csv"),
+        help="Rolling ledger, appended to.",
+    ),
+) -> None:
+    """Scan Polymarket complete sets: YES ask + NO ask against the dollar they pay.
+
+    Worth watching separately from Kalshi's version, which cannot dislocate at all.
+    On Kalshi the asks are derived from the bids in one matching engine, so a set
+    under a dollar is a crossed book and the engine removes it on arrival - a zero
+    there is close to a tautology. On Polymarket, YES and NO are separate ERC-1155
+    tokens with separate order books and nothing cross-checks them, so a set under a
+    dollar is *possible*. That makes a zero here a fact about who is arbitraging,
+    not about the plumbing.
+
+    Each batch is one request, so the two sides of a set are always read together.
+    """
+    import httpx
+
+    async def _run() -> dict[str, Any]:
+        provider = PolymarketProvider()
+        try:
+            mkts = [
+                m
+                for m in await provider.list_active_markets(limit=markets)
+                if m.yes_token_id and m.no_token_id
+            ]
+            rows: list[tuple[Decimal, Decimal, str]] = []
+            books_seen = 0
+            async with httpx.AsyncClient(
+                base_url="https://clob.polymarket.com", timeout=60
+            ) as client:
+                for i in range(0, len(mkts), chunk):
+                    batch = mkts[i : i + chunk]
+                    toks = [t for m in batch for t in (m.yes_token_id, m.no_token_id)]
+                    resp = await client.post(
+                        "/books", json=[{"token_id": t} for t in toks]
+                    )
+                    if resp.status_code != 200:
+                        continue
+                    books = {e["asset_id"]: e for e in resp.json()}
+                    books_seen += len(books)
+                    for m in batch:
+                        ya = books.get(m.yes_token_id, {}).get("asks") or []
+                        na = books.get(m.no_token_id, {}).get("asks") or []
+                        if not ya or not na:
+                            continue
+                        y = min((Decimal(l["price"]), Decimal(l["size"])) for l in ya)
+                        n = min((Decimal(l["price"]), Decimal(l["size"])) for l in na)
+                        rows.append(
+                            (ONE - (y[0] + n[0]), min(y[1], n[1]), m.title or "")
+                        )
+            return {"rows": rows, "books": books_seen, "markets": len(mkts)}
+        finally:
+            await provider.aclose()
+
+    body = asyncio.run(_run())
+    rows = body["rows"]
+    if not rows:
+        console.print("[red]no complete set could be priced")
+        raise typer.Exit(1)
+
+    edges = sorted(r[0] for r in rows)
+
+    def at(q: float) -> Decimal:
+        return edges[min(len(edges) - 1, int(q * (len(edges) - 1)))]
+
+    clearing = [r for r in rows if r[0] > 0]
+    best = max(rows, key=lambda r: r[0])
+
+    table = Table(title="polymarket complete sets (YES ask + NO ask vs $1)")
+    for column in ("markets", "sets priced", "p50 edge", "p95 edge", "best",
+                   "clearing $1", "best depth"):
+        table.add_column(column, justify="right")
+    table.add_row(
+        str(body["markets"]), str(len(rows)), str(at(0.50)), str(at(0.95)),
+        str(best[0]), str(len(clearing)), str(best[1]),
+    )
+    console.print(table)
+    if clearing:
+        console.print(
+            f"[bold red]{len(clearing)} complete set(s) priced under a dollar. "
+            "Two independent books can do this; verify before believing it."
+        )
+        for edge, size, title in sorted(clearing, reverse=True)[:5]:
+            console.print(f"   edge {edge} on {size} sets - {title[:60]}")
+    else:
+        console.print(
+            "[green]no complete set priced under a dollar - the same answer so far"
+        )
+
+    ledger.parent.mkdir(parents=True, exist_ok=True)
+    new = not ledger.exists()
+    with ledger.open("a", newline="") as fh:
+        writer = csv.writer(fh)
+        if new:
+            writer.writerow(
+                ["scanned_at", "markets", "sets_priced", "p50_edge", "p95_edge",
+                 "best_edge", "best_depth_sets", "clearing_one_dollar"]
+            )
+        writer.writerow([
+            datetime.now(timezone.utc).isoformat(), body["markets"], len(rows),
+            at(0.50), at(0.95), best[0], best[1], len(clearing),
+        ])
+    console.print(f"appended to {ledger}")
 
 
 @app.command("verify")

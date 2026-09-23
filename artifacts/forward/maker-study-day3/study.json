@@ -573,6 +573,36 @@
         "skew_bound_ms_p95": 820.3,
         "skew_bound_ms_max": 2733.306
       }
+    },
+    {
+      "session": 19,
+      "started_at": "2026-09-23T10:59:39.002896+00:00",
+      "ended_at": "2026-09-23T11:29:54.707781+00:00",
+      "date": "2026-09-23",
+      "events": [
+        "KXWTAMATCH-26SEP22ANDSAS",
+        "KXRAIN-26SEP23",
+        "KXKBOGAME-26SEP230530NCDKTW",
+        "KXMLBTOTAL-26SEP221835TORBAL",
+        "KXKBOGAME-26SEP230530LOTHAN",
+        "KXKBOGAME-26SEP230530KIADOO",
+        "KXWTAMATCH-26SEP22PARFER",
+        "KXMLBSPREAD-26SEP231940MIACHC"
+      ],
+      "stats": {
+        "cycles": 180,
+        "snapshots": 1440,
+        "rejections": 0,
+        "rejection_reasons": {},
+        "trades": 7060,
+        "trade_budget_exhausted_cycles": 180,
+        "trade_polls_at_row_limit": 19,
+        "legs_captured": 9900,
+        "two_sided_legs": 8713,
+        "skew_bound_ms_p50": 322.7,
+        "skew_bound_ms_p95": 730.8,
+        "skew_bound_ms_max": 2425.56
+      }
     }
   ]
 }

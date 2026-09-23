@@ -57,4 +57,10 @@ echo "=== $DAY recorded $(date -u +%FT%TZ) ==="
 .venv/bin/pmvl replay daily-scan "$OUT" || \
     echo "$(date -u +%FT%TZ) $DAY scan failed" >> artifacts/forward/maker-daily/skipped.log
 
+# Polymarket complete sets are the one family where two genuinely independent books
+# price the same dollar, so they can dislocate where Kalshi's cannot. One request per
+# 200 markets, so it is cheap enough to check every day.
+.venv/bin/pmvl record polymarket-sets || \
+    echo "$(date -u +%FT%TZ) $DAY polymarket scan failed" >> artifacts/forward/maker-daily/skipped.log
+
 echo "=== $DAY finished $(date -u +%FT%TZ) ==="
