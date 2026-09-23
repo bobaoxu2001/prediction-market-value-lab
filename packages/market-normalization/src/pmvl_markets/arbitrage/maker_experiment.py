@@ -106,6 +106,11 @@ class QuotePolicy:
     #: Counting them is the easy way to manufacture a fill rate: the default is the
     #: observed batch round trip, which is a *lower* bound on real placement latency.
     placement_latency_ms: int = 300
+    #: The venue's minimum price increment. Kalshi ticks at a cent and Polymarket at a
+    #: tenth of one, so "improve by one tick" means ten times as much on one venue as
+    #: the other. It belongs to the declared policy rather than to a module constant,
+    #: because a constant changed at runtime is a setting nobody can see in the report.
+    tick: Decimal = TICK
     name: str = "join-the-bid"
 
     def as_dict(self) -> dict[str, Any]:
@@ -119,6 +124,7 @@ class QuotePolicy:
             "maker_fee_rate": str(self.maker_fee_rate),
             "taker_fee_rate_on_unwind": str(self.taker_fee_rate),
             "placement_latency_ms": self.placement_latency_ms,
+            "tick": str(self.tick),
         }
 
 
@@ -242,7 +248,7 @@ def _quote_from_book(
     if spread < policy.min_spread:
         return None
 
-    price = best_bid + TICK * policy.improve_ticks
+    price = best_bid + policy.tick * policy.improve_ticks
     if price >= best_ask or price <= ZERO or price >= ONE:
         return None
 

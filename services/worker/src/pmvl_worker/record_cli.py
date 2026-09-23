@@ -11,6 +11,7 @@ from __future__ import annotations
 
 import asyncio
 import csv
+import time
 import json
 from collections import defaultdict
 from datetime import datetime, timezone
@@ -429,6 +430,165 @@ def sessions(
         f"[bold]{len(dates)}[/bold] calendar date(s): {dates}"
     )
     console.print(f"wrote {manifest_path}")
+
+
+@app.command("polymarket-forward")
+def polymarket_forward(
+    markets: int = typer.Option(40, help="Binary markets to record (two tokens each)."),
+    interval: float = typer.Option(15.0, help="Seconds between cycles."),
+    duration: float = typer.Option(1800.0, help="Total seconds to record."),
+    tape_batch: int = typer.Option(5, help="Condition ids per tape request."),
+    out: Path = typer.Option(..., help="Output directory."),
+) -> None:
+    """Record Polymarket books and prints to disk, with tape coverage measured.
+
+    Written after an in-memory capture reported zero maker fills on 538 quotes and
+    could not be re-examined to say whether that was a real zero or a mapping bug.
+    Everything goes to the same append-only, hash-chained logs the Kalshi recorder
+    writes, so the replay tooling runs on it unchanged.
+
+    The tape is polled per market, several condition ids to a request, and coverage is
+    **measured**: a page that comes back full whose oldest print is newer than a
+    market's cursor means prints between the two were never seen. That batch is split
+    and re-polled market by market, and a single market that still shows the gap is
+    counted as lost. Missing prints under-count fills, which pulls a maker result
+    toward zero - the silent bias this project has already found once - so the count
+    is written into the stats rather than left to inference.
+    """
+    import httpx
+
+    from pmvl_markets.recording import AppendOnlyLog
+    from pmvl_markets.recording.polymarket_capture import (
+        books_to_snapshot,
+        trades_to_records,
+    )
+
+    PAGE = 500
+
+    async def _run() -> dict[str, Any]:
+        out.mkdir(parents=True, exist_ok=True)
+        books_log = AppendOnlyLog(out / "snapshots.jsonl")
+        trades_log = AppendOnlyLog(out / "trades.jsonl")
+        stats = {"cycles": 0, "snapshots": 0, "book_failures": 0, "trades": 0,
+                 "tape_requests": 0, "tape_pages_full": 0, "tape_splits": 0,
+                 "markets_with_lost_prints": 0, "skews_ms": []}
+
+        async with httpx.AsyncClient(timeout=60) as client:
+            resp = await client.get(
+                "https://gamma-api.polymarket.com/events",
+                params={"closed": "false", "limit": 200,
+                        "order": "volume24hr", "ascending": "false"},
+            )
+            chosen: list[dict[str, Any]] = []
+            for event in resp.json():
+                for m in event.get("markets") or []:
+                    try:
+                        ids = json.loads(m.get("clobTokenIds") or "[]")
+                    except ValueError:
+                        continue
+                    if len(ids) == 2 and m.get("conditionId") and float(
+                        m.get("volume24hr") or 0
+                    ) > 0:
+                        chosen.append({"condition": m["conditionId"], "yes": ids[0],
+                                       "no": ids[1], "question": m.get("question", "")})
+                if len(chosen) >= markets:
+                    break
+            chosen = chosen[:markets]
+            #: The mapping replay needs and nothing in a quote can supply: which token
+            #: closes which. Written before the first cycle so it cannot drift.
+            (out / "polymarket_markets.json").write_text(json.dumps(
+                {"strategy_version": STRATEGY_VERSION, "markets": chosen}, indent=2) + "\n")
+            tokens = [t for m in chosen for t in (m["yes"], m["no"])]
+            conditions = [m["condition"] for m in chosen]
+            cursor: dict[str, int] = {}
+            seen: set[str] = set()
+
+            async def pull(ids: list[str]) -> list[dict[str, Any]] | None:
+                stats["tape_requests"] += 1
+                r = await client.get(
+                    "https://data-api.polymarket.com/trades",
+                    params={"market": ",".join(ids), "limit": PAGE, "takerOnly": "true"},
+                )
+                rows = r.json() if r.status_code == 200 else None
+                return rows if isinstance(rows, list) else None
+
+            def gap(rows: list[dict[str, Any]], ids: list[str]) -> bool:
+                if len(rows) < PAGE:
+                    return False
+                oldest = min(int(x["timestamp"]) for x in rows)
+                return any(oldest > cursor[i] for i in ids if i in cursor)
+
+            def keep(rows: list[dict[str, Any]]) -> None:
+                for rec in trades_to_records(rows):
+                    if rec.trade_id in seen:
+                        continue
+                    seen.add(rec.trade_id)
+                    trades_log.append(rec.as_dict())
+                    stats["trades"] += 1
+                for x in rows:
+                    cid = x.get("conditionId")
+                    if cid:
+                        cursor[cid] = max(cursor.get(cid, 0), int(x["timestamp"]))
+
+            deadline = time.time() + duration
+            seq = 0
+            while time.time() < deadline:
+                started = time.time()
+                sent = datetime.now(timezone.utc)
+                r = await client.post(
+                    "https://clob.polymarket.com/books",
+                    json=[{"token_id": t} for t in tokens],
+                )
+                got = datetime.now(timezone.utc)
+                if r.status_code == 200:
+                    snap = books_to_snapshot(r.json(), event_ticker="POLYMARKET",
+                                             sent_at=sent, received_at=got,
+                                             sequence=seq, requested=tokens)
+                    books_log.append(snap.as_dict())
+                    stats["snapshots"] += 1
+                    stats["skews_ms"].append(float(snap.skew_bound_ms))
+                    seq += 1
+                else:
+                    stats["book_failures"] += 1
+
+                for i in range(0, len(conditions), tape_batch):
+                    batch = conditions[i : i + tape_batch]
+                    rows = await pull(batch)
+                    if rows is None:
+                        continue
+                    if len(rows) >= PAGE:
+                        stats["tape_pages_full"] += 1
+                    if gap(rows, batch) and len(batch) > 1:
+                        stats["tape_splits"] += 1
+                        for cid in batch:
+                            single = await pull([cid])
+                            if single is None:
+                                continue
+                            if gap(single, [cid]):
+                                stats["markets_with_lost_prints"] += 1
+                            keep(single)
+                    else:
+                        if gap(rows, batch):
+                            stats["markets_with_lost_prints"] += 1
+                        keep(rows)
+
+                stats["cycles"] += 1
+                await asyncio.sleep(max(0.0, interval - (time.time() - started)))
+        skews = sorted(stats.pop("skews_ms"))
+        stats["skew_bound_ms_p50"] = skews[len(skews) // 2] if skews else None
+        stats["skew_bound_ms_max"] = skews[-1] if skews else None
+        return stats
+
+    body = asyncio.run(_run())
+    console.print_json(data=body)
+    (out / "recording_summary.json").write_text(
+        json.dumps({"strategy_version": STRATEGY_VERSION, "venue": "polymarket", **body},
+                   indent=2) + "\n")
+    for name in ("snapshots.jsonl", "trades.jsonl"):
+        path = out / name
+        if path.exists():
+            ok, message = verify_log(path)
+            console.print(f"{'[green]' if ok else '[red]'}{name}: {message}")
 
 
 @app.command("burst")

@@ -273,6 +273,79 @@ def _run_study(directory: Path, policies, *, size, lifetime, latency_ms):
     return pool_sessions(results, planned_sessions=manifest["planned_sessions"]), versions.pop()
 
 
+@app.command("polymarket-maker")
+def polymarket_maker(
+    directory: Path = typer.Argument(..., help="Directory from `pmvl record polymarket-forward`."),
+    size: int = typer.Option(50, help="Contracts per quote."),
+    lifetime: int = typer.Option(60, help="Seconds a quote rests before cancellation."),
+    latency_ms: int = typer.Option(300, help="Delay before the order rests on the book."),
+    min_spread: float = typer.Option(0.002, help="Minimum spread to quote into (2 ticks)."),
+    out: Path = typer.Option(None, help="Where to write the report."),
+) -> None:
+    """The maker experiment on Polymarket: zero fees, 0.001 ticks, complement hedge.
+
+    Each token is its own single-sided market, so every quote buys a token and the
+    closing leg is the *complement* token - both together settle for exactly $1. Two
+    declared policies, join and improve, and both are reported: every token in the
+    recording is quoted, so between them they cover buying YES and buying NO.
+
+    Fees are zero because the venue charges none on 999 of 1,000 markets. That is a
+    measured fact about the venue, not an assumption made to flatter the result, and
+    it is the whole reason this experiment is worth running separately.
+    """
+    recording, version = _load(directory)
+    mapping = json.loads((directory / "polymarket_markets.json").read_text())
+    complement: dict[str, str] = {}
+    for m in mapping["markets"]:
+        complement[m["yes"]] = m["no"]
+        complement[m["no"]] = m["yes"]
+
+    def hedge_for(quote):
+        other = complement.get(quote.market)
+        return (other, Side.YES) if other else None
+
+    table = Table(title=f"polymarket maker (v{version}, zero fees)")
+    for column in ("policy", "quotes", "fills", "fill rate", "completion",
+                   "markout 60s | fill", "hedge cost", "hedged pair", "E[PnL]/quote",
+                   "95% CI"):
+        table.add_column(column, justify="right" if column != "policy" else "left")
+
+    reports = {}
+    for name, ticks in (("join", 0), ("improve", 1)):
+        policy = QuotePolicy(
+            side=Side.YES, improve_ticks=ticks, size=Decimal(size),
+            lifetime_seconds=lifetime, placement_latency_ms=latency_ms,
+            min_spread=Decimal(str(min_spread)),
+            maker_fee_rate=Decimal("0"), taker_fee_rate=Decimal("0"),
+            #: Polymarket ticks at 0.001, not the 0.01 the Kalshi default assumes.
+            tick=Decimal("0.001"),
+            name=f"poly-{name}",
+        )
+        report = run_experiment(
+            recording.snapshots, recording.trades, policy,
+            strategy_version=version, hedge_for=hedge_for,
+        )
+        body = report.as_dict()
+        reports[policy.name] = body
+        _write_quote_ledger(directory / f"maker_quote_ledger_{policy.name}.csv", report)
+        row = body["estimators"][FillEstimator.QUEUE_MODEL.value]
+        ci = row["expectancy_per_quote_ci95"]
+        table.add_row(
+            policy.name, str(body["quotes_placed"]), str(row["fills"]),
+            row["fill_rate"], row["completion_rate"],
+            str(row["mean_markout_given_fill"]["60"]),
+            str(row["mean_hedge_cost_given_fill"]),
+            str(row["hedged_pair_pnl_per_contract"]),
+            row["expectancy_per_quote_usd"]["60"],
+            f"[{ci[0]}, {ci[1]}]" if ci else "-",
+        )
+    console.print(table)
+    target = out or (directory / "polymarket_maker_report.json")
+    target.write_text(json.dumps({"venue": "polymarket", "fees": "zero (measured)",
+                                  "reports": reports}, indent=2) + "\n")
+    console.print(f"wrote {target}")
+
+
 @app.command("daily-scan")
 def daily_scan(
     directory: Path = typer.Argument(..., help="A day directory written by `pmvl record sessions`."),

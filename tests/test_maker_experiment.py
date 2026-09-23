@@ -546,3 +546,19 @@ def test_a_fractional_fill_is_carried_as_a_fraction_not_rounded():
     assert out.filled_size[FillEstimator.QUEUE_MODEL] == Decimal("13.99")
     #: and the inadmissible estimator claims all fifty from fourteen that traded
     assert out.filled_size[FillEstimator.TOUCHED] == Decimal("50")
+
+
+def test_the_tick_is_part_of_the_declared_policy():
+    """Improve-by-one means a cent on Kalshi and a tenth of one on Polymarket.
+
+    It lives on the policy so it appears in the report. A module constant swapped at
+    runtime would change the experiment without anything recording that it had.
+    """
+    book = _book(yes_bid="0.400", yes_ask="0.450")
+    kalshi = generate_quotes([_snap(0, {"M": book})], QuotePolicy(improve_ticks=1))
+    poly = generate_quotes(
+        [_snap(0, {"M": book})], QuotePolicy(improve_ticks=1, tick=Decimal("0.001"))
+    )
+    assert kalshi[0].price == Decimal("0.41")
+    assert poly[0].price == Decimal("0.401")
+    assert QuotePolicy(tick=Decimal("0.001")).as_dict()["tick"] == "0.001"
