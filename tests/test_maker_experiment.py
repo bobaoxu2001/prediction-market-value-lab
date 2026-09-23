@@ -562,3 +562,29 @@ def test_the_tick_is_part_of_the_declared_policy():
     assert kalshi[0].price == Decimal("0.41")
     assert poly[0].price == Decimal("0.401")
     assert QuotePolicy(tick=Decimal("0.001")).as_dict()["tick"] == "0.001"
+
+
+def test_a_quote_the_tape_does_not_yet_cover_is_excluded_not_scored_as_unfilled():
+    """A print that has not been indexed yet is not a quote nobody traded against.
+
+    Polymarket's trade feed indexes in batches - its newest timestamp sits frozen and
+    ages between them - so the last minutes of any recording have prints that exist
+    but have not arrived. Scoring those quotes would book every missing fill as a
+    zero, which is a silent pull toward "the maker earns nothing".
+    """
+    books = {"M": _book()}
+    snaps = [_snap(i * 60, books) for i in range(6)]          # quotes at 0..300s
+    horizon = T0 + timedelta(seconds=150)                       # tape complete to 150s
+    report = run_experiment(snaps, [], QuotePolicy(), strategy_version="t",
+                            tape_complete_through=horizon)
+    assert report.quotes_placed == 2          # windows ending by 150s: [0,60] and [60,120]
+    assert report.quotes_excluded_tape_incomplete == 4
+    assert report.as_dict()["quotes_excluded_tape_incomplete"] == 4
+
+
+def test_without_a_horizon_nothing_is_excluded():
+    books = {"M": _book()}
+    snaps = [_snap(i * 60, books) for i in range(6)]
+    report = run_experiment(snaps, [], QuotePolicy(), strategy_version="t")
+    assert report.quotes_excluded_tape_incomplete == 0
+    assert report.quotes_placed == 6

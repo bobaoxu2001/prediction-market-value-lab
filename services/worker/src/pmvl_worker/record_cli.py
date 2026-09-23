@@ -591,6 +591,69 @@ def polymarket_forward(
             console.print(f"{'[green]' if ok else '[red]'}{name}: {message}")
 
 
+@app.command("polymarket-drain")
+def polymarket_drain(
+    directory: Path = typer.Argument(..., help="A polymarket-forward recording."),
+    seconds: float = typer.Option(360.0, help="How long to keep polling the tape."),
+    interval: float = typer.Option(20.0, help="Seconds between tape polls."),
+    tape_batch: int = typer.Option(5, help="Condition ids per request."),
+) -> None:
+    """Keep polling the tape after the books stop, so batched prints arrive.
+
+    Polymarket's trade feed is not real time. Its newest timestamp sits frozen and
+    ages between indexing batches - measured at three minutes and more platform-wide -
+    so the prints from a recording's final minutes exist but have not been published
+    when the recorder stops. Without a drain those quotes look unfilled.
+
+    Appends to the recording's existing tape log and continues its hash chain, and
+    reads the prints already there first so nothing is written twice.
+    """
+    import httpx
+
+    from pmvl_markets.recording import AppendOnlyLog, read_log
+    from pmvl_markets.recording.polymarket_capture import trades_to_records
+
+    mapping = json.loads((directory / "polymarket_markets.json").read_text())
+    conditions = [m["condition"] for m in mapping["markets"]]
+    log_path = directory / "trades.jsonl"
+    seen = {e.body["trade_id"] for e in read_log(log_path)} if log_path.exists() else set()
+    tape = AppendOnlyLog(log_path)
+
+    async def _run() -> dict[str, Any]:
+        added = 0
+        high_water = 0
+        async with httpx.AsyncClient(timeout=60) as client:
+            deadline = time.time() + seconds
+            while time.time() < deadline:
+                started = time.time()
+                for i in range(0, len(conditions), tape_batch):
+                    r = await client.get(
+                        "https://data-api.polymarket.com/trades",
+                        params={"market": ",".join(conditions[i : i + tape_batch]),
+                                "limit": 500, "takerOnly": "true"},
+                    )
+                    rows = r.json() if r.status_code == 200 else []
+                    if not isinstance(rows, list):
+                        continue
+                    for row in rows:
+                        high_water = max(high_water, int(row.get("timestamp") or 0))
+                    for rec in trades_to_records(rows):
+                        if rec.trade_id not in seen:
+                            seen.add(rec.trade_id)
+                            tape.append(rec.as_dict())
+                            added += 1
+                await asyncio.sleep(max(0.0, interval - (time.time() - started)))
+        return {"prints_added": added, "tape_high_water": high_water}
+
+    body = asyncio.run(_run())
+    hw = datetime.fromtimestamp(body["tape_high_water"], tz=timezone.utc) if body[
+        "tape_high_water"] else None
+    console.print(f"drained {body['prints_added']} prints; tape now indexed through "
+                  f"{hw.isoformat() if hw else 'unknown'}")
+    ok, message = verify_log(log_path)
+    console.print(f"{'[green]' if ok else '[red]'}trades.jsonl: {message}")
+
+
 @app.command("burst")
 def burst(
     seconds: float = typer.Option(60.0, help="How long to sweep for."),

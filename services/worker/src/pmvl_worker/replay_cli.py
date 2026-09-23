@@ -304,8 +304,31 @@ def polymarket_maker(
         other = complement.get(quote.market)
         return (other, Side.YES) if other else None
 
+    from pmvl_markets.recording.polymarket_capture import with_mint_fills
+
+    #: Most fills on these markets are mints: a buyer of the complement crossing a
+    #: resting bid. The tape shows only the taker's side, so those are added back here.
+    tape = with_mint_fills(recording.trades, complement)
+    console.print(
+        f"{len(recording.trades)} prints on the tape, {len(tape) - len(recording.trades)} "
+        "mint fills inferred on the complement token"
+    )
+
+    #: The tape is only known complete up to the newest print actually recorded.
+    #: Polymarket indexes trades in batches, so a quote whose window runs past this
+    #: point may have fills that were never published before recording stopped.
+    horizon = max((t.traded_at for t in recording.trades), default=None)
+    last_book = max((s.response_received_at for s in recording.snapshots), default=None)
+    if horizon and last_book:
+        gap = (last_book - horizon).total_seconds()
+        console.print(
+            f"tape complete through {horizon.isoformat()} - "
+            + (f"[yellow]{gap:.0f}s short of the last book; quotes past it are excluded"
+               if gap > 0 else "[green]covers every book in the recording")
+        )
+
     table = Table(title=f"polymarket maker (v{version}, zero fees)")
-    for column in ("policy", "quotes", "fills", "fill rate", "completion",
+    for column in ("policy", "quotes", "excluded", "fills", "fill rate", "completion",
                    "markout 60s | fill", "hedge cost", "hedged pair", "E[PnL]/quote",
                    "95% CI"):
         table.add_column(column, justify="right" if column != "policy" else "left")
@@ -322,8 +345,9 @@ def polymarket_maker(
             name=f"poly-{name}",
         )
         report = run_experiment(
-            recording.snapshots, recording.trades, policy,
+            recording.snapshots, tape, policy,
             strategy_version=version, hedge_for=hedge_for,
+            tape_complete_through=horizon,
         )
         body = report.as_dict()
         reports[policy.name] = body
@@ -331,7 +355,8 @@ def polymarket_maker(
         row = body["estimators"][FillEstimator.QUEUE_MODEL.value]
         ci = row["expectancy_per_quote_ci95"]
         table.add_row(
-            policy.name, str(body["quotes_placed"]), str(row["fills"]),
+            policy.name, str(body["quotes_placed"]),
+            str(body["quotes_excluded_tape_incomplete"]), str(row["fills"]),
             row["fill_rate"], row["completion_rate"],
             str(row["mean_markout_given_fill"]["60"]),
             str(row["mean_hedge_cost_given_fill"]),

@@ -35,6 +35,7 @@ __all__ = [
     "POLYMARKET_BOOKS_PATH",
     "books_to_snapshot",
     "trades_to_records",
+    "with_mint_fills",
 ]
 
 #: The one POST path the market-data client is allowed to use.
@@ -122,6 +123,52 @@ def trades_to_records(rows: Sequence[dict[str, Any]]) -> list[TradeRecord]:
                 yes_price=Decimal(str(price)),
                 size=Decimal(str(size)),
                 taker_side="no" if side == "SELL" else "yes",
+                is_block_trade=False,
+            )
+        )
+    return out
+
+
+def with_mint_fills(
+    trades: Sequence[TradeRecord], complement: dict[str, str]
+) -> list[TradeRecord]:
+    """Add the fills that minting produced on the other token, which the tape omits.
+
+    Polymarket's matching engine does not only cross a buyer with a seller of the same
+    token. It also crosses a buyer of YES with a buyer of NO whose prices sum to at
+    least a dollar, minting a fresh pair - and on the markets measured, **most**
+    transactions are mints or merges rather than direct trades (116 of 159 in one,
+    146 of 184 in another). A resting bid on token T is therefore filled, most often,
+    by a taker *buying the complement*.
+
+    The taker-only tape shows that as a BUY on the complement token and shows nothing
+    on T, because the maker's side is not a taker print. Read naively, a bid on T
+    never fills. So each taker BUY on complement(T) at price ``p`` is also expressed as
+    what it is from T's side: a sale of T at ``1 - p``, which is exactly the coordinate
+    transform Kalshi needs between a YES ask and a NO bid.
+
+    Done at replay rather than at recording. The log holds what the venue published;
+    this is an inference about what that implies, and it belongs to the analysis
+    version, not to the evidence.
+
+    Merges - two sellers - fill resting *offers*, not bids, and the experiment only
+    rests bids, so they add nothing here.
+    """
+    out = list(trades)
+    for trade in trades:
+        if trade.taker_side != "yes":
+            continue
+        other = complement.get(trade.platform_market_id)
+        if other is None:
+            continue
+        out.append(
+            TradeRecord(
+                platform_market_id=other,
+                trade_id=f"{trade.trade_id}-mint",
+                traded_at=trade.traded_at,
+                yes_price=Decimal("1") - trade.yes_price,
+                size=trade.size,
+                taker_side="no",
                 is_block_trade=False,
             )
         )

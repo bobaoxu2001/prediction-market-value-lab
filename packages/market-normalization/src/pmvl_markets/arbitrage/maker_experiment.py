@@ -511,6 +511,10 @@ class MakerExperimentReport:
     policy: QuotePolicy
     strategy_version: str
     quotes_placed: int = 0
+    #: Quotes dropped because the tape was not known complete through their window.
+    #: Counted, never silently discarded - a large number here means the recording
+    #: ended before its prints were indexed, not that the market was quiet.
+    quotes_excluded_tape_incomplete: int = 0
     markets: int = 0
     event_days: int = 0
     #: Calendar dates covered. Eight events recorded in one afternoon are eight
@@ -653,6 +657,7 @@ class MakerExperimentReport:
             "analysis_version": ANALYSIS_VERSION,
             "policy": self.policy.as_dict(),
             "quotes_placed": self.quotes_placed,
+            "quotes_excluded_tape_incomplete": self.quotes_excluded_tape_incomplete,
             "markets": self.markets,
             "event_days": self.event_days,
             "distinct_dates": self.distinct_dates,
@@ -742,6 +747,7 @@ def run_experiment(
     *,
     strategy_version: str,
     hedge_for: "Callable[[MakerQuote], tuple[str, Side] | None] | None" = None,
+    tape_complete_through: datetime | None = None,
 ) -> MakerExperimentReport:
     """Place every quote the policy dictates and score all of them.
 
@@ -752,6 +758,15 @@ def run_experiment(
     itself says which one that is - the caller holds that mapping.
     """
     quotes = generate_quotes(snapshots, policy)
+    excluded = 0
+    if tape_complete_through is not None:
+        #: A quote whose window runs past the point the tape is known complete cannot
+        #: be scored: its fills may simply not have been indexed yet, and an unfilled
+        #: quote scores exactly zero. Keeping it would book a missing print as a quote
+        #: nobody traded against - a silent pull toward zero.
+        kept = [q for q in quotes if q.expires_at <= tape_complete_through]
+        excluded = len(quotes) - len(kept)
+        quotes = kept
     index = ReplayIndex(trades, snapshots)
     outcomes = [
         evaluate_quote(
@@ -766,6 +781,7 @@ def run_experiment(
     return MakerExperimentReport(
         policy=policy,
         strategy_version=strategy_version,
+        quotes_excluded_tape_incomplete=excluded,
         quotes_placed=len(quotes),
         markets=len({q.market for q in quotes}),
         event_days=len(event_days),

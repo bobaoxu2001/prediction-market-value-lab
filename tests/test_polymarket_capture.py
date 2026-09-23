@@ -102,3 +102,88 @@ def test_timestamps_are_seconds_not_milliseconds():
     """Reading this feed's seconds as milliseconds puts every print in 1970."""
     rec = trades_to_records([_row("SELL")])[0]
     assert rec.traded_at.year == 2026
+
+
+# ------------------------------------------------------------------ minting
+from pmvl_markets.arbitrage.maker_experiment import (  # noqa: E402
+    FillEstimator,
+    MakerQuote,
+    QuotePolicy,
+    evaluate_quote,
+)
+from pmvl_markets.recording.polymarket_capture import with_mint_fills  # noqa: E402
+
+COMPLEMENT = {"YES_T": "NO_T", "NO_T": "YES_T"}
+
+
+def _rec(token, side, price, size="125"):
+    return trades_to_records([{"asset": token, "side": side, "price": price,
+                               "size": size, "timestamp": 1790162575,
+                               "transactionHash": "0xmint"}])[0]
+
+
+def test_a_complement_buy_is_a_sale_of_this_token_at_one_minus_the_price():
+    """Taken from a real transaction: YES BUY 0.996 x 125 and NO BUY 0.004 x 125.
+
+    Two buyers, prices summing to exactly a dollar, one mint. The tape only shows
+    the taker; from the NO token's side that YES purchase is a sale of NO at 0.004.
+    """
+    tape = with_mint_fills([_rec("YES_T", "BUY", "0.996")], COMPLEMENT)
+    mint = [t for t in tape if t.trade_id.endswith("-mint")]
+    assert len(mint) == 1
+    assert mint[0].platform_market_id == "NO_T"
+    assert mint[0].yes_price == Decimal("0.004")
+    assert mint[0].taker_side == "no"
+    assert mint[0].size == Decimal("125")
+
+
+def test_a_taker_sale_does_not_mint_anything():
+    """Two sellers merge; that fills resting offers, and the experiment rests bids."""
+    tape = with_mint_fills([_rec("YES_T", "SELL", "0.99")], COMPLEMENT)
+    assert not any(t.trade_id.endswith("-mint") for t in tape)
+
+
+def test_the_raw_print_is_kept_alongside_the_inferred_one():
+    """The inference adds; it never replaces what the venue published."""
+    raw = _rec("YES_T", "BUY", "0.996")
+    tape = with_mint_fills([raw], COMPLEMENT)
+    assert raw in tape
+    assert len(tape) == 2
+
+
+def test_a_token_with_no_known_complement_produces_no_inference():
+    tape = with_mint_fills([_rec("ORPHAN", "BUY", "0.5")], COMPLEMENT)
+    assert len(tape) == 1
+
+
+def test_without_minting_a_resting_no_bid_is_never_filled_by_the_real_trade():
+    """The bug this closes, reproduced end to end.
+
+    A bid on NO at 0.01 sits in a market where a taker buys YES at 0.99 - which the
+    engine fills by minting against that very bid. Read per token, the NO bid sees no
+    print at all and scores as unfilled. With mints inferred, it is filled.
+    """
+    from datetime import timedelta
+
+    placed = datetime(2026, 9, 23, 12, 0, 0, tzinfo=UTC)
+    quote = MakerQuote(
+        market="NO_T", event_ticker="EV", side=Side.YES, price=Decimal("0.01"),
+        size=Decimal("50"), placed_at=placed, expires_at=placed + timedelta(seconds=60),
+        queue_ahead=Decimal("0"), spread_at_placement=Decimal("0.02"),
+        snapshot_sequence=0,
+    )
+    buy_yes = trades_to_records([{"asset": "YES_T", "side": "BUY", "price": "0.99",
+                                  "size": "80", "timestamp": int(placed.timestamp()) + 10,
+                                  "transactionHash": "0xm"}])
+    book = books_to_snapshot(
+        [{"asset_id": "NO_T", "bids": [{"price": "0.01", "size": "10"}],
+          "asks": [{"price": "0.03", "size": "10"}]}],
+        event_ticker="EV", sent_at=placed, received_at=placed,
+    )
+    policy = QuotePolicy(tick=Decimal("0.001"))
+
+    naive = evaluate_quote(quote, buy_yes, [book], policy=policy)
+    assert naive.filled_size[FillEstimator.QUEUE_MODEL] == Decimal("0")
+
+    minted = evaluate_quote(quote, with_mint_fills(buy_yes, COMPLEMENT), [book], policy=policy)
+    assert minted.filled_size[FillEstimator.QUEUE_MODEL] == Decimal("50")

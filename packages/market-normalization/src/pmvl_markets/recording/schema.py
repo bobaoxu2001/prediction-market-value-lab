@@ -69,7 +69,12 @@ STRATEGY_VERSION = "1.1.0"
 #:         `[X > 0]` held for all 351 pairs - and reported a 78c edge on rain in
 #:         Dallas settling rain in Milwaukee. Results produced under 1.0.0 for the
 #:         implication structure are withdrawn.
-ANALYSIS_VERSION = "1.1.0"
+#: 1.2.0 - Polymarket fills include mints. A taker buying the complement token at p
+#:         fills a resting bid on this token at 1 - p; the taker-only tape shows
+#:         only the complement buy, so reading it per token missed most fills. No
+#:         Polymarket maker result was published under 1.1.0 - the one run was held
+#:         in memory, could not be replayed, and was discarded.
+ANALYSIS_VERSION = "1.2.0"
 
 #: The venue's batch orderbook endpoint rejects more than this many tickers per
 #: request (observed: 100 accepted, 188 rejected with a ``max`` tag validation error).
