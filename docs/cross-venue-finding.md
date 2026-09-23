@@ -52,16 +52,57 @@ the fee barrier, and it now carries *two* venues' sequencing risk rather than on
 is worse than the single-venue case already shown to be fatal. But it is the first place
 where the gap is measured in single cents rather than tens of them.
 
-## Before any of this could be traded, three things are unproven
+## The void asymmetry: checked, and it is worse than the fee gap
 
-1. **Void asymmetry.** Kalshi settles the game "originally scheduled" for a date;
-   Polymarket's wording differs. A postponement may void one leg and not the other,
-   which turns a $1 floor into an open position. `payoff.py` models exactly this and it
-   has not been run against these pairs.
-2. **The team map is hand-built.** `sox -> CWS` would wrongly match the Red Sox. A
+The two venues publish incompatible rules for a game that does not finish on schedule.
+
+> **Kalshi** (`BASEBALLTOTALS` contract terms): "If `<game>` is suspended or postponed
+> and not resumed within 48 hours of the original scheduled start time, all Contracts
+> settle to the last fair market price prior to suspension unless the outcome has been
+> unequivocally determined"
+
+> **Polymarket** (market description): "If the game is postponed, this market will
+> remain open until the game has been completed. If the game is canceled entirely, with
+> no make-up game, this market will resolve 50-50."
+
+| event | Kalshi | Polymarket |
+|---|---|---|
+| postponed, resumed within 48h | actual result | actual result |
+| **postponed beyond 48h** | **settles at the last quote** | **stays open until played** |
+| cancelled, no make-up | → last quote | **50-50** |
+
+One leg cashes out at whatever the book happened to say; the other stays open for as
+long as it takes. The holder is left with a directional position on a pair bought
+precisely so they would not have one - and the capital behind the open leg stays locked
+the whole time.
+
+Neither behaviour existed in the payoff model, because neither is a refund, a coin flip
+or a zero. Both are now first-class: `VoidPayout.MARKET_PRICE` for a payout that is a
+real number nobody holds at trade time, and `VoidPayout.REMAINS_OPEN` for a leg that
+does not settle on its partner's timetable. Both score at zero for a floor and both flag
+the report, because a structure whose payoff depends on a future quote does not have a
+floor.
+
+Run against the pair that looked +1c:
+
+| scenario | min payout | cost | worst case |
+|---|---|---|---|
+| if no void were possible | $100.00 | $102.69 | −$2.69 |
+| **under the real published rules** | **$0.00** | $102.69 | **−$102.69** |
+| if both venues merely refunded | $42.00 | $102.69 | −$60.69 |
+
+So this was never an arbitrage that missed by a cent. Its worst case is the **entire
+stake**, and the fee gap was the less important of the two reasons not to trade it.
+
+## Still unproven
+
+1. **The team map is hand-built.** `sox -> CWS` would wrongly match the Red Sox. A
    matcher that is wrong about which game it is has already produced one fake +29c edge
    in this session.
-3. **Polymarket fees and settlement timing** are not in the numbers above.
+2. **Polymarket fees and settlement timing** are not in the numbers above.
+3. **How often MLB games are postponed past 48 hours** is not measured here. The
+   structure is unfloored whatever the frequency; the frequency would only tell you how
+   often the floor is tested.
 
 ## The bug this session produced, and what caught it
 

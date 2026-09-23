@@ -66,6 +66,17 @@ class VoidPayout(StrEnum):
     REFUND_TOTAL = "refund_total"
     HALF = "half"                    # resolved 50-50; both sides receive $0.50
     ZERO = "zero"                    # the stake is lost
+    #: Settles at whatever the book happened to say. Kalshi's baseball terms do this
+    #: for a game suspended or postponed past 48 hours: "all Contracts settle to the
+    #: last fair market price prior to suspension". The payout is a real number in
+    #: [0, 1] that nobody knows when the position is opened, so a floor has to score
+    #: it at zero - it is not a refund, and it is not a coin flip either.
+    MARKET_PRICE = "market_price"
+    #: Does not settle at all on the other leg's timetable. Polymarket's sports
+    #: markets "remain open until the game has been completed", which can be weeks.
+    #: A leg that has not settled contributes nothing to a floor measured when its
+    #: partner settles, and the capital behind it stays locked.
+    REMAINS_OPEN = "remains_open"
     UNKNOWN = "unknown"              # not published; bounded at $0 when evaluating
 
 
@@ -702,5 +713,16 @@ def _leg_unit_payout(
         return _HALF, False
     if rule.void_payout is VoidPayout.ZERO:
         return _NONE, False
+    if rule.void_payout is VoidPayout.MARKET_PRICE:
+        # Settles at whatever the book said. That is a real number, but not one
+        # anybody holds at the time the position is opened, so a floor scores it at
+        # zero - and flags itself, because a structure whose payoff depends on a
+        # future quote is not a structure with a floor.
+        return _NONE, True
+    if rule.void_payout is VoidPayout.REMAINS_OPEN:
+        # The leg has not settled when its partner has. It contributes nothing to a
+        # floor measured at that moment, and the position it leaves behind is
+        # directional - which is the opposite of what the pair was bought for.
+        return _NONE, True
     # UNKNOWN: bound at the worst it can be, and say so.
     return _NONE, True
