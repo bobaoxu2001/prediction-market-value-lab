@@ -60,6 +60,10 @@ echo "=== $DAY recorded $(date -u +%FT%TZ) ==="
 # Polymarket complete sets are the one family where two genuinely independent books
 # price the same dollar, so they can dislocate where Kalshi's cannot. One request per
 # 200 markets, so it is cheap enough to check every day.
+# A minute at ~2 Hz, to probe the resolution the 10-second cadence cannot reach.
+.venv/bin/pmvl record burst --seconds 60 || \
+    echo "$(date -u +%FT%TZ) $DAY burst failed" >> artifacts/forward/maker-daily/skipped.log
+
 .venv/bin/pmvl record polymarket-sets || \
     echo "$(date -u +%FT%TZ) $DAY polymarket scan failed" >> artifacts/forward/maker-daily/skipped.log
 

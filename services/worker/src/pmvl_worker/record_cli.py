@@ -431,6 +431,191 @@ def sessions(
     console.print(f"wrote {manifest_path}")
 
 
+@app.command("burst")
+def burst(
+    seconds: float = typer.Option(60.0, help="How long to sweep for."),
+    tickers: int = typer.Option(100, help="Markets per sweep (one request)."),
+    universe: Path = typer.Option(
+        Path("artifacts/forward/universe-study-frozen.json"),
+        help="Frozen census whose series supply the candidates.",
+    ),
+    ledger: Path = typer.Option(
+        Path("artifacts/forward/edge_watch_burst.csv"), help="Rolling ledger."
+    ),
+) -> None:
+    """Sweep one batch of books as fast as the limiter allows, to catch a brief gap.
+
+    The twenty-session study samples every ten seconds, so a dislocation lasting a
+    fraction of a second has only a small chance of landing in any given window.
+    That is the largest hole in "no route cleared a cent in 787,000 observations",
+    and this is the cheap way to probe it: the batch endpoint answers in about half a
+    second, so one request per round trip gives roughly fourteen to sixteen times the
+    temporal resolution without needing the authenticated websocket.
+
+    It measures the two Kalshi structures at that rate - the complete set inside one
+    market, which the matching engine should never let cross, and proven implication
+    pairs across rungs, which nothing prevents from crossing.
+    """
+    import statistics
+    import time as _time
+    from collections import defaultdict
+
+    from pmvl_markets.arbitrage.implication import (
+        ProofStatus,
+        StrikeContract,
+        prove_implication,
+    )
+    from pmvl_shared.enums import Side
+
+    def _strike(market: Any):
+        comparator = (getattr(market, "strike_type", None) or "").lower()
+        if comparator in {"greater", "greater_or_equal"}:
+            value = getattr(market, "floor_strike", None)
+        elif comparator in {"less", "less_or_equal"}:
+            value = getattr(market, "cap_strike", None)
+        else:
+            return None
+        return (comparator, value) if value is not None else None
+
+    async def _run() -> dict[str, Any]:
+        provider = KalshiProvider()
+        try:
+            series = json.loads(universe.read_text()).get("series") or []
+            by_event: dict[str, list[Any]] = defaultdict(list)
+            for ticker in series:
+                data = await provider._client.get_json(
+                    "/markets",
+                    params={"status": "open", "series_ticker": ticker, "limit": 1000},
+                    use_cache=False,
+                    allow_404=True,
+                )
+                for row in (data or {}).get("markets") or []:
+                    market = provider._normalize_market(row)
+                    if market is not None and _strike(market):
+                        by_event[market.platform_event_id].append(market)
+
+            #: Whole ladders, widest first, so every rung of a pair is in one request.
+            chosen: list[Any] = []
+            for _event, members in sorted(
+                by_event.items(), key=lambda kv: -len(kv[1])
+            ):
+                if not 2 <= len(members) <= MAX_BATCH_TICKERS:
+                    continue
+                if len(chosen) + len(members) > tickers:
+                    continue
+                chosen.extend(members)
+            lookup = {m.platform_market_id: m for m in chosen}
+            keys = list(lookup)
+            if not keys:
+                return {"error": "no ladder in the frozen universe is currently open"}
+
+            sweeps = 0
+            rtts: list[float] = []
+            set_sums: list[Decimal] = []
+            pair_edges: list[Decimal] = []
+            set_crossed = 0
+            pair_clearing = 0
+            deadline = _time.time() + seconds
+            while _time.time() < deadline:
+                started = _time.time()
+                capture = await provider.get_orderbooks_synchronized(keys)
+                rtts.append(_time.time() - started)
+                if not capture.ok:
+                    continue
+                sweeps += 1
+                per_event: dict[str, list[StrikeContract]] = defaultdict(list)
+                for key, book in capture.books.items():
+                    market = lookup.get(key)
+                    if market is None:
+                        continue
+                    yes_ask, no_ask = book.best_ask(Side.YES), book.best_ask(Side.NO)
+                    if yes_ask is not None and no_ask is not None:
+                        total = yes_ask + no_ask
+                        set_sums.append(total)
+                        if total < ONE:
+                            set_crossed += 1
+                    strike = _strike(market)
+                    if strike:
+                        per_event[market.platform_event_id].append(
+                            StrikeContract(
+                                market=market, book=book,
+                                comparator=strike[0], threshold=strike[1],
+                            )
+                        )
+                for rungs in per_event.values():
+                    rungs.sort(key=lambda c: c.threshold)
+                    for i, weaker in enumerate(rungs):
+                        for stronger in rungs[i + 1 :]:
+                            if prove_implication(stronger, weaker).status is not ProofStatus.PROVEN:
+                                continue
+                            yes_ask = weaker.book.best_ask(Side.YES)
+                            no_ask = stronger.book.best_ask(Side.NO)
+                            if yes_ask is None or no_ask is None:
+                                continue
+                            edge = ONE - (yes_ask + no_ask)
+                            pair_edges.append(edge)
+                            if edge > 0:
+                                pair_clearing += 1
+            return {
+                "sweeps": sweeps, "markets": len(keys),
+                "rtt_p50_ms": statistics.median(rtts) * 1000 if rtts else 0,
+                "hz": sweeps / seconds if seconds else 0,
+                "set_observations": len(set_sums),
+                "set_min": min(set_sums) if set_sums else None,
+                "set_crossed": set_crossed,
+                "pair_observations": len(pair_edges),
+                "pair_best": max(pair_edges) if pair_edges else None,
+                "pair_clearing": pair_clearing,
+            }
+        finally:
+            await provider.aclose()
+
+    body = asyncio.run(_run())
+    if body.get("error"):
+        console.print(f"[red]{body['error']}")
+        raise typer.Exit(1)
+
+    table = Table(title="burst sweep - the resolution the 10s study cannot reach")
+    for column in ("sweeps", "Hz", "vs 10s study", "rtt p50",
+                   "set obs", "set min", "set crossed",
+                   "pair obs", "pair best", "pair clearing"):
+        table.add_column(column, justify="right")
+    table.add_row(
+        str(body["sweeps"]), f"{body['hz']:.2f}", f"{body['hz'] * 10:.0f}x",
+        f"{body['rtt_p50_ms']:.0f}ms",
+        str(body["set_observations"]), str(body["set_min"]), str(body["set_crossed"]),
+        str(body["pair_observations"]), str(body["pair_best"]), str(body["pair_clearing"]),
+    )
+    console.print(table)
+    if body["set_crossed"] or body["pair_clearing"]:
+        console.print(
+            "[bold red]something cleared at burst resolution that the 10s cadence "
+            "would have missed. Verify before believing it."
+        )
+    else:
+        console.print(
+            f"[green]nothing cleared at {body['hz'] * 10:.0f}x the study's resolution"
+        )
+
+    ledger.parent.mkdir(parents=True, exist_ok=True)
+    new = not ledger.exists()
+    with ledger.open("a", newline="") as fh:
+        writer = csv.writer(fh)
+        if new:
+            writer.writerow(
+                ["scanned_at", "seconds", "sweeps", "hz", "markets", "set_observations",
+                 "set_min", "set_crossed", "pair_observations", "pair_best",
+                 "pair_clearing"]
+            )
+        writer.writerow([
+            datetime.now(timezone.utc).isoformat(), seconds, body["sweeps"],
+            round(body["hz"], 3), body["markets"], body["set_observations"],
+            body["set_min"], body["set_crossed"], body["pair_observations"],
+            body["pair_best"], body["pair_clearing"],
+        ])
+    console.print(f"appended to {ledger}")
+
+
 @app.command("polymarket-sets")
 def polymarket_sets(
     markets: int = typer.Option(2000, help="How many active markets to scan."),
