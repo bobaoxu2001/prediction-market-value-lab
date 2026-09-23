@@ -20,7 +20,11 @@ from pmvl_markets.pricing.fees import KALSHI_TAKER_RATE, taker_fee
 from pmvl_shared.enums import Platform
 
 D = Path(__file__).parent
-MARGIN = Decimal("0.3")
+#: Half a degree Celsius. Five-minute ASOS readings arrive in whole degrees C, so
+#: 96.8F is really "36C", which only proves the true temperature was in
+#: [95.9, 97.7)F. A 0.3F margin claimed locks on readings that could not prove
+#: them; half a degree C is the widest bin any reading here can occupy.
+MARGIN = Decimal("0.9")
 KNEW = Decimal("0.99")
 
 def body(line): return json.loads(line)["body"]
@@ -47,13 +51,24 @@ def ask_at(ticker, side, when):
     v = books[i]["books"].get(ticker, {}).get(f"{side}_ask")
     return books[i]["seen_at"], (Decimal(v) if v is not None else None)
 
-def priced_at(ticker, side, since):
-    """First book at/after `since` where the locked side is gone or >= 0.99."""
-    for i in range(bisect_left(book_t, since), len(books)):
+def cheapest_offer(ticker, side, lo, hi):
+    """Lowest offer on `side` seen in [lo, hi], or None if it was never offered.
+
+    This is the question the thesis actually turns on. "When did the market price
+    it" is misleading when the side was already priced before anything happened -
+    that returned the first book and read as a 20-minute lead. What matters is
+    whether a trader acting on the feed could ever have bought the certain side
+    below a dollar.
+    """
+    best = None
+    for i in range(bisect_left(book_t, lo), len(books)):
+        if book_t[i] > hi:
+            break
         v = books[i]["books"].get(ticker, {}).get(f"{side}_ask")
-        if v is None or Decimal(v) >= KNEW:
-            return book_t[i]
-    return None
+        if v is not None:
+            v = Decimal(v)
+            best = v if best is None or v < best else best
+    return best
 
 rows = []
 start = book_t[0] if book_t else None
@@ -76,24 +91,21 @@ for ticker, rule in sorted(markets.items()):
         continue   # already published before we started watching: no lock moment seen
     t_obs = datetime.fromisoformat(lock["observation_time"])
     t_pub = datetime.fromisoformat(lock["seen_at"])
-    _, ask_obs = ask_at(ticker, side, t_obs)
-    _, ask_pub = ask_at(ticker, side, t_pub)
-    # the market is judged from the observation onward, so its lead over the feed is visible
-    t_prc = priced_at(ticker, side, min(t_obs, t_pub) if start is None else max(t_obs, start))
-    lead = (t_pub - t_prc).total_seconds() if t_prc else None
+    #: the window a trader on the public feed could act in: from publication onward
+    window_end = t_pub + __import__("datetime").timedelta(minutes=10)
+    before = cheapest_offer(ticker, side, book_t[0], t_obs) if book_t else None
+    after = cheapest_offer(ticker, side, t_pub, window_end)
     edge = None
-    if ask_pub is not None and ask_pub < KNEW:
-        fee = taker_fee(Platform.KALSHI, Decimal(1), ask_pub, rate=KALSHI_TAKER_RATE)
-        edge = Decimal(1) - ask_pub - fee
-    rows.append((ticker, side, lock["temperature_f"], t_obs, t_pub, t_prc, ask_obs, ask_pub, lead, edge))
+    if after is not None and after < KNEW:
+        fee = taker_fee(Platform.KALSHI, Decimal(1), after, rate=KALSHI_TAKER_RATE)
+        edge = Decimal(1) - after - fee
+    rows.append((ticker, side, lock["temperature_f"], t_obs, t_pub, before, after, edge))
 
 print(f"{len(books)} book sweeps, {len(obs)} observations; "
       f"{len(rows)} rungs locked while we were watching\n")
-for (tk, side, T, to, tp, tr, ao, ap, lead, edge) in rows:
-    who = ("market first by " + f"{lead/60:.1f} min") if lead is not None and lead > 0 else \
-          ("FEED FIRST" if lead is not None else "never priced in window")
-    print(f"{tk:32s} {side:3s} obs {T:>6s}F @ {to:%H:%M}  published {tp:%H:%M} "
-          f"(lag {(tp-to).total_seconds()/60:4.0f}m)  priced {tr:%H:%M}" if tr else
-          f"{tk:32s} {side:3s} obs {T:>6s}F @ {to:%H:%M}  published {tp:%H:%M}  priced -")
-    print(f"{'':32s}     ask at obs {ao}  ask at publication {ap}  -> {who}"
-          + (f"  EDGE {edge:+.3f}/ct" if edge is not None else ""))
+for (tk, side, T, to, tp, before, after, edge) in rows:
+    print(f"{tk:32s} {side:3s} {T:>7s}F at {to:%H:%M}, public at {tp:%H:%M} "
+          f"(feed lag {(tp - to).total_seconds() / 60:.0f}m)")
+    print(f"{'':32s}     cheapest {side} offer before the crossing: {before}")
+    print(f"{'':32s}     cheapest {side} offer once public (+10m): {after}"
+          + (f"  -> EDGE {edge:+.3f}/ct" if edge is not None else "  -> nothing to buy"))
