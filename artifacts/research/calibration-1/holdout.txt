@@ -1,0 +1,4 @@
+holdout: price [0.00, 0.05) at H=1h - 5793 observations, 1504 events, 31 days
+  mean net -1.07c per contract; one-sided 95% event-clustered lower bound -1.20c
+  criterion 1 (exploration): NOT MET; criterion 2 (holdout): NOT MET
+  -> NO CALIBRATION EDGE

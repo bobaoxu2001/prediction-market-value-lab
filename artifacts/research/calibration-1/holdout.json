@@ -1,0 +1,11 @@
+{
+ "bin": 0,
+ "h": 1,
+ "n": 5793,
+ "events": 1504,
+ "days": 31,
+ "mean": -0.010671396513032977,
+ "lb95": -0.01204774910316039,
+ "criterion_1_met": false,
+ "criterion_2_met": false
+}
