@@ -79,9 +79,17 @@ authenticated `GET /account/endpoint_costs`, which this study does not call. It 
 taken as the default 10 tokens (one request), and the §8 rule stands as the check: any 429
 at the planned rates moves the book cadence to 2 s for the whole study.
 
-**Still open before day 1:** G3 (the user confirms no Market Maker Agreement, not an IB/FCM
-customer, not an affiliate or employee), G4 (code, tests, synthetic replay, tag), G5
-(pre-flight and `cadence.json`), G6 (the user installs the cron line).
+**Gate log.**
+
+- **G1, G2** - closed above, 2026-09-24.
+- **G3** - closed 2026-09-24: the user confirmed that none of a Market Maker Agreement with
+  Kalshi, trading through an introducing broker or FCM, or being a Kalshi affiliate or
+  employee applies to the account.
+- **G6** - approved 2026-09-24: the user agreed to a second daily cron line for the LIP
+  recorder at 12:25 UTC, to be installed only after G4 and G5 close, with the exact line
+  shown to the user.
+- **Still open before day 1:** G4 (code, tests, synthetic replay, tag), G5 (pre-flight and
+  `cadence.json`), and the installation under G6.
 
 ---
 
