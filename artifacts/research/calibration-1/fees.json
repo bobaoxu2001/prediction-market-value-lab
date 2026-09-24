@@ -1,0 +1,5892 @@
+{
+ "KXA100W": {
+  "fee_type": "quadratic_with_maker_fees",
+  "fee_multiplier": 1,
+  "category": "Science and Technology"
+ },
+ "KXA100WS": {
+  "fee_type": "quadratic_with_maker_fees",
+  "fee_multiplier": 1,
+  "category": "Financials"
+ },
+ "KXAAAGASD": {
+  "fee_type": "quadratic",
+  "fee_multiplier": 1,
+  "category": "Economics"
+ },
+ "KXAAAGASDCA": {
+  "fee_type": "quadratic",
+  "fee_multiplier": 1,
+  "category": "Economics"
+ },
+ "KXAAAGASDFL": {
+  "fee_type": "quadratic",
+  "fee_multiplier": 1,
+  "category": "Economics"
+ },
+ "KXAAAGASDGA": {
+  "fee_type": "quadratic",
+  "fee_multiplier": 1,
+  "category": "Economics"
+ },
+ "KXAAAGASDIL": {
+  "fee_type": "quadratic",
+  "fee_multiplier": 1,
+  "category": "Economics"
+ },
+ "KXAAAGASDNC": {
+  "fee_type": "quadratic",
+  "fee_multiplier": 1,
+  "category": "Economics"
+ },
+ "KXAAAGASDNJ": {
+  "fee_type": "quadratic",
+  "fee_multiplier": 1,
+  "category": "Economics"
+ },
+ "KXAAAGASDNY": {
+  "fee_type": "quadratic",
+  "fee_multiplier": 1,
+  "category": "Economics"
+ },
+ "KXAAAGASDTN": {
+  "fee_type": "quadratic",
+  "fee_multiplier": 1,
+  "category": "Economics"
+ },
+ "KXAAAGASDTX": {
+  "fee_type": "quadratic",
+  "fee_multiplier": 1,
+  "category": "Economics"
+ },
+ "KXAAAGASDVA": {
+  "fee_type": "quadratic",
+  "fee_multiplier": 1,
+  "category": "Economics"
+ },
+ "KXAAAGASDWA": {
+  "fee_type": "quadratic",
+  "fee_multiplier": 1,
+  "category": "Economics"
+ },
+ "KXAAAGASW": {
+  "fee_type": "quadratic",
+  "fee_multiplier": 1,
+  "category": "Economics"
+ },
+ "KXAFCCL1H": {
+  "fee_type": "quadratic",
+  "fee_multiplier": 1,
+  "category": "Sports"
+ },
+ "KXAFCCL1HBTTS": {
+  "fee_type": "quadratic",
+  "fee_multiplier": 1,
+  "category": "Sports"
+ },
+ "KXAFCCL1HSPREAD": {
+  "fee_type": "quadratic",
+  "fee_multiplier": 1,
+  "category": "Sports"
+ },
+ "KXAFCCL1HTOTAL": {
+  "fee_type": "quadratic",
+  "fee_multiplier": 1,
+  "category": "Sports"
+ },
+ "KXAFCCLBTTS": {
+  "fee_type": "quadratic",
+  "fee_multiplier": 1,
+  "category": "Sports"
+ },
+ "KXAFCCLFTTS": {
+  "fee_type": "quadratic",
+  "fee_multiplier": 1,
+  "category": "Sports"
+ },
+ "KXAFCCLGAME": {
+  "fee_type": "quadratic",
+  "fee_multiplier": 1,
+  "category": "Sports"
+ },
+ "KXAFCCLSCORE": {
+  "fee_type": "quadratic",
+  "fee_multiplier": 1,
+  "category": "Sports"
+ },
+ "KXAFCCLSPREAD": {
+  "fee_type": "quadratic",
+  "fee_multiplier": 1,
+  "category": "Sports"
+ },
+ "KXAFCCLTEAMTOTAL": {
+  "fee_type": "quadratic",
+  "fee_multiplier": 1,
+  "category": "Sports"
+ },
+ "KXAFCCLTOTAL": {
+  "fee_type": "quadratic",
+  "fee_multiplier": 1,
+  "category": "Sports"
+ },
+ "KXAFLGAME": {
+  "fee_type": "quadratic",
+  "fee_multiplier": 1,
+  "category": "Sports"
+ },
+ "KXALANIPOS": {
+  "fee_type": "quadratic",
+  "fee_multiplier": 1,
+  "category": "Financials"
+ },
+ "KXALBUMDEBUT": {
+  "fee_type": "quadratic",
+  "fee_multiplier": 1,
+  "category": "Entertainment"
+ },
+ "KXALBUMEQUIV": {
+  "fee_type": "quadratic",
+  "fee_multiplier": 1,
+  "category": "Entertainment"
+ },
+ "KXALLSVENSKANBTTS": {
+  "fee_type": "quadratic",
+  "fee_multiplier": 1,
+  "category": "Sports"
+ },
+ "KXALLSVENSKANGAME": {
+  "fee_type": "quadratic",
+  "fee_multiplier": 1,
+  "category": "Sports"
+ },
+ "KXALLSVENSKANSPREAD": {
+  "fee_type": "quadratic",
+  "fee_multiplier": 1,
+  "category": "Sports"
+ },
+ "KXALLSVENSKANTOTAL": {
+  "fee_type": "quadratic",
+  "fee_multiplier": 1,
+  "category": "Sports"
+ },
+ "KXAMSAVO": {
+  "fee_type": "quadratic",
+  "fee_multiplier": 1,
+  "category": "Economics"
+ },
+ "KXAOCMENTION": {
+  "fee_type": "quadratic",
+  "fee_multiplier": 1,
+  "category": "Mentions"
+ },
+ "KXAPFDDHBTTS": {
+  "fee_type": "quadratic",
+  "fee_multiplier": 1,
+  "category": "Sports"
+ },
+ "KXAPFDDHGAME": {
+  "fee_type": "quadratic",
+  "fee_multiplier": 1,
+  "category": "Sports"
+ },
+ "KXAPFDDHSPREAD": {
+  "fee_type": "quadratic",
+  "fee_multiplier": 1,
+  "category": "Sports"
+ },
+ "KXAPFDDHTOTAL": {
+  "fee_type": "quadratic",
+  "fee_multiplier": 1,
+  "category": "Sports"
+ },
+ "KXAPRPOTUSD": {
+  "fee_type": "quadratic",
+  "fee_multiplier": 1,
+  "category": "Politics"
+ },
+ "KXARGNACBBTTS": {
+  "fee_type": "quadratic",
+  "fee_multiplier": 1,
+  "category": "Sports"
+ },
+ "KXARGNACBGAME": {
+  "fee_type": "quadratic",
+  "fee_multiplier": 1,
+  "category": "Sports"
+ },
+ "KXARGNACBSPREAD": {
+  "fee_type": "quadratic",
+  "fee_multiplier": 1,
+  "category": "Sports"
+ },
+ "KXARGNACBTOTAL": {
+  "fee_type": "quadratic",
+  "fee_multiplier": 1,
+  "category": "Sports"
+ },
+ "KXARGPREMDIVBTTS": {
+  "fee_type": "quadratic",
+  "fee_multiplier": 1,
+  "category": "Sports"
+ },
+ "KXARGPREMDIVGAME": {
+  "fee_type": "quadratic",
+  "fee_multiplier": 1,
+  "category": "Sports"
+ },
+ "KXARGPREMDIVSPREAD": {
+  "fee_type": "quadratic",
+  "fee_multiplier": 1,
+  "category": "Sports"
+ },
+ "KXARGPREMDIVTOTAL": {
+  "fee_type": "quadratic",
+  "fee_multiplier": 1,
+  "category": "Sports"
+ },
+ "KXARNAULTNW": {
+  "fee_type": "quadratic",
+  "fee_multiplier": 1,
+  "category": "Financials"
+ },
+ "KXASEANBTTS": {
+  "fee_type": "quadratic",
+  "fee_multiplier": 1,
+  "category": "Sports"
+ },
+ "KXASEANGAME": {
+  "fee_type": "quadratic",
+  "fee_multiplier": 1,
+  "category": "Sports"
+ },
+ "KXASEANSPREAD": {
+  "fee_type": "quadratic",
+  "fee_multiplier": 1,
+  "category": "Sports"
+ },
+ "KXASEANTOTAL": {
+  "fee_type": "quadratic",
+  "fee_multiplier": 1,
+  "category": "Sports"
+ },
+ "KXATP": {
+  "fee_type": "quadratic",
+  "fee_multiplier": 1,
+  "category": "Sports"
+ },
+ "KXATPADVANCE": {
+  "fee_type": "quadratic",
+  "fee_multiplier": 1,
+  "category": "Sports"
+ },
+ "KXATPCHALLENGERDOUBLES": {
+  "fee_type": "quadratic",
+  "fee_multiplier": 1,
+  "category": "Sports"
+ },
+ "KXATPCHALLENGERMATCH": {
+  "fee_type": "quadratic",
+  "fee_multiplier": 1,
+  "category": "Sports"
+ },
+ "KXATPDOUBLES": {
+  "fee_type": "quadratic",
+  "fee_multiplier": 1,
+  "category": "Sports"
+ },
+ "KXATPEXACTMATCH": {
+  "fee_type": "quadratic",
+  "fee_multiplier": 1,
+  "category": "Sports"
+ },
+ "KXATPGSPREAD": {
+  "fee_type": "quadratic",
+  "fee_multiplier": 1,
+  "category": "Sports"
+ },
+ "KXATPGTOTAL": {
+  "fee_type": "quadratic",
+  "fee_multiplier": 1,
+  "category": "Sports"
+ },
+ "KXATPMATCH": {
+  "fee_type": "quadratic_with_maker_fees",
+  "fee_multiplier": 1,
+  "category": "Sports"
+ },
+ "KXATPNATWINNER": {
+  "fee_type": "quadratic",
+  "fee_multiplier": 1,
+  "category": "Sports"
+ },
+ "KXATPSETWINNER": {
+  "fee_type": "quadratic",
+  "fee_multiplier": 1,
+  "category": "Sports"
+ },
+ "KXATPSSPREAD": {
+  "fee_type": "quadratic",
+  "fee_multiplier": 1,
+  "category": "Sports"
+ },
+ "KXATPTOTALSETS": {
+  "fee_type": "quadratic",
+  "fee_multiplier": 1,
+  "category": "Sports"
+ },
+ "KXAVGTKAUS": {
+  "fee_type": "quadratic",
+  "fee_multiplier": 1,
+  "category": "Climate and Weather"
+ },
+ "KXAVGTKLAS": {
+  "fee_type": "quadratic",
+  "fee_multiplier": 1,
+  "category": "Climate and Weather"
+ },
+ "KXB200W": {
+  "fee_type": "quadratic_with_maker_fees",
+  "fee_multiplier": 1,
+  "category": "Science and Technology"
+ },
+ "KXB200WS": {
+  "fee_type": "quadratic_with_maker_fees",
+  "fee_multiplier": 1,
+  "category": "Financials"
+ },
+ "KXBABELMANDEBWEEKLY": {
+  "fee_type": "quadratic",
+  "fee_multiplier": 1,
+  "category": "Politics"
+ },
+ "KXBBCHARTPOSITIONALBUM": {
+  "fee_type": "quadratic",
+  "fee_multiplier": 1,
+  "category": "Entertainment"
+ },
+ "KXBBINTLGAME": {
+  "fee_type": "quadratic",
+  "fee_multiplier": 1,
+  "category": "Sports"
+ },
+ "KXBELGIANPLBTTS": {
+  "fee_type": "quadratic",
+  "fee_multiplier": 1,
+  "category": "Sports"
+ },
+ "KXBELGIANPLGAME": {
+  "fee_type": "quadratic",
+  "fee_multiplier": 1,
+  "category": "Sports"
+ },
+ "KXBELGIANPLSPREAD": {
+  "fee_type": "quadratic",
+  "fee_multiplier": 1,
+  "category": "Sports"
+ },
+ "KXBELGIANPLTOTAL": {
+  "fee_type": "quadratic",
+  "fee_multiplier": 1,
+  "category": "Sports"
+ },
+ "KXBERNIEMENTION": {
+  "fee_type": "quadratic",
+  "fee_multiplier": 1,
+  "category": "Mentions"
+ },
+ "KXBIG3GAME": {
+  "fee_type": "quadratic",
+  "fee_multiplier": 1,
+  "category": "Sports"
+ },
+ "KXBIGBROTHERELIMINATION": {
+  "fee_type": "quadratic",
+  "fee_multiplier": 1,
+  "category": "Entertainment"
+ },
+ "KXBIGGESTQUAKE": {
+  "fee_type": "quadratic",
+  "fee_multiplier": 1,
+  "category": "Climate and Weather"
+ },
+ "KXBILLSCOUNT": {
+  "fee_type": "quadratic",
+  "fee_multiplier": 1,
+  "category": "Politics"
+ },
+ "KXBNB": {
+  "fee_type": "quadratic",
+  "fee_multiplier": 1,
+  "category": "Crypto"
+ },
+ "KXBNB15M": {
+  "fee_type": "quadratic",
+  "fee_multiplier": 1,
+  "category": "Crypto"
+ },
+ "KXBNBD": {
+  "fee_type": "quadratic",
+  "fee_multiplier": 1,
+  "category": "Crypto"
+ },
+ "KXBNBMINMON": {
+  "fee_type": "quadratic",
+  "fee_multiplier": 1,
+  "category": "Crypto"
+ },
+ "KXBOLPDIVGAME": {
+  "fee_type": "quadratic",
+  "fee_multiplier": 1,
+  "category": "Sports"
+ },
+ "KXBOXING": {
+  "fee_type": "quadratic",
+  "fee_multiplier": 1,
+  "category": "Sports"
+ },
+ "KXBOXINGDISTANCE": {
+  "fee_type": "quadratic",
+  "fee_multiplier": 1,
+  "category": "Sports"
+ },
+ "KXBOXINGVICROUND": {
+  "fee_type": "quadratic",
+  "fee_multiplier": 1,
+  "category": "Sports"
+ },
+ "KXBRASILEIRO1H": {
+  "fee_type": "quadratic",
+  "fee_multiplier": 1,
+  "category": "Sports"
+ },
+ "KXBRASILEIRO1HBTTS": {
+  "fee_type": "quadratic",
+  "fee_multiplier": 1,
+  "category": "Sports"
+ },
+ "KXBRASILEIRO1HSPREAD": {
+  "fee_type": "quadratic",
+  "fee_multiplier": 1,
+  "category": "Sports"
+ },
+ "KXBRASILEIRO1HTOTAL": {
+  "fee_type": "quadratic",
+  "fee_multiplier": 1,
+  "category": "Sports"
+ },
+ "KXBRASILEIROB1H": {
+  "fee_type": "quadratic",
+  "fee_multiplier": 1,
+  "category": "Sports"
+ },
+ "KXBRASILEIROB1HBTTS": {
+  "fee_type": "quadratic",
+  "fee_multiplier": 1,
+  "category": "Sports"
+ },
+ "KXBRASILEIROB1HSPREAD": {
+  "fee_type": "quadratic",
+  "fee_multiplier": 1,
+  "category": "Sports"
+ },
+ "KXBRASILEIROB1HTOTAL": {
+  "fee_type": "quadratic",
+  "fee_multiplier": 1,
+  "category": "Sports"
+ },
+ "KXBRASILEIROBBTTS": {
+  "fee_type": "quadratic",
+  "fee_multiplier": 1,
+  "category": "Sports"
+ },
+ "KXBRASILEIROBGAME": {
+  "fee_type": "quadratic",
+  "fee_multiplier": 1,
+  "category": "Sports"
+ },
+ "KXBRASILEIROBSPREAD": {
+  "fee_type": "quadratic",
+  "fee_multiplier": 1,
+  "category": "Sports"
+ },
+ "KXBRASILEIROBTOTAL": {
+  "fee_type": "quadratic",
+  "fee_multiplier": 1,
+  "category": "Sports"
+ },
+ "KXBRASILEIROBTTS": {
+  "fee_type": "quadratic",
+  "fee_multiplier": 1,
+  "category": "Sports"
+ },
+ "KXBRASILEIROC1H": {
+  "fee_type": "quadratic",
+  "fee_multiplier": 1,
+  "category": "Sports"
+ },
+ "KXBRASILEIROC1HBTTS": {
+  "fee_type": "quadratic",
+  "fee_multiplier": 1,
+  "category": "Sports"
+ },
+ "KXBRASILEIROC1HSPREAD": {
+  "fee_type": "quadratic",
+  "fee_multiplier": 1,
+  "category": "Sports"
+ },
+ "KXBRASILEIROC1HTOTAL": {
+  "fee_type": "quadratic",
+  "fee_multiplier": 1,
+  "category": "Sports"
+ },
+ "KXBRASILEIROCBTTS": {
+  "fee_type": "quadratic",
+  "fee_multiplier": 1,
+  "category": "Sports"
+ },
+ "KXBRASILEIROCGAME": {
+  "fee_type": "quadratic",
+  "fee_multiplier": 1,
+  "category": "Sports"
+ },
+ "KXBRASILEIROCSPREAD": {
+  "fee_type": "quadratic",
+  "fee_multiplier": 1,
+  "category": "Sports"
+ },
+ "KXBRASILEIROCTOTAL": {
+  "fee_type": "quadratic",
+  "fee_multiplier": 1,
+  "category": "Sports"
+ },
+ "KXBRASILEIROFTTS": {
+  "fee_type": "quadratic",
+  "fee_multiplier": 1,
+  "category": "Sports"
+ },
+ "KXBRASILEIROGAME": {
+  "fee_type": "quadratic",
+  "fee_multiplier": 1,
+  "category": "Sports"
+ },
+ "KXBRASILEIROSCORE": {
+  "fee_type": "quadratic",
+  "fee_multiplier": 1,
+  "category": "Sports"
+ },
+ "KXBRASILEIROSPREAD": {
+  "fee_type": "quadratic",
+  "fee_multiplier": 1,
+  "category": "Sports"
+ },
+ "KXBRASILEIROTEAMTOTAL": {
+  "fee_type": "quadratic",
+  "fee_multiplier": 1,
+  "category": "Sports"
+ },
+ "KXBRASILEIROTOTAL": {
+  "fee_type": "quadratic",
+  "fee_multiplier": 1,
+  "category": "Sports"
+ },
+ "KXBRENTD": {
+  "fee_type": "quadratic",
+  "fee_multiplier": 1,
+  "category": "Commodities"
+ },
+ "KXBRENTW": {
+  "fee_type": "quadratic",
+  "fee_multiplier": 1,
+  "category": "Commodities"
+ },
+ "KXBSNGAME": {
+  "fee_type": "quadratic",
+  "fee_multiplier": 1,
+  "category": "Sports"
+ },
+ "KXBTC": {
+  "fee_type": "quadratic",
+  "fee_multiplier": 1,
+  "category": "Crypto"
+ },
+ "KXBTC15M": {
+  "fee_type": "quadratic",
+  "fee_multiplier": 1,
+  "category": "Crypto"
+ },
+ "KXBTCD": {
+  "fee_type": "quadratic",
+  "fee_multiplier": 1,
+  "category": "Crypto"
+ },
+ "KXBUDLIGHTPOS": {
+  "fee_type": "quadratic",
+  "fee_multiplier": 1,
+  "category": "Financials"
+ },
+ "KXBUNDESLIGA1H": {
+  "fee_type": "quadratic",
+  "fee_multiplier": 1,
+  "category": "Sports"
+ },
+ "KXBUNDESLIGA1HBTTS": {
+  "fee_type": "quadratic",
+  "fee_multiplier": 1,
+  "category": "Sports"
+ },
+ "KXBUNDESLIGA1HSCORE": {
+  "fee_type": "quadratic",
+  "fee_multiplier": 1,
+  "category": "Sports"
+ },
+ "KXBUNDESLIGA1HSPREAD": {
+  "fee_type": "quadratic",
+  "fee_multiplier": 1,
+  "category": "Sports"
+ },
+ "KXBUNDESLIGA1HTOTAL": {
+  "fee_type": "quadratic",
+  "fee_multiplier": 1,
+  "category": "Sports"
+ },
+ "KXBUNDESLIGA2BTTS": {
+  "fee_type": "quadratic",
+  "fee_multiplier": 1,
+  "category": "Sports"
+ },
+ "KXBUNDESLIGA2GAME": {
+  "fee_type": "quadratic",
+  "fee_multiplier": 1,
+  "category": "Sports"
+ },
+ "KXBUNDESLIGA2H": {
+  "fee_type": "quadratic",
+  "fee_multiplier": 1,
+  "category": "Sports"
+ },
+ "KXBUNDESLIGA2HBTTS": {
+  "fee_type": "quadratic",
+  "fee_multiplier": 1,
+  "category": "Sports"
+ },
+ "KXBUNDESLIGA2HSPREAD": {
+  "fee_type": "quadratic",
+  "fee_multiplier": 1,
+  "category": "Sports"
+ },
+ "KXBUNDESLIGA2HTOTAL": {
+  "fee_type": "quadratic",
+  "fee_multiplier": 1,
+  "category": "Sports"
+ },
+ "KXBUNDESLIGA2SPREAD": {
+  "fee_type": "quadratic",
+  "fee_multiplier": 1,
+  "category": "Sports"
+ },
+ "KXBUNDESLIGA2TOTAL": {
+  "fee_type": "quadratic",
+  "fee_multiplier": 1,
+  "category": "Sports"
+ },
+ "KXBUNDESLIGAFTTS": {
+  "fee_type": "quadratic",
+  "fee_multiplier": 1,
+  "category": "Sports"
+ },
+ "KXBUNDESLIGAGAME": {
+  "fee_type": "quadratic_with_maker_fees",
+  "fee_multiplier": 1,
+  "category": "Sports"
+ },
+ "KXBUNDESLIGASCORE": {
+  "fee_type": "quadratic",
+  "fee_multiplier": 1,
+  "category": "Sports"
+ },
+ "KXBUNDESLIGASPREAD": {
+  "fee_type": "quadratic",
+  "fee_multiplier": 1,
+  "category": "Sports"
+ },
+ "KXBUNDESLIGATOTAL": {
+  "fee_type": "quadratic",
+  "fee_multiplier": 1,
+  "category": "Sports"
+ },
+ "KXCANPLBTTS": {
+  "fee_type": "quadratic",
+  "fee_multiplier": 1,
+  "category": "Sports"
+ },
+ "KXCANPLGAME": {
+  "fee_type": "quadratic",
+  "fee_multiplier": 1,
+  "category": "Sports"
+ },
+ "KXCANPLSPREAD": {
+  "fee_type": "quadratic",
+  "fee_multiplier": 1,
+  "category": "Sports"
+ },
+ "KXCANPLTOTAL": {
+  "fee_type": "quadratic",
+  "fee_multiplier": 1,
+  "category": "Sports"
+ },
+ "KXCBDECISIONBRAZIL": {
+  "fee_type": "quadratic",
+  "fee_multiplier": 1,
+  "category": "Economics"
+ },
+ "KXCBDECISIONJAPAN": {
+  "fee_type": "quadratic",
+  "fee_multiplier": 1,
+  "category": "Economics"
+ },
+ "KXCBDECISIONMEXICO": {
+  "fee_type": "quadratic",
+  "fee_multiplier": 1,
+  "category": "Economics"
+ },
+ "KXCBDECISIONRUSSIA": {
+  "fee_type": "quadratic",
+  "fee_multiplier": 1,
+  "category": "Economics"
+ },
+ "KXCEBLGAME": {
+  "fee_type": "quadratic",
+  "fee_multiplier": 1,
+  "category": "Sports"
+ },
+ "KXCFLGAME": {
+  "fee_type": "quadratic",
+  "fee_multiplier": 1,
+  "category": "Sports"
+ },
+ "KXCFLSPREAD": {
+  "fee_type": "quadratic",
+  "fee_multiplier": 1,
+  "category": "Sports"
+ },
+ "KXCFLTOTAL": {
+  "fee_type": "quadratic",
+  "fee_multiplier": 1,
+  "category": "Sports"
+ },
+ "KXCHAMPTOUR": {
+  "fee_type": "quadratic",
+  "fee_multiplier": 1,
+  "category": "Sports"
+ },
+ "KXCHINAAI": {
+  "fee_type": "quadratic",
+  "fee_multiplier": 1,
+  "category": "Science and Technology"
+ },
+ "KXCHIPBURRITO": {
+  "fee_type": "quadratic",
+  "fee_multiplier": 1,
+  "category": "Economics"
+ },
+ "KXCHLLDPBTTS": {
+  "fee_type": "quadratic",
+  "fee_multiplier": 1,
+  "category": "Sports"
+ },
+ "KXCHLLDPGAME": {
+  "fee_type": "quadratic",
+  "fee_multiplier": 1,
+  "category": "Sports"
+ },
+ "KXCHLLDPSPREAD": {
+  "fee_type": "quadratic",
+  "fee_multiplier": 1,
+  "category": "Sports"
+ },
+ "KXCHLLDPTOTAL": {
+  "fee_type": "quadratic",
+  "fee_multiplier": 1,
+  "category": "Sports"
+ },
+ "KXCHNL1BTTS": {
+  "fee_type": "quadratic",
+  "fee_multiplier": 1,
+  "category": "Sports"
+ },
+ "KXCHNL1GAME": {
+  "fee_type": "quadratic",
+  "fee_multiplier": 1,
+  "category": "Sports"
+ },
+ "KXCHNL1SPREAD": {
+  "fee_type": "quadratic",
+  "fee_multiplier": 1,
+  "category": "Sports"
+ },
+ "KXCHNL1TOTAL": {
+  "fee_type": "quadratic",
+  "fee_multiplier": 1,
+  "category": "Sports"
+ },
+ "KXCHNSLBTTS": {
+  "fee_type": "quadratic",
+  "fee_multiplier": 1,
+  "category": "Sports"
+ },
+ "KXCHNSLGAME": {
+  "fee_type": "quadratic",
+  "fee_multiplier": 1,
+  "category": "Sports"
+ },
+ "KXCHNSLSPREAD": {
+  "fee_type": "quadratic",
+  "fee_multiplier": 1,
+  "category": "Sports"
+ },
+ "KXCHNSLTOTAL": {
+  "fee_type": "quadratic",
+  "fee_multiplier": 1,
+  "category": "Sports"
+ },
+ "KXCLUBFBTTS": {
+  "fee_type": "quadratic",
+  "fee_multiplier": 1,
+  "category": "Sports"
+ },
+ "KXCLUBFGAME": {
+  "fee_type": "quadratic",
+  "fee_multiplier": 1,
+  "category": "Sports"
+ },
+ "KXCLUBFSPREAD": {
+  "fee_type": "quadratic",
+  "fee_multiplier": 1,
+  "category": "Sports"
+ },
+ "KXCLUBFTOTAL": {
+  "fee_type": "quadratic",
+  "fee_multiplier": 1,
+  "category": "Sports"
+ },
+ "KXCMGCC": {
+  "fee_type": "quadratic",
+  "fee_multiplier": 1,
+  "category": "Financials"
+ },
+ "KXCODEAI": {
+  "fee_type": "quadratic",
+  "fee_multiplier": 1,
+  "category": "Science and Technology"
+ },
+ "KXCODGAME": {
+  "fee_type": "quadratic",
+  "fee_multiplier": 1,
+  "category": "Sports"
+ },
+ "KXCODMAP": {
+  "fee_type": "quadratic",
+  "fee_multiplier": 1,
+  "category": "Sports"
+ },
+ "KXCODTOTALMAPS": {
+  "fee_type": "quadratic",
+  "fee_multiplier": 1,
+  "category": "Sports"
+ },
+ "KXCONMEBOLLIB1H": {
+  "fee_type": "quadratic",
+  "fee_multiplier": 1,
+  "category": "Sports"
+ },
+ "KXCONMEBOLLIB1HBTTS": {
+  "fee_type": "quadratic",
+  "fee_multiplier": 1,
+  "category": "Sports"
+ },
+ "KXCONMEBOLLIB1HTOTAL": {
+  "fee_type": "quadratic",
+  "fee_multiplier": 1,
+  "category": "Sports"
+ },
+ "KXCONMEBOLLIBADVANCE": {
+  "fee_type": "quadratic",
+  "fee_multiplier": 1,
+  "category": "Sports"
+ },
+ "KXCONMEBOLLIBBTTS": {
+  "fee_type": "quadratic",
+  "fee_multiplier": 1,
+  "category": "Sports"
+ },
+ "KXCONMEBOLLIBGAME": {
+  "fee_type": "quadratic",
+  "fee_multiplier": 1,
+  "category": "Sports"
+ },
+ "KXCONMEBOLLIBSPREAD": {
+  "fee_type": "quadratic",
+  "fee_multiplier": 1,
+  "category": "Sports"
+ },
+ "KXCONMEBOLLIBTOTAL": {
+  "fee_type": "quadratic",
+  "fee_multiplier": 1,
+  "category": "Sports"
+ },
+ "KXCONMEBOLSUD1H": {
+  "fee_type": "quadratic",
+  "fee_multiplier": 1,
+  "category": "Sports"
+ },
+ "KXCONMEBOLSUD1HBTTS": {
+  "fee_type": "quadratic",
+  "fee_multiplier": 1,
+  "category": "Sports"
+ },
+ "KXCONMEBOLSUD1HSPREAD": {
+  "fee_type": "quadratic",
+  "fee_multiplier": 1,
+  "category": "Sports"
+ },
+ "KXCONMEBOLSUD1HTOTAL": {
+  "fee_type": "quadratic",
+  "fee_multiplier": 1,
+  "category": "Sports"
+ },
+ "KXCONMEBOLSUDADVANCE": {
+  "fee_type": "quadratic",
+  "fee_multiplier": 1,
+  "category": "Sports"
+ },
+ "KXCONMEBOLSUDBTTS": {
+  "fee_type": "quadratic",
+  "fee_multiplier": 1,
+  "category": "Sports"
+ },
+ "KXCONMEBOLSUDGAME": {
+  "fee_type": "quadratic",
+  "fee_multiplier": 1,
+  "category": "Sports"
+ },
+ "KXCONMEBOLSUDSPREAD": {
+  "fee_type": "quadratic",
+  "fee_multiplier": 1,
+  "category": "Sports"
+ },
+ "KXCONMEBOLSUDTOTAL": {
+  "fee_type": "quadratic",
+  "fee_multiplier": 1,
+  "category": "Sports"
+ },
+ "KXCOPADOBRASIL1H": {
+  "fee_type": "quadratic",
+  "fee_multiplier": 1,
+  "category": "Sports"
+ },
+ "KXCOPADOBRASIL1HBTTS": {
+  "fee_type": "quadratic",
+  "fee_multiplier": 1,
+  "category": "Sports"
+ },
+ "KXCOPADOBRASIL1HSPREAD": {
+  "fee_type": "quadratic",
+  "fee_multiplier": 1,
+  "category": "Sports"
+ },
+ "KXCOPADOBRASIL1HTOTAL": {
+  "fee_type": "quadratic",
+  "fee_multiplier": 1,
+  "category": "Sports"
+ },
+ "KXCOPADOBRASILADVANCE": {
+  "fee_type": "quadratic",
+  "fee_multiplier": 1,
+  "category": "Sports"
+ },
+ "KXCOPADOBRASILBTTS": {
+  "fee_type": "quadratic",
+  "fee_multiplier": 1,
+  "category": "Sports"
+ },
+ "KXCOPADOBRASILGAME": {
+  "fee_type": "quadratic",
+  "fee_multiplier": 1,
+  "category": "Sports"
+ },
+ "KXCOPADOBRASILSPREAD": {
+  "fee_type": "quadratic",
+  "fee_multiplier": 1,
+  "category": "Sports"
+ },
+ "KXCOPADOBRASILTOTAL": {
+  "fee_type": "quadratic",
+  "fee_multiplier": 1,
+  "category": "Sports"
+ },
+ "KXCOPPAITALIA1H": {
+  "fee_type": "quadratic",
+  "fee_multiplier": 1,
+  "category": "Sports"
+ },
+ "KXCOPPAITALIA1HBTTS": {
+  "fee_type": "quadratic",
+  "fee_multiplier": 1,
+  "category": "Sports"
+ },
+ "KXCOPPAITALIA1HSPREAD": {
+  "fee_type": "quadratic",
+  "fee_multiplier": 1,
+  "category": "Sports"
+ },
+ "KXCOPPAITALIA1HTOTAL": {
+  "fee_type": "quadratic",
+  "fee_multiplier": 1,
+  "category": "Sports"
+ },
+ "KXCOPPAITALIAADVANCE": {
+  "fee_type": "quadratic",
+  "fee_multiplier": 1,
+  "category": "Sports"
+ },
+ "KXCOPPAITALIABTTS": {
+  "fee_type": "quadratic",
+  "fee_multiplier": 1,
+  "category": "Sports"
+ },
+ "KXCOPPAITALIAFTTS": {
+  "fee_type": "quadratic",
+  "fee_multiplier": 1,
+  "category": "Sports"
+ },
+ "KXCOPPAITALIAGAME": {
+  "fee_type": "quadratic",
+  "fee_multiplier": 1,
+  "category": "Sports"
+ },
+ "KXCOPPAITALIASCORE": {
+  "fee_type": "quadratic",
+  "fee_multiplier": 1,
+  "category": "Sports"
+ },
+ "KXCOPPAITALIASPREAD": {
+  "fee_type": "quadratic",
+  "fee_multiplier": 1,
+  "category": "Sports"
+ },
+ "KXCOPPAITALIATEAMTOTAL": {
+  "fee_type": "quadratic",
+  "fee_multiplier": 1,
+  "category": "Sports"
+ },
+ "KXCOPPAITALIATOTAL": {
+  "fee_type": "quadratic",
+  "fee_multiplier": 1,
+  "category": "Sports"
+ },
+ "KXCOPPER15M": {
+  "fee_type": "quadratic",
+  "fee_multiplier": 1,
+  "category": "Commodities"
+ },
+ "KXCOPPERD": {
+  "fee_type": "quadratic",
+  "fee_multiplier": 1,
+  "category": "Commodities"
+ },
+ "KXCOUNTYCHAMPMATCH": {
+  "fee_type": "quadratic",
+  "fee_multiplier": 1,
+  "category": "Sports"
+ },
+ "KXCPLMATCH": {
+  "fee_type": "quadratic",
+  "fee_multiplier": 1,
+  "category": "Sports"
+ },
+ "KXCPLTEAMTOTAL": {
+  "fee_type": "quadratic",
+  "fee_multiplier": 1,
+  "category": "Sports"
+ },
+ "KXCRYPTOLEAD15M": {
+  "fee_type": "quadratic",
+  "fee_multiplier": 1,
+  "category": "Crypto"
+ },
+ "KXCS2": {
+  "fee_type": "quadratic",
+  "fee_multiplier": 1,
+  "category": "Sports"
+ },
+ "KXCS2GAME": {
+  "fee_type": "quadratic",
+  "fee_multiplier": 1,
+  "category": "Sports"
+ },
+ "KXCS2MAP": {
+  "fee_type": "quadratic",
+  "fee_multiplier": 1,
+  "category": "Sports"
+ },
+ "KXCS2TOTALMAPS": {
+  "fee_type": "quadratic",
+  "fee_multiplier": 1,
+  "category": "Sports"
+ },
+ "KXCYCLINGSTAGE": {
+  "fee_type": "quadratic",
+  "fee_multiplier": 1,
+  "category": "Sports"
+ },
+ "KXCYCLINGTEAM": {
+  "fee_type": "quadratic",
+  "fee_multiplier": 1,
+  "category": "Sports"
+ },
+ "KXCZEFLBTTS": {
+  "fee_type": "quadratic",
+  "fee_multiplier": 1,
+  "category": "Sports"
+ },
+ "KXCZEFLGAME": {
+  "fee_type": "quadratic",
+  "fee_multiplier": 1,
+  "category": "Sports"
+ },
+ "KXCZEFLSPREAD": {
+  "fee_type": "quadratic",
+  "fee_multiplier": 1,
+  "category": "Sports"
+ },
+ "KXCZEFLTOTAL": {
+  "fee_type": "quadratic",
+  "fee_multiplier": 1,
+  "category": "Sports"
+ },
+ "KXCZEFNLBTTS": {
+  "fee_type": "quadratic",
+  "fee_multiplier": 1,
+  "category": "Sports"
+ },
+ "KXCZEFNLGAME": {
+  "fee_type": "quadratic",
+  "fee_multiplier": 1,
+  "category": "Sports"
+ },
+ "KXCZEFNLSPREAD": {
+  "fee_type": "quadratic",
+  "fee_multiplier": 1,
+  "category": "Sports"
+ },
+ "KXCZEFNLTOTAL": {
+  "fee_type": "quadratic",
+  "fee_multiplier": 1,
+  "category": "Sports"
+ },
+ "KXDARLINEENDORSE": {
+  "fee_type": "quadratic",
+  "fee_multiplier": 1,
+  "category": "Elections"
+ },
+ "KXDARTSMATCH": {
+  "fee_type": "quadratic",
+  "fee_multiplier": 1,
+  "category": "Sports"
+ },
+ "KXDBBGAME": {
+  "fee_type": "quadratic",
+  "fee_multiplier": 1,
+  "category": "Sports"
+ },
+ "KXDENSUPERLIGABTTS": {
+  "fee_type": "quadratic",
+  "fee_multiplier": 1,
+  "category": "Sports"
+ },
+ "KXDENSUPERLIGAGAME": {
+  "fee_type": "quadratic",
+  "fee_multiplier": 1,
+  "category": "Sports"
+ },
+ "KXDENSUPERLIGASPREAD": {
+  "fee_type": "quadratic",
+  "fee_multiplier": 1,
+  "category": "Sports"
+ },
+ "KXDENSUPERLIGATOTAL": {
+  "fee_type": "quadratic",
+  "fee_multiplier": 1,
+  "category": "Sports"
+ },
+ "KXDFBPOKAL1HBTTS": {
+  "fee_type": "quadratic",
+  "fee_multiplier": 1,
+  "category": "Sports"
+ },
+ "KXDFBPOKAL1HSPREAD": {
+  "fee_type": "quadratic",
+  "fee_multiplier": 1,
+  "category": "Sports"
+ },
+ "KXDFBPOKAL1HTOTAL": {
+  "fee_type": "quadratic",
+  "fee_multiplier": 1,
+  "category": "Sports"
+ },
+ "KXDFBPOKALBTTS": {
+  "fee_type": "quadratic",
+  "fee_multiplier": 1,
+  "category": "Sports"
+ },
+ "KXDFBPOKALFTTS": {
+  "fee_type": "quadratic",
+  "fee_multiplier": 1,
+  "category": "Sports"
+ },
+ "KXDFBPOKALGAME": {
+  "fee_type": "quadratic",
+  "fee_multiplier": 1,
+  "category": "Sports"
+ },
+ "KXDFBPOKALSCORE": {
+  "fee_type": "quadratic",
+  "fee_multiplier": 1,
+  "category": "Sports"
+ },
+ "KXDFBPOKALSPREAD": {
+  "fee_type": "quadratic",
+  "fee_multiplier": 1,
+  "category": "Sports"
+ },
+ "KXDFBPOKALTEAMTOTAL": {
+  "fee_type": "quadratic",
+  "fee_multiplier": 1,
+  "category": "Sports"
+ },
+ "KXDFBPOKALTOTAL": {
+  "fee_type": "quadratic",
+  "fee_multiplier": 1,
+  "category": "Sports"
+ },
+ "KXDIESELD": {
+  "fee_type": "quadratic",
+  "fee_multiplier": 1,
+  "category": "Economics"
+ },
+ "KXDIESELW": {
+  "fee_type": "quadratic",
+  "fee_multiplier": 1,
+  "category": "Economics"
+ },
+ "KXDIMAYORBTTS": {
+  "fee_type": "quadratic",
+  "fee_multiplier": 1,
+  "category": "Sports"
+ },
+ "KXDIMAYORGAME": {
+  "fee_type": "quadratic",
+  "fee_multiplier": 1,
+  "category": "Sports"
+ },
+ "KXDIMAYORSPREAD": {
+  "fee_type": "quadratic",
+  "fee_multiplier": 1,
+  "category": "Sports"
+ },
+ "KXDIMAYORTOTAL": {
+  "fee_type": "quadratic",
+  "fee_multiplier": 1,
+  "category": "Sports"
+ },
+ "KXDJI": {
+  "fee_type": "quadratic",
+  "fee_multiplier": 1,
+  "category": "Financials"
+ },
+ "KXDOGE": {
+  "fee_type": "quadratic",
+  "fee_multiplier": 1,
+  "category": "Crypto"
+ },
+ "KXDOGE15M": {
+  "fee_type": "quadratic",
+  "fee_multiplier": 1,
+  "category": "Crypto"
+ },
+ "KXDOGED": {
+  "fee_type": "quadratic",
+  "fee_multiplier": 1,
+  "category": "Crypto"
+ },
+ "KXDOTA2GAME": {
+  "fee_type": "quadratic",
+  "fee_multiplier": 1,
+  "category": "Sports"
+ },
+ "KXDOTA2MAP": {
+  "fee_type": "quadratic",
+  "fee_multiplier": 1,
+  "category": "Sports"
+ },
+ "KXDOTA2TOTALMAPS": {
+  "fee_type": "quadratic",
+  "fee_multiplier": 1,
+  "category": "Sports"
+ },
+ "KXDPWORLDTOUR": {
+  "fee_type": "quadratic",
+  "fee_multiplier": 1,
+  "category": "Sports"
+ },
+ "KXDPWT3BALL": {
+  "fee_type": "quadratic",
+  "fee_multiplier": 1,
+  "category": "Sports"
+ },
+ "KXDXYDUD": {
+  "fee_type": "quadratic",
+  "fee_multiplier": 1,
+  "category": "Financials"
+ },
+ "KXECULPBTTS": {
+  "fee_type": "quadratic",
+  "fee_multiplier": 1,
+  "category": "Sports"
+ },
+ "KXECULPGAME": {
+  "fee_type": "quadratic",
+  "fee_multiplier": 1,
+  "category": "Sports"
+ },
+ "KXECULPSPREAD": {
+  "fee_type": "quadratic",
+  "fee_multiplier": 1,
+  "category": "Sports"
+ },
+ "KXECULPTOTAL": {
+  "fee_type": "quadratic",
+  "fee_multiplier": 1,
+  "category": "Sports"
+ },
+ "KXEERSTEDIVBTTS": {
+  "fee_type": "quadratic",
+  "fee_multiplier": 1,
+  "category": "Sports"
+ },
+ "KXEERSTEDIVGAME": {
+  "fee_type": "quadratic",
+  "fee_multiplier": 1,
+  "category": "Sports"
+ },
+ "KXEERSTEDIVSPREAD": {
+  "fee_type": "quadratic",
+  "fee_multiplier": 1,
+  "category": "Sports"
+ },
+ "KXEERSTEDIVTOTAL": {
+  "fee_type": "quadratic",
+  "fee_multiplier": 1,
+  "category": "Sports"
+ },
+ "KXEFLCHAMPIONSHIP1H": {
+  "fee_type": "quadratic",
+  "fee_multiplier": 1,
+  "category": "Sports"
+ },
+ "KXEFLCHAMPIONSHIP1HBTTS": {
+  "fee_type": "quadratic",
+  "fee_multiplier": 1,
+  "category": "Sports"
+ },
+ "KXEFLCHAMPIONSHIP1HSPREAD": {
+  "fee_type": "quadratic",
+  "fee_multiplier": 1,
+  "category": "Sports"
+ },
+ "KXEFLCHAMPIONSHIP1HTOTAL": {
+  "fee_type": "quadratic",
+  "fee_multiplier": 1,
+  "category": "Sports"
+ },
+ "KXEFLCHAMPIONSHIPBTTS": {
+  "fee_type": "quadratic",
+  "fee_multiplier": 1,
+  "category": "Sports"
+ },
+ "KXEFLCHAMPIONSHIPGAME": {
+  "fee_type": "quadratic",
+  "fee_multiplier": 1,
+  "category": "Sports"
+ },
+ "KXEFLCHAMPIONSHIPSPREAD": {
+  "fee_type": "quadratic",
+  "fee_multiplier": 1,
+  "category": "Sports"
+ },
+ "KXEFLCHAMPIONSHIPTOTAL": {
+  "fee_type": "quadratic",
+  "fee_multiplier": 1,
+  "category": "Sports"
+ },
+ "KXEFLCUP1H": {
+  "fee_type": "quadratic",
+  "fee_multiplier": 1,
+  "category": "Sports"
+ },
+ "KXEFLCUP1HBTTS": {
+  "fee_type": "quadratic",
+  "fee_multiplier": 1,
+  "category": "Sports"
+ },
+ "KXEFLCUP1HSPREAD": {
+  "fee_type": "quadratic",
+  "fee_multiplier": 1,
+  "category": "Sports"
+ },
+ "KXEFLCUP1HTOTAL": {
+  "fee_type": "quadratic",
+  "fee_multiplier": 1,
+  "category": "Sports"
+ },
+ "KXEFLCUPADVANCE": {
+  "fee_type": "quadratic",
+  "fee_multiplier": 1,
+  "category": "Sports"
+ },
+ "KXEFLCUPBTTS": {
+  "fee_type": "quadratic",
+  "fee_multiplier": 1,
+  "category": "Sports"
+ },
+ "KXEFLCUPGAME": {
+  "fee_type": "quadratic",
+  "fee_multiplier": 1,
+  "category": "Sports"
+ },
+ "KXEFLCUPSPREAD": {
+  "fee_type": "quadratic",
+  "fee_multiplier": 1,
+  "category": "Sports"
+ },
+ "KXEFLCUPTEAMTOTAL": {
+  "fee_type": "quadratic",
+  "fee_multiplier": 1,
+  "category": "Sports"
+ },
+ "KXEFLCUPTOTAL": {
+  "fee_type": "quadratic",
+  "fee_multiplier": 1,
+  "category": "Sports"
+ },
+ "KXEFLL11H": {
+  "fee_type": "quadratic",
+  "fee_multiplier": 1,
+  "category": "Sports"
+ },
+ "KXEFLL11HBTTS": {
+  "fee_type": "quadratic",
+  "fee_multiplier": 1,
+  "category": "Sports"
+ },
+ "KXEFLL11HSPREAD": {
+  "fee_type": "quadratic",
+  "fee_multiplier": 1,
+  "category": "Sports"
+ },
+ "KXEFLL11HTOTAL": {
+  "fee_type": "quadratic",
+  "fee_multiplier": 1,
+  "category": "Sports"
+ },
+ "KXEFLL1BTTS": {
+  "fee_type": "quadratic",
+  "fee_multiplier": 1,
+  "category": "Sports"
+ },
+ "KXEFLL1GAME": {
+  "fee_type": "quadratic",
+  "fee_multiplier": 1,
+  "category": "Sports"
+ },
+ "KXEFLL1SPREAD": {
+  "fee_type": "quadratic",
+  "fee_multiplier": 1,
+  "category": "Sports"
+ },
+ "KXEFLL1TOTAL": {
+  "fee_type": "quadratic",
+  "fee_multiplier": 1,
+  "category": "Sports"
+ },
+ "KXEGGS": {
+  "fee_type": "quadratic_with_maker_fees",
+  "fee_multiplier": 1,
+  "category": "Economics"
+ },
+ "KXEGYPLBTTS": {
+  "fee_type": "quadratic",
+  "fee_multiplier": 1,
+  "category": "Sports"
+ },
+ "KXEGYPLGAME": {
+  "fee_type": "quadratic",
+  "fee_multiplier": 1,
+  "category": "Sports"
+ },
+ "KXEGYPLSPREAD": {
+  "fee_type": "quadratic",
+  "fee_multiplier": 1,
+  "category": "Sports"
+ },
+ "KXEGYPLTOTAL": {
+  "fee_type": "quadratic",
+  "fee_multiplier": 1,
+  "category": "Sports"
+ },
+ "KXEHSALES": {
+  "fee_type": "quadratic",
+  "fee_multiplier": 1,
+  "category": "Economics"
+ },
+ "KXEKSTRAKLASABTTS": {
+  "fee_type": "quadratic",
+  "fee_multiplier": 1,
+  "category": "Sports"
+ },
+ "KXEKSTRAKLASAGAME": {
+  "fee_type": "quadratic",
+  "fee_multiplier": 1,
+  "category": "Sports"
+ },
+ "KXEKSTRAKLASASPREAD": {
+  "fee_type": "quadratic",
+  "fee_multiplier": 1,
+  "category": "Sports"
+ },
+ "KXEKSTRAKLASATOTAL": {
+  "fee_type": "quadratic",
+  "fee_multiplier": 1,
+  "category": "Sports"
+ },
+ "KXELITESERIENBTTS": {
+  "fee_type": "quadratic",
+  "fee_multiplier": 1,
+  "category": "Sports"
+ },
+ "KXELITESERIENGAME": {
+  "fee_type": "quadratic",
+  "fee_multiplier": 1,
+  "category": "Sports"
+ },
+ "KXELITESERIENSPREAD": {
+  "fee_type": "quadratic",
+  "fee_multiplier": 1,
+  "category": "Sports"
+ },
+ "KXELITESERIENTOTAL": {
+  "fee_type": "quadratic",
+  "fee_multiplier": 1,
+  "category": "Sports"
+ },
+ "KXELLISONNW": {
+  "fee_type": "quadratic",
+  "fee_multiplier": 1,
+  "category": "Financials"
+ },
+ "KXEMMY": {
+  "fee_type": "quadratic",
+  "fee_multiplier": 1,
+  "category": "Entertainment"
+ },
+ "KXENGNLBTTS": {
+  "fee_type": "quadratic",
+  "fee_multiplier": 1,
+  "category": "Sports"
+ },
+ "KXENGNLGAME": {
+  "fee_type": "quadratic",
+  "fee_multiplier": 1,
+  "category": "Sports"
+ },
+ "KXENGNLSPREAD": {
+  "fee_type": "quadratic",
+  "fee_multiplier": 1,
+  "category": "Sports"
+ },
+ "KXENGNLTOTAL": {
+  "fee_type": "quadratic",
+  "fee_multiplier": 1,
+  "category": "Sports"
+ },
+ "KXEPL1H": {
+  "fee_type": "quadratic",
+  "fee_multiplier": 1,
+  "category": "Sports"
+ },
+ "KXEPL1HBTTS": {
+  "fee_type": "quadratic",
+  "fee_multiplier": 1,
+  "category": "Sports"
+ },
+ "KXEPL1HSCORE": {
+  "fee_type": "quadratic",
+  "fee_multiplier": 1,
+  "category": "Sports"
+ },
+ "KXEPL1HSPREAD": {
+  "fee_type": "quadratic",
+  "fee_multiplier": 1,
+  "category": "Sports"
+ },
+ "KXEPL1HTOTAL": {
+  "fee_type": "quadratic",
+  "fee_multiplier": 1,
+  "category": "Sports"
+ },
+ "KXEPL2H": {
+  "fee_type": "quadratic",
+  "fee_multiplier": 1,
+  "category": "Sports"
+ },
+ "KXEPL2HBTTS": {
+  "fee_type": "quadratic",
+  "fee_multiplier": 1,
+  "category": "Sports"
+ },
+ "KXEPL2HSPREAD": {
+  "fee_type": "quadratic",
+  "fee_multiplier": 1,
+  "category": "Sports"
+ },
+ "KXEPL2HTOTAL": {
+  "fee_type": "quadratic",
+  "fee_multiplier": 1,
+  "category": "Sports"
+ },
+ "KXEPLBTTS": {
+  "fee_type": "quadratic",
+  "fee_multiplier": 1,
+  "category": "Sports"
+ },
+ "KXEPLCORNERS": {
+  "fee_type": "quadratic",
+  "fee_multiplier": 1,
+  "category": "Sports"
+ },
+ "KXEPLFIRSTGOAL": {
+  "fee_type": "quadratic",
+  "fee_multiplier": 1,
+  "category": "Sports"
+ },
+ "KXEPLFTTS": {
+  "fee_type": "quadratic",
+  "fee_multiplier": 1,
+  "category": "Sports"
+ },
+ "KXEPLGAME": {
+  "fee_type": "quadratic_with_maker_fees",
+  "fee_multiplier": 1,
+  "category": "Sports"
+ },
+ "KXEPLGOAL": {
+  "fee_type": "quadratic",
+  "fee_multiplier": 1,
+  "category": "Sports"
+ },
+ "KXEPLSCORE": {
+  "fee_type": "quadratic",
+  "fee_multiplier": 1,
+  "category": "Sports"
+ },
+ "KXEPLSPREAD": {
+  "fee_type": "quadratic",
+  "fee_multiplier": 1,
+  "category": "Sports"
+ },
+ "KXEPLTCORNERS": {
+  "fee_type": "quadratic",
+  "fee_multiplier": 1,
+  "category": "Sports"
+ },
+ "KXEPLTEAMTOTAL": {
+  "fee_type": "quadratic",
+  "fee_multiplier": 1,
+  "category": "Sports"
+ },
+ "KXEPLTOTAL": {
+  "fee_type": "quadratic",
+  "fee_multiplier": 1,
+  "category": "Sports"
+ },
+ "KXEREDIVISIE1H": {
+  "fee_type": "quadratic",
+  "fee_multiplier": 1,
+  "category": "Sports"
+ },
+ "KXEREDIVISIE1HBTTS": {
+  "fee_type": "quadratic",
+  "fee_multiplier": 1,
+  "category": "Sports"
+ },
+ "KXEREDIVISIE1HSPREAD": {
+  "fee_type": "quadratic",
+  "fee_multiplier": 1,
+  "category": "Sports"
+ },
+ "KXEREDIVISIE1HTOTAL": {
+  "fee_type": "quadratic",
+  "fee_multiplier": 1,
+  "category": "Sports"
+ },
+ "KXEREDIVISIEBTTS": {
+  "fee_type": "quadratic",
+  "fee_multiplier": 1,
+  "category": "Sports"
+ },
+ "KXEREDIVISIEGAME": {
+  "fee_type": "quadratic",
+  "fee_multiplier": 1,
+  "category": "Sports"
+ },
+ "KXEREDIVISIESPREAD": {
+  "fee_type": "quadratic",
+  "fee_multiplier": 1,
+  "category": "Sports"
+ },
+ "KXEREDIVISIETOTAL": {
+  "fee_type": "quadratic",
+  "fee_multiplier": 1,
+  "category": "Sports"
+ },
+ "KXEREDIVISIEWGAME": {
+  "fee_type": "quadratic",
+  "fee_multiplier": 1,
+  "category": "Sports"
+ },
+ "KXETH": {
+  "fee_type": "quadratic",
+  "fee_multiplier": 1,
+  "category": "Crypto"
+ },
+ "KXETH15M": {
+  "fee_type": "quadratic",
+  "fee_multiplier": 1,
+  "category": "Crypto"
+ },
+ "KXETHD": {
+  "fee_type": "quadratic",
+  "fee_multiplier": 1,
+  "category": "Crypto"
+ },
+ "KXETTANBTTS": {
+  "fee_type": "quadratic",
+  "fee_multiplier": 1,
+  "category": "Sports"
+ },
+ "KXETTANGAME": {
+  "fee_type": "quadratic",
+  "fee_multiplier": 1,
+  "category": "Sports"
+ },
+ "KXETTANSPREAD": {
+  "fee_type": "quadratic",
+  "fee_multiplier": 1,
+  "category": "Sports"
+ },
+ "KXETTANTOTAL": {
+  "fee_type": "quadratic",
+  "fee_multiplier": 1,
+  "category": "Sports"
+ },
+ "KXEURUSD": {
+  "fee_type": "quadratic",
+  "fee_multiplier": 1,
+  "category": "Financials"
+ },
+ "KXEURUSDAW": {
+  "fee_type": "quadratic",
+  "fee_multiplier": 1,
+  "category": "Financials"
+ },
+ "KXEWSLGAME": {
+  "fee_type": "quadratic",
+  "fee_multiplier": 1,
+  "category": "Sports"
+ },
+ "KXF1RACEPODIUM": {
+  "fee_type": "quadratic_with_maker_fees",
+  "fee_multiplier": 1,
+  "category": "Sports"
+ },
+ "KXF1TOP5": {
+  "fee_type": "quadratic",
+  "fee_multiplier": 1,
+  "category": "Sports"
+ },
+ "KXFACUPADVANCE": {
+  "fee_type": "quadratic",
+  "fee_multiplier": 1,
+  "category": "Sports"
+ },
+ "KXFACUPGAME": {
+  "fee_type": "quadratic",
+  "fee_multiplier": 1,
+  "category": "Sports"
+ },
+ "KXFACUPSPREAD": {
+  "fee_type": "quadratic",
+  "fee_multiplier": 1,
+  "category": "Sports"
+ },
+ "KXFACUPTOTAL": {
+  "fee_type": "quadratic",
+  "fee_multiplier": 1,
+  "category": "Sports"
+ },
+ "KXFEAR": {
+  "fee_type": "quadratic",
+  "fee_multiplier": 1,
+  "category": "Financials"
+ },
+ "KXFIBAGAME": {
+  "fee_type": "quadratic",
+  "fee_multiplier": 1,
+  "category": "Sports"
+ },
+ "KXFIBASPREAD": {
+  "fee_type": "quadratic",
+  "fee_multiplier": 1,
+  "category": "Sports"
+ },
+ "KXFIBATOTAL": {
+  "fee_type": "quadratic",
+  "fee_multiplier": 1,
+  "category": "Sports"
+ },
+ "KXFIGHTMENTION": {
+  "fee_type": "quadratic",
+  "fee_multiplier": 1,
+  "category": "Mentions"
+ },
+ "KXFINYLBTTS": {
+  "fee_type": "quadratic",
+  "fee_multiplier": 1,
+  "category": "Sports"
+ },
+ "KXFINYLTOTAL": {
+  "fee_type": "quadratic",
+  "fee_multiplier": 1,
+  "category": "Sports"
+ },
+ "KXFISHBACKCONCEDE": {
+  "fee_type": "quadratic",
+  "fee_multiplier": 1,
+  "category": "Elections"
+ },
+ "KXFNSMENTION": {
+  "fee_type": "quadratic",
+  "fee_multiplier": 1,
+  "category": "Mentions"
+ },
+ "KXFOMCDISSENTCOUNT": {
+  "fee_type": "quadratic",
+  "fee_multiplier": 1,
+  "category": "Economics"
+ },
+ "KXFOXNEWSMENTION": {
+  "fee_type": "quadratic",
+  "fee_multiplier": 1,
+  "category": "Mentions"
+ },
+ "KXFRASUPERCUP1HSPREAD": {
+  "fee_type": "quadratic",
+  "fee_multiplier": 1,
+  "category": "Sports"
+ },
+ "KXFROPLBTTS": {
+  "fee_type": "quadratic",
+  "fee_multiplier": 1,
+  "category": "Sports"
+ },
+ "KXFROPLGAME": {
+  "fee_type": "quadratic",
+  "fee_multiplier": 1,
+  "category": "Sports"
+ },
+ "KXFRYENDORSE": {
+  "fee_type": "quadratic",
+  "fee_multiplier": 1,
+  "category": "Elections"
+ },
+ "KXFTNMENTION": {
+  "fee_type": "quadratic",
+  "fee_multiplier": 1,
+  "category": "Mentions"
+ },
+ "KXGBPUSDAD": {
+  "fee_type": "quadratic",
+  "fee_multiplier": 1,
+  "category": "Financials"
+ },
+ "KXGER3LBTTS": {
+  "fee_type": "quadratic",
+  "fee_multiplier": 1,
+  "category": "Sports"
+ },
+ "KXGER3LGAME": {
+  "fee_type": "quadratic",
+  "fee_multiplier": 1,
+  "category": "Sports"
+ },
+ "KXGER3LSPREAD": {
+  "fee_type": "quadratic",
+  "fee_multiplier": 1,
+  "category": "Sports"
+ },
+ "KXGER3LTOTAL": {
+  "fee_type": "quadratic",
+  "fee_multiplier": 1,
+  "category": "Sports"
+ },
+ "KXGERSCBTTS": {
+  "fee_type": "quadratic",
+  "fee_multiplier": 1,
+  "category": "Sports"
+ },
+ "KXGERSCGAME": {
+  "fee_type": "quadratic",
+  "fee_multiplier": 1,
+  "category": "Sports"
+ },
+ "KXGERSCSCORE": {
+  "fee_type": "quadratic",
+  "fee_multiplier": 1,
+  "category": "Sports"
+ },
+ "KXGERSCTEAMTOTAL": {
+  "fee_type": "quadratic",
+  "fee_multiplier": 1,
+  "category": "Sports"
+ },
+ "KXGOLD15M": {
+  "fee_type": "quadratic",
+  "fee_multiplier": 1,
+  "category": "Commodities"
+ },
+ "KXGOLDD": {
+  "fee_type": "quadratic",
+  "fee_multiplier": 1,
+  "category": "Commodities"
+ },
+ "KXGOLDH": {
+  "fee_type": "quadratic",
+  "fee_multiplier": 1,
+  "category": "Commodities"
+ },
+ "KXGOLDMON": {
+  "fee_type": "quadratic",
+  "fee_multiplier": 1,
+  "category": "Commodities"
+ },
+ "KXGOLDW": {
+  "fee_type": "quadratic",
+  "fee_multiplier": 1,
+  "category": "Commodities"
+ },
+ "KXGOLFMAJOR": {
+  "fee_type": "quadratic",
+  "fee_multiplier": 1,
+  "category": "Sports"
+ },
+ "KXGOVCTNOMD": {
+  "fee_type": "quadratic",
+  "fee_multiplier": 1,
+  "category": "Elections"
+ },
+ "KXGRECUPBTTS": {
+  "fee_type": "quadratic",
+  "fee_multiplier": 1,
+  "category": "Sports"
+ },
+ "KXGRECUPGAME": {
+  "fee_type": "quadratic",
+  "fee_multiplier": 1,
+  "category": "Sports"
+ },
+ "KXGRECUPSPREAD": {
+  "fee_type": "quadratic",
+  "fee_multiplier": 1,
+  "category": "Sports"
+ },
+ "KXGRECUPTOTAL": {
+  "fee_type": "quadratic",
+  "fee_multiplier": 1,
+  "category": "Sports"
+ },
+ "KXGRUBHUBAPP": {
+  "fee_type": "quadratic",
+  "fee_multiplier": 1,
+  "category": "Financials"
+ },
+ "KXH100MON": {
+  "fee_type": "quadratic_with_maker_fees",
+  "fee_multiplier": 1,
+  "category": "Science and Technology"
+ },
+ "KXH100MS": {
+  "fee_type": "quadratic_with_maker_fees",
+  "fee_multiplier": 1,
+  "category": "Financials"
+ },
+ "KXH100WS": {
+  "fee_type": "quadratic_with_maker_fees",
+  "fee_multiplier": 1,
+  "category": "Financials"
+ },
+ "KXHEARINGMENTION": {
+  "fee_type": "quadratic",
+  "fee_multiplier": 1,
+  "category": "Mentions"
+ },
+ "KXHIGHAUS": {
+  "fee_type": "quadratic",
+  "fee_multiplier": 1,
+  "category": "Climate and Weather"
+ },
+ "KXHIGHCHI": {
+  "fee_type": "quadratic",
+  "fee_multiplier": 1,
+  "category": "Climate and Weather"
+ },
+ "KXHIGHDEN": {
+  "fee_type": "quadratic",
+  "fee_multiplier": 1,
+  "category": "Climate and Weather"
+ },
+ "KXHIGHLAX": {
+  "fee_type": "quadratic",
+  "fee_multiplier": 1,
+  "category": "Climate and Weather"
+ },
+ "KXHIGHMIA": {
+  "fee_type": "quadratic",
+  "fee_multiplier": 1,
+  "category": "Climate and Weather"
+ },
+ "KXHIGHNY": {
+  "fee_type": "quadratic",
+  "fee_multiplier": 1,
+  "category": "Climate and Weather"
+ },
+ "KXHIGHPHIL": {
+  "fee_type": "quadratic",
+  "fee_multiplier": 1,
+  "category": "Climate and Weather"
+ },
+ "KXHIGHTATL": {
+  "fee_type": "quadratic",
+  "fee_multiplier": 1,
+  "category": "Climate and Weather"
+ },
+ "KXHIGHTBOS": {
+  "fee_type": "quadratic",
+  "fee_multiplier": 1,
+  "category": "Climate and Weather"
+ },
+ "KXHIGHTDAL": {
+  "fee_type": "quadratic",
+  "fee_multiplier": 1,
+  "category": "Climate and Weather"
+ },
+ "KXHIGHTDC": {
+  "fee_type": "quadratic",
+  "fee_multiplier": 1,
+  "category": "Climate and Weather"
+ },
+ "KXHIGHTHOU": {
+  "fee_type": "quadratic",
+  "fee_multiplier": 1,
+  "category": "Climate and Weather"
+ },
+ "KXHIGHTLV": {
+  "fee_type": "quadratic",
+  "fee_multiplier": 1,
+  "category": "Climate and Weather"
+ },
+ "KXHIGHTMIN": {
+  "fee_type": "quadratic",
+  "fee_multiplier": 1,
+  "category": "Climate and Weather"
+ },
+ "KXHIGHTNOLA": {
+  "fee_type": "quadratic",
+  "fee_multiplier": 1,
+  "category": "Climate and Weather"
+ },
+ "KXHIGHTOKC": {
+  "fee_type": "quadratic",
+  "fee_multiplier": 1,
+  "category": "Climate and Weather"
+ },
+ "KXHIGHTPHX": {
+  "fee_type": "quadratic",
+  "fee_multiplier": 1,
+  "category": "Climate and Weather"
+ },
+ "KXHIGHTSAN": {
+  "fee_type": "quadratic",
+  "fee_multiplier": 1,
+  "category": "Climate and Weather"
+ },
+ "KXHIGHTSATX": {
+  "fee_type": "quadratic",
+  "fee_multiplier": 1,
+  "category": "Climate and Weather"
+ },
+ "KXHIGHTSDF": {
+  "fee_type": "quadratic",
+  "fee_multiplier": 1,
+  "category": "Climate and Weather"
+ },
+ "KXHIGHTSEA": {
+  "fee_type": "quadratic",
+  "fee_multiplier": 1,
+  "category": "Climate and Weather"
+ },
+ "KXHIGHTSFO": {
+  "fee_type": "quadratic",
+  "fee_multiplier": 1,
+  "category": "Climate and Weather"
+ },
+ "KXHNLGAME": {
+  "fee_type": "quadratic",
+  "fee_multiplier": 1,
+  "category": "Sports"
+ },
+ "KXHNLSPREAD": {
+  "fee_type": "quadratic",
+  "fee_multiplier": 1,
+  "category": "Sports"
+ },
+ "KXHNLTOTAL": {
+  "fee_type": "quadratic",
+  "fee_multiplier": 1,
+  "category": "Sports"
+ },
+ "KXHORMUZMAX": {
+  "fee_type": "quadratic",
+  "fee_multiplier": 1,
+  "category": "Politics"
+ },
+ "KXHORMUZWEEKLY": {
+  "fee_type": "quadratic",
+  "fee_multiplier": 1,
+  "category": "Politics"
+ },
+ "KXHSI": {
+  "fee_type": "quadratic",
+  "fee_multiplier": 1,
+  "category": "Financials"
+ },
+ "KXHUNDREDMATCH": {
+  "fee_type": "quadratic",
+  "fee_multiplier": 1,
+  "category": "Sports"
+ },
+ "KXHYPE": {
+  "fee_type": "quadratic",
+  "fee_multiplier": 1,
+  "category": "Crypto"
+ },
+ "KXHYPE15M": {
+  "fee_type": "quadratic",
+  "fee_multiplier": 1,
+  "category": "Crypto"
+ },
+ "KXHYPED": {
+  "fee_type": "quadratic",
+  "fee_multiplier": 1,
+  "category": "Crypto"
+ },
+ "KXHYPEMINMON": {
+  "fee_type": "quadratic",
+  "fee_multiplier": 1,
+  "category": "Crypto"
+ },
+ "KXIDNSLBTTS": {
+  "fee_type": "quadratic",
+  "fee_multiplier": 1,
+  "category": "Sports"
+ },
+ "KXIDNSLGAME": {
+  "fee_type": "quadratic",
+  "fee_multiplier": 1,
+  "category": "Sports"
+ },
+ "KXIDNSLSPREAD": {
+  "fee_type": "quadratic",
+  "fee_multiplier": 1,
+  "category": "Sports"
+ },
+ "KXIDNSLTOTAL": {
+  "fee_type": "quadratic",
+  "fee_multiplier": 1,
+  "category": "Sports"
+ },
+ "KXIMAGEAI": {
+  "fee_type": "quadratic",
+  "fee_multiplier": 1,
+  "category": "Science and Technology"
+ },
+ "KXINDYCARFASTLAP": {
+  "fee_type": "quadratic",
+  "fee_multiplier": 1,
+  "category": "Sports"
+ },
+ "KXINX": {
+  "fee_type": "quadratic",
+  "fee_multiplier": 1,
+  "category": "Financials"
+ },
+ "KXINXDUD": {
+  "fee_type": "quadratic",
+  "fee_multiplier": 1,
+  "category": "Financials"
+ },
+ "KXINXHUD": {
+  "fee_type": "quadratic",
+  "fee_multiplier": 1,
+  "category": "Financials"
+ },
+ "KXINXU": {
+  "fee_type": "quadratic",
+  "fee_multiplier": 1,
+  "category": "Financials"
+ },
+ "KXISRNLBTTS": {
+  "fee_type": "quadratic",
+  "fee_multiplier": 1,
+  "category": "Sports"
+ },
+ "KXISRNLGAME": {
+  "fee_type": "quadratic",
+  "fee_multiplier": 1,
+  "category": "Sports"
+ },
+ "KXISRNLSPREAD": {
+  "fee_type": "quadratic",
+  "fee_multiplier": 1,
+  "category": "Sports"
+ },
+ "KXISRNLTOTAL": {
+  "fee_type": "quadratic",
+  "fee_multiplier": 1,
+  "category": "Sports"
+ },
+ "KXISRPLBTTS": {
+  "fee_type": "quadratic",
+  "fee_multiplier": 1,
+  "category": "Sports"
+ },
+ "KXISRPLCUPBTTS": {
+  "fee_type": "quadratic",
+  "fee_multiplier": 1,
+  "category": "Sports"
+ },
+ "KXISRPLCUPGAME": {
+  "fee_type": "quadratic",
+  "fee_multiplier": 1,
+  "category": "Sports"
+ },
+ "KXISRPLGAME": {
+  "fee_type": "quadratic",
+  "fee_multiplier": 1,
+  "category": "Sports"
+ },
+ "KXISRPLSPREAD": {
+  "fee_type": "quadratic",
+  "fee_multiplier": 1,
+  "category": "Sports"
+ },
+ "KXISRPLTOTAL": {
+  "fee_type": "quadratic",
+  "fee_multiplier": 1,
+  "category": "Sports"
+ },
+ "KXITFDOUBLES": {
+  "fee_type": "quadratic",
+  "fee_multiplier": 1,
+  "category": "Sports"
+ },
+ "KXITFMATCH": {
+  "fee_type": "quadratic",
+  "fee_multiplier": 1,
+  "category": "Sports"
+ },
+ "KXITFWDOUBLES": {
+  "fee_type": "quadratic",
+  "fee_multiplier": 1,
+  "category": "Sports"
+ },
+ "KXITFWMATCH": {
+  "fee_type": "quadratic",
+  "fee_multiplier": 1,
+  "category": "Sports"
+ },
+ "KXJ2LEAGUEBTTS": {
+  "fee_type": "quadratic",
+  "fee_multiplier": 1,
+  "category": "Sports"
+ },
+ "KXJ2LEAGUEGAME": {
+  "fee_type": "quadratic",
+  "fee_multiplier": 1,
+  "category": "Sports"
+ },
+ "KXJ2LEAGUESPREAD": {
+  "fee_type": "quadratic",
+  "fee_multiplier": 1,
+  "category": "Sports"
+ },
+ "KXJ2LEAGUETOTAL": {
+  "fee_type": "quadratic",
+  "fee_multiplier": 1,
+  "category": "Sports"
+ },
+ "KXJLEAGUE1H": {
+  "fee_type": "quadratic",
+  "fee_multiplier": 1,
+  "category": "Sports"
+ },
+ "KXJLEAGUE1HBTTS": {
+  "fee_type": "quadratic",
+  "fee_multiplier": 1,
+  "category": "Sports"
+ },
+ "KXJLEAGUE1HSPREAD": {
+  "fee_type": "quadratic",
+  "fee_multiplier": 1,
+  "category": "Sports"
+ },
+ "KXJLEAGUE1HTOTAL": {
+  "fee_type": "quadratic",
+  "fee_multiplier": 1,
+  "category": "Sports"
+ },
+ "KXJLEAGUEBTTS": {
+  "fee_type": "quadratic",
+  "fee_multiplier": 1,
+  "category": "Sports"
+ },
+ "KXJLEAGUEGAME": {
+  "fee_type": "quadratic",
+  "fee_multiplier": 1,
+  "category": "Sports"
+ },
+ "KXJLEAGUESPREAD": {
+  "fee_type": "quadratic",
+  "fee_multiplier": 1,
+  "category": "Sports"
+ },
+ "KXJLEAGUETOTAL": {
+  "fee_type": "quadratic",
+  "fee_multiplier": 1,
+  "category": "Sports"
+ },
+ "KXJOBLESSCLAIMS": {
+  "fee_type": "quadratic",
+  "fee_multiplier": 1,
+  "category": "Economics"
+ },
+ "KXJUDGECOUNT": {
+  "fee_type": "quadratic",
+  "fee_multiplier": 1,
+  "category": "Politics"
+ },
+ "KXK2LEAGUEBTTS": {
+  "fee_type": "quadratic",
+  "fee_multiplier": 1,
+  "category": "Sports"
+ },
+ "KXK2LEAGUEGAME": {
+  "fee_type": "quadratic",
+  "fee_multiplier": 1,
+  "category": "Sports"
+ },
+ "KXK2LEAGUESPREAD": {
+  "fee_type": "quadratic",
+  "fee_multiplier": 1,
+  "category": "Sports"
+ },
+ "KXK2LEAGUETOTAL": {
+  "fee_type": "quadratic",
+  "fee_multiplier": 1,
+  "category": "Sports"
+ },
+ "KXKBOGAME": {
+  "fee_type": "quadratic",
+  "fee_multiplier": 1,
+  "category": "Sports"
+ },
+ "KXKBORFI": {
+  "fee_type": "quadratic",
+  "fee_multiplier": 1,
+  "category": "Sports"
+ },
+ "KXKBOSPREAD": {
+  "fee_type": "quadratic",
+  "fee_multiplier": 1,
+  "category": "Sports"
+ },
+ "KXKBOTOTAL": {
+  "fee_type": "quadratic",
+  "fee_multiplier": 1,
+  "category": "Sports"
+ },
+ "KXKHLGAME": {
+  "fee_type": "quadratic",
+  "fee_multiplier": 1,
+  "category": "Sports"
+ },
+ "KXKLEAGUE1H": {
+  "fee_type": "quadratic",
+  "fee_multiplier": 1,
+  "category": "Sports"
+ },
+ "KXKLEAGUE1HBTTS": {
+  "fee_type": "quadratic",
+  "fee_multiplier": 1,
+  "category": "Sports"
+ },
+ "KXKLEAGUE1HSPREAD": {
+  "fee_type": "quadratic",
+  "fee_multiplier": 1,
+  "category": "Sports"
+ },
+ "KXKLEAGUE1HTOTAL": {
+  "fee_type": "quadratic",
+  "fee_multiplier": 1,
+  "category": "Sports"
+ },
+ "KXKLEAGUEBTTS": {
+  "fee_type": "quadratic",
+  "fee_multiplier": 1,
+  "category": "Sports"
+ },
+ "KXKLEAGUEGAME": {
+  "fee_type": "quadratic",
+  "fee_multiplier": 1,
+  "category": "Sports"
+ },
+ "KXKLEAGUESPREAD": {
+  "fee_type": "quadratic",
+  "fee_multiplier": 1,
+  "category": "Sports"
+ },
+ "KXKLEAGUETOTAL": {
+  "fee_type": "quadratic",
+  "fee_multiplier": 1,
+  "category": "Sports"
+ },
+ "KXKNVBCUPADVANCE": {
+  "fee_type": "quadratic",
+  "fee_multiplier": 1,
+  "category": "Sports"
+ },
+ "KXKNVBCUPBTTS": {
+  "fee_type": "quadratic",
+  "fee_multiplier": 1,
+  "category": "Sports"
+ },
+ "KXKNVBCUPGAME": {
+  "fee_type": "quadratic",
+  "fee_multiplier": 1,
+  "category": "Sports"
+ },
+ "KXKNVBCUPSPREAD": {
+  "fee_type": "quadratic",
+  "fee_multiplier": 1,
+  "category": "Sports"
+ },
+ "KXKNVBCUPTOTAL": {
+  "fee_type": "quadratic",
+  "fee_multiplier": 1,
+  "category": "Sports"
+ },
+ "KXLALIGA1H": {
+  "fee_type": "quadratic",
+  "fee_multiplier": 1,
+  "category": "Sports"
+ },
+ "KXLALIGA1HBTTS": {
+  "fee_type": "quadratic",
+  "fee_multiplier": 1,
+  "category": "Sports"
+ },
+ "KXLALIGA1HSCORE": {
+  "fee_type": "quadratic",
+  "fee_multiplier": 1,
+  "category": "Sports"
+ },
+ "KXLALIGA1HSPREAD": {
+  "fee_type": "quadratic",
+  "fee_multiplier": 1,
+  "category": "Sports"
+ },
+ "KXLALIGA1HTOTAL": {
+  "fee_type": "quadratic",
+  "fee_multiplier": 1,
+  "category": "Sports"
+ },
+ "KXLALIGA2BTTS": {
+  "fee_type": "quadratic",
+  "fee_multiplier": 1,
+  "category": "Sports"
+ },
+ "KXLALIGA2GAME": {
+  "fee_type": "quadratic",
+  "fee_multiplier": 1,
+  "category": "Sports"
+ },
+ "KXLALIGA2H": {
+  "fee_type": "quadratic",
+  "fee_multiplier": 1,
+  "category": "Sports"
+ },
+ "KXLALIGA2HBTTS": {
+  "fee_type": "quadratic",
+  "fee_multiplier": 1,
+  "category": "Sports"
+ },
+ "KXLALIGA2HSPREAD": {
+  "fee_type": "quadratic",
+  "fee_multiplier": 1,
+  "category": "Sports"
+ },
+ "KXLALIGA2HTOTAL": {
+  "fee_type": "quadratic",
+  "fee_multiplier": 1,
+  "category": "Sports"
+ },
+ "KXLALIGA2SPREAD": {
+  "fee_type": "quadratic",
+  "fee_multiplier": 1,
+  "category": "Sports"
+ },
+ "KXLALIGA2TOTAL": {
+  "fee_type": "quadratic",
+  "fee_multiplier": 1,
+  "category": "Sports"
+ },
+ "KXLALIGABTTS": {
+  "fee_type": "quadratic",
+  "fee_multiplier": 1,
+  "category": "Sports"
+ },
+ "KXLALIGACORNERS": {
+  "fee_type": "quadratic",
+  "fee_multiplier": 1,
+  "category": "Sports"
+ },
+ "KXLALIGAFIRSTGOAL": {
+  "fee_type": "quadratic",
+  "fee_multiplier": 1,
+  "category": "Sports"
+ },
+ "KXLALIGAFTTS": {
+  "fee_type": "quadratic",
+  "fee_multiplier": 1,
+  "category": "Sports"
+ },
+ "KXLALIGAGAME": {
+  "fee_type": "quadratic_with_maker_fees",
+  "fee_multiplier": 1,
+  "category": "Sports"
+ },
+ "KXLALIGAGOAL": {
+  "fee_type": "quadratic",
+  "fee_multiplier": 1,
+  "category": "Sports"
+ },
+ "KXLALIGASCORE": {
+  "fee_type": "quadratic",
+  "fee_multiplier": 1,
+  "category": "Sports"
+ },
+ "KXLALIGASPREAD": {
+  "fee_type": "quadratic",
+  "fee_multiplier": 1,
+  "category": "Sports"
+ },
+ "KXLALIGATCORNERS": {
+  "fee_type": "quadratic",
+  "fee_multiplier": 1,
+  "category": "Sports"
+ },
+ "KXLALIGATEAMTOTAL": {
+  "fee_type": "quadratic",
+  "fee_multiplier": 1,
+  "category": "Sports"
+ },
+ "KXLALIGATOTAL": {
+  "fee_type": "quadratic",
+  "fee_multiplier": 1,
+  "category": "Sports"
+ },
+ "KXLASTWORDMENTION": {
+  "fee_type": "quadratic",
+  "fee_multiplier": 1,
+  "category": "Mentions"
+ },
+ "KXLEAGUESCUP1H": {
+  "fee_type": "quadratic",
+  "fee_multiplier": 1,
+  "category": "Sports"
+ },
+ "KXLEAGUESCUP1HBTTS": {
+  "fee_type": "quadratic",
+  "fee_multiplier": 1,
+  "category": "Sports"
+ },
+ "KXLEAGUESCUP1HSPREAD": {
+  "fee_type": "quadratic",
+  "fee_multiplier": 1,
+  "category": "Sports"
+ },
+ "KXLEAGUESCUP1HTOTAL": {
+  "fee_type": "quadratic",
+  "fee_multiplier": 1,
+  "category": "Sports"
+ },
+ "KXLEAGUESCUPADVANCE": {
+  "fee_type": "quadratic",
+  "fee_multiplier": 1,
+  "category": "Sports"
+ },
+ "KXLEAGUESCUPBTTS": {
+  "fee_type": "quadratic",
+  "fee_multiplier": 1,
+  "category": "Sports"
+ },
+ "KXLEAGUESCUPFTTS": {
+  "fee_type": "quadratic",
+  "fee_multiplier": 1,
+  "category": "Sports"
+ },
+ "KXLEAGUESCUPGAME": {
+  "fee_type": "quadratic",
+  "fee_multiplier": 1,
+  "category": "Sports"
+ },
+ "KXLEAGUESCUPSCORE": {
+  "fee_type": "quadratic",
+  "fee_multiplier": 1,
+  "category": "Sports"
+ },
+ "KXLEAGUESCUPSPREAD": {
+  "fee_type": "quadratic",
+  "fee_multiplier": 1,
+  "category": "Sports"
+ },
+ "KXLEAGUESCUPTEAMTOTAL": {
+  "fee_type": "quadratic",
+  "fee_multiplier": 1,
+  "category": "Sports"
+ },
+ "KXLEAGUESCUPTOTAL": {
+  "fee_type": "quadratic",
+  "fee_multiplier": 1,
+  "category": "Sports"
+ },
+ "KXLEAVECONGRESS": {
+  "fee_type": "quadratic",
+  "fee_multiplier": 1,
+  "category": "Politics"
+ },
+ "KXLIGAEXP1H": {
+  "fee_type": "quadratic",
+  "fee_multiplier": 1,
+  "category": "Sports"
+ },
+ "KXLIGAEXP1HBTTS": {
+  "fee_type": "quadratic",
+  "fee_multiplier": 1,
+  "category": "Sports"
+ },
+ "KXLIGAEXP1HSPREAD": {
+  "fee_type": "quadratic",
+  "fee_multiplier": 1,
+  "category": "Sports"
+ },
+ "KXLIGAEXP1HTOTAL": {
+  "fee_type": "quadratic",
+  "fee_multiplier": 1,
+  "category": "Sports"
+ },
+ "KXLIGAEXPBTTS": {
+  "fee_type": "quadratic",
+  "fee_multiplier": 1,
+  "category": "Sports"
+ },
+ "KXLIGAEXPGAME": {
+  "fee_type": "quadratic",
+  "fee_multiplier": 1,
+  "category": "Sports"
+ },
+ "KXLIGAEXPSPREAD": {
+  "fee_type": "quadratic",
+  "fee_multiplier": 1,
+  "category": "Sports"
+ },
+ "KXLIGAEXPTOTAL": {
+  "fee_type": "quadratic",
+  "fee_multiplier": 1,
+  "category": "Sports"
+ },
+ "KXLIGAMX1H": {
+  "fee_type": "quadratic",
+  "fee_multiplier": 1,
+  "category": "Sports"
+ },
+ "KXLIGAMX1HBTTS": {
+  "fee_type": "quadratic",
+  "fee_multiplier": 1,
+  "category": "Sports"
+ },
+ "KXLIGAMX1HSCORE": {
+  "fee_type": "quadratic",
+  "fee_multiplier": 1,
+  "category": "Sports"
+ },
+ "KXLIGAMX1HSPREAD": {
+  "fee_type": "quadratic",
+  "fee_multiplier": 1,
+  "category": "Sports"
+ },
+ "KXLIGAMX1HTOTAL": {
+  "fee_type": "quadratic",
+  "fee_multiplier": 1,
+  "category": "Sports"
+ },
+ "KXLIGAMX2H": {
+  "fee_type": "quadratic",
+  "fee_multiplier": 1,
+  "category": "Sports"
+ },
+ "KXLIGAMX2HBTTS": {
+  "fee_type": "quadratic",
+  "fee_multiplier": 1,
+  "category": "Sports"
+ },
+ "KXLIGAMX2HSPREAD": {
+  "fee_type": "quadratic",
+  "fee_multiplier": 1,
+  "category": "Sports"
+ },
+ "KXLIGAMX2HTOTAL": {
+  "fee_type": "quadratic",
+  "fee_multiplier": 1,
+  "category": "Sports"
+ },
+ "KXLIGAMXBTTS": {
+  "fee_type": "quadratic",
+  "fee_multiplier": 1,
+  "category": "Sports"
+ },
+ "KXLIGAMXFTTS": {
+  "fee_type": "quadratic",
+  "fee_multiplier": 1,
+  "category": "Sports"
+ },
+ "KXLIGAMXGAME": {
+  "fee_type": "quadratic",
+  "fee_multiplier": 1,
+  "category": "Sports"
+ },
+ "KXLIGAMXSCORE": {
+  "fee_type": "quadratic",
+  "fee_multiplier": 1,
+  "category": "Sports"
+ },
+ "KXLIGAMXSPREAD": {
+  "fee_type": "quadratic",
+  "fee_multiplier": 1,
+  "category": "Sports"
+ },
+ "KXLIGAMXTEAMTOTAL": {
+  "fee_type": "quadratic",
+  "fee_multiplier": 1,
+  "category": "Sports"
+ },
+ "KXLIGAMXTOTAL": {
+  "fee_type": "quadratic",
+  "fee_multiplier": 1,
+  "category": "Sports"
+ },
+ "KXLIGAPORTUGAL1H": {
+  "fee_type": "quadratic",
+  "fee_multiplier": 1,
+  "category": "Sports"
+ },
+ "KXLIGAPORTUGAL1HBTTS": {
+  "fee_type": "quadratic",
+  "fee_multiplier": 1,
+  "category": "Sports"
+ },
+ "KXLIGAPORTUGAL1HSPREAD": {
+  "fee_type": "quadratic",
+  "fee_multiplier": 1,
+  "category": "Sports"
+ },
+ "KXLIGAPORTUGAL1HTOTAL": {
+  "fee_type": "quadratic",
+  "fee_multiplier": 1,
+  "category": "Sports"
+ },
+ "KXLIGAPORTUGALBTTS": {
+  "fee_type": "quadratic",
+  "fee_multiplier": 1,
+  "category": "Sports"
+ },
+ "KXLIGAPORTUGALGAME": {
+  "fee_type": "quadratic",
+  "fee_multiplier": 1,
+  "category": "Sports"
+ },
+ "KXLIGAPORTUGALSPREAD": {
+  "fee_type": "quadratic",
+  "fee_multiplier": 1,
+  "category": "Sports"
+ },
+ "KXLIGAPORTUGALTOTAL": {
+  "fee_type": "quadratic",
+  "fee_multiplier": 1,
+  "category": "Sports"
+ },
+ "KXLIGUE11H": {
+  "fee_type": "quadratic",
+  "fee_multiplier": 1,
+  "category": "Sports"
+ },
+ "KXLIGUE11HBTTS": {
+  "fee_type": "quadratic",
+  "fee_multiplier": 1,
+  "category": "Sports"
+ },
+ "KXLIGUE11HSCORE": {
+  "fee_type": "quadratic",
+  "fee_multiplier": 1,
+  "category": "Sports"
+ },
+ "KXLIGUE11HSPREAD": {
+  "fee_type": "quadratic",
+  "fee_multiplier": 1,
+  "category": "Sports"
+ },
+ "KXLIGUE11HTOTAL": {
+  "fee_type": "quadratic",
+  "fee_multiplier": 1,
+  "category": "Sports"
+ },
+ "KXLIGUE12H": {
+  "fee_type": "quadratic",
+  "fee_multiplier": 1,
+  "category": "Sports"
+ },
+ "KXLIGUE12HBTTS": {
+  "fee_type": "quadratic",
+  "fee_multiplier": 1,
+  "category": "Sports"
+ },
+ "KXLIGUE12HSPREAD": {
+  "fee_type": "quadratic",
+  "fee_multiplier": 1,
+  "category": "Sports"
+ },
+ "KXLIGUE12HTOTAL": {
+  "fee_type": "quadratic",
+  "fee_multiplier": 1,
+  "category": "Sports"
+ },
+ "KXLIGUE1BTTS": {
+  "fee_type": "quadratic",
+  "fee_multiplier": 1,
+  "category": "Sports"
+ },
+ "KXLIGUE1FTTS": {
+  "fee_type": "quadratic",
+  "fee_multiplier": 1,
+  "category": "Sports"
+ },
+ "KXLIGUE1GAME": {
+  "fee_type": "quadratic_with_maker_fees",
+  "fee_multiplier": 1,
+  "category": "Sports"
+ },
+ "KXLIGUE1SCORE": {
+  "fee_type": "quadratic",
+  "fee_multiplier": 1,
+  "category": "Sports"
+ },
+ "KXLIGUE1SPREAD": {
+  "fee_type": "quadratic",
+  "fee_multiplier": 1,
+  "category": "Sports"
+ },
+ "KXLIGUE1TEAMTOTAL": {
+  "fee_type": "quadratic",
+  "fee_multiplier": 1,
+  "category": "Sports"
+ },
+ "KXLIGUE1TOTAL": {
+  "fee_type": "quadratic",
+  "fee_multiplier": 1,
+  "category": "Sports"
+ },
+ "KXLIGUE2BTTS": {
+  "fee_type": "quadratic",
+  "fee_multiplier": 1,
+  "category": "Sports"
+ },
+ "KXLIGUE2GAME": {
+  "fee_type": "quadratic",
+  "fee_multiplier": 1,
+  "category": "Sports"
+ },
+ "KXLIGUE2SPREAD": {
+  "fee_type": "quadratic",
+  "fee_multiplier": 1,
+  "category": "Sports"
+ },
+ "KXLIGUE2TOTAL": {
+  "fee_type": "quadratic",
+  "fee_multiplier": 1,
+  "category": "Sports"
+ },
+ "KXLIIGAGAME": {
+  "fee_type": "quadratic",
+  "fee_multiplier": 1,
+  "category": "Sports"
+ },
+ "KXLIVR2LEAD": {
+  "fee_type": "quadratic",
+  "fee_multiplier": 1,
+  "category": "Sports"
+ },
+ "KXLIVTOP10": {
+  "fee_type": "quadratic",
+  "fee_multiplier": 1,
+  "category": "Sports"
+ },
+ "KXLIVTOUR": {
+  "fee_type": "quadratic",
+  "fee_multiplier": 1,
+  "category": "Sports"
+ },
+ "KXLMBGAME": {
+  "fee_type": "quadratic",
+  "fee_multiplier": 1,
+  "category": "Sports"
+ },
+ "KXLNBPGAME": {
+  "fee_type": "quadratic",
+  "fee_multiplier": 1,
+  "category": "Sports"
+ },
+ "KXLNBPSPREAD": {
+  "fee_type": "quadratic",
+  "fee_multiplier": 1,
+  "category": "Sports"
+ },
+ "KXLNBPTOTAL": {
+  "fee_type": "quadratic",
+  "fee_multiplier": 1,
+  "category": "Sports"
+ },
+ "KXLOLGAME": {
+  "fee_type": "quadratic",
+  "fee_multiplier": 1,
+  "category": "Sports"
+ },
+ "KXLOLMAP": {
+  "fee_type": "quadratic",
+  "fee_multiplier": 1,
+  "category": "Sports"
+ },
+ "KXLOLTOTALMAPS": {
+  "fee_type": "quadratic",
+  "fee_multiplier": 1,
+  "category": "Sports"
+ },
+ "KXLOWTATL": {
+  "fee_type": "quadratic",
+  "fee_multiplier": 1,
+  "category": "Climate and Weather"
+ },
+ "KXLOWTAUS": {
+  "fee_type": "quadratic",
+  "fee_multiplier": 1,
+  "category": "Climate and Weather"
+ },
+ "KXLOWTBOS": {
+  "fee_type": "quadratic",
+  "fee_multiplier": 1,
+  "category": "Climate and Weather"
+ },
+ "KXLOWTCHI": {
+  "fee_type": "quadratic",
+  "fee_multiplier": 1,
+  "category": "Climate and Weather"
+ },
+ "KXLOWTDAL": {
+  "fee_type": "quadratic",
+  "fee_multiplier": 1,
+  "category": "Climate and Weather"
+ },
+ "KXLOWTDC": {
+  "fee_type": "quadratic",
+  "fee_multiplier": 1,
+  "category": "Climate and Weather"
+ },
+ "KXLOWTDEN": {
+  "fee_type": "quadratic",
+  "fee_multiplier": 1,
+  "category": "Climate and Weather"
+ },
+ "KXLOWTEWR": {
+  "fee_type": "quadratic",
+  "fee_multiplier": 1,
+  "category": "Climate and Weather"
+ },
+ "KXLOWTHOU": {
+  "fee_type": "quadratic",
+  "fee_multiplier": 1,
+  "category": "Climate and Weather"
+ },
+ "KXLOWTLAX": {
+  "fee_type": "quadratic",
+  "fee_multiplier": 1,
+  "category": "Climate and Weather"
+ },
+ "KXLOWTLV": {
+  "fee_type": "quadratic",
+  "fee_multiplier": 1,
+  "category": "Climate and Weather"
+ },
+ "KXLOWTMIA": {
+  "fee_type": "quadratic",
+  "fee_multiplier": 1,
+  "category": "Climate and Weather"
+ },
+ "KXLOWTMIN": {
+  "fee_type": "quadratic",
+  "fee_multiplier": 1,
+  "category": "Climate and Weather"
+ },
+ "KXLOWTNOLA": {
+  "fee_type": "quadratic",
+  "fee_multiplier": 1,
+  "category": "Climate and Weather"
+ },
+ "KXLOWTNYC": {
+  "fee_type": "quadratic",
+  "fee_multiplier": 1,
+  "category": "Climate and Weather"
+ },
+ "KXLOWTOKC": {
+  "fee_type": "quadratic",
+  "fee_multiplier": 1,
+  "category": "Climate and Weather"
+ },
+ "KXLOWTPHIL": {
+  "fee_type": "quadratic",
+  "fee_multiplier": 1,
+  "category": "Climate and Weather"
+ },
+ "KXLOWTPHX": {
+  "fee_type": "quadratic",
+  "fee_multiplier": 1,
+  "category": "Climate and Weather"
+ },
+ "KXLOWTSAN": {
+  "fee_type": "quadratic",
+  "fee_multiplier": 1,
+  "category": "Climate and Weather"
+ },
+ "KXLOWTSATX": {
+  "fee_type": "quadratic",
+  "fee_multiplier": 1,
+  "category": "Climate and Weather"
+ },
+ "KXLOWTSDF": {
+  "fee_type": "quadratic",
+  "fee_multiplier": 1,
+  "category": "Climate and Weather"
+ },
+ "KXLOWTSEA": {
+  "fee_type": "quadratic",
+  "fee_multiplier": 1,
+  "category": "Climate and Weather"
+ },
+ "KXLOWTSFO": {
+  "fee_type": "quadratic",
+  "fee_multiplier": 1,
+  "category": "Climate and Weather"
+ },
+ "KXLOWTTTN": {
+  "fee_type": "quadratic",
+  "fee_multiplier": 1,
+  "category": "Climate and Weather"
+ },
+ "KXLPGAR3LEAD": {
+  "fee_type": "quadratic",
+  "fee_multiplier": 1,
+  "category": "Sports"
+ },
+ "KXLPGATOUR": {
+  "fee_type": "quadratic",
+  "fee_multiplier": 1,
+  "category": "Sports"
+ },
+ "KXLPL": {
+  "fee_type": "quadratic",
+  "fee_multiplier": 1,
+  "category": "Sports"
+ },
+ "KXLPLMATCH": {
+  "fee_type": "quadratic",
+  "fee_multiplier": 1,
+  "category": "Sports"
+ },
+ "KXLVAVIRBTTS": {
+  "fee_type": "quadratic",
+  "fee_multiplier": 1,
+  "category": "Sports"
+ },
+ "KXLVAVIRSPREAD": {
+  "fee_type": "quadratic",
+  "fee_multiplier": 1,
+  "category": "Sports"
+ },
+ "KXLVAVIRTOTAL": {
+  "fee_type": "quadratic",
+  "fee_multiplier": 1,
+  "category": "Sports"
+ },
+ "KXLYFT": {
+  "fee_type": "quadratic",
+  "fee_multiplier": 1,
+  "category": "Financials"
+ },
+ "KXMAMDANIMENTION": {
+  "fee_type": "quadratic",
+  "fee_multiplier": 1,
+  "category": "Mentions"
+ },
+ "KXMC": {
+  "fee_type": "quadratic",
+  "fee_multiplier": 1,
+  "category": "Entertainment"
+ },
+ "KXMELI": {
+  "fee_type": "quadratic",
+  "fee_multiplier": 1,
+  "category": "Financials"
+ },
+ "KXMETA": {
+  "fee_type": "quadratic",
+  "fee_multiplier": 1,
+  "category": "Financials"
+ },
+ "KXMIXEDDOUBLESMATCH": {
+  "fee_type": "quadratic",
+  "fee_multiplier": 1,
+  "category": "Sports"
+ },
+ "KXMLBERA": {
+  "fee_type": "quadratic",
+  "fee_multiplier": 1,
+  "category": "Sports"
+ },
+ "KXMLBEXTRAS": {
+  "fee_type": "quadratic",
+  "fee_multiplier": 0.5,
+  "category": "Sports"
+ },
+ "KXMLBF3": {
+  "fee_type": "quadratic",
+  "fee_multiplier": 0.5,
+  "category": "Sports"
+ },
+ "KXMLBF5": {
+  "fee_type": "quadratic",
+  "fee_multiplier": 0.5,
+  "category": "Sports"
+ },
+ "KXMLBF5SPREAD": {
+  "fee_type": "quadratic",
+  "fee_multiplier": 0.5,
+  "category": "Sports"
+ },
+ "KXMLBF5TOTAL": {
+  "fee_type": "quadratic",
+  "fee_multiplier": 0.5,
+  "category": "Sports"
+ },
+ "KXMLBF7": {
+  "fee_type": "quadratic",
+  "fee_multiplier": 0.5,
+  "category": "Sports"
+ },
+ "KXMLBGAME": {
+  "fee_type": "quadratic_with_maker_fees",
+  "fee_multiplier": 0.5,
+  "category": "Sports"
+ },
+ "KXMLBHA": {
+  "fee_type": "quadratic",
+  "fee_multiplier": 1,
+  "category": "Sports"
+ },
+ "KXMLBHIT": {
+  "fee_type": "quadratic",
+  "fee_multiplier": 0.5,
+  "category": "Sports"
+ },
+ "KXMLBHR": {
+  "fee_type": "quadratic",
+  "fee_multiplier": 0.5,
+  "category": "Sports"
+ },
+ "KXMLBHRR": {
+  "fee_type": "quadratic",
+  "fee_multiplier": 0.5,
+  "category": "Sports"
+ },
+ "KXMLBINNINGTOTAL": {
+  "fee_type": "quadratic",
+  "fee_multiplier": 1,
+  "category": "Sports"
+ },
+ "KXMLBINNINGWIN": {
+  "fee_type": "quadratic",
+  "fee_multiplier": 1,
+  "category": "Sports"
+ },
+ "KXMLBKS": {
+  "fee_type": "quadratic",
+  "fee_multiplier": 0.5,
+  "category": "Sports"
+ },
+ "KXMLBMENTION": {
+  "fee_type": "quadratic",
+  "fee_multiplier": 1,
+  "category": "Mentions"
+ },
+ "KXMLBNEXTTEAM": {
+  "fee_type": "quadratic",
+  "fee_multiplier": 1,
+  "category": "Sports"
+ },
+ "KXMLBOUTS": {
+  "fee_type": "quadratic",
+  "fee_multiplier": 0.5,
+  "category": "Sports"
+ },
+ "KXMLBRBI": {
+  "fee_type": "quadratic",
+  "fee_multiplier": 0.5,
+  "category": "Sports"
+ },
+ "KXMLBRFI": {
+  "fee_type": "quadratic",
+  "fee_multiplier": 0.5,
+  "category": "Sports"
+ },
+ "KXMLBSB": {
+  "fee_type": "quadratic",
+  "fee_multiplier": 0.5,
+  "category": "Sports"
+ },
+ "KXMLBSPREAD": {
+  "fee_type": "quadratic",
+  "fee_multiplier": 0.5,
+  "category": "Sports"
+ },
+ "KXMLBTB": {
+  "fee_type": "quadratic",
+  "fee_multiplier": 0.5,
+  "category": "Sports"
+ },
+ "KXMLBTEAMTOTAL": {
+  "fee_type": "quadratic",
+  "fee_multiplier": 0.5,
+  "category": "Sports"
+ },
+ "KXMLBTOTAL": {
+  "fee_type": "quadratic",
+  "fee_multiplier": 0.5,
+  "category": "Sports"
+ },
+ "KXMLBWA": {
+  "fee_type": "quadratic",
+  "fee_multiplier": 1,
+  "category": "Sports"
+ },
+ "KXMLS1H": {
+  "fee_type": "quadratic",
+  "fee_multiplier": 1,
+  "category": "Sports"
+ },
+ "KXMLS1HBTTS": {
+  "fee_type": "quadratic",
+  "fee_multiplier": 1,
+  "category": "Sports"
+ },
+ "KXMLS1HSCORE": {
+  "fee_type": "quadratic",
+  "fee_multiplier": 1,
+  "category": "Sports"
+ },
+ "KXMLS1HSPREAD": {
+  "fee_type": "quadratic",
+  "fee_multiplier": 1,
+  "category": "Sports"
+ },
+ "KXMLS1HTOTAL": {
+  "fee_type": "quadratic",
+  "fee_multiplier": 1,
+  "category": "Sports"
+ },
+ "KXMLS2H": {
+  "fee_type": "quadratic",
+  "fee_multiplier": 1,
+  "category": "Sports"
+ },
+ "KXMLS2HBTTS": {
+  "fee_type": "quadratic",
+  "fee_multiplier": 1,
+  "category": "Sports"
+ },
+ "KXMLS2HSPREAD": {
+  "fee_type": "quadratic",
+  "fee_multiplier": 1,
+  "category": "Sports"
+ },
+ "KXMLS2HTOTAL": {
+  "fee_type": "quadratic",
+  "fee_multiplier": 1,
+  "category": "Sports"
+ },
+ "KXMLSBTTS": {
+  "fee_type": "quadratic",
+  "fee_multiplier": 1,
+  "category": "Sports"
+ },
+ "KXMLSFTTS": {
+  "fee_type": "quadratic",
+  "fee_multiplier": 1,
+  "category": "Sports"
+ },
+ "KXMLSGAME": {
+  "fee_type": "quadratic",
+  "fee_multiplier": 1,
+  "category": "Sports"
+ },
+ "KXMLSSCORE": {
+  "fee_type": "quadratic",
+  "fee_multiplier": 1,
+  "category": "Sports"
+ },
+ "KXMLSSPREAD": {
+  "fee_type": "quadratic",
+  "fee_multiplier": 1,
+  "category": "Sports"
+ },
+ "KXMLSTEAMTOTAL": {
+  "fee_type": "quadratic",
+  "fee_multiplier": 1,
+  "category": "Sports"
+ },
+ "KXMLSTOTAL": {
+  "fee_type": "quadratic",
+  "fee_multiplier": 1,
+  "category": "Sports"
+ },
+ "KXMMAFIGHT": {
+  "fee_type": "quadratic",
+  "fee_multiplier": 1,
+  "category": "Sports"
+ },
+ "KXMNPRIMARY": {
+  "fee_type": "quadratic",
+  "fee_multiplier": 1,
+  "category": "Elections"
+ },
+ "KXMTPMENTION": {
+  "fee_type": "quadratic",
+  "fee_multiplier": 1,
+  "category": "Mentions"
+ },
+ "KXMYSLBTTS": {
+  "fee_type": "quadratic",
+  "fee_multiplier": 1,
+  "category": "Sports"
+ },
+ "KXMYSLSPREAD": {
+  "fee_type": "quadratic",
+  "fee_multiplier": 1,
+  "category": "Sports"
+ },
+ "KXMYSLTOTAL": {
+  "fee_type": "quadratic",
+  "fee_multiplier": 1,
+  "category": "Sports"
+ },
+ "KXNASCARBIGGESTMOVER": {
+  "fee_type": "quadratic",
+  "fee_multiplier": 1,
+  "category": "Sports"
+ },
+ "KXNASCARFASTLAP": {
+  "fee_type": "quadratic",
+  "fee_multiplier": 1,
+  "category": "Sports"
+ },
+ "KXNASCARRACE": {
+  "fee_type": "quadratic_with_maker_fees",
+  "fee_multiplier": 1,
+  "category": "Sports"
+ },
+ "KXNASCARTOP10": {
+  "fee_type": "quadratic",
+  "fee_multiplier": 1,
+  "category": "Sports"
+ },
+ "KXNASCARTOP3": {
+  "fee_type": "quadratic",
+  "fee_multiplier": 1,
+  "category": "Sports"
+ },
+ "KXNASCARTOPTEAM": {
+  "fee_type": "quadratic",
+  "fee_multiplier": 1,
+  "category": "Sports"
+ },
+ "KXNASDAQ100": {
+  "fee_type": "quadratic",
+  "fee_multiplier": 1,
+  "category": "Financials"
+ },
+ "KXNASDAQ100U": {
+  "fee_type": "quadratic",
+  "fee_multiplier": 1,
+  "category": "Financials"
+ },
+ "KXNASDAQDUD": {
+  "fee_type": "quadratic",
+  "fee_multiplier": 1,
+  "category": "Financials"
+ },
+ "KXNATGAS15M": {
+  "fee_type": "quadratic",
+  "fee_multiplier": 1,
+  "category": "Commodities"
+ },
+ "KXNATGASD": {
+  "fee_type": "quadratic",
+  "fee_multiplier": 1,
+  "category": "Commodities"
+ },
+ "KXNATGASMON": {
+  "fee_type": "quadratic",
+  "fee_multiplier": 1,
+  "category": "Commodities"
+ },
+ "KXNATGASW": {
+  "fee_type": "quadratic",
+  "fee_multiplier": 1,
+  "category": "Commodities"
+ },
+ "KXNBASUMMER1HSPREAD": {
+  "fee_type": "quadratic",
+  "fee_multiplier": 1,
+  "category": "Sports"
+ },
+ "KXNBASUMMER1HTOTAL": {
+  "fee_type": "quadratic",
+  "fee_multiplier": 1,
+  "category": "Sports"
+ },
+ "KXNBASUMMER1HWINNER": {
+  "fee_type": "quadratic",
+  "fee_multiplier": 1,
+  "category": "Sports"
+ },
+ "KXNBASUMMERGAME": {
+  "fee_type": "quadratic",
+  "fee_multiplier": 1,
+  "category": "Sports"
+ },
+ "KXNBASUMMERMVP": {
+  "fee_type": "quadratic",
+  "fee_multiplier": 1,
+  "category": "Sports"
+ },
+ "KXNBASUMMERSPREAD": {
+  "fee_type": "quadratic",
+  "fee_multiplier": 1,
+  "category": "Sports"
+ },
+ "KXNBASUMMERTOTAL": {
+  "fee_type": "quadratic",
+  "fee_multiplier": 1,
+  "category": "Sports"
+ },
+ "KXNCAAF1H": {
+  "fee_type": "quadratic",
+  "fee_multiplier": 1,
+  "category": "Sports"
+ },
+ "KXNCAAF1HFT": {
+  "fee_type": "quadratic",
+  "fee_multiplier": 1,
+  "category": "Sports"
+ },
+ "KXNCAAF1HSPREAD": {
+  "fee_type": "quadratic",
+  "fee_multiplier": 1,
+  "category": "Sports"
+ },
+ "KXNCAAF1HTEAMTOTAL": {
+  "fee_type": "quadratic",
+  "fee_multiplier": 1,
+  "category": "Sports"
+ },
+ "KXNCAAF1HTOTAL": {
+  "fee_type": "quadratic",
+  "fee_multiplier": 1,
+  "category": "Sports"
+ },
+ "KXNCAAF1Q": {
+  "fee_type": "quadratic",
+  "fee_multiplier": 1,
+  "category": "Sports"
+ },
+ "KXNCAAF1QSPREAD": {
+  "fee_type": "quadratic",
+  "fee_multiplier": 1,
+  "category": "Sports"
+ },
+ "KXNCAAF1QTOTAL": {
+  "fee_type": "quadratic",
+  "fee_multiplier": 1,
+  "category": "Sports"
+ },
+ "KXNCAAF2H": {
+  "fee_type": "quadratic",
+  "fee_multiplier": 1,
+  "category": "Sports"
+ },
+ "KXNCAAF2HSPREAD": {
+  "fee_type": "quadratic",
+  "fee_multiplier": 1,
+  "category": "Sports"
+ },
+ "KXNCAAF2HTOTAL": {
+  "fee_type": "quadratic",
+  "fee_multiplier": 1,
+  "category": "Sports"
+ },
+ "KXNCAAF2Q": {
+  "fee_type": "quadratic",
+  "fee_multiplier": 1,
+  "category": "Sports"
+ },
+ "KXNCAAF2QSPREAD": {
+  "fee_type": "quadratic",
+  "fee_multiplier": 1,
+  "category": "Sports"
+ },
+ "KXNCAAF2QTOTAL": {
+  "fee_type": "quadratic",
+  "fee_multiplier": 1,
+  "category": "Sports"
+ },
+ "KXNCAAF3Q": {
+  "fee_type": "quadratic",
+  "fee_multiplier": 1,
+  "category": "Sports"
+ },
+ "KXNCAAF3QSPREAD": {
+  "fee_type": "quadratic",
+  "fee_multiplier": 1,
+  "category": "Sports"
+ },
+ "KXNCAAF3QTOTAL": {
+  "fee_type": "quadratic",
+  "fee_multiplier": 1,
+  "category": "Sports"
+ },
+ "KXNCAAF4Q": {
+  "fee_type": "quadratic",
+  "fee_multiplier": 1,
+  "category": "Sports"
+ },
+ "KXNCAAF4QSPREAD": {
+  "fee_type": "quadratic",
+  "fee_multiplier": 1,
+  "category": "Sports"
+ },
+ "KXNCAAF4QTOTAL": {
+  "fee_type": "quadratic",
+  "fee_multiplier": 1,
+  "category": "Sports"
+ },
+ "KXNCAAFDSTTD": {
+  "fee_type": "quadratic",
+  "fee_multiplier": 1,
+  "category": "Sports"
+ },
+ "KXNCAAFFIRSTTDTEAM": {
+  "fee_type": "quadratic",
+  "fee_multiplier": 1,
+  "category": "Sports"
+ },
+ "KXNCAAFGAME": {
+  "fee_type": "quadratic_with_maker_fees",
+  "fee_multiplier": 1,
+  "category": "Sports"
+ },
+ "KXNCAAFOT": {
+  "fee_type": "quadratic",
+  "fee_multiplier": 1,
+  "category": "Sports"
+ },
+ "KXNCAAFSPREAD": {
+  "fee_type": "quadratic_with_maker_fees",
+  "fee_multiplier": 1,
+  "category": "Sports"
+ },
+ "KXNCAAFTEAMFG": {
+  "fee_type": "quadratic",
+  "fee_multiplier": 1,
+  "category": "Sports"
+ },
+ "KXNCAAFTEAMRECTD": {
+  "fee_type": "quadratic",
+  "fee_multiplier": 1,
+  "category": "Sports"
+ },
+ "KXNCAAFTEAMRECYDS": {
+  "fee_type": "quadratic",
+  "fee_multiplier": 1,
+  "category": "Sports"
+ },
+ "KXNCAAFTEAMRSHTD": {
+  "fee_type": "quadratic",
+  "fee_multiplier": 1,
+  "category": "Sports"
+ },
+ "KXNCAAFTEAMTD": {
+  "fee_type": "quadratic",
+  "fee_multiplier": 1,
+  "category": "Sports"
+ },
+ "KXNCAAFTEAMTOTAL": {
+  "fee_type": "quadratic",
+  "fee_multiplier": 1,
+  "category": "Sports"
+ },
+ "KXNCAAFTEAMYDS": {
+  "fee_type": "quadratic",
+  "fee_multiplier": 1,
+  "category": "Sports"
+ },
+ "KXNCAAFTOPAPRANK": {
+  "fee_type": "quadratic",
+  "fee_multiplier": 1,
+  "category": "Sports"
+ },
+ "KXNCAAFTOTAL": {
+  "fee_type": "quadratic_with_maker_fees",
+  "fee_multiplier": 1,
+  "category": "Sports"
+ },
+ "KXNCAAMSOCCERGAME": {
+  "fee_type": "quadratic",
+  "fee_multiplier": 1,
+  "category": "Sports"
+ },
+ "KXNCAAWVMATCH": {
+  "fee_type": "quadratic",
+  "fee_multiplier": 1,
+  "category": "Sports"
+ },
+ "KXNDQHUD": {
+  "fee_type": "quadratic",
+  "fee_multiplier": 1,
+  "category": "Financials"
+ },
+ "KXNEAR15M": {
+  "fee_type": "quadratic",
+  "fee_multiplier": 1,
+  "category": "Crypto"
+ },
+ "KXNETFLIXRANKSHOW": {
+  "fee_type": "quadratic",
+  "fee_multiplier": 1,
+  "category": "Entertainment"
+ },
+ "KXNETFLIXRANKSHOWGLOBAL": {
+  "fee_type": "quadratic",
+  "fee_multiplier": 1,
+  "category": "Entertainment"
+ },
+ "KXNETFLIXRANKSHOWGLOBAL2": {
+  "fee_type": "quadratic",
+  "fee_multiplier": 1,
+  "category": "Entertainment"
+ },
+ "KXNETFLIXTOPVIEWSMOVIE": {
+  "fee_type": "quadratic",
+  "fee_multiplier": 1,
+  "category": "Entertainment"
+ },
+ "KXNETFLIXTOPVIEWSTV": {
+  "fee_type": "quadratic",
+  "fee_multiplier": 1,
+  "category": "Entertainment"
+ },
+ "KXNEXTTEAMNFL": {
+  "fee_type": "quadratic",
+  "fee_multiplier": 1,
+  "category": "Sports"
+ },
+ "KXNFL1H": {
+  "fee_type": "quadratic",
+  "fee_multiplier": 1,
+  "category": "Sports"
+ },
+ "KXNFL1HFT": {
+  "fee_type": "quadratic",
+  "fee_multiplier": 1,
+  "category": "Sports"
+ },
+ "KXNFL1HSPREAD": {
+  "fee_type": "quadratic",
+  "fee_multiplier": 1,
+  "category": "Sports"
+ },
+ "KXNFL1HTEAMTOTAL": {
+  "fee_type": "quadratic",
+  "fee_multiplier": 1,
+  "category": "Sports"
+ },
+ "KXNFL1HTOTAL": {
+  "fee_type": "quadratic",
+  "fee_multiplier": 1,
+  "category": "Sports"
+ },
+ "KXNFL1Q": {
+  "fee_type": "quadratic",
+  "fee_multiplier": 1,
+  "category": "Sports"
+ },
+ "KXNFL1QBTTS": {
+  "fee_type": "quadratic",
+  "fee_multiplier": 1,
+  "category": "Sports"
+ },
+ "KXNFL1QSPREAD": {
+  "fee_type": "quadratic",
+  "fee_multiplier": 1,
+  "category": "Sports"
+ },
+ "KXNFL1QTOTAL": {
+  "fee_type": "quadratic",
+  "fee_multiplier": 1,
+  "category": "Sports"
+ },
+ "KXNFL2H": {
+  "fee_type": "quadratic",
+  "fee_multiplier": 1,
+  "category": "Sports"
+ },
+ "KXNFL2HSPREAD": {
+  "fee_type": "quadratic",
+  "fee_multiplier": 1,
+  "category": "Sports"
+ },
+ "KXNFL2HTOTAL": {
+  "fee_type": "quadratic",
+  "fee_multiplier": 1,
+  "category": "Sports"
+ },
+ "KXNFL2Q": {
+  "fee_type": "quadratic",
+  "fee_multiplier": 1,
+  "category": "Sports"
+ },
+ "KXNFL2QBTTS": {
+  "fee_type": "quadratic",
+  "fee_multiplier": 1,
+  "category": "Sports"
+ },
+ "KXNFL2QSPREAD": {
+  "fee_type": "quadratic",
+  "fee_multiplier": 1,
+  "category": "Sports"
+ },
+ "KXNFL2QTOTAL": {
+  "fee_type": "quadratic",
+  "fee_multiplier": 1,
+  "category": "Sports"
+ },
+ "KXNFL3Q": {
+  "fee_type": "quadratic",
+  "fee_multiplier": 1,
+  "category": "Sports"
+ },
+ "KXNFL3QBTTS": {
+  "fee_type": "quadratic",
+  "fee_multiplier": 1,
+  "category": "Sports"
+ },
+ "KXNFL3QSPREAD": {
+  "fee_type": "quadratic",
+  "fee_multiplier": 1,
+  "category": "Sports"
+ },
+ "KXNFL3QTOTAL": {
+  "fee_type": "quadratic",
+  "fee_multiplier": 1,
+  "category": "Sports"
+ },
+ "KXNFL4Q": {
+  "fee_type": "quadratic",
+  "fee_multiplier": 1,
+  "category": "Sports"
+ },
+ "KXNFL4QSPREAD": {
+  "fee_type": "quadratic",
+  "fee_multiplier": 1,
+  "category": "Sports"
+ },
+ "KXNFL4QTOTAL": {
+  "fee_type": "quadratic",
+  "fee_multiplier": 1,
+  "category": "Sports"
+ },
+ "KXNFLBOTH": {
+  "fee_type": "quadratic",
+  "fee_multiplier": 1,
+  "category": "Sports"
+ },
+ "KXNFLDSTTD": {
+  "fee_type": "quadratic",
+  "fee_multiplier": 1,
+  "category": "Sports"
+ },
+ "KXNFLEQBTTS": {
+  "fee_type": "quadratic",
+  "fee_multiplier": 1,
+  "category": "Sports"
+ },
+ "KXNFLFFPTS": {
+  "fee_type": "quadratic",
+  "fee_multiplier": 1,
+  "category": "Sports"
+ },
+ "KXNFLFG": {
+  "fee_type": "quadratic",
+  "fee_multiplier": 1,
+  "category": "Sports"
+ },
+ "KXNFLFIRSTTDTEAM": {
+  "fee_type": "quadratic",
+  "fee_multiplier": 1,
+  "category": "Sports"
+ },
+ "KXNFLGAME": {
+  "fee_type": "quadratic_with_maker_fees",
+  "fee_multiplier": 1,
+  "category": "Sports"
+ },
+ "KXNFLLONGREC": {
+  "fee_type": "quadratic",
+  "fee_multiplier": 1,
+  "category": "Sports"
+ },
+ "KXNFLLONGRSH": {
+  "fee_type": "quadratic",
+  "fee_multiplier": 1,
+  "category": "Sports"
+ },
+ "KXNFLMOSTRECYDS": {
+  "fee_type": "quadratic",
+  "fee_multiplier": 1,
+  "category": "Sports"
+ },
+ "KXNFLMOSTRSHYDS": {
+  "fee_type": "quadratic",
+  "fee_multiplier": 1,
+  "category": "Sports"
+ },
+ "KXNFLOT": {
+  "fee_type": "quadratic",
+  "fee_multiplier": 1,
+  "category": "Sports"
+ },
+ "KXNFLPASSATT": {
+  "fee_type": "quadratic",
+  "fee_multiplier": 1,
+  "category": "Sports"
+ },
+ "KXNFLPASSCOMP": {
+  "fee_type": "quadratic",
+  "fee_multiplier": 1,
+  "category": "Sports"
+ },
+ "KXNFLPASSINT": {
+  "fee_type": "quadratic",
+  "fee_multiplier": 1,
+  "category": "Sports"
+ },
+ "KXNFLPASSTDS": {
+  "fee_type": "quadratic",
+  "fee_multiplier": 1,
+  "category": "Sports"
+ },
+ "KXNFLPASSYDS": {
+  "fee_type": "quadratic",
+  "fee_multiplier": 1,
+  "category": "Sports"
+ },
+ "KXNFLRACE": {
+  "fee_type": "quadratic",
+  "fee_multiplier": 1,
+  "category": "Sports"
+ },
+ "KXNFLREC": {
+  "fee_type": "quadratic",
+  "fee_multiplier": 1,
+  "category": "Sports"
+ },
+ "KXNFLRECYDS": {
+  "fee_type": "quadratic",
+  "fee_multiplier": 1,
+  "category": "Sports"
+ },
+ "KXNFLRRYDS": {
+  "fee_type": "quadratic",
+  "fee_multiplier": 1,
+  "category": "Sports"
+ },
+ "KXNFLRSHATT": {
+  "fee_type": "quadratic",
+  "fee_multiplier": 1,
+  "category": "Sports"
+ },
+ "KXNFLRSHYDS": {
+  "fee_type": "quadratic",
+  "fee_multiplier": 1,
+  "category": "Sports"
+ },
+ "KXNFLSFTY": {
+  "fee_type": "quadratic",
+  "fee_multiplier": 1,
+  "category": "Sports"
+ },
+ "KXNFLSPREAD": {
+  "fee_type": "quadratic_with_maker_fees",
+  "fee_multiplier": 1,
+  "category": "Sports"
+ },
+ "KXNFLTD": {
+  "fee_type": "quadratic",
+  "fee_multiplier": 1,
+  "category": "Sports"
+ },
+ "KXNFLTEAMSACK": {
+  "fee_type": "quadratic",
+  "fee_multiplier": 1,
+  "category": "Sports"
+ },
+ "KXNFLTEAMTD": {
+  "fee_type": "quadratic",
+  "fee_multiplier": 1,
+  "category": "Sports"
+ },
+ "KXNFLTEAMTOTAL": {
+  "fee_type": "quadratic",
+  "fee_multiplier": 1,
+  "category": "Sports"
+ },
+ "KXNFLTEAMYDS": {
+  "fee_type": "quadratic",
+  "fee_multiplier": 1,
+  "category": "Sports"
+ },
+ "KXNFLTOTAL": {
+  "fee_type": "quadratic_with_maker_fees",
+  "fee_multiplier": 1,
+  "category": "Sports"
+ },
+ "KXNFLWEEKMOSTRSHYDS": {
+  "fee_type": "quadratic",
+  "fee_multiplier": 1,
+  "category": "Sports"
+ },
+ "KXNFLWINMARGIN": {
+  "fee_type": "quadratic",
+  "fee_multiplier": 1,
+  "category": "Sports"
+ },
+ "KXNKY": {
+  "fee_type": "quadratic",
+  "fee_multiplier": 1,
+  "category": "Financials"
+ },
+ "KXNLGAME": {
+  "fee_type": "quadratic",
+  "fee_multiplier": 1,
+  "category": "Sports"
+ },
+ "KXNPBGAME": {
+  "fee_type": "quadratic",
+  "fee_multiplier": 1,
+  "category": "Sports"
+ },
+ "KXNPBRFI": {
+  "fee_type": "quadratic",
+  "fee_multiplier": 1,
+  "category": "Sports"
+ },
+ "KXNPBSPREAD": {
+  "fee_type": "quadratic",
+  "fee_multiplier": 1,
+  "category": "Sports"
+ },
+ "KXNPBTOTAL": {
+  "fee_type": "quadratic",
+  "fee_multiplier": 1,
+  "category": "Sports"
+ },
+ "KXNWSLBTTS": {
+  "fee_type": "quadratic",
+  "fee_multiplier": 1,
+  "category": "Sports"
+ },
+ "KXNWSLGAME": {
+  "fee_type": "quadratic",
+  "fee_multiplier": 1,
+  "category": "Sports"
+ },
+ "KXNWSLSPREAD": {
+  "fee_type": "quadratic",
+  "fee_multiplier": 1,
+  "category": "Sports"
+ },
+ "KXNWSLTOTAL": {
+  "fee_type": "quadratic",
+  "fee_multiplier": 1,
+  "category": "Sports"
+ },
+ "KXNZDUSD": {
+  "fee_type": "quadratic",
+  "fee_multiplier": 1,
+  "category": "Financials"
+ },
+ "KXODIMATCH": {
+  "fee_type": "quadratic",
+  "fee_multiplier": 1,
+  "category": "Sports"
+ },
+ "KXOPENSHARE": {
+  "fee_type": "quadratic",
+  "fee_multiplier": 1,
+  "category": "Science and Technology"
+ },
+ "KXOWGAME": {
+  "fee_type": "quadratic",
+  "fee_multiplier": 1,
+  "category": "Sports"
+ },
+ "KXPALLADIUMH": {
+  "fee_type": "quadratic",
+  "fee_multiplier": 1,
+  "category": "Commodities"
+ },
+ "KXPANAMAWEEKLY": {
+  "fee_type": "quadratic",
+  "fee_multiplier": 1,
+  "category": "Politics"
+ },
+ "KXPAYROLLS": {
+  "fee_type": "quadratic_with_maker_fees",
+  "fee_multiplier": 1,
+  "category": "Economics"
+ },
+ "KXPERLIGA1BTTS": {
+  "fee_type": "quadratic",
+  "fee_multiplier": 1,
+  "category": "Sports"
+ },
+ "KXPERLIGA1GAME": {
+  "fee_type": "quadratic",
+  "fee_multiplier": 1,
+  "category": "Sports"
+ },
+ "KXPERLIGA1SPREAD": {
+  "fee_type": "quadratic",
+  "fee_multiplier": 1,
+  "category": "Sports"
+ },
+ "KXPERLIGA1TOTAL": {
+  "fee_type": "quadratic",
+  "fee_multiplier": 1,
+  "category": "Sports"
+ },
+ "KXPERSONMENTION": {
+  "fee_type": "quadratic",
+  "fee_multiplier": 1,
+  "category": "Mentions"
+ },
+ "KXPGA3BALL": {
+  "fee_type": "quadratic",
+  "fee_multiplier": 1,
+  "category": "Sports"
+ },
+ "KXPGAH2H": {
+  "fee_type": "quadratic",
+  "fee_multiplier": 1,
+  "category": "Sports"
+ },
+ "KXPGALOWSCORE": {
+  "fee_type": "quadratic",
+  "fee_multiplier": 1,
+  "category": "Sports"
+ },
+ "KXPGAMAKECUT": {
+  "fee_type": "quadratic",
+  "fee_multiplier": 1,
+  "category": "Sports"
+ },
+ "KXPGAPLAYERCAT": {
+  "fee_type": "quadratic",
+  "fee_multiplier": 1,
+  "category": "Sports"
+ },
+ "KXPGAPLAYOFF": {
+  "fee_type": "quadratic",
+  "fee_multiplier": 1,
+  "category": "Sports"
+ },
+ "KXPGAR3LEAD": {
+  "fee_type": "quadratic",
+  "fee_multiplier": 1,
+  "category": "Sports"
+ },
+ "KXPGAROUNDSCORE": {
+  "fee_type": "quadratic",
+  "fee_multiplier": 1,
+  "category": "Sports"
+ },
+ "KXPGATOP10": {
+  "fee_type": "quadratic",
+  "fee_multiplier": 1,
+  "category": "Sports"
+ },
+ "KXPGATOP20": {
+  "fee_type": "quadratic",
+  "fee_multiplier": 1,
+  "category": "Sports"
+ },
+ "KXPGATOP5": {
+  "fee_type": "quadratic",
+  "fee_multiplier": 1,
+  "category": "Sports"
+ },
+ "KXPGATOUR": {
+  "fee_type": "quadratic_with_maker_fees",
+  "fee_multiplier": 1,
+  "category": "Sports"
+ },
+ "KXPLLGAME": {
+  "fee_type": "quadratic",
+  "fee_multiplier": 1,
+  "category": "Sports"
+ },
+ "KXPOKEMON": {
+  "fee_type": "quadratic",
+  "fee_multiplier": 1,
+  "category": "Entertainment"
+ },
+ "KXPOLITICSMENTION": {
+  "fee_type": "quadratic",
+  "fee_multiplier": 1,
+  "category": "Mentions"
+ },
+ "KXPUREALBUMS": {
+  "fee_type": "quadratic",
+  "fee_multiplier": 1,
+  "category": "Entertainment"
+ },
+ "KXR6GAME": {
+  "fee_type": "quadratic",
+  "fee_multiplier": 1,
+  "category": "Sports"
+ },
+ "KXR6MAP": {
+  "fee_type": "quadratic",
+  "fee_multiplier": 1,
+  "category": "Sports"
+ },
+ "KXRAIN": {
+  "fee_type": "quadratic",
+  "fee_multiplier": 1,
+  "category": "Climate and Weather"
+ },
+ "KXRAINNYCM": {
+  "fee_type": "quadratic",
+  "fee_multiplier": 1,
+  "category": "Climate and Weather"
+ },
+ "KXRAINWKND": {
+  "fee_type": "quadratic",
+  "fee_multiplier": 1,
+  "category": "Climate and Weather"
+ },
+ "KXRLGAME": {
+  "fee_type": "quadratic",
+  "fee_multiplier": 1,
+  "category": "Sports"
+ },
+ "KXRT": {
+  "fee_type": "quadratic",
+  "fee_multiplier": 1,
+  "category": "Entertainment"
+ },
+ "KXRTX5090WS": {
+  "fee_type": "quadratic_with_maker_fees",
+  "fee_multiplier": 1,
+  "category": "Financials"
+ },
+ "KXRUGBYESLMATCH": {
+  "fee_type": "quadratic",
+  "fee_multiplier": 1,
+  "category": "Sports"
+ },
+ "KXRUGBYFRA14MATCH": {
+  "fee_type": "quadratic",
+  "fee_multiplier": 1,
+  "category": "Sports"
+ },
+ "KXRUGBYNRLMATCH": {
+  "fee_type": "quadratic",
+  "fee_multiplier": 1,
+  "category": "Sports"
+ },
+ "KXSAMOMINF": {
+  "fee_type": "quadratic",
+  "fee_multiplier": 1,
+  "category": "Economics"
+ },
+ "KXSARETAIL": {
+  "fee_type": "quadratic",
+  "fee_multiplier": 1,
+  "category": "Economics"
+ },
+ "KXSAUDIPL1H": {
+  "fee_type": "quadratic",
+  "fee_multiplier": 1,
+  "category": "Sports"
+ },
+ "KXSAUDIPL1HBTTS": {
+  "fee_type": "quadratic",
+  "fee_multiplier": 1,
+  "category": "Sports"
+ },
+ "KXSAUDIPL1HSPREAD": {
+  "fee_type": "quadratic",
+  "fee_multiplier": 1,
+  "category": "Sports"
+ },
+ "KXSAUDIPL1HTOTAL": {
+  "fee_type": "quadratic",
+  "fee_multiplier": 1,
+  "category": "Sports"
+ },
+ "KXSAUDIPLBTTS": {
+  "fee_type": "quadratic",
+  "fee_multiplier": 1,
+  "category": "Sports"
+ },
+ "KXSAUDIPLGAME": {
+  "fee_type": "quadratic",
+  "fee_multiplier": 1,
+  "category": "Sports"
+ },
+ "KXSAUDIPLSPREAD": {
+  "fee_type": "quadratic",
+  "fee_multiplier": 1,
+  "category": "Sports"
+ },
+ "KXSAUDIPLTOTAL": {
+  "fee_type": "quadratic",
+  "fee_multiplier": 1,
+  "category": "Sports"
+ },
+ "KXSCOCUPADVANCE": {
+  "fee_type": "quadratic",
+  "fee_multiplier": 1,
+  "category": "Sports"
+ },
+ "KXSCOCUPBTTS": {
+  "fee_type": "quadratic",
+  "fee_multiplier": 1,
+  "category": "Sports"
+ },
+ "KXSCOCUPGAME": {
+  "fee_type": "quadratic",
+  "fee_multiplier": 1,
+  "category": "Sports"
+ },
+ "KXSCOCUPSPREAD": {
+  "fee_type": "quadratic",
+  "fee_multiplier": 1,
+  "category": "Sports"
+ },
+ "KXSCOCUPTOTAL": {
+  "fee_type": "quadratic",
+  "fee_multiplier": 1,
+  "category": "Sports"
+ },
+ "KXSCOTTISHPREM1H": {
+  "fee_type": "quadratic",
+  "fee_multiplier": 1,
+  "category": "Sports"
+ },
+ "KXSCOTTISHPREM1HBTTS": {
+  "fee_type": "quadratic",
+  "fee_multiplier": 1,
+  "category": "Sports"
+ },
+ "KXSCOTTISHPREM1HSPREAD": {
+  "fee_type": "quadratic",
+  "fee_multiplier": 1,
+  "category": "Sports"
+ },
+ "KXSCOTTISHPREM1HTOTAL": {
+  "fee_type": "quadratic",
+  "fee_multiplier": 1,
+  "category": "Sports"
+ },
+ "KXSCOTTISHPREMBTTS": {
+  "fee_type": "quadratic",
+  "fee_multiplier": 1,
+  "category": "Sports"
+ },
+ "KXSCOTTISHPREMGAME": {
+  "fee_type": "quadratic",
+  "fee_multiplier": 1,
+  "category": "Sports"
+ },
+ "KXSCOTTISHPREMSPREAD": {
+  "fee_type": "quadratic",
+  "fee_multiplier": 1,
+  "category": "Sports"
+ },
+ "KXSCOTTISHPREMTOTAL": {
+  "fee_type": "quadratic",
+  "fee_multiplier": 1,
+  "category": "Sports"
+ },
+ "KXSERIEA1H": {
+  "fee_type": "quadratic",
+  "fee_multiplier": 1,
+  "category": "Sports"
+ },
+ "KXSERIEA1HBTTS": {
+  "fee_type": "quadratic",
+  "fee_multiplier": 1,
+  "category": "Sports"
+ },
+ "KXSERIEA1HSCORE": {
+  "fee_type": "quadratic",
+  "fee_multiplier": 1,
+  "category": "Sports"
+ },
+ "KXSERIEA1HSPREAD": {
+  "fee_type": "quadratic",
+  "fee_multiplier": 1,
+  "category": "Sports"
+ },
+ "KXSERIEA1HTOTAL": {
+  "fee_type": "quadratic",
+  "fee_multiplier": 1,
+  "category": "Sports"
+ },
+ "KXSERIEA2H": {
+  "fee_type": "quadratic",
+  "fee_multiplier": 1,
+  "category": "Sports"
+ },
+ "KXSERIEA2HBTTS": {
+  "fee_type": "quadratic",
+  "fee_multiplier": 1,
+  "category": "Sports"
+ },
+ "KXSERIEA2HSPREAD": {
+  "fee_type": "quadratic",
+  "fee_multiplier": 1,
+  "category": "Sports"
+ },
+ "KXSERIEA2HTOTAL": {
+  "fee_type": "quadratic",
+  "fee_multiplier": 1,
+  "category": "Sports"
+ },
+ "KXSERIEABTTS": {
+  "fee_type": "quadratic",
+  "fee_multiplier": 1,
+  "category": "Sports"
+ },
+ "KXSERIEAFTTS": {
+  "fee_type": "quadratic",
+  "fee_multiplier": 1,
+  "category": "Sports"
+ },
+ "KXSERIEAGAME": {
+  "fee_type": "quadratic_with_maker_fees",
+  "fee_multiplier": 1,
+  "category": "Sports"
+ },
+ "KXSERIEASCORE": {
+  "fee_type": "quadratic",
+  "fee_multiplier": 1,
+  "category": "Sports"
+ },
+ "KXSERIEASPREAD": {
+  "fee_type": "quadratic",
+  "fee_multiplier": 1,
+  "category": "Sports"
+ },
+ "KXSERIEATEAMTOTAL": {
+  "fee_type": "quadratic",
+  "fee_multiplier": 1,
+  "category": "Sports"
+ },
+ "KXSERIEATOTAL": {
+  "fee_type": "quadratic",
+  "fee_multiplier": 1,
+  "category": "Sports"
+ },
+ "KXSERIEBBTTS": {
+  "fee_type": "quadratic",
+  "fee_multiplier": 1,
+  "category": "Sports"
+ },
+ "KXSERIEBGAME": {
+  "fee_type": "quadratic",
+  "fee_multiplier": 1,
+  "category": "Sports"
+ },
+ "KXSERIEBSPREAD": {
+  "fee_type": "quadratic",
+  "fee_multiplier": 1,
+  "category": "Sports"
+ },
+ "KXSERIEBTOTAL": {
+  "fee_type": "quadratic",
+  "fee_multiplier": 1,
+  "category": "Sports"
+ },
+ "KXSERIECBTTS": {
+  "fee_type": "quadratic",
+  "fee_multiplier": 1,
+  "category": "Sports"
+ },
+ "KXSERIECCUPADVANCE": {
+  "fee_type": "quadratic",
+  "fee_multiplier": 1,
+  "category": "Sports"
+ },
+ "KXSERIECCUPBTTS": {
+  "fee_type": "quadratic",
+  "fee_multiplier": 1,
+  "category": "Sports"
+ },
+ "KXSERIECCUPGAME": {
+  "fee_type": "quadratic",
+  "fee_multiplier": 1,
+  "category": "Sports"
+ },
+ "KXSERIECCUPSPREAD": {
+  "fee_type": "quadratic",
+  "fee_multiplier": 1,
+  "category": "Sports"
+ },
+ "KXSERIECCUPTOTAL": {
+  "fee_type": "quadratic",
+  "fee_multiplier": 1,
+  "category": "Sports"
+ },
+ "KXSERIECGAME": {
+  "fee_type": "quadratic",
+  "fee_multiplier": 1,
+  "category": "Sports"
+ },
+ "KXSERIECSPREAD": {
+  "fee_type": "quadratic",
+  "fee_multiplier": 1,
+  "category": "Sports"
+ },
+ "KXSERIECTOTAL": {
+  "fee_type": "quadratic",
+  "fee_multiplier": 1,
+  "category": "Sports"
+ },
+ "KXSGPPLSPREAD": {
+  "fee_type": "quadratic",
+  "fee_multiplier": 1,
+  "category": "Sports"
+ },
+ "KXSGPPLTOTAL": {
+  "fee_type": "quadratic",
+  "fee_multiplier": 1,
+  "category": "Sports"
+ },
+ "KXSHIBA": {
+  "fee_type": "quadratic",
+  "fee_multiplier": 1,
+  "category": "Crypto"
+ },
+ "KXSHIBAD": {
+  "fee_type": "quadratic",
+  "fee_multiplier": 1,
+  "category": "Crypto"
+ },
+ "KXSILVER15M": {
+  "fee_type": "quadratic",
+  "fee_multiplier": 1,
+  "category": "Commodities"
+ },
+ "KXSILVERD": {
+  "fee_type": "quadratic",
+  "fee_multiplier": 1,
+  "category": "Commodities"
+ },
+ "KXSILVERH": {
+  "fee_type": "quadratic",
+  "fee_multiplier": 1,
+  "category": "Commodities"
+ },
+ "KXSILVERW": {
+  "fee_type": "quadratic",
+  "fee_multiplier": 1,
+  "category": "Commodities"
+ },
+ "KXSLGREECEBTTS": {
+  "fee_type": "quadratic",
+  "fee_multiplier": 1,
+  "category": "Sports"
+ },
+ "KXSLGREECEGAME": {
+  "fee_type": "quadratic",
+  "fee_multiplier": 1,
+  "category": "Sports"
+ },
+ "KXSLGREECESPREAD": {
+  "fee_type": "quadratic",
+  "fee_multiplier": 1,
+  "category": "Sports"
+ },
+ "KXSOFRD": {
+  "fee_type": "quadratic",
+  "fee_multiplier": 1,
+  "category": "Economics"
+ },
+ "KXSOL15M": {
+  "fee_type": "quadratic",
+  "fee_multiplier": 1,
+  "category": "Crypto"
+ },
+ "KXSOLD": {
+  "fee_type": "quadratic",
+  "fee_multiplier": 1,
+  "category": "Crypto"
+ },
+ "KXSOLE": {
+  "fee_type": "quadratic",
+  "fee_multiplier": 1,
+  "category": "Crypto"
+ },
+ "KXSOWBBALLSPREAD": {
+  "fee_type": "quadratic",
+  "fee_multiplier": 1,
+  "category": "Sports"
+ },
+ "KXSOWBBALLTOTAL": {
+  "fee_type": "quadratic",
+  "fee_multiplier": 1,
+  "category": "Sports"
+ },
+ "KXSPEECHAI": {
+  "fee_type": "quadratic",
+  "fee_multiplier": 1,
+  "category": "Science and Technology"
+ },
+ "KXSRBSLBTTS": {
+  "fee_type": "quadratic",
+  "fee_multiplier": 1,
+  "category": "Sports"
+ },
+ "KXSRBSLGAME": {
+  "fee_type": "quadratic",
+  "fee_multiplier": 1,
+  "category": "Sports"
+ },
+ "KXSRBSLSPREAD": {
+  "fee_type": "quadratic",
+  "fee_multiplier": 1,
+  "category": "Sports"
+ },
+ "KXSRBSLTOTAL": {
+  "fee_type": "quadratic",
+  "fee_multiplier": 1,
+  "category": "Sports"
+ },
+ "KXSTARTINGQBWEEK1": {
+  "fee_type": "quadratic",
+  "fee_multiplier": 1,
+  "category": "Sports"
+ },
+ "KXSUEZWEEKLY": {
+  "fee_type": "quadratic",
+  "fee_multiplier": 1,
+  "category": "Politics"
+ },
+ "KXSUPERLIGBTTS": {
+  "fee_type": "quadratic",
+  "fee_multiplier": 1,
+  "category": "Sports"
+ },
+ "KXSUPERLIGGAME": {
+  "fee_type": "quadratic",
+  "fee_multiplier": 1,
+  "category": "Sports"
+ },
+ "KXSUPERLIGSPREAD": {
+  "fee_type": "quadratic",
+  "fee_multiplier": 1,
+  "category": "Sports"
+ },
+ "KXSUPERLIGTOTAL": {
+  "fee_type": "quadratic",
+  "fee_multiplier": 1,
+  "category": "Sports"
+ },
+ "KXSVK2LBTTS": {
+  "fee_type": "quadratic",
+  "fee_multiplier": 1,
+  "category": "Sports"
+ },
+ "KXSVK2LGAME": {
+  "fee_type": "quadratic",
+  "fee_multiplier": 1,
+  "category": "Sports"
+ },
+ "KXSVK2LSPREAD": {
+  "fee_type": "quadratic",
+  "fee_multiplier": 1,
+  "category": "Sports"
+ },
+ "KXSVK2LTOTAL": {
+  "fee_type": "quadratic",
+  "fee_multiplier": 1,
+  "category": "Sports"
+ },
+ "KXSVKCUPADVANCE": {
+  "fee_type": "quadratic",
+  "fee_multiplier": 1,
+  "category": "Sports"
+ },
+ "KXSVKCUPBTTS": {
+  "fee_type": "quadratic",
+  "fee_multiplier": 1,
+  "category": "Sports"
+ },
+ "KXSVKCUPGAME": {
+  "fee_type": "quadratic",
+  "fee_multiplier": 1,
+  "category": "Sports"
+ },
+ "KXSVKCUPSPREAD": {
+  "fee_type": "quadratic",
+  "fee_multiplier": 1,
+  "category": "Sports"
+ },
+ "KXSVKCUPTOTAL": {
+  "fee_type": "quadratic",
+  "fee_multiplier": 1,
+  "category": "Sports"
+ },
+ "KXSVNPLBTTS": {
+  "fee_type": "quadratic",
+  "fee_multiplier": 1,
+  "category": "Sports"
+ },
+ "KXSVNPLGAME": {
+  "fee_type": "quadratic",
+  "fee_multiplier": 1,
+  "category": "Sports"
+ },
+ "KXSVNPLSPREAD": {
+  "fee_type": "quadratic",
+  "fee_multiplier": 1,
+  "category": "Sports"
+ },
+ "KXSVNPLTOTAL": {
+  "fee_type": "quadratic",
+  "fee_multiplier": 1,
+  "category": "Sports"
+ },
+ "KXSWISSLEAGUEBTTS": {
+  "fee_type": "quadratic",
+  "fee_multiplier": 1,
+  "category": "Sports"
+ },
+ "KXSWISSLEAGUEGAME": {
+  "fee_type": "quadratic",
+  "fee_multiplier": 1,
+  "category": "Sports"
+ },
+ "KXSWISSLEAGUESPREAD": {
+  "fee_type": "quadratic",
+  "fee_multiplier": 1,
+  "category": "Sports"
+ },
+ "KXSWISSLEAGUETOTAL": {
+  "fee_type": "quadratic",
+  "fee_multiplier": 1,
+  "category": "Sports"
+ },
+ "KXT20CANADAMATCH": {
+  "fee_type": "quadratic",
+  "fee_multiplier": 1,
+  "category": "Sports"
+ },
+ "KXT20MATCH": {
+  "fee_type": "quadratic",
+  "fee_multiplier": 1,
+  "category": "Sports"
+ },
+ "KXTABLETENNISMATCH": {
+  "fee_type": "quadratic",
+  "fee_multiplier": 1,
+  "category": "Sports"
+ },
+ "KXTACAPORT1H": {
+  "fee_type": "quadratic",
+  "fee_multiplier": 1,
+  "category": "Sports"
+ },
+ "KXTACAPORT1HBTTS": {
+  "fee_type": "quadratic",
+  "fee_multiplier": 1,
+  "category": "Sports"
+ },
+ "KXTACAPORT1HTOTAL": {
+  "fee_type": "quadratic",
+  "fee_multiplier": 1,
+  "category": "Sports"
+ },
+ "KXTACAPORTADVANCE": {
+  "fee_type": "quadratic",
+  "fee_multiplier": 1,
+  "category": "Sports"
+ },
+ "KXTACAPORTBTTS": {
+  "fee_type": "quadratic",
+  "fee_multiplier": 1,
+  "category": "Sports"
+ },
+ "KXTACAPORTGAME": {
+  "fee_type": "quadratic",
+  "fee_multiplier": 1,
+  "category": "Sports"
+ },
+ "KXTACAPORTSPREAD": {
+  "fee_type": "quadratic",
+  "fee_multiplier": 1,
+  "category": "Sports"
+ },
+ "KXTACAPORTTOTAL": {
+  "fee_type": "quadratic",
+  "fee_multiplier": 1,
+  "category": "Sports"
+ },
+ "KXTBTGAME": {
+  "fee_type": "quadratic",
+  "fee_multiplier": 1,
+  "category": "Sports"
+ },
+ "KXTECHRANKLISTAICODE": {
+  "fee_type": "quadratic",
+  "fee_multiplier": 1,
+  "category": "Science and Technology"
+ },
+ "KXTEMPAUSH": {
+  "fee_type": "quadratic",
+  "fee_multiplier": 1,
+  "category": "Climate and Weather"
+ },
+ "KXTEMPCHIH": {
+  "fee_type": "quadratic",
+  "fee_multiplier": 1,
+  "category": "Climate and Weather"
+ },
+ "KXTEMPCHIHS": {
+  "fee_type": "quadratic",
+  "fee_multiplier": 1,
+  "category": "Climate and Weather"
+ },
+ "KXTEMPDCH": {
+  "fee_type": "quadratic",
+  "fee_multiplier": 1,
+  "category": "Climate and Weather"
+ },
+ "KXTEMPLAXH": {
+  "fee_type": "quadratic",
+  "fee_multiplier": 1,
+  "category": "Climate and Weather"
+ },
+ "KXTEMPLAXHS": {
+  "fee_type": "quadratic",
+  "fee_multiplier": 1,
+  "category": "Climate and Weather"
+ },
+ "KXTEMPMIAH": {
+  "fee_type": "quadratic",
+  "fee_multiplier": 1,
+  "category": "Climate and Weather"
+ },
+ "KXTEMPNYCH": {
+  "fee_type": "quadratic",
+  "fee_multiplier": 1,
+  "category": "Climate and Weather"
+ },
+ "KXTEMPNYCHS": {
+  "fee_type": "quadratic",
+  "fee_multiplier": 1,
+  "category": "Climate and Weather"
+ },
+ "KXTESTMATCH": {
+  "fee_type": "quadratic",
+  "fee_multiplier": 1,
+  "category": "Sports"
+ },
+ "KXTFF1LIGBTTS": {
+  "fee_type": "quadratic",
+  "fee_multiplier": 1,
+  "category": "Sports"
+ },
+ "KXTFF1LIGGAME": {
+  "fee_type": "quadratic",
+  "fee_multiplier": 1,
+  "category": "Sports"
+ },
+ "KXTFF1LIGSPREAD": {
+  "fee_type": "quadratic",
+  "fee_multiplier": 1,
+  "category": "Sports"
+ },
+ "KXTGTFT": {
+  "fee_type": "quadratic",
+  "fee_multiplier": 1,
+  "category": "Financials"
+ },
+ "KXTHAIL1BTTS": {
+  "fee_type": "quadratic",
+  "fee_multiplier": 1,
+  "category": "Sports"
+ },
+ "KXTHAIL1GAME": {
+  "fee_type": "quadratic",
+  "fee_multiplier": 1,
+  "category": "Sports"
+ },
+ "KXTHAIL1SPREAD": {
+  "fee_type": "quadratic",
+  "fee_multiplier": 1,
+  "category": "Sports"
+ },
+ "KXTHAIL1TOTAL": {
+  "fee_type": "quadratic",
+  "fee_multiplier": 1,
+  "category": "Sports"
+ },
+ "KXTITLEDTUESTOP": {
+  "fee_type": "quadratic",
+  "fee_multiplier": 1,
+  "category": "Sports"
+ },
+ "KXTOPALBUM": {
+  "fee_type": "quadratic",
+  "fee_multiplier": 1,
+  "category": "Entertainment"
+ },
+ "KXTOPSONG": {
+  "fee_type": "quadratic",
+  "fee_multiplier": 1,
+  "category": "Entertainment"
+ },
+ "KXTOPUSAGEAI": {
+  "fee_type": "quadratic",
+  "fee_multiplier": 1,
+  "category": "Science and Technology"
+ },
+ "KXTRUEV": {
+  "fee_type": "quadratic",
+  "fee_multiplier": 1,
+  "category": "Economics"
+ },
+ "KXTRUMPAPPROVE": {
+  "fee_type": "quadratic",
+  "fee_multiplier": 1,
+  "category": "Politics"
+ },
+ "KXTRUMPATTEND": {
+  "fee_type": "quadratic",
+  "fee_multiplier": 1,
+  "category": "Politics"
+ },
+ "KXTRUMPDELETE": {
+  "fee_type": "quadratic",
+  "fee_multiplier": 1,
+  "category": "Politics"
+ },
+ "KXTRUMPMEET": {
+  "fee_type": "quadratic",
+  "fee_multiplier": 1,
+  "category": "Politics"
+ },
+ "KXTRUMPMENTION": {
+  "fee_type": "quadratic",
+  "fee_multiplier": 1,
+  "category": "Mentions"
+ },
+ "KXTRUMPMENTIONB": {
+  "fee_type": "quadratic",
+  "fee_multiplier": 1,
+  "category": "Mentions"
+ },
+ "KXTRUMPNOMNUM": {
+  "fee_type": "quadratic",
+  "fee_multiplier": 1,
+  "category": "Politics"
+ },
+ "KXTRUMPPHOTO": {
+  "fee_type": "quadratic",
+  "fee_multiplier": 1,
+  "category": "Politics"
+ },
+ "KXTRUTHSOCIAL": {
+  "fee_type": "quadratic",
+  "fee_multiplier": 1,
+  "category": "Politics"
+ },
+ "KXTTELITEMATCH": {
+  "fee_type": "quadratic",
+  "fee_multiplier": 1,
+  "category": "Sports"
+ },
+ "KXTTMATCH": {
+  "fee_type": "quadratic",
+  "fee_multiplier": 1,
+  "category": "Sports"
+ },
+ "KXTTSTARMATCH": {
+  "fee_type": "quadratic",
+  "fee_multiplier": 1,
+  "category": "Sports"
+ },
+ "KXTVSTATSHBO": {
+  "fee_type": "quadratic",
+  "fee_multiplier": 1,
+  "category": "Entertainment"
+ },
+ "KXTVSTATSHULU": {
+  "fee_type": "quadratic",
+  "fee_multiplier": 1,
+  "category": "Entertainment"
+ },
+ "KXTVSTATSMOVIE": {
+  "fee_type": "quadratic",
+  "fee_multiplier": 1,
+  "category": "Entertainment"
+ },
+ "KXTVSTATSNBC": {
+  "fee_type": "quadratic",
+  "fee_multiplier": 1,
+  "category": "Entertainment"
+ },
+ "KXTVSTATSNFLX": {
+  "fee_type": "quadratic",
+  "fee_multiplier": 1,
+  "category": "Entertainment"
+ },
+ "KXTWEEDEDIVBTTS": {
+  "fee_type": "quadratic",
+  "fee_multiplier": 1,
+  "category": "Sports"
+ },
+ "KXTWEEDEDIVGAME": {
+  "fee_type": "quadratic",
+  "fee_multiplier": 1,
+  "category": "Sports"
+ },
+ "KXTWEEDEDIVSPREAD": {
+  "fee_type": "quadratic",
+  "fee_multiplier": 1,
+  "category": "Sports"
+ },
+ "KXTWEEDEDIVTOTAL": {
+  "fee_type": "quadratic",
+  "fee_multiplier": 1,
+  "category": "Sports"
+ },
+ "KXTXERCOTPEAKD": {
+  "fee_type": "quadratic",
+  "fee_multiplier": 1,
+  "category": "Economics"
+ },
+ "KXUAEPLBTTS": {
+  "fee_type": "quadratic",
+  "fee_multiplier": 1,
+  "category": "Sports"
+ },
+ "KXUAEPLGAME": {
+  "fee_type": "quadratic",
+  "fee_multiplier": 1,
+  "category": "Sports"
+ },
+ "KXUAEPLSPREAD": {
+  "fee_type": "quadratic",
+  "fee_multiplier": 1,
+  "category": "Sports"
+ },
+ "KXUAEPLTOTAL": {
+  "fee_type": "quadratic",
+  "fee_multiplier": 1,
+  "category": "Sports"
+ },
+ "KXUCL1H": {
+  "fee_type": "quadratic",
+  "fee_multiplier": 1,
+  "category": "Sports"
+ },
+ "KXUCL1HBTTS": {
+  "fee_type": "quadratic",
+  "fee_multiplier": 1,
+  "category": "Sports"
+ },
+ "KXUCL1HSPREAD": {
+  "fee_type": "quadratic",
+  "fee_multiplier": 1,
+  "category": "Sports"
+ },
+ "KXUCL1HTOTAL": {
+  "fee_type": "quadratic",
+  "fee_multiplier": 1,
+  "category": "Sports"
+ },
+ "KXUCL2H": {
+  "fee_type": "quadratic",
+  "fee_multiplier": 1,
+  "category": "Sports"
+ },
+ "KXUCL2HBTTS": {
+  "fee_type": "quadratic",
+  "fee_multiplier": 1,
+  "category": "Sports"
+ },
+ "KXUCL2HSPREAD": {
+  "fee_type": "quadratic",
+  "fee_multiplier": 1,
+  "category": "Sports"
+ },
+ "KXUCLADVANCE": {
+  "fee_type": "quadratic",
+  "fee_multiplier": 1,
+  "category": "Sports"
+ },
+ "KXUCLBTTS": {
+  "fee_type": "quadratic",
+  "fee_multiplier": 1,
+  "category": "Sports"
+ },
+ "KXUCLCORNERS": {
+  "fee_type": "quadratic",
+  "fee_multiplier": 1,
+  "category": "Sports"
+ },
+ "KXUCLFTTS": {
+  "fee_type": "quadratic",
+  "fee_multiplier": 1,
+  "category": "Sports"
+ },
+ "KXUCLGAME": {
+  "fee_type": "quadratic_with_maker_fees",
+  "fee_multiplier": 1,
+  "category": "Sports"
+ },
+ "KXUCLGOAL": {
+  "fee_type": "quadratic",
+  "fee_multiplier": 1,
+  "category": "Sports"
+ },
+ "KXUCLSCORE": {
+  "fee_type": "quadratic",
+  "fee_multiplier": 1,
+  "category": "Sports"
+ },
+ "KXUCLSPREAD": {
+  "fee_type": "quadratic",
+  "fee_multiplier": 1,
+  "category": "Sports"
+ },
+ "KXUCLTCORNERS": {
+  "fee_type": "quadratic",
+  "fee_multiplier": 1,
+  "category": "Sports"
+ },
+ "KXUCLTOTAL": {
+  "fee_type": "quadratic",
+  "fee_multiplier": 1,
+  "category": "Sports"
+ },
+ "KXUCLWADVANCE": {
+  "fee_type": "quadratic",
+  "fee_multiplier": 1,
+  "category": "Sports"
+ },
+ "KXUCLWBTTS": {
+  "fee_type": "quadratic",
+  "fee_multiplier": 1,
+  "category": "Sports"
+ },
+ "KXUCLWGAME": {
+  "fee_type": "quadratic",
+  "fee_multiplier": 1,
+  "category": "Sports"
+ },
+ "KXUCLWSPREAD": {
+  "fee_type": "quadratic",
+  "fee_multiplier": 1,
+  "category": "Sports"
+ },
+ "KXUCLWTOTAL": {
+  "fee_type": "quadratic",
+  "fee_multiplier": 1,
+  "category": "Sports"
+ },
+ "KXUECL1H": {
+  "fee_type": "quadratic",
+  "fee_multiplier": 1,
+  "category": "Sports"
+ },
+ "KXUECL1HBTTS": {
+  "fee_type": "quadratic",
+  "fee_multiplier": 1,
+  "category": "Sports"
+ },
+ "KXUECL1HSPREAD": {
+  "fee_type": "quadratic",
+  "fee_multiplier": 1,
+  "category": "Sports"
+ },
+ "KXUECL1HTOTAL": {
+  "fee_type": "quadratic",
+  "fee_multiplier": 1,
+  "category": "Sports"
+ },
+ "KXUECLADVANCE": {
+  "fee_type": "quadratic",
+  "fee_multiplier": 1,
+  "category": "Sports"
+ },
+ "KXUECLBTTS": {
+  "fee_type": "quadratic",
+  "fee_multiplier": 1,
+  "category": "Sports"
+ },
+ "KXUECLFTTS": {
+  "fee_type": "quadratic",
+  "fee_multiplier": 1,
+  "category": "Sports"
+ },
+ "KXUECLGAME": {
+  "fee_type": "quadratic",
+  "fee_multiplier": 1,
+  "category": "Sports"
+ },
+ "KXUECLSCORE": {
+  "fee_type": "quadratic",
+  "fee_multiplier": 1,
+  "category": "Sports"
+ },
+ "KXUECLSPREAD": {
+  "fee_type": "quadratic",
+  "fee_multiplier": 1,
+  "category": "Sports"
+ },
+ "KXUECLTEAMTOTAL": {
+  "fee_type": "quadratic",
+  "fee_multiplier": 1,
+  "category": "Sports"
+ },
+ "KXUECLTOTAL": {
+  "fee_type": "quadratic",
+  "fee_multiplier": 1,
+  "category": "Sports"
+ },
+ "KXUEL1H": {
+  "fee_type": "quadratic",
+  "fee_multiplier": 1,
+  "category": "Sports"
+ },
+ "KXUEL1HBTTS": {
+  "fee_type": "quadratic",
+  "fee_multiplier": 1,
+  "category": "Sports"
+ },
+ "KXUEL1HSPREAD": {
+  "fee_type": "quadratic",
+  "fee_multiplier": 1,
+  "category": "Sports"
+ },
+ "KXUEL1HTOTAL": {
+  "fee_type": "quadratic",
+  "fee_multiplier": 1,
+  "category": "Sports"
+ },
+ "KXUELADVANCE": {
+  "fee_type": "quadratic",
+  "fee_multiplier": 1,
+  "category": "Sports"
+ },
+ "KXUELBTTS": {
+  "fee_type": "quadratic",
+  "fee_multiplier": 1,
+  "category": "Sports"
+ },
+ "KXUELFTTS": {
+  "fee_type": "quadratic",
+  "fee_multiplier": 1,
+  "category": "Sports"
+ },
+ "KXUELGAME": {
+  "fee_type": "quadratic",
+  "fee_multiplier": 1,
+  "category": "Sports"
+ },
+ "KXUELSCORE": {
+  "fee_type": "quadratic",
+  "fee_multiplier": 1,
+  "category": "Sports"
+ },
+ "KXUELSPREAD": {
+  "fee_type": "quadratic",
+  "fee_multiplier": 1,
+  "category": "Sports"
+ },
+ "KXUELTEAMTOTAL": {
+  "fee_type": "quadratic",
+  "fee_multiplier": 1,
+  "category": "Sports"
+ },
+ "KXUELTOTAL": {
+  "fee_type": "quadratic",
+  "fee_multiplier": 1,
+  "category": "Sports"
+ },
+ "KXUFCDISTANCE": {
+  "fee_type": "quadratic",
+  "fee_multiplier": 1,
+  "category": "Sports"
+ },
+ "KXUFCFIGHT": {
+  "fee_type": "quadratic",
+  "fee_multiplier": 1,
+  "category": "Sports"
+ },
+ "KXUFCMOF": {
+  "fee_type": "quadratic",
+  "fee_multiplier": 1,
+  "category": "Sports"
+ },
+ "KXUFCMOV": {
+  "fee_type": "quadratic",
+  "fee_multiplier": 1,
+  "category": "Sports"
+ },
+ "KXUFCROUNDS": {
+  "fee_type": "quadratic",
+  "fee_multiplier": 1,
+  "category": "Sports"
+ },
+ "KXUFCVICROUND": {
+  "fee_type": "quadratic",
+  "fee_multiplier": 1,
+  "category": "Sports"
+ },
+ "KXURYPDBTTS": {
+  "fee_type": "quadratic",
+  "fee_multiplier": 1,
+  "category": "Sports"
+ },
+ "KXURYPDGAME": {
+  "fee_type": "quadratic",
+  "fee_multiplier": 1,
+  "category": "Sports"
+ },
+ "KXURYPDSPREAD": {
+  "fee_type": "quadratic",
+  "fee_multiplier": 1,
+  "category": "Sports"
+ },
+ "KXURYPDTOTAL": {
+  "fee_type": "quadratic",
+  "fee_multiplier": 1,
+  "category": "Sports"
+ },
+ "KXUSDINRAD": {
+  "fee_type": "quadratic",
+  "fee_multiplier": 1,
+  "category": "Financials"
+ },
+ "KXUSDINRAW": {
+  "fee_type": "quadratic",
+  "fee_multiplier": 1,
+  "category": "Financials"
+ },
+ "KXUSDJPY": {
+  "fee_type": "quadratic",
+  "fee_multiplier": 1,
+  "category": "Financials"
+ },
+ "KXUSDJPYAD": {
+  "fee_type": "quadratic",
+  "fee_multiplier": 1,
+  "category": "Financials"
+ },
+ "KXUSDJPYAW": {
+  "fee_type": "quadratic",
+  "fee_multiplier": 1,
+  "category": "Financials"
+ },
+ "KXUSDNOKAD": {
+  "fee_type": "quadratic",
+  "fee_multiplier": 1,
+  "category": "Financials"
+ },
+ "KXUSDNOKAW": {
+  "fee_type": "quadratic",
+  "fee_multiplier": 1,
+  "category": "Financials"
+ },
+ "KXUSDSEKAW": {
+  "fee_type": "quadratic",
+  "fee_multiplier": 1,
+  "category": "Financials"
+ },
+ "KXUSL1H": {
+  "fee_type": "quadratic",
+  "fee_multiplier": 1,
+  "category": "Sports"
+ },
+ "KXUSL1HBTTS": {
+  "fee_type": "quadratic",
+  "fee_multiplier": 1,
+  "category": "Sports"
+ },
+ "KXUSL1HSPREAD": {
+  "fee_type": "quadratic",
+  "fee_multiplier": 1,
+  "category": "Sports"
+ },
+ "KXUSL1HTOTAL": {
+  "fee_type": "quadratic",
+  "fee_multiplier": 1,
+  "category": "Sports"
+ },
+ "KXUSLBTTS": {
+  "fee_type": "quadratic",
+  "fee_multiplier": 1,
+  "category": "Sports"
+ },
+ "KXUSLCUP1HTOTAL": {
+  "fee_type": "quadratic",
+  "fee_multiplier": 1,
+  "category": "Sports"
+ },
+ "KXUSLCUPBTTS": {
+  "fee_type": "quadratic",
+  "fee_multiplier": 1,
+  "category": "Sports"
+ },
+ "KXUSLCUPTOTAL": {
+  "fee_type": "quadratic",
+  "fee_multiplier": 1,
+  "category": "Sports"
+ },
+ "KXUSLGAME": {
+  "fee_type": "quadratic",
+  "fee_multiplier": 1,
+  "category": "Sports"
+ },
+ "KXUSLSPREAD": {
+  "fee_type": "quadratic",
+  "fee_multiplier": 1,
+  "category": "Sports"
+ },
+ "KXUSLTOTAL": {
+  "fee_type": "quadratic",
+  "fee_multiplier": 1,
+  "category": "Sports"
+ },
+ "KXUSOPENCUPGAME": {
+  "fee_type": "quadratic",
+  "fee_multiplier": 1,
+  "category": "Sports"
+ },
+ "KXUSOPENPRICE": {
+  "fee_type": "quadratic",
+  "fee_multiplier": 1,
+  "category": "Financials"
+ },
+ "KXUST10A": {
+  "fee_type": "quadratic",
+  "fee_multiplier": 1,
+  "category": "Financials"
+ },
+ "KXUST10AD": {
+  "fee_type": "quadratic",
+  "fee_multiplier": 1,
+  "category": "Financials"
+ },
+ "KXUST2A": {
+  "fee_type": "quadratic",
+  "fee_multiplier": 1,
+  "category": "Financials"
+ },
+ "KXUST2AD": {
+  "fee_type": "quadratic",
+  "fee_multiplier": 1,
+  "category": "Financials"
+ },
+ "KXUST30AD": {
+  "fee_type": "quadratic",
+  "fee_multiplier": 1,
+  "category": "Financials"
+ },
+ "KXUST5AD": {
+  "fee_type": "quadratic",
+  "fee_multiplier": 1,
+  "category": "Financials"
+ },
+ "KXUST7A": {
+  "fee_type": "quadratic",
+  "fee_multiplier": 1,
+  "category": "Financials"
+ },
+ "KXUST7AD": {
+  "fee_type": "quadratic",
+  "fee_multiplier": 1,
+  "category": "Financials"
+ },
+ "KXVALORANTGAME": {
+  "fee_type": "quadratic",
+  "fee_multiplier": 1,
+  "category": "Sports"
+ },
+ "KXVALORANTMAP": {
+  "fee_type": "quadratic",
+  "fee_multiplier": 1,
+  "category": "Sports"
+ },
+ "KXVALORANTTOTALMAPS": {
+  "fee_type": "quadratic",
+  "fee_multiplier": 1,
+  "category": "Sports"
+ },
+ "KXVBAGAME": {
+  "fee_type": "quadratic",
+  "fee_multiplier": 1,
+  "category": "Sports"
+ },
+ "KXVENFUTVEBTTS": {
+  "fee_type": "quadratic",
+  "fee_multiplier": 1,
+  "category": "Sports"
+ },
+ "KXVENFUTVEGAME": {
+  "fee_type": "quadratic",
+  "fee_multiplier": 1,
+  "category": "Sports"
+ },
+ "KXVENFUTVESPREAD": {
+  "fee_type": "quadratic",
+  "fee_multiplier": 1,
+  "category": "Sports"
+ },
+ "KXVENFUTVETOTAL": {
+  "fee_type": "quadratic",
+  "fee_multiplier": 1,
+  "category": "Sports"
+ },
+ "KXVFILMFESTIVAL": {
+  "fee_type": "quadratic",
+  "fee_multiplier": 1,
+  "category": "Entertainment"
+ },
+ "KXVLEAGUE1TOTAL": {
+  "fee_type": "quadratic",
+  "fee_multiplier": 1,
+  "category": "Sports"
+ },
+ "KXWC1HBTTS": {
+  "fee_type": "quadratic",
+  "fee_multiplier": 1,
+  "category": "Sports"
+ },
+ "KXWC1HSCORE": {
+  "fee_type": "quadratic",
+  "fee_multiplier": 1,
+  "category": "Sports"
+ },
+ "KXWC2HTOTAL": {
+  "fee_type": "quadratic",
+  "fee_multiplier": 1,
+  "category": "Sports"
+ },
+ "KXWCAST": {
+  "fee_type": "quadratic",
+  "fee_multiplier": 1,
+  "category": "Sports"
+ },
+ "KXWCAWARD": {
+  "fee_type": "quadratic",
+  "fee_multiplier": 1,
+  "category": "Sports"
+ },
+ "KXWCFINISHINGORDER": {
+  "fee_type": "quadratic",
+  "fee_multiplier": 1,
+  "category": "Sports"
+ },
+ "KXWCTEAMTOTALGOALS": {
+  "fee_type": "quadratic",
+  "fee_multiplier": 1,
+  "category": "Sports"
+ },
+ "KXWCWINNERTRAIL": {
+  "fee_type": "quadratic",
+  "fee_multiplier": 1,
+  "category": "Sports"
+ },
+ "KXWEFTWEETS": {
+  "fee_type": "quadratic",
+  "fee_multiplier": 1,
+  "category": "Economics"
+ },
+ "KXWENCC": {
+  "fee_type": "quadratic",
+  "fee_multiplier": 1,
+  "category": "Financials"
+ },
+ "KXWFIBAGAME": {
+  "fee_type": "quadratic",
+  "fee_multiplier": 1,
+  "category": "Sports"
+ },
+ "KXWFIBASPREAD": {
+  "fee_type": "quadratic",
+  "fee_multiplier": 1,
+  "category": "Sports"
+ },
+ "KXWFIBATOTAL": {
+  "fee_type": "quadratic",
+  "fee_multiplier": 1,
+  "category": "Sports"
+ },
+ "KXWHUNDREDMATCH": {
+  "fee_type": "quadratic",
+  "fee_multiplier": 1,
+  "category": "Sports"
+ },
+ "KXWNBA1HSPREAD": {
+  "fee_type": "quadratic",
+  "fee_multiplier": 1,
+  "category": "Sports"
+ },
+ "KXWNBA1HTOTAL": {
+  "fee_type": "quadratic",
+  "fee_multiplier": 1,
+  "category": "Sports"
+ },
+ "KXWNBA1HWINNER": {
+  "fee_type": "quadratic",
+  "fee_multiplier": 1,
+  "category": "Sports"
+ },
+ "KXWNBA1QSPREAD": {
+  "fee_type": "quadratic",
+  "fee_multiplier": 1,
+  "category": "Sports"
+ },
+ "KXWNBA1QTOTAL": {
+  "fee_type": "quadratic",
+  "fee_multiplier": 1,
+  "category": "Sports"
+ },
+ "KXWNBA1QWINNER": {
+  "fee_type": "quadratic",
+  "fee_multiplier": 1,
+  "category": "Sports"
+ },
+ "KXWNBA2HSPREAD": {
+  "fee_type": "quadratic",
+  "fee_multiplier": 1,
+  "category": "Sports"
+ },
+ "KXWNBA2HTOTAL": {
+  "fee_type": "quadratic",
+  "fee_multiplier": 1,
+  "category": "Sports"
+ },
+ "KXWNBA2HWINNER": {
+  "fee_type": "quadratic",
+  "fee_multiplier": 1,
+  "category": "Sports"
+ },
+ "KXWNBA2QSPREAD": {
+  "fee_type": "quadratic",
+  "fee_multiplier": 1,
+  "category": "Sports"
+ },
+ "KXWNBA2QTOTAL": {
+  "fee_type": "quadratic",
+  "fee_multiplier": 1,
+  "category": "Sports"
+ },
+ "KXWNBA2QWINNER": {
+  "fee_type": "quadratic",
+  "fee_multiplier": 1,
+  "category": "Sports"
+ },
+ "KXWNBA3PT": {
+  "fee_type": "quadratic",
+  "fee_multiplier": 1,
+  "category": "Sports"
+ },
+ "KXWNBA3PTROUND": {
+  "fee_type": "quadratic",
+  "fee_multiplier": 1,
+  "category": "Sports"
+ },
+ "KXWNBA3QSPREAD": {
+  "fee_type": "quadratic",
+  "fee_multiplier": 1,
+  "category": "Sports"
+ },
+ "KXWNBA3QTOTAL": {
+  "fee_type": "quadratic",
+  "fee_multiplier": 1,
+  "category": "Sports"
+ },
+ "KXWNBA3QWINNER": {
+  "fee_type": "quadratic",
+  "fee_multiplier": 1,
+  "category": "Sports"
+ },
+ "KXWNBA4QSPREAD": {
+  "fee_type": "quadratic",
+  "fee_multiplier": 1,
+  "category": "Sports"
+ },
+ "KXWNBA4QTOTAL": {
+  "fee_type": "quadratic",
+  "fee_multiplier": 1,
+  "category": "Sports"
+ },
+ "KXWNBA4QWINNER": {
+  "fee_type": "quadratic",
+  "fee_multiplier": 1,
+  "category": "Sports"
+ },
+ "KXWNBAAST": {
+  "fee_type": "quadratic",
+  "fee_multiplier": 1,
+  "category": "Sports"
+ },
+ "KXWNBAGAME": {
+  "fee_type": "quadratic_with_maker_fees",
+  "fee_multiplier": 1,
+  "category": "Sports"
+ },
+ "KXWNBAMENTION": {
+  "fee_type": "quadratic",
+  "fee_multiplier": 1,
+  "category": "Mentions"
+ },
+ "KXWNBAOT": {
+  "fee_type": "quadratic",
+  "fee_multiplier": 1,
+  "category": "Sports"
+ },
+ "KXWNBAPTS": {
+  "fee_type": "quadratic",
+  "fee_multiplier": 1,
+  "category": "Sports"
+ },
+ "KXWNBAREB": {
+  "fee_type": "quadratic",
+  "fee_multiplier": 1,
+  "category": "Sports"
+ },
+ "KXWNBASPREAD": {
+  "fee_type": "quadratic",
+  "fee_multiplier": 1,
+  "category": "Sports"
+ },
+ "KXWNBATEAMTOTAL": {
+  "fee_type": "quadratic",
+  "fee_multiplier": 1,
+  "category": "Sports"
+ },
+ "KXWNBATOTAL": {
+  "fee_type": "quadratic",
+  "fee_multiplier": 1,
+  "category": "Sports"
+ },
+ "KXWORLDNEWSMENTION": {
+  "fee_type": "quadratic",
+  "fee_multiplier": 1,
+  "category": "Mentions"
+ },
+ "KXWT20MATCH": {
+  "fee_type": "quadratic",
+  "fee_multiplier": 1,
+  "category": "Sports"
+ },
+ "KXWTACHALLENGERMATCH": {
+  "fee_type": "quadratic",
+  "fee_multiplier": 1,
+  "category": "Sports"
+ },
+ "KXWTADOUBLES": {
+  "fee_type": "quadratic",
+  "fee_multiplier": 1,
+  "category": "Sports"
+ },
+ "KXWTAEXACTMATCH": {
+  "fee_type": "quadratic",
+  "fee_multiplier": 1,
+  "category": "Sports"
+ },
+ "KXWTAGTOTAL": {
+  "fee_type": "quadratic",
+  "fee_multiplier": 1,
+  "category": "Sports"
+ },
+ "KXWTAMATCH": {
+  "fee_type": "quadratic_with_maker_fees",
+  "fee_multiplier": 1,
+  "category": "Sports"
+ },
+ "KXWTASETWINNER": {
+  "fee_type": "quadratic",
+  "fee_multiplier": 1,
+  "category": "Sports"
+ },
+ "KXWTI": {
+  "fee_type": "quadratic",
+  "fee_multiplier": 1,
+  "category": "Commodities"
+ },
+ "KXWTI15M": {
+  "fee_type": "quadratic",
+  "fee_multiplier": 1,
+  "category": "Commodities"
+ },
+ "KXWTIH": {
+  "fee_type": "quadratic",
+  "fee_multiplier": 1,
+  "category": "Commodities"
+ },
+ "KXWTIW": {
+  "fee_type": "quadratic",
+  "fee_multiplier": 1,
+  "category": "Commodities"
+ },
+ "KXXRP": {
+  "fee_type": "quadratic",
+  "fee_multiplier": 1,
+  "category": "Crypto"
+ },
+ "KXXRP15M": {
+  "fee_type": "quadratic",
+  "fee_multiplier": 1,
+  "category": "Crypto"
+ },
+ "KXXRPD": {
+  "fee_type": "quadratic",
+  "fee_multiplier": 1,
+  "category": "Crypto"
+ },
+ "KXYTDAILYTOPVIDEO": {
+  "fee_type": "quadratic",
+  "fee_multiplier": 1,
+  "category": "Entertainment"
+ },
+ "KXYTDAILYTOPVIDEOG": {
+  "fee_type": "quadratic",
+  "fee_multiplier": 1,
+  "category": "Entertainment"
+ },
+ "KXYTMONTHLYG": {
+  "fee_type": "quadratic",
+  "fee_multiplier": 1,
+  "category": "Entertainment"
+ },
+ "KXYTTOPVIDEO2D": {
+  "fee_type": "quadratic",
+  "fee_multiplier": 1,
+  "category": "Entertainment"
+ },
+ "KXYTTOPVIDEOG2D": {
+  "fee_type": "quadratic",
+  "fee_multiplier": 1,
+  "category": "Entertainment"
+ },
+ "KXYTVIEWSW": {
+  "fee_type": "quadratic",
+  "fee_multiplier": 1,
+  "category": "Entertainment"
+ },
+ "KXZEC15M": {
+  "fee_type": "quadratic",
+  "fee_multiplier": 1,
+  "category": "Crypto"
+ },
+ "KXZUCKERBERGNW": {
+  "fee_type": "quadratic",
+  "fee_multiplier": 1,
+  "category": "Financials"
+ }
+}
