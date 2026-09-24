@@ -52,6 +52,7 @@ artifacts/forward/**/markets.jsonl
 artifacts/forward/**/trades.jsonl
 artifacts/forward/**/books.jsonl
 artifacts/forward/**/observations.jsonl
+artifacts/forward/**/prices.jsonl
 
 # --- customer records (never commit) ---
 #
