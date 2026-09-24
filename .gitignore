@@ -133,3 +133,5 @@ data/EXECUTION_DISABLED
 # Reproducible from the collector; the pre-registration, scripts and results are tracked.
 artifacts/research/**/rows.jsonl
 artifacts/research/**/quotes.jsonl
+# The full incentive-program history (~85 MB); re-fetched from the public endpoint.
+artifacts/research/lip-*/programs_history.json
