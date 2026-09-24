@@ -71,9 +71,10 @@ while done < hours:
             if p.returncode != 0 or not (out / "books.jsonl").exists():
                 fh.write((out / "runner.log").read_text()[-2000:] + "\n")
                 continue
-            r = subprocess.run([str(PY), str(HERE / "analyze.py"), str(out)],
-                               capture_output=True, text=True, cwd=REPO)
-            fh.write(r.stdout + r.stderr + "\n")
+            for script in ("analyze.py", "explore.py"):
+                r = subprocess.run([str(PY), str(HERE / script), str(out)],
+                                   capture_output=True, text=True, cwd=REPO)
+                fh.write(f"--- {script} ---\n" + r.stdout + r.stderr + "\n")
     summary = {"settlement": close.isoformat(), "events": [e for e, _, _ in procs], "maker_running": maker,
                "recorder_exit": {e: p.returncode for e, _, p in procs}}
     with open(root / "runs.jsonl", "a") as fh:
