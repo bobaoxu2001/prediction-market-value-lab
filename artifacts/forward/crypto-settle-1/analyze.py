@@ -1,82 +1,167 @@
-"""Did the book lag the live price into settlement?
+"""Did the book keep selling a settled outcome? Rule fixed before the data exists.
 
-Model-free. After settlement each rung's outcome is known, so for each rung we ask two
-things:
+KXBTCD settles on the average of sixty one-second BRTI prints over [00:59:00, 01:00:00),
+and trading closes at 01:00:00 - the same instant. So the outcome is decided a second
+at a time *while the book is still open*, and anyone watching a constituent exchange
+can see how much of the average is already fixed.
 
-  price-certain  the first moment from which the live price stayed on the winning side
-                 of the strike, by a margin, through to settlement
-  book-certain   the first moment from which the book stopped offering the winning side
-                 below 0.97
+At every book sweep, using only Coinbase prints the recorder had actually *received* by
+then (seen_at, never the exchange's own timestamp - that is what we knew, not what was
+true), we ask how far the unknown remainder of the average would have to move to flip
+each rung:
 
-If the book is consistently later, it lagged a price anyone could see, and the winning
-side was on offer in between. Coinbase is a proxy for the BRTI, not the index, so only
-rungs that settled well clear of the strike are judged: close to the strike the proxy
-and the index can disagree about the outcome itself.
+    before the window   the whole average is unknown; flip needs spot to cross K
+    inside the window   e seconds are fixed at mean m; the remaining 60-e seconds must
+                        average K' = (60K - e*m) / (60-e); flip needs spot to reach K'
+
+    required move = |K' - spot| / spot
+
+A rung is LOCKED at a sweep if the required move is at least 1% and at most ten minutes
+remain. Bitcoin moving 1% and holding it within ten minutes is a many-sigma event, and
+Coinbase-vs-BRTI basis is hundredths of a percent, so a lock is not a certainty but it
+is the thing a latency edge would be buying.
+
+An OPPORTUNITY is a sweep where a rung is locked and its winning side is offered at a
+price that clears Kalshi's taker fee (ceil to the cent of 0.07 * P * (1-P)) by at least
+one cent. It is TAKEABLE only if the same offer was still there on the next sweep,
+because a price seen once may be gone before an order arrives.
+
+Judged only after settlement, and only on rungs whose final Coinbase average settled at
+least $100 from the strike: nearer than that, the proxy and the index could disagree
+about the outcome itself and the rung is reported as unjudged, not as a win.
 """
-import json
+import json, math, sys
 from bisect import bisect_right
+from collections import defaultdict
 from datetime import datetime, timedelta, timezone
 from decimal import Decimal
 from pathlib import Path
 
 D = Path(__file__).parent
-CLEAR = 150.0        # settled at least this far from the strike, in dollars
-MARGIN = 60.0        # "price-certain" = spot stayed this far on the winning side
-CERTAIN = Decimal("0.97")
+SETTLE = datetime(2026, 9, 24, 1, 0, 0, tzinfo=timezone.utc)
+if len(sys.argv) > 1:   # dry run of the code path on a pretend settlement; not a result
+    SETTLE = datetime.fromisoformat(sys.argv[1])
+    print(f"DRY RUN - pretending settlement at {SETTLE:%H:%M:%S}; nothing below is a finding\n")
+WINDOW_START = SETTLE - timedelta(seconds=60)
+LOCK_MOVE = 0.01                       # required move to flip, as a fraction of spot
+LOCK_HORIZON = timedelta(minutes=10)   # only this close to settlement
+CLEAR = 100.0                          # judged only if settled this far from the strike
+MIN_NET = Decimal("0.01")
 
-def body(l): return json.loads(l)["body"]
+
+def taker_fee(p: Decimal) -> Decimal:
+    return Decimal(math.ceil(Decimal("0.07") * p * (1 - p) * 100)) / 100
+
+
+def parse_exchange_time(s: str) -> datetime:
+    whole, _, frac = s.rstrip("Z").partition(".")
+    return datetime.fromisoformat(f"{whole}.{(frac + '000000')[:6]}+00:00")
+
+
+def body(line): return json.loads(line)["body"]
 meta = json.loads((D / "markets.json").read_text())
 books = [body(l) for l in open(D / "books.jsonl")]
-prices = [body(l) for l in open(D / "prices.jsonl") if body(l).get("price")]
-bt = [datetime.fromisoformat(b["seen_at"]) for b in books]
-pt = [datetime.fromisoformat(p["seen_at"]) for p in prices]
-px = [float(p["price"]) for p in prices]
+prices = [p for p in (body(l) for l in open(D / "prices.jsonl")) if p.get("price")]
+for p in prices:
+    p["seen"] = datetime.fromisoformat(p["seen_at"])
+    p["ex"] = parse_exchange_time(p["exchange_time"])
+    p["px"] = float(p["price"])
+prices.sort(key=lambda p: p["seen"])
+seen_times = [p["seen"] for p in prices]
 
-settle = datetime(2026, 9, 24, 1, 0, 0, tzinfo=timezone.utc)
-window = [px[i] for i, t in enumerate(pt) if settle - timedelta(seconds=60) <= t < settle]
-if not window:
-    raise SystemExit("no prices in the settlement window yet")
-avg = sum(window) / len(window)
-print(f"Coinbase 60s average into settlement: {avg:,.2f} over {len(window)} prints "
-      f"(range {min(window):,.2f}-{max(window):,.2f})\n")
+# The settlement proxy: one price per exchange second inside the window, by exchange time.
+by_second = {}
+for p in prices:
+    if WINDOW_START <= p["ex"] < SETTLE:
+        by_second[p["ex"].replace(microsecond=0)] = p["px"]
+if len(by_second) < 30:
+    raise SystemExit(f"only {len(by_second)} window seconds covered - not enough to stand in for the index")
+final_avg = sum(by_second.values()) / len(by_second)
+print(f"Coinbase proxy for the settlement average: {final_avg:,.2f} "
+      f"({len(by_second)}/60 seconds covered, range {min(by_second.values()):,.2f}-{max(by_second.values()):,.2f})")
+lag = sorted((p["seen"] - p["ex"]).total_seconds() for p in prices)
+print(f"our view of Coinbase lagged the exchange by {lag[len(lag)//2]:.2f}s median, {lag[-1]:.2f}s max\n")
 
-def spot_at(t):
-    i = bisect_right(pt, t) - 1
-    return px[i] if i >= 0 else None
 
-rows = []
-for ticker, m in meta["markets"].items():
+def known_at(t):
+    """Spot, and the part of the average fixed, from prints received by t."""
+    i = bisect_right(seen_times, t)
+    if i == 0:
+        return None, 0, 0.0
+    fixed = {}
+    for p in prices[:i]:
+        if WINDOW_START <= p["ex"] < SETTLE:
+            fixed[p["ex"].replace(microsecond=0)] = p["px"]
+    spot = prices[i - 1]["px"]
+    if not fixed:
+        return spot, 0, 0.0
+    return spot, len(fixed), sum(fixed.values()) / len(fixed)
+
+
+def required_move(K, spot, e, m):
+    """(fraction spot must move to flip the rung, the side currently winning)."""
+    if e >= 60:
+        return math.inf, ("yes" if m > K else "no")
+    k_flip = (60 * K - e * m) / (60 - e) if e else K
+    return abs(k_flip - spot) / spot, ("yes" if spot > k_flip else "no")
+
+
+judged, unjudged = {}, []
+for tk, m in meta["markets"].items():
     K = float(m["floor_strike"])
-    if abs(avg - K) < CLEAR:
-        continue
-    won = "yes" if avg > K else "no"
-    sign = 1 if won == "yes" else -1
-    # price-certain: last time before settlement that spot was NOT clearly on the winning side
-    last_unclear = None
-    for t, p in zip(pt, px):
-        if t >= settle: break
-        if sign * (p - K) < MARGIN:
-            last_unclear = t
-    price_certain = (last_unclear + timedelta(seconds=1)) if last_unclear else pt[0]
-    # book-certain: last time before settlement the winning side was offered below CERTAIN
-    last_cheap, cheapest = None, None
-    for t, b in zip(bt, books):
-        if t >= settle: break
-        a = b["books"].get(ticker, {}).get(f"{won}_ask")
-        if a is not None and Decimal(a) < CERTAIN:
-            last_cheap = t
-            cheapest = Decimal(a) if cheapest is None or Decimal(a) < cheapest else cheapest
-    if last_cheap is None or last_cheap < price_certain:
-        continue      # never cheap after the price made it clear: no window
-    # the cheapest price the winning side was offered at AFTER the price made it clear
-    after = [Decimal(b["books"][ticker][f"{won}_ask"]) for t, b in zip(bt, books)
-             if price_certain <= t < settle and b["books"].get(ticker, {}).get(f"{won}_ask") is not None
-             and Decimal(b["books"][ticker][f"{won}_ask"]) < CERTAIN]
-    rows.append((ticker, K, won, price_certain, last_cheap, min(after) if after else None))
+    if abs(final_avg - K) < CLEAR:
+        unjudged.append((tk, K))
+    else:
+        judged[tk] = (K, "yes" if final_avg > K else "no")
 
-judged = sum(1 for m in meta["markets"].values() if abs(avg - float(m["floor_strike"])) >= CLEAR)
-print(f"{judged} rungs settled at least ${CLEAR:.0f} from the strike; "
-      f"{len(rows)} still offered the winning side below {CERTAIN} after the price had made it clear\n")
-for tk, K, won, pc, lc, cheapest in sorted(rows, key=lambda r: r[1]):
-    print(f"  {tk:28s} K={K:>9,.0f} won {won:3s}  price-certain {pc:%H:%M:%S}  "
-          f"still cheap until {lc:%H:%M:%S} ({(lc-pc).total_seconds():5.0f}s)  cheapest after: {cheapest}")
+sweeps = [b for b in books if SETTLE - LOCK_HORIZON <= datetime.fromisoformat(b["seen_at"]) < SETTLE]
+print(f"{len(sweeps)} book sweeps in the last {LOCK_HORIZON.seconds // 60} minutes; "
+      f"{len(judged)} rungs judged, {len(unjudged)} too close to call on a proxy "
+      f"({', '.join(f'{K:,.0f}' for _, K in sorted(unjudged, key=lambda x: x[1]))})\n")
+
+opps = defaultdict(list)        # ticker -> [(t, ask, size, net, move, takeable)]
+wrong_side_locks = []           # a lock that the final average contradicted - the lock rule failed
+for i, b in enumerate(sweeps):
+    t = datetime.fromisoformat(b["seen_at"])
+    spot, e, m = known_at(t)
+    if spot is None:
+        continue
+    nxt = sweeps[i + 1]["books"] if i + 1 < len(sweeps) else {}
+    for tk, (K, won) in judged.items():
+        move, locked_side = required_move(K, spot, e, m)
+        if move < LOCK_MOVE:
+            continue
+        if locked_side != won:
+            wrong_side_locks.append((t, tk))
+            continue
+        book = b["books"].get(tk) or {}
+        ask = book.get(f"{won}_ask")
+        if ask is None:
+            continue
+        ask = Decimal(ask)
+        net = 1 - ask - taker_fee(ask)
+        if net < MIN_NET:
+            continue
+        still = (nxt.get(tk) or {}).get(f"{won}_ask")
+        takeable = still is not None and Decimal(still) <= ask
+        opps[tk].append((t, ask, book.get(f"{won}_size"), net, move, takeable, e))
+
+if wrong_side_locks:
+    print(f"!! {len(wrong_side_locks)} locks pointed at the side that LOST - the lock rule is unsafe")
+n_opp = sum(len(v) for v in opps.values())
+n_take = sum(1 for v in opps.values() for o in v if o[5])
+print(f"locked rungs offering the winning side at >= {MIN_NET} net of fee: "
+      f"{n_opp} sweep-observations on {len(opps)} rungs, {n_take} still there on the next sweep\n")
+cap_total = Decimal(0)
+for tk in sorted(opps, key=lambda x: judged[x][0]):
+    K, won = judged[tk]
+    v = opps[tk]
+    best = max(v, key=lambda o: o[3])
+    take = [o for o in v if o[5]]
+    cap = max((o[3] * Decimal(o[2] or 0) for o in take), default=Decimal(0))
+    cap_total += cap
+    print(f"  {tk:30s} K={K:>9,.0f} won {won:3s} {len(v):4d} sweeps ({len(take):4d} takeable)  "
+          f"first {v[0][0]:%H:%M:%S} last {v[-1][0]:%H:%M:%S}  best ask {best[1]} "
+          f"(net {best[3]}, size {best[2]}, flip needed {best[4]*100:.2f}%, {best[6]}s of average fixed)  "
+          f"top-of-book $ {cap:.2f}")
+print(f"\nlargest single takeable top-of-book profit per rung, summed: ${cap_total:.2f}")
