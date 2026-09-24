@@ -43,6 +43,7 @@ a certain dollar: **+$0.66 a contract**. Someone trading off the public feed had
 | source | carries | newest reading when checked |
 |---|---|---|
 | aviationweather.gov | hourly METAR only - cannot see a 5-minute reading at all | ~44 min |
+| Iowa Environmental Mesonet | hourly METAR only in its live feed | ~37 min |
 | api.weather.gov | 5-minute ASOS, delayed | 17-46 min |
 | what the market reacts to | the 5-minute reading | **~1 min** |
 
