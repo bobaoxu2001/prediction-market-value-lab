@@ -28,15 +28,23 @@ async def main():
         spot = float((await cb.get(TICKER_URL)).json()["price"])
         d = await k._client.get_json("/markets", params={"status": "open", "event_ticker": EVENT, "limit": 1000},
                                      use_cache=False)
-        ms = [m for m in d["markets"] if m.get("floor_strike") is not None]
+        ms = []
+        for m in d["markets"]:
+            # most ladders carry the strike at top level; Dogecoin's sits in custom_strike
+            src = m if m.get("floor_strike") is not None else (m.get("custom_strike") or {})
+            if src.get("floor_strike") not in (None, "") and src.get("strike_type") in ("greater", "greater_or_equal"):
+                ms.append({**m, "floor_strike": src["floor_strike"], "strike_type": src["strike_type"]})
+        if not ms:
+            raise SystemExit(f"{EVENT}: no above-the-strike rungs found")
         ms.sort(key=lambda m: abs(float(m["floor_strike"]) - spot))
         ms = ms[:100]
         (OUT / "markets.json").write_text(json.dumps({"event": EVENT, "product": PRODUCT, "spot_at_start": spot,
+            "close_time": ms[0]["close_time"],
             "markets": {m["ticker"]: {"floor_strike": m["floor_strike"], "strike_type": m["strike_type"]}
                         for m in ms}}, indent=2))
         tickers = [m["ticker"] for m in ms]
         print(f"{EVENT}: {PRODUCT} spot {spot:.4f}, {len(tickers)} rungs nearest spot, "
-              f"strikes {min(float(m['floor_strike']) for m in ms):.0f}-{max(float(m['floor_strike']) for m in ms):.0f}",
+              f"strikes {min(float(m['floor_strike']) for m in ms):g}-{max(float(m['floor_strike']) for m in ms):g}",
               flush=True)
 
         async def price_loop():

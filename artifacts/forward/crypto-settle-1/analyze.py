@@ -40,7 +40,7 @@ are quadratic with multiplier 1, which is Kalshi's standard 0.07 * P * (1-P).
 import argparse, json, math
 from bisect import bisect_right
 from collections import defaultdict
-from datetime import datetime, timedelta, timezone
+from datetime import datetime, timedelta
 from decimal import Decimal
 from pathlib import Path
 
@@ -49,7 +49,10 @@ ap.add_argument("recording", nargs="?", default=str(Path(__file__).parent))
 ap.add_argument("--pretend-settle", help="dry run of the code path only; never a result")
 args = ap.parse_args()
 D = Path(args.recording)
-SETTLE = datetime(2026, 9, 24, 1, 0, 0, tzinfo=timezone.utc)
+meta = json.loads((D / "markets.json").read_text())
+# trading closes at the instant the averaging window ends; the first recording predates
+# the recorder writing close_time down, and settled at 01:00Z
+SETTLE = datetime.fromisoformat(meta.get("close_time", "2026-09-24T01:00:00Z").replace("Z", "+00:00"))
 if args.pretend_settle:
     SETTLE = datetime.fromisoformat(args.pretend_settle)
     print(f"DRY RUN - pretending settlement at {SETTLE:%H:%M:%S}; nothing below is a finding\n")
@@ -70,7 +73,6 @@ def parse_exchange_time(s: str) -> datetime:
 
 
 def body(line): return json.loads(line)["body"]
-meta = json.loads((D / "markets.json").read_text())
 books = [body(l) for l in open(D / "books.jsonl")]
 prices = [p for p in (body(l) for l in open(D / "prices.jsonl")) if p.get("price")]
 for p in prices:
