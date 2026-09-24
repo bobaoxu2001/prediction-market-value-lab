@@ -66,6 +66,18 @@ On exploration, each rule's mean net return per contract gets an event-clustered
 bootstrap interval (10,000 resamples) at the Bonferroni level for 60 one-sided
 tests (1 - 0.05/60). The candidate is the rule with the highest lower bound.
 
+**Amendment, 2026-09-24, before the analysis first ran:** a rule is eligible to be the
+candidate only if its exploration observations come from at least 30 events. At the
+Bonferroni level the lower bound is roughly the 8th-smallest of 10,000 resamples, and
+with a handful of clusters that tail is a property of which few events happened to
+land in the bin, not of the rule. Every rule is still reported.
+
+**Coverage, found while collecting:** the settled listing reaches back only to
+2026-07-17 - older markets have moved to Kalshi's historical archive - so exploration
+is effectively [2026-07-17, 2026-08-16), about 30 days, against a 31-day holdout. The
+window boundaries in the rule are unchanged; there is simply no listed data before
+that date.
+
 ## Success, fixed now
 
 A route is claimed only if **both**:
