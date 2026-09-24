@@ -128,3 +128,8 @@ logs/
 # would silently kill execution for everyone else.
 data/DEMO_ARMED
 data/EXECUTION_DISABLED
+
+# Calibration study inputs: the settled-market listing and the candles pulled for it.
+# Reproducible from the collector; the pre-registration, scripts and results are tracked.
+artifacts/research/**/rows.jsonl
+artifacts/research/**/quotes.jsonl
