@@ -27,25 +27,36 @@ one cent. It is TAKEABLE only if the same offer was still there on the next swee
 because a price seen once may be gone before an order arrives.
 
 Judged only after settlement, and only on rungs whose final Coinbase average settled at
-least $100 from the strike: nearer than that, the proxy and the index could disagree
-about the outcome itself and the rung is reported as unjudged, not as a win.
+least 0.12% from the strike ($100 on Bitcoin at $84k): nearer than that, the proxy and
+the index could disagree about the outcome itself and the rung is reported as unjudged,
+not as a win.
+
+The same rule judges Ether and Solana, whose ladders settle the same way at the same
+instant; the margin is relative so that one number serves all three. Fee: the series
+are quadratic with multiplier 1, which is Kalshi's standard 0.07 * P * (1-P).
+
+    analyze.py [RECORDING_DIR] [--pretend-settle ISO]   (default: this directory, 01:00Z)
 """
-import json, math, sys
+import argparse, json, math
 from bisect import bisect_right
 from collections import defaultdict
 from datetime import datetime, timedelta, timezone
 from decimal import Decimal
 from pathlib import Path
 
-D = Path(__file__).parent
+ap = argparse.ArgumentParser()
+ap.add_argument("recording", nargs="?", default=str(Path(__file__).parent))
+ap.add_argument("--pretend-settle", help="dry run of the code path only; never a result")
+args = ap.parse_args()
+D = Path(args.recording)
 SETTLE = datetime(2026, 9, 24, 1, 0, 0, tzinfo=timezone.utc)
-if len(sys.argv) > 1:   # dry run of the code path on a pretend settlement; not a result
-    SETTLE = datetime.fromisoformat(sys.argv[1])
+if args.pretend_settle:
+    SETTLE = datetime.fromisoformat(args.pretend_settle)
     print(f"DRY RUN - pretending settlement at {SETTLE:%H:%M:%S}; nothing below is a finding\n")
 WINDOW_START = SETTLE - timedelta(seconds=60)
 LOCK_MOVE = 0.01                       # required move to flip, as a fraction of spot
 LOCK_HORIZON = timedelta(minutes=10)   # only this close to settlement
-CLEAR = 100.0                          # judged only if settled this far from the strike
+CLEAR_FRACTION = 0.0012               # judged only if settled this far from the strike
 MIN_NET = Decimal("0.01")
 
 
@@ -77,6 +88,8 @@ for p in prices:
 if len(by_second) < 30:
     raise SystemExit(f"only {len(by_second)} window seconds covered - not enough to stand in for the index")
 final_avg = sum(by_second.values()) / len(by_second)
+CLEAR = CLEAR_FRACTION * final_avg
+print(f"{meta['event']} ({meta.get('product', 'BTC-USD')})")
 print(f"Coinbase proxy for the settlement average: {final_avg:,.2f} "
       f"({len(by_second)}/60 seconds covered, range {min(by_second.values()):,.2f}-{max(by_second.values()):,.2f})")
 lag = sorted((p["seen"] - p["ex"]).total_seconds() for p in prices)
@@ -117,7 +130,7 @@ for tk, m in meta["markets"].items():
 sweeps = [b for b in books if SETTLE - LOCK_HORIZON <= datetime.fromisoformat(b["seen_at"]) < SETTLE]
 print(f"{len(sweeps)} book sweeps in the last {LOCK_HORIZON.seconds // 60} minutes; "
       f"{len(judged)} rungs judged, {len(unjudged)} too close to call on a proxy "
-      f"({', '.join(f'{K:,.0f}' for _, K in sorted(unjudged, key=lambda x: x[1]))})\n")
+      f"({', '.join(f'{K:,.2f}' for _, K in sorted(unjudged, key=lambda x: x[1]))})\n")
 
 opps = defaultdict(list)        # ticker -> [(t, ask, size, net, move, takeable)]
 wrong_side_locks = []           # a lock that the final average contradicted - the lock rule failed
@@ -160,7 +173,7 @@ for tk in sorted(opps, key=lambda x: judged[x][0]):
     take = [o for o in v if o[5]]
     cap = max((o[3] * Decimal(o[2] or 0) for o in take), default=Decimal(0))
     cap_total += cap
-    print(f"  {tk:30s} K={K:>9,.0f} won {won:3s} {len(v):4d} sweeps ({len(take):4d} takeable)  "
+    print(f"  {tk:30s} K={K:>10,.2f} won {won:3s} {len(v):4d} sweeps ({len(take):4d} takeable)  "
           f"first {v[0][0]:%H:%M:%S} last {v[-1][0]:%H:%M:%S}  best ask {best[1]} "
           f"(net {best[3]}, size {best[2]}, flip needed {best[4]*100:.2f}%, {best[6]}s of average fixed)  "
           f"top-of-book $ {cap:.2f}")
