@@ -18,6 +18,10 @@ PRODUCT = sys.argv[3] if len(sys.argv) > 3 else "BTC-USD"       # the Coinbase c
 OUT = Path(sys.argv[4]) if len(sys.argv) > 4 else Path(__file__).parent
 OUT.mkdir(parents=True, exist_ok=True)
 TICKER_URL = f"https://api.exchange.coinbase.com/products/{PRODUCT}/ticker"
+#: seconds between book sweeps; 0 = as fast as the round trip allows (~2 Hz). The
+#: scheduler sets 1.0 so that five assets and the maker study's recorder together stay
+#: well inside Kalshi's read limit.
+MIN_SWEEP = float(sys.argv[5]) if len(sys.argv) > 5 else 0.0
 
 async def main():
     ctx = ssl.create_default_context(cafile=certifi.where())
@@ -62,6 +66,7 @@ async def main():
 
         async def book_loop():
             while datetime.now(timezone.utc) < UNTIL:
+                t0 = time.time()
                 cap = await k.get_orderbooks_synchronized(tickers)
                 if cap.ok:
                     books_log.append({"seen_at": cap.received_at.isoformat(), "rtt_ms": round(cap.roundtrip_ms, 1),
@@ -70,6 +75,7 @@ async def main():
                                       "yes_size": str(b.asks("yes")[0].size) if b.asks("yes") else None,
                                       "no_size": str(b.asks("no")[0].size) if b.asks("no") else None}
                                   for t, b in cap.books.items()}})
+                await asyncio.sleep(max(0.0, MIN_SWEEP - (time.time() - t0)))
         await asyncio.gather(price_loop(), book_loop())
     await k.aclose()
 
