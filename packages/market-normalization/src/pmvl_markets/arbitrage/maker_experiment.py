@@ -38,7 +38,7 @@ from dataclasses import dataclass, field
 from datetime import datetime, timedelta
 from decimal import Decimal
 from enum import StrEnum
-from typing import Any, Callable, Iterable, Sequence
+from typing import Any, Callable, Iterable, Mapping, Sequence
 
 from pmvl_shared.enums import Platform, Side
 from pmvl_shared.money import ONE, ZERO, quantize_usd
@@ -57,6 +57,7 @@ __all__ = [
     "generate_quotes",
     "evaluate_quote",
     "run_experiment",
+    "settlement_pnl_per_contract",
 ]
 
 #: Markout horizons, in seconds. Fixed before any forward data was recorded.
@@ -420,6 +421,26 @@ def evaluate_quote(
     )
 
 
+def settlement_pnl_per_contract(
+    quote: MakerQuote, payout_yes: Decimal, policy: QuotePolicy
+) -> Decimal:
+    """Per-contract PnL of holding a filled quote to settlement, net of any maker fee.
+
+    Every quote is a bid, so a fill *buys* ``quote.side`` at ``quote.price``. The side
+    then pays what it settled for: ``payout_yes`` for YES and ``1 - payout_yes`` for NO,
+    which for a scalar settlement is a partial dollar rather than zero or one. No exit is
+    charged because there is no exit - the position is carried to the outcome, which is
+    the whole difference from the markout and the liquidation numbers.
+    """
+    payout = payout_yes if quote.side == Side.YES else ONE - payout_yes
+    fee = (
+        kalshi_maker_fee(quote.size, quote.price, rate=policy.maker_fee_rate)
+        if policy.maker_fee_rate > 0
+        else ZERO
+    )
+    return quantize_usd(payout - quote.price - (fee / quote.size if quote.size else ZERO))
+
+
 def _first_fill_time(
     quote: MakerQuote, window: Sequence[TradeRecord]
 ) -> datetime | None:
@@ -605,6 +626,34 @@ class MakerExperimentReport:
             if size > 0 and value is not None:
                 total += value * size
         return quantize_usd(total / Decimal(self.quotes_placed))
+
+    def settlement_values(
+        self, estimator: FillEstimator, payouts: Mapping[str, Decimal]
+    ) -> tuple[list[Decimal], list[Decimal], int]:
+        """Per-quote PnL of holding every fill to settlement, unconditionally.
+
+        Returns ``(pnl per quote, filled contracts per quote, quotes not scored)``. An
+        unfilled quote earns zero, as everywhere else. A quote on a market that has not
+        settled cannot be scored at all - not its fill and not its miss - so it leaves
+        the numerator *and* the denominator and is counted, rather than scoring as a
+        zero that would pull an unknown toward nothing happening.
+        """
+        values: list[Decimal] = []
+        sizes: list[Decimal] = []
+        unsettled = 0
+        for o in self.outcomes:
+            payout = payouts.get(o.quote.market)
+            if payout is None:
+                unsettled += 1
+                continue
+            size = o.filled_size.get(estimator, ZERO)
+            sizes.append(size)
+            values.append(
+                quantize_usd(settlement_pnl_per_contract(o.quote, payout, self.policy) * size)
+                if size > 0
+                else ZERO
+            )
+        return values, sizes, unsettled
 
     def mean_hedge_cost_given_fill(self, estimator: FillEstimator) -> Decimal | None:
         values = [

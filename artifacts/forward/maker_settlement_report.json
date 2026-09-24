@@ -1,0 +1,179 @@
+{
+  "metric": "hold every fill to settlement (secondary; amendment of 2026-09-24)",
+  "verdict": "INTERIM_NOT_A_DECISION",
+  "why": "2 of 20 eligible days; decided once, at the planned count",
+  "planned_days": 20,
+  "days_pooled": 2,
+  "dates": [
+    "2026-09-20",
+    "2026-09-23"
+  ],
+  "family_size": 8,
+  "settled_markets_known": 572,
+  "policies": [
+    {
+      "policy": {
+        "name": "improve-no",
+        "side": "no",
+        "improve_ticks": 1,
+        "size": "50",
+        "lifetime_seconds": 60,
+        "min_spread": "0.02",
+        "maker_fee_rate": "0",
+        "taker_fee_rate_on_unwind": "0.07",
+        "placement_latency_ms": 300,
+        "tick": "0.01"
+      },
+      "sessions": 40,
+      "dates": 2,
+      "quotes_scored": 31490,
+      "quotes_unsettled": 5868,
+      "fills": 4083,
+      "filled_contracts": "150117.56",
+      "mean_pnl_per_quote_usd": "-0.0935",
+      "pnl_per_filled_contract_usd": "-0.0196",
+      "session_cluster_ci95": [
+        "-0.3076",
+        "0.0851"
+      ],
+      "date_cluster_ci95": null,
+      "date_cluster_ci_family_wise": null,
+      "family_wise_confidence": "99.375%",
+      "per_date": [
+        {
+          "date": "2026-09-20",
+          "mean_pnl_per_quote": "0.1152",
+          "quotes": 22440
+        },
+        {
+          "date": "2026-09-23",
+          "mean_pnl_per_quote": "-0.6108",
+          "quotes": 9050
+        }
+      ]
+    },
+    {
+      "policy": {
+        "name": "improve-yes",
+        "side": "yes",
+        "improve_ticks": 1,
+        "size": "50",
+        "lifetime_seconds": 60,
+        "min_spread": "0.02",
+        "maker_fee_rate": "0",
+        "taker_fee_rate_on_unwind": "0.07",
+        "placement_latency_ms": 300,
+        "tick": "0.01"
+      },
+      "sessions": 40,
+      "dates": 2,
+      "quotes_scored": 31490,
+      "quotes_unsettled": 5868,
+      "fills": 2879,
+      "filled_contracts": "106605.83",
+      "mean_pnl_per_quote_usd": "0.0535",
+      "pnl_per_filled_contract_usd": "0.0158",
+      "session_cluster_ci95": [
+        "-0.0941",
+        "0.2195"
+      ],
+      "date_cluster_ci95": null,
+      "date_cluster_ci_family_wise": null,
+      "family_wise_confidence": "99.375%",
+      "per_date": [
+        {
+          "date": "2026-09-20",
+          "mean_pnl_per_quote": "-0.0609",
+          "quotes": 22440
+        },
+        {
+          "date": "2026-09-23",
+          "mean_pnl_per_quote": "0.3371",
+          "quotes": 9050
+        }
+      ]
+    },
+    {
+      "policy": {
+        "name": "join-no",
+        "side": "no",
+        "improve_ticks": 0,
+        "size": "50",
+        "lifetime_seconds": 60,
+        "min_spread": "0.02",
+        "maker_fee_rate": "0",
+        "taker_fee_rate_on_unwind": "0.07",
+        "placement_latency_ms": 300,
+        "tick": "0.01"
+      },
+      "sessions": 40,
+      "dates": 2,
+      "quotes_scored": 31490,
+      "quotes_unsettled": 5868,
+      "fills": 1830,
+      "filled_contracts": "71371.43",
+      "mean_pnl_per_quote_usd": "-0.0692",
+      "pnl_per_filled_contract_usd": "-0.0305",
+      "session_cluster_ci95": [
+        "-0.2233",
+        "0.0503"
+      ],
+      "date_cluster_ci95": null,
+      "date_cluster_ci_family_wise": null,
+      "family_wise_confidence": "99.375%",
+      "per_date": [
+        {
+          "date": "2026-09-20",
+          "mean_pnl_per_quote": "0.0789",
+          "quotes": 22440
+        },
+        {
+          "date": "2026-09-23",
+          "mean_pnl_per_quote": "-0.4366",
+          "quotes": 9050
+        }
+      ]
+    },
+    {
+      "policy": {
+        "name": "join-yes",
+        "side": "yes",
+        "improve_ticks": 0,
+        "size": "50",
+        "lifetime_seconds": 60,
+        "min_spread": "0.02",
+        "maker_fee_rate": "0",
+        "taker_fee_rate_on_unwind": "0.07",
+        "placement_latency_ms": 300,
+        "tick": "0.01"
+      },
+      "sessions": 40,
+      "dates": 2,
+      "quotes_scored": 31490,
+      "quotes_unsettled": 5868,
+      "fills": 1433,
+      "filled_contracts": "56308.56",
+      "mean_pnl_per_quote_usd": "0.0215",
+      "pnl_per_filled_contract_usd": "0.0120",
+      "session_cluster_ci95": [
+        "-0.0662",
+        "0.1164"
+      ],
+      "date_cluster_ci95": null,
+      "date_cluster_ci_family_wise": null,
+      "family_wise_confidence": "99.375%",
+      "per_date": [
+        {
+          "date": "2026-09-20",
+          "mean_pnl_per_quote": "-0.0294",
+          "quotes": 22440
+        },
+        {
+          "date": "2026-09-23",
+          "mean_pnl_per_quote": "0.1478",
+          "quotes": 9050
+        }
+      ]
+    }
+  ]
+}

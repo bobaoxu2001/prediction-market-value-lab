@@ -21,7 +21,7 @@ from __future__ import annotations
 import random
 from dataclasses import dataclass, field
 from decimal import Decimal
-from typing import Any, Sequence
+from typing import Any, Mapping, Sequence
 
 from pmvl_shared.money import ZERO, quantize_usd
 
@@ -42,6 +42,8 @@ __all__ = [
     "ReplicationReport",
     "compare_days",
     "pool_sessions",
+    "SettlementHoldingResult",
+    "pool_settlement_holding",
 ]
 
 #: Fixed in the pre-registration, before the first session.
@@ -50,6 +52,10 @@ BOOTSTRAP_SEED = 20260919
 #: Four declared policies are one family; the family-wise interval is Bonferroni'd.
 FAMILY_SIZE = 4
 PRIMARY_HORIZON = 60
+#: Holding to settlement was added as a second metric (pre-registration amendment of
+#: 2026-09-24). Two metrics are two chances at a false positive, so its positive claim
+#: is corrected for four policies times two metrics.
+SETTLEMENT_FAMILY_SIZE = 8
 
 #: Fewest clusters for which a percentile interval is reported at all.
 #:
@@ -588,3 +594,133 @@ def compare_days(
             }
         )
     return report
+
+
+# ------------------------------------------------------- holding to settlement
+@dataclass
+class SettlementHoldingResult:
+    """One policy's fills held to the outcome, pooled over sessions and dates."""
+
+    policy: QuotePolicy
+    sessions: int
+    dates: int
+    quotes_scored: int
+    #: Quotes on markets that had not settled when this ran - out of both numerator
+    #: and denominator, and reported so a large number cannot pass unnoticed.
+    quotes_unsettled: int
+    fills: int
+    filled_contracts: Decimal
+    mean_pnl_per_quote: Decimal
+    #: Dollars earned per contract actually bought. The per-quote number mixes how
+    #: often quotes fill with what a fill is worth; this is the second half alone.
+    pnl_per_filled_contract: Decimal | None
+    session_ci95: tuple[Decimal, Decimal] | None
+    date_ci95: tuple[Decimal, Decimal] | None
+    date_ci_family: tuple[Decimal, Decimal] | None
+    per_date: list[tuple[str, Decimal, int]]
+
+    @property
+    def verdict_positive(self) -> bool:
+        return self.date_ci_family is not None and self.date_ci_family[0] > ZERO
+
+    @property
+    def verdict_negative(self) -> bool:
+        return self.date_ci95 is not None and self.date_ci95[1] < ZERO
+
+    def as_dict(self) -> dict[str, Any]:
+        def ci(v):
+            return None if v is None else [str(v[0]), str(v[1])]
+
+        return {
+            "policy": self.policy.as_dict(),
+            "sessions": self.sessions,
+            "dates": self.dates,
+            "quotes_scored": self.quotes_scored,
+            "quotes_unsettled": self.quotes_unsettled,
+            "fills": self.fills,
+            "filled_contracts": str(self.filled_contracts),
+            "mean_pnl_per_quote_usd": str(self.mean_pnl_per_quote),
+            "pnl_per_filled_contract_usd": (
+                None if self.pnl_per_filled_contract is None else str(self.pnl_per_filled_contract)
+            ),
+            "session_cluster_ci95": ci(self.session_ci95),
+            "date_cluster_ci95": ci(self.date_ci95),
+            "date_cluster_ci_family_wise": ci(self.date_ci_family),
+            "family_wise_confidence": f"{100 * (1 - 0.05 / SETTLEMENT_FAMILY_SIZE):.3f}%",
+            "per_date": [
+                {"date": d, "mean_pnl_per_quote": str(m), "quotes": n} for d, m, n in self.per_date
+            ],
+        }
+
+
+def pool_settlement_holding(
+    sessions: Sequence[SessionResult],
+    payouts: Mapping[str, Decimal],
+    *,
+    estimator: FillEstimator = FillEstimator.QUEUE_MODEL,
+) -> list[SettlementHoldingResult]:
+    """The secondary metric: every fill held to settlement, resampled by date.
+
+    Same quotes, same fill model and same clustering as the primary analysis; only the
+    value of a fill differs. ``payouts`` maps a market to what its YES side settled
+    for; a market missing from it has not settled and its quotes are not scored.
+    """
+    by_policy: dict[str, list[SessionResult]] = {}
+    for session in sessions:
+        by_policy.setdefault(session.report.policy.name, []).append(session)
+
+    alpha_family = 0.05 / SETTLEMENT_FAMILY_SIZE
+    out: list[SettlementHoldingResult] = []
+    for _name, group in sorted(by_policy.items()):
+        session_clusters: list[list[Decimal]] = []
+        date_map: dict[str, list[Decimal]] = {}
+        unsettled = 0
+        fills = 0
+        contracts = ZERO
+        for s in group:
+            values, sizes, missing = s.report.settlement_values(estimator, payouts)
+            unsettled += missing
+            fills += sum(1 for z in sizes if z > 0)
+            contracts += sum(sizes, ZERO)
+            session_clusters.append(values)
+            date_map.setdefault(s.date, []).extend(values)
+        date_clusters = [date_map[d] for d in sorted(date_map)]
+        all_values = [v for c in session_clusters for v in c]
+        total = sum(all_values, ZERO)
+        session_means = _cluster_bootstrap(
+            session_clusters, iterations=BOOTSTRAP_ITERATIONS, seed=BOOTSTRAP_SEED
+        )
+        date_means = _cluster_bootstrap(
+            date_clusters, iterations=BOOTSTRAP_ITERATIONS, seed=BOOTSTRAP_SEED
+        )
+        out.append(
+            SettlementHoldingResult(
+                policy=group[0].report.policy,
+                sessions=len(group),
+                dates=len(date_clusters),
+                quotes_scored=len(all_values),
+                quotes_unsettled=unsettled,
+                fills=fills,
+                filled_contracts=contracts,
+                mean_pnl_per_quote=(
+                    quantize_usd(total / Decimal(len(all_values))) if all_values else ZERO
+                ),
+                pnl_per_filled_contract=(
+                    quantize_usd(total / contracts) if contracts > 0 else None
+                ),
+                session_ci95=_interval(session_means, 0.05),
+                date_ci95=_interval(date_means, 0.05),
+                date_ci_family=_interval(date_means, alpha_family),
+                per_date=[
+                    (
+                        d,
+                        quantize_usd(sum(date_map[d], ZERO) / Decimal(len(date_map[d])))
+                        if date_map[d]
+                        else ZERO,
+                        len(date_map[d]),
+                    )
+                    for d in sorted(date_map)
+                ],
+            )
+        )
+    return out

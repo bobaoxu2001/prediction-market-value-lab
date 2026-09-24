@@ -33,11 +33,13 @@ from pmvl_markets.arbitrage.maker_experiment import (
     run_experiment,
 )
 from pmvl_markets.arbitrage.maker_study import (
+    SETTLEMENT_FAMILY_SIZE,
     SessionResult,
     compare_days,
     pool_sessions,
+    pool_settlement_holding,
 )
-from pmvl_markets.recording import load_recording
+from pmvl_markets.recording import load_recording, read_log
 from pmvl_shared.enums import Side
 
 app = typer.Typer(add_completion=False, help="Offline replay of a forward recording.")
@@ -486,26 +488,14 @@ def daily_scan(
     console.print(f"appended to {ledger}")
 
 
-@app.command("maker-days")
-def maker_days(
-    directories: list[Path] = typer.Argument(..., help="Day directories to pool."),
-    planned_days: int = typer.Option(20, help="Eligible days the pre-registration targets."),
-    size: int = typer.Option(50, help="Contracts per quote."),
-    lifetime: int = typer.Option(60, help="Seconds a quote rests before cancellation."),
-    latency_ms: int = typer.Option(300, help="Delay before the order rests on the book."),
-    out: Path = typer.Option(None, help="Where to write the pooled report."),
-) -> None:
-    """Pool whole days and resample calendar dates, per the multi-day pre-registration.
+def _day_sessions(
+    directories: list[Path], *, size: int, lifetime: int, latency_ms: int
+) -> list[SessionResult]:
+    """Every session of these days under the four pre-registered policies.
 
-    This is the only analysis that ever puts an interval on the *day* factor. Every
-    earlier result was conditional on one afternoon, however many sessions it held.
-
-    Refuses to mix recorder versions. Day 1 was recorded under 1.0.0, whose skew
-    bound counted local queueing and whose tape starved in busy hours; it was
-    excluded from this study before day 3 existed, and not because of its result.
-
-    Before the planned number of days the verdict is labelled an interim and decides
-    nothing. The study does not stop early on a good interim.
+    Shared by the primary analysis and the settlement-holding one, so that both score
+    exactly the same quotes. Refuses a session or a set of days that spans recorder
+    versions.
     """
     policies = [
         QuotePolicy(
@@ -546,7 +536,47 @@ def maker_days(
             f"{ {v: sorted(d) for v, d in versions.items()} } - not poolable"
         )
         raise typer.Exit(1)
+    return results
 
+
+def _load_payouts(path: Path) -> dict[str, Decimal]:
+    """What each market's YES side settled for, from the latest row recorded for it.
+
+    A market whose latest row is not final has no payout and is left out of scoring.
+    """
+    latest: dict[str, dict[str, Any]] = {}
+    for entry in read_log(path):
+        latest[entry.body["ticker"]] = entry.body
+    return {
+        t: Decimal(str(r["settlement_value_dollars"]))
+        for t, r in latest.items()
+        if r.get("status") in ("finalized", "settled")
+        and r.get("settlement_value_dollars") not in (None, "")
+    }
+
+
+@app.command("maker-days")
+def maker_days(
+    directories: list[Path] = typer.Argument(..., help="Day directories to pool."),
+    planned_days: int = typer.Option(20, help="Eligible days the pre-registration targets."),
+    size: int = typer.Option(50, help="Contracts per quote."),
+    lifetime: int = typer.Option(60, help="Seconds a quote rests before cancellation."),
+    latency_ms: int = typer.Option(300, help="Delay before the order rests on the book."),
+    out: Path = typer.Option(None, help="Where to write the pooled report."),
+) -> None:
+    """Pool whole days and resample calendar dates, per the multi-day pre-registration.
+
+    This is the only analysis that ever puts an interval on the *day* factor. Every
+    earlier result was conditional on one afternoon, however many sessions it held.
+
+    Refuses to mix recorder versions. Day 1 was recorded under 1.0.0, whose skew
+    bound counted local queueing and whose tape starved in busy hours; it was
+    excluded from this study before day 3 existed, and not because of its result.
+
+    Before the planned number of days the verdict is labelled an interim and decides
+    nothing. The study does not stop early on a good interim.
+    """
+    results = _day_sessions(directories, size=size, lifetime=lifetime, latency_ms=latency_ms)
     dates = sorted({r.date for r in results})
     study = pool_sessions(results, planned_sessions=planned_days * 20)
     body = study.as_dict()
@@ -572,6 +602,67 @@ def maker_days(
     console.print(f"\n[bold]{body['verdict']}[/bold]: {body['why']}")
     console.print(f"dates pooled: {dates}")
     target = out or Path("artifacts/forward/maker_days_report.json")
+    target.write_text(json.dumps(body, indent=2) + "\n")
+    console.print(f"wrote {target}")
+
+
+@app.command("maker-settlement")
+def maker_settlement(
+    directories: list[Path] = typer.Argument(..., help="Day directories to pool."),
+    settlements: Path = typer.Option(
+        Path("artifacts/forward/settlements.jsonl"), help="Log written by `pmvl record settlements`."
+    ),
+    planned_days: int = typer.Option(20, help="Eligible days the pre-registration targets."),
+    size: int = typer.Option(50, help="Contracts per quote."),
+    lifetime: int = typer.Option(60, help="Seconds a quote rests before cancellation."),
+    latency_ms: int = typer.Option(300, help="Delay before the order rests on the book."),
+    out: Path = typer.Option(None, help="Where to write the report."),
+) -> None:
+    """The secondary metric: the primary analysis's fills, held to settlement.
+
+    Same days, same four policies, same fill model as ``maker-days``; a fill is valued
+    at what its side settled for instead of at a five-minute mark. Pre-registered as an
+    amendment on 2026-09-24, decided at the planned day count with a family-wise bound
+    for eight tests. Before that it is an interim and decides nothing.
+    """
+    payouts = _load_payouts(settlements)
+    results = _day_sessions(directories, size=size, lifetime=lifetime, latency_ms=latency_ms)
+    dates = sorted({r.date for r in results})
+    pooled = pool_settlement_holding(results, payouts)
+    if len(dates) < planned_days:
+        verdict, why = ("INTERIM_NOT_A_DECISION",
+                        f"{len(dates)} of {planned_days} eligible days; decided once, at the planned count")
+    elif any(r.verdict_positive for r in pooled):
+        verdict, why = ("MAKER_POSITIVE_UNCONDITIONAL_EXPECTANCY",
+                        "date-level family-wise lower bound above zero for "
+                        + ", ".join(r.policy.name for r in pooled if r.verdict_positive))
+    elif pooled and all(r.verdict_negative for r in pooled):
+        verdict, why = ("CURRENT_MARKET_MICROSTRUCTURE_DOES_NOT_SUPPORT_PROFITABLE_EXECUTION",
+                        "every policy's 95% date-level upper bound is below zero")
+    else:
+        verdict, why = ("INSUFFICIENT_EVIDENCE", "date-level intervals straddle zero at the planned count")
+
+    table = Table(title=f"maker fills held to settlement - {len(dates)} day(s)")
+    for column in ("policy", "scored", "unsettled", "fills", "E[PnL]/quote",
+                   "per filled contract", "date CI95", "session CI95"):
+        table.add_column(column, justify="right" if column != "policy" else "left")
+    for r in pooled:
+        def fmt(ci):
+            return f"[{ci[0]}, {ci[1]}]" if ci else "-"
+        table.add_row(r.policy.name, str(r.quotes_scored), str(r.quotes_unsettled), str(r.fills),
+                      str(r.mean_pnl_per_quote), str(r.pnl_per_filled_contract),
+                      fmt(r.date_ci95), fmt(r.session_ci95))
+    console.print(table)
+    console.print(f"\n[bold]{verdict}[/bold]: {why}")
+    console.print(f"dates pooled: {dates}")
+    body = {
+        "metric": "hold every fill to settlement (secondary; amendment of 2026-09-24)",
+        "verdict": verdict, "why": why, "planned_days": planned_days, "days_pooled": len(dates),
+        "dates": dates, "family_size": SETTLEMENT_FAMILY_SIZE,
+        "settled_markets_known": len(payouts),
+        "policies": [r.as_dict() for r in pooled],
+    }
+    target = out or Path("artifacts/forward/maker_settlement_report.json")
     target.write_text(json.dumps(body, indent=2) + "\n")
     console.print(f"wrote {target}")
 

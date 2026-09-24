@@ -29,6 +29,7 @@ from pmvl_markets.providers.polymarket import PolymarketProvider
 from pmvl_shared.money import ONE
 from pmvl_markets.recording import (
     STRATEGY_VERSION,
+    AppendOnlyLog,
     RecorderConfig,
     SynchronizedRecorder,
     read_log,
@@ -948,6 +949,71 @@ def polymarket_sets(
             at(0.50), at(0.95), best[0], best[1], len(clearing),
         ])
     console.print(f"appended to {ledger}")
+
+
+@app.command("settlements")
+def settlements(
+    directories: list[Path] = typer.Argument(..., help="Day directories whose markets to look up."),
+    out: Path = typer.Option(
+        Path("artifacts/forward/settlements.jsonl"), help="Append-only settlement log."
+    ),
+) -> None:
+    """Record how every market in these recordings settled, for offline replay.
+
+    Holding a maker fill to settlement needs the outcome, and replay never touches the
+    network - so the outcome is recorded like everything else. One row per market per
+    run, as the venue reports it now: an open market is written as open, and a later
+    run writes it again once it settles. Nothing is rewritten; replay reads the latest
+    row. Read-only, one batched lookup per hundred markets.
+    """
+    tickers: set[str] = set()
+    for directory in directories:
+        for session_dir in sorted(directory.glob("session-*")):
+            snapshots = session_dir / "snapshots.jsonl"
+            if not snapshots.exists():
+                continue
+            for entry in read_log(snapshots):
+                if entry.body.get("kind") == "snapshot":
+                    tickers.update(entry.body["books"])
+    ordered = sorted(tickers)
+    if not ordered:
+        console.print("[red]no recorded markets under those directories")
+        raise typer.Exit(1)
+
+    async def _run() -> list[dict[str, Any]]:
+        provider = KalshiProvider()
+        rows: list[dict[str, Any]] = []
+        try:
+            for i in range(0, len(ordered), MAX_BATCH_TICKERS):
+                chunk = ordered[i : i + MAX_BATCH_TICKERS]
+                data = await provider._client.get_json(
+                    "/markets", params={"tickers": ",".join(chunk), "limit": len(chunk)},
+                    use_cache=False,
+                )
+                seen = set()
+                fetched_at = datetime.now(timezone.utc).isoformat()
+                for m in (data or {}).get("markets") or []:
+                    seen.add(m["ticker"])
+                    rows.append({
+                        "ticker": m["ticker"], "status": m.get("status"), "result": m.get("result"),
+                        "settlement_value_dollars": m.get("settlement_value_dollars"),
+                        "settlement_ts": m.get("settlement_ts"), "fetched_at": fetched_at,
+                    })
+                #: a market the venue no longer returns is written down as missing,
+                #: not skipped - an absent row would read as "never looked"
+                rows.extend({"ticker": t, "status": "not_returned", "fetched_at": fetched_at}
+                            for t in chunk if t not in seen)
+        finally:
+            await provider.aclose()
+        return rows
+
+    rows = asyncio.run(_run())
+    log = AppendOnlyLog(out)
+    for row in rows:
+        log.append(row)
+    final = sum(1 for r in rows if r.get("status") in ("finalized", "settled")
+                and r.get("settlement_value_dollars") not in (None, ""))
+    console.print(f"{len(ordered)} markets: {final} settled, {len(rows) - final} not yet; appended to {out}")
 
 
 @app.command("verify")

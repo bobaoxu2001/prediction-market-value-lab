@@ -67,4 +67,12 @@ echo "=== $DAY recorded $(date -u +%FT%TZ) ==="
 .venv/bin/pmvl record polymarket-sets || \
     echo "$(date -u +%FT%TZ) $DAY polymarket scan failed" >> artifacts/forward/maker-daily/skipped.log
 
+# Outcomes for every study day so far, for the secondary metric - fills held to
+# settlement (amendment of 2026-09-24). Replay never touches the network, so the
+# outcomes are recorded like everything else; a market still open is written as open
+# and looked up again tomorrow.
+.venv/bin/pmvl record settlements artifacts/forward/maker-study-day2 \
+    artifacts/forward/maker-study-day3 artifacts/forward/maker-daily/20* || \
+    echo "$(date -u +%FT%TZ) $DAY settlement lookup failed" >> artifacts/forward/maker-daily/skipped.log
+
 echo "=== $DAY finished $(date -u +%FT%TZ) ==="
