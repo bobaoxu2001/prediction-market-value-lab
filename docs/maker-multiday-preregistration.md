@@ -49,3 +49,31 @@ optimistic bound, exactly as before.
   are listed in every report so a gap cannot be mistaken for continuity.
 - If the accumulating result turns positive, that is the finding. The first two days do
   not get defended.
+
+## Amendment, 2026-09-24: a secondary metric - holding the fill to settlement
+
+Added after days 2 and 3 were recorded and while day 4 was recording, and **before any
+hold-to-settlement number had been computed for any day**. The commit history shows the
+order.
+
+**Why.** Every number above marks or flattens a fill within five minutes; the analysis
+code has always listed `settlement_holding` as not measured. The calibration study
+(`calibration-preregistration.md`, run 2026-09-24) found Kalshi's mid-price calibrated
+to within about a cent and a taker's loss to be the half-spread plus the fee - which is
+to say that the spread goes to whoever quoted it. Whether a *resting* quote keeps that
+spread when held to the outcome, or gives it back to the traders who chose to hit it, is
+the one maker question not yet asked. It is a different strategy with a different risk,
+so it is a separate metric, not a replacement.
+
+**The metric.** For every quote the primary analysis places, with the same fill model
+(`QUEUE_MODEL`), the unconditional PnL per quote placed of holding every fill to
+settlement: `filled size x (payout of the side bought - fill price - maker fee)`,
+unfilled quotes scoring zero, scalar settlements paid as they settled. A quote on a
+market that has not settled when the analysis runs is left out of both numerator and
+denominator, and counted.
+
+**The decision, at day 20 with the primary.** Two metrics are two chances at a false
+positive, so the secondary claims `MAKER_POSITIVE_UNCONDITIONAL_EXPECTANCY` only if some
+policy's **date-level** lower bound at **1 - 0.05/8** (four policies x two metrics) is
+above zero. Its negative condition is the primary's: every policy's 95% date-level upper
+bound below zero. Everything before day 20 is `INTERIM_NOT_A_DECISION`, as above.
