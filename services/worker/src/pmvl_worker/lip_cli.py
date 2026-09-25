@@ -190,6 +190,98 @@ def replay_day_cmd(
     console.print(f"{len(results)} market-days replayed -> {out}")
 
 
+def _study_days() -> list[Path]:
+    root = FORWARD / "lip-daily"
+    return sorted(d for d in root.glob("20*") if d.is_dir() and (d / "study.json").exists())
+
+
+@app.command("programs-paid")
+def programs_paid() -> None:
+    """Record, read-only, which admitted programs Kalshi has since paid or closed.
+
+    Appends every paid_out / closed listing row for a program admitted on any study day
+    to artifacts/forward/lip-programs-paid.jsonl. Run at the verdict date (last study
+    day + 14 days), before the final analysis.
+    """
+    from pmvl_markets.lip.http import lane_provider
+    from pmvl_markets.lip.store import read_stream
+    from pmvl_markets.recording.writer import AppendOnlyLog
+
+    admitted = {b["program_id"] for d in _study_days() for b in read_stream(d, "universe")
+                if b.get("decision") == "admitted"}
+
+    async def fetch() -> list[dict]:
+        p = lane_provider("control", 0.3, attempts=2)
+        rows: list[dict] = []
+        try:
+            for status in ("paid_out", "closed"):
+                cursor = None
+                while True:
+                    params = {"status": status, "type": "liquidity", "limit": 10000}
+                    if cursor:
+                        params["cursor"] = cursor
+                    data = await p._client.get_json("/incentive_programs", params=params, use_cache=False)
+                    batch = (data or {}).get("incentive_programs") or []
+                    rows.extend(r for r in batch if r.get("id") in admitted)
+                    cursor = (data or {}).get("next_cursor") or (data or {}).get("cursor")
+                    if not cursor or not batch:
+                        break
+        finally:
+            await p.aclose()
+        return rows
+
+    rows = asyncio.run(fetch())
+    log = AppendOnlyLog(FORWARD / "lip-programs-paid.jsonl")
+    at = datetime.now(timezone.utc).isoformat()
+    for r in rows:
+        log.append({"fetched_at": at, "row": r})
+    console.print(f"{len(admitted)} admitted programs; {len(rows)} paid_out/closed rows appended")
+
+
+@app.command("study")
+def study_cmd(final: bool = typer.Option(False, "--final", help="The one final look, after the verdict date.")) -> None:
+    """Pool every study day's replay into cells and evaluate the decision table - once.
+
+    Without --final (or before the verdict date) it prints INTERIM_NOT_A_DECISION and no
+    dollar figure.
+    """
+    from datetime import date, timedelta
+
+    from pmvl_markets.lip.final import isolation_breaches, payment_status
+    from pmvl_markets.lip.replay import build_cells
+    from pmvl_markets.lip.sim_params import SIM
+    from pmvl_markets.lip.study import decide
+
+    days = _study_days()
+    last = max((date.fromisoformat(json.loads((d / "study.json").read_text())["day"]) for d in days), default=None)
+    verdict_date = last + timedelta(days=SIM.verdict_lag_days) if last else None
+    is_final = final and verdict_date is not None and datetime.now(timezone.utc).date() >= verdict_date
+    results, versions, counted, breaches = [], set(), 0, 0
+    for d in days:
+        health_file = d / "health.json"
+        if health_file.exists() and json.loads(health_file.read_text()).get("counted_day"):
+            counted += 1
+        breaches += len(isolation_breaches(d, FORWARD / "maker-daily"))
+        replay_file = d / "replay.json"
+        if replay_file.exists():
+            body = json.loads(replay_file.read_text())
+            versions.add(body.get("sim_version"))
+            results.extend(body.get("results") or [])
+    if not is_final:
+        console.print_json(json.dumps({"verdict": "INTERIM_NOT_A_DECISION", "study_days": len(days),
+                                       "counted_days": counted, "isolation_breaches": breaches,
+                                       "verdict_date": verdict_date.isoformat() if verdict_date else None}))
+        return
+    verified, withdrawn = payment_status(days, FORWARD / "lip-programs-paid.jsonl")
+    cells = build_cells(results, verified=verified, withdrawn=withdrawn)
+    gates = FORWARD / "lip-gates.json"
+    v = decide(cells, policies=["J1", "I1", "J5", "I5"], counted_days=counted, final=True,
+               versions=versions or {"none"}, gates_closed=gates.exists(), isolation_ok=breaches == 0)
+    out = FORWARD / "lip-verdict.json"
+    out.write_text(json.dumps(v.as_dict(), indent=2, default=str) + "\n")
+    console.print(f"[bold]{v.verdict}[/bold]: {v.why}\nwrote {out}")
+
+
 @app.command("health")
 def health(day_dir: Path = typer.Argument(..., help="A recorded day directory.")) -> None:
     """Coverage and lane health only. No credit, fills or dollars - ever."""
