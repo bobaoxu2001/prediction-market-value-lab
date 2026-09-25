@@ -75,6 +75,37 @@ def record_day(
     console.print_json(json.dumps(health))
 
 
+@app.command("replay-day")
+def replay_day_cmd(
+    day_dir: Path = typer.Argument(..., help="A recorded day directory."),
+    health_only: bool = typer.Option(False, "--health-only", help="Counts and exceptions only; no dollars."),
+    workers: int = typer.Option(4, help="Parallel processes across markets."),
+) -> None:
+    """Replay every admitted market-day through all 24 paths.
+
+    Before the final analysis only --health-only may be run on study days (section 7):
+    it prints counts and exceptions and no credit, fill or dollar figure. Results are
+    written next to the day; nothing is printed that could steer anyone.
+    """
+    from pmvl_markets.lip.replay import replay_day, write_results
+
+    study = json.loads((day_dir / "study.json").read_text())
+    root = day_dir.parent
+    if health_only:
+        console.print_json(json.dumps(day_health(day_dir)))
+        return
+    if study.get("tag") == "study" and not (FORWARD / "lip-final.flag").exists():
+        console.print("[red]refused: study days are replayed for dollars only at the final analysis "
+                      "(create artifacts/forward/lip-final.flag after the verdict date)")
+        raise typer.Exit(5)
+    results = replay_day(day_dir, settlements_path=FORWARD / (
+        "lip-shakedown-settlements.jsonl" if study.get("tag") == "shakedown" else "lip-settlements.jsonl"),
+        state_path=root / "admission_state.json", workers=workers)
+    out = day_dir / "replay.json"
+    write_results(results, out)
+    console.print(f"{len(results)} market-days replayed -> {out}")
+
+
 @app.command("health")
 def health(day_dir: Path = typer.Argument(..., help="A recorded day directory.")) -> None:
     """Coverage and lane health only. No credit, fills or dollars - ever."""
