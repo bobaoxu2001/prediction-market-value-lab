@@ -677,10 +677,14 @@ class LipRecorder:
     # ------------------------------------------------------------------ final phase
     async def _final_phase(self) -> None:
         """Drain the tape, read program payouts and settlements, verify, close."""
-        for _ in range(3):
-            poll = await self._tape_poll()
-            if poll["complete"]:
-                break
+        if self.params.tape_mode == "per_ticker":
+            for ticker in sorted(self.recorded_ever):
+                await self._tape_poll(ticker=ticker)
+        else:
+            for _ in range(3):
+                poll = await self._tape_poll()
+                if poll["complete"]:
+                    break
         try:
             for listing in ("paid_out", "closed"):
                 rows = await self._list_programs(listing)

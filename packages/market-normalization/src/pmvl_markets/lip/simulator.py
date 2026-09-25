@@ -456,7 +456,9 @@ def simulate(md: MarketDay, policy: LipPolicy, scenario: FillScenario, regime: R
     for t, _, _, (kind, obj) in events:
         if ended and t > stop_after:
             break
-        drain_internal(t)
+        # HEAVY treats an order as able to fill from eps before it landed (the clock may
+        # have put the print early); its credit still starts at the landing itself
+        drain_internal(t + max(0.0, live_eps))
         if (not ended and last_book is not None and t - last_book_at > params.dead_man_s
                 and (resting[LipSide.YES] or resting[LipSide.NO])):
             cancel_all(last_book_at + params.dead_man_s, last_book.rtt, "dead_man")
