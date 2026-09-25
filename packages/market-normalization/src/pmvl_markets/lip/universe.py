@@ -92,9 +92,26 @@ class AdmittedPair:
     start: float
     end: float
     target: str
+    #: the program's terms at admission, so a pair carried into a later day can be
+    #: replayed even if its program has vanished from that day's listing (2.4 item 4)
+    series: str = ""
+    reward: str = ""
+    discount: str = ""
+    cap: str | None = None
 
     def live(self, t: float) -> bool:
         return t < self.end
+
+    def program(self) -> ProgramPeriod:
+        from datetime import datetime, timezone
+        from decimal import Decimal
+
+        return ProgramPeriod(
+            id=self.program_id, market_ticker=self.market, series=self.series or self.market.split("-")[0],
+            start=datetime.fromtimestamp(self.start, tz=timezone.utc),
+            end=datetime.fromtimestamp(self.end, tz=timezone.utc),
+            reward=Decimal(self.reward or "0"), target=Decimal(self.target), discount=Decimal(self.discount or "0"),
+            cap=None if self.cap in (None, "") else Decimal(self.cap), paid_out=False)
 
 
 @dataclass
@@ -157,8 +174,9 @@ class AdmissionState:
             elif len(live) >= self.params.total_cap:
                 reason = "cap_total"
             else:
-                pair = AdmittedPair(p.id, p.market_ticker, fam, now, p.start_ts, p.end_ts,
-                                    str(p.target))
+                pair = AdmittedPair(p.id, p.market_ticker, fam, now, p.start_ts, p.end_ts, str(p.target),
+                                    series=p.series, reward=str(p.reward), discount=str(p.discount),
+                                    cap=None if p.cap is None else str(p.cap))
                 self.admitted[p.id] = pair
                 live[p.id] = pair
                 events.append(AdmissionEvent(stamp, p.id, p.market_ticker, p.series, fam,

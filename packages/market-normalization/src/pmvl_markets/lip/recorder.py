@@ -127,6 +127,9 @@ class LaneStats:
     ok: int = 0
     failed: int = 0
     skipped_in_flight: int = 0
+    #: ticks in the quoting window on which this lane had markets to read, and on which
+    #: it read them - the counted-day test is on these, at the lane's own cadence
+    due_ticks_in_window: int = 0
     ok_ticks_in_window: int = 0
     rate_limited: int = 0
 
@@ -142,6 +145,8 @@ class LipRecorder:
     #: stop early (shakedown); None means the pre-registered drain/hard-stop times
     stop_at: datetime | None = None
     prereg_commit: str = ""
+    #: the commit the recorder ran from, so a day can be tied to exact code
+    code_commit: str = ""
     cadence_sha256: str = ""
     clock: Clock = field(default_factory=RealClock)
     make_provider: Callable[..., KalshiProvider] = lane_provider
@@ -155,6 +160,13 @@ class LipRecorder:
         self.admission = (AdmissionState.from_json(json.loads(Path(self.state_path).read_text()))
                           if Path(self.state_path).exists() else AdmissionState())
         self.admission.known_series.update(self.known_series)
+        self.admission.params = self.params
+        #: lane -> [minute, count, first, last]: every request, for the isolation check
+        self._req_minute: dict[str, list[float]] = {}
+        #: lane -> recent (t, was_429) for the trailing ten-minute 429 share
+        self._recent: dict[str, list[tuple[float, bool]]] = {}
+        self._tape_marks: dict[str, float] = {}
+        self._tape_last_poll: dict[str, float] = {}
         self.meta: dict[str, dict[str, Any]] = {}
         self.fees: dict[str, dict[str, Any]] = {}
         self.encoder = BookEncoder(self.params.keyframe_every_s, self.params.truncate_multiple)
@@ -180,29 +192,37 @@ class LipRecorder:
             raise LockHeld(f"{lock} exists: another LIP recorder is running (or crashed)") from exc
         try:
             if not await self._wait_for_maker():
-                return {"skipped": True, "reason": "maker study still running at give-up time"}
+                return self._write_skipped("maker study still running at give-up time")
+            if refused(self.clock.now().time(), self.params):
+                return self._write_skipped("the wait ran into the maker study's window")
             self.writer = SegmentWriter(self.out_dir)
             self._write_study_json()
             self._providers = {
                 "book-A": self.make_provider("book-A", self.params.book_lane_rate, attempts=1),
-                "book-B": self.make_provider("book-B", self.params.book_lane_rate, attempts=1),
                 "tape": self.make_provider("tape", self.params.tape_rate, attempts=2),
                 "status": self.make_provider("status", self.params.status_rate, attempts=2),
                 "control": self.make_provider("control", self.params.control_rate, attempts=2),
             }
+            if self.params.book_lanes > 1:
+                self._providers["book-B"] = self.make_provider("book-B", self.params.book_lane_rate, attempts=1)
             for name in self._providers:
                 self.lanes[name] = LaneStats()
             await self._control_tick(first=True)
-            tasks = [
-                asyncio.create_task(self._book_lane("book-A", 0)),
-                asyncio.create_task(self._book_lane("book-B", 1)),
+            tasks = [asyncio.create_task(self._book_lane(name, i))
+                     for i, name in enumerate(n for n in ("book-A", "book-B") if n in self._providers)]
+            tasks += [
                 asyncio.create_task(self._tape_lane()),
                 asyncio.create_task(self._status_lane()),
                 asyncio.create_task(self._control_lane()),
                 asyncio.create_task(self._stopper()),
             ]
             await asyncio.gather(*tasks)
-            await self._final_phase()
+            remaining = (self.window.hard_stop - self.clock.now()).total_seconds() * self._time_scale()
+            try:
+                await asyncio.wait_for(self._final_phase(), timeout=max(1.0, remaining))
+            except asyncio.TimeoutError:
+                self._write("lanes", {"kind": "final_phase_cut", "at": self.clock.now().timestamp()})
+            self._flush_requests()
             return self._write_health()
         finally:
             for p in self._providers.values():
@@ -222,18 +242,40 @@ class LipRecorder:
             await self.clock.sleep(30)
         return True
 
+    def _time_scale(self) -> float:
+        """Real seconds per clock second (1 for the real clock; tests run a faster one)."""
+        return float(getattr(self.clock, "scale", 1.0))
+
     async def _stopper(self) -> None:
-        drain = self.stop_at or self.window.drain_at
+        # never past the pre-registered drain time, whatever --until asked for
+        drain = min(self.stop_at or self.window.drain_at, self.window.drain_at)
         while self.clock.now() < drain:
             await self.clock.sleep(min(5.0, max(0.05, (drain - self.clock.now()).total_seconds())))
         self._stop.set()
+
+    def _write_skipped(self, reason: str) -> dict[str, Any]:
+        """A day that did not record still exists: its admitted hours enter as zeros."""
+        self.out_dir.mkdir(parents=True, exist_ok=True)
+        body = {"tag": "shakedown" if self.shakedown else "study", "skipped": reason,
+                "recorder_version": LIP_RECORDER_VERSION, "sim_version": LIP_SIM_VERSION,
+                "day": self.window.day.isoformat(), "book_cadence_s": self.params.book_cadence_s,
+                "window": {k: _iso(getattr(self.window, k)) for k in
+                           ("admission_from", "window_start", "window_end", "drain_at", "hard_stop")}}
+        (self.out_dir / "study.json").write_text(json.dumps(body, indent=2) + "\n")
+        health = {"v": LIP_RECORDER_VERSION, "skipped": reason, "counted_day": False,
+                  "day": self.window.day.isoformat()}
+        (self.out_dir / "health.json").write_text(json.dumps(health, indent=2) + "\n")
+        return {"skipped": True, "reason": reason}
 
     def _write_study_json(self) -> None:
         body = {
             "tag": "shakedown" if self.shakedown else "study",
             "recorder_version": LIP_RECORDER_VERSION, "sim_version": LIP_SIM_VERSION,
-            "prereg_commit": self.prereg_commit, "cadence_sha256": self.cadence_sha256,
+            "prereg_commit": self.prereg_commit, "code_commit": self.code_commit,
+            "cadence_sha256": self.cadence_sha256,
             "day": self.window.day.isoformat(), "started_at": _iso(self.clock.now()),
+            "book_cadence_s": self.params.book_cadence_s, "tape_mode": self.params.tape_mode,
+            "min_ts_honoured": self.params.min_ts_honoured, "total_cap": self.params.total_cap,
             "window": {k: _iso(getattr(self.window, k)) for k in
                        ("admission_from", "window_start", "window_end", "drain_at", "hard_stop")},
         }
@@ -246,11 +288,43 @@ class LipRecorder:
     def _client(self, lane: str) -> LaneClient | Any:
         return self._providers[lane]._client
 
+    def _guard(self) -> None:
+        """No request inside the maker study's window or past the hard stop - ever."""
+        now = self.clock.now()
+        if refused(now.time(), self.params) or now >= self.window.hard_stop:
+            self._stop.set()
+            raise WindowRefused(f"{now.time()} UTC: outside the LIP recording window")
+
+    def _log_request(self, lane: str, t: float, was_429: bool = False) -> None:
+        minute = int(t // 60)
+        cur = self._req_minute.get(lane)
+        if cur is not None and cur[0] != minute:
+            self._write("lanes", {"kind": "requests", "lane": lane, "minute": int(cur[0]), "n": int(cur[1]),
+                                  "first": cur[2], "last": cur[3]})
+            cur = None
+        if cur is None:
+            self._req_minute[lane] = [minute, 1, t, t]
+        else:
+            cur[1] += 1
+            cur[3] = t
+        recent = self._recent.setdefault(lane, [])
+        recent.append((t, was_429))
+        while recent and recent[0][0] < t - self.params.backoff_s:
+            recent.pop(0)
+
+    def _flush_requests(self) -> None:
+        for lane, cur in self._req_minute.items():
+            self._write("lanes", {"kind": "requests", "lane": lane, "minute": int(cur[0]), "n": int(cur[1]),
+                                  "first": cur[2], "last": cur[3]})
+        self._req_minute = {}
+
     async def _get(self, lane: str, path: str, params: Any = None) -> Any:
+        self._guard()
         stats = self.lanes[lane]
         stats.requests += 1
         client = self._client(lane)
         before = len(getattr(client, "rate_limited", []))
+        self._log_request(lane, self.clock.now().timestamp())
         try:
             data = await client.get_json(path, params=params, use_cache=False, allow_404=True)
             stats.ok += 1
@@ -262,6 +336,7 @@ class LipRecorder:
             after = len(getattr(client, "rate_limited", []))
             if after > before:
                 stats.rate_limited += after - before
+                self._recent.setdefault(lane, []).append((self.clock.now().timestamp(), True))
                 self._on_429(lane)
 
     def _on_429(self, lane: str) -> None:
@@ -271,8 +346,9 @@ class LipRecorder:
             client.set_rate(max(0.1, client.rate / 2))
             asyncio.get_event_loop().call_later(
                 self.params.backoff_s, lambda: client.set_rate(self._base_rate(lane)))
-        stats = self.lanes[lane]
-        if lane.startswith("book") and stats.requests and stats.rate_limited / stats.requests > 0.01:
+        recent = self._recent.get(lane, [])
+        share = sum(1 for _, hit in recent if hit) / max(1, len(recent))
+        if lane.startswith("book") and share > 0.01:
             now = self.clock.now()
             self._pause_books_until = (now.replace(minute=0, second=0, microsecond=0)
                                        + timedelta(hours=1)).timestamp()
@@ -295,7 +371,7 @@ class LipRecorder:
             if pair.admitted_at <= t < self._participation_end(pair) + self.params.mark_tail_s:
                 if pair.market not in out:
                     out.append(pair.market)
-        return out[: 2 * self.params.book_lane_size]
+        return out[: self.params.book_lanes * self.params.book_lane_size]
 
     # ------------------------------------------------------------------ book lanes
     async def _book_lane(self, lane: str, index: int) -> None:
@@ -310,24 +386,32 @@ class LipRecorder:
                 break
             if self.clock.now().timestamp() < self._pause_books_until:
                 continue
-            if in_flight is not None and not in_flight.done():
-                self.lanes[lane].skipped_in_flight += 1
-                continue
             markets = self.recorded_markets(self.clock.now().timestamp())
             size = self.params.book_lane_size
             tickers = markets[index * size:(index + 1) * size]
             if not tickers:
+                continue
+            now_ts = self.clock.now().timestamp()
+            if self.window.window_start.timestamp() <= now_ts < self.window.window_end.timestamp():
+                self.lanes[lane].due_ticks_in_window += 1
+            if in_flight is not None and not in_flight.done():
+                self.lanes[lane].skipped_in_flight += 1
                 continue
             in_flight = asyncio.create_task(self._read_books(lane, tickers))
         if in_flight is not None:
             await asyncio.gather(in_flight, return_exceptions=True)
 
     async def _read_books(self, lane: str, tickers: list[str]) -> None:
+        try:
+            self._guard()
+        except WindowRefused:
+            return
         stats = self.lanes[lane]
         stats.requests += 1
         provider = self._providers[lane]
         client = provider._client
         before = len(getattr(client, "rate_limited", []))
+        self._log_request(lane, self.clock.now().timestamp())
         result = await provider.get_orderbooks_synchronized(tickers, depth=self.params.book_depth)
         after = len(getattr(client, "rate_limited", []))
         if after > before:
@@ -350,18 +434,36 @@ class LipRecorder:
     # ------------------------------------------------------------------ tape lane
     async def _tape_lane(self) -> None:
         while not self._stop.is_set():
-            await self._tape_poll()
-            await self.clock.sleep(self.params.tape_every_s)
+            if self.params.tape_mode == "per_ticker":
+                await self._tape_per_ticker_round()
+                await self.clock.sleep(1.0)
+            else:
+                await self._tape_poll()
+                await self.clock.sleep(self.params.tape_every_s)
 
-    async def _tape_poll(self) -> dict[str, Any]:
-        """One poll of the global feed from the watermark, every page, logged whole."""
+    async def _tape_per_ticker_round(self) -> None:
+        """TAPE_PT: each recorded market's own tape, each every tape_per_ticker_every_s."""
+        now = self.clock.now().timestamp()
+        for ticker in self.recorded_markets(now):
+            if self._stop.is_set():
+                return
+            if now - self._tape_last_poll.get(ticker, -1e18) >= self.params.tape_per_ticker_every_s:
+                self._tape_last_poll[ticker] = now
+                await self._tape_poll(ticker=ticker)
+
+    async def _tape_poll(self, ticker: str | None = None) -> dict[str, Any]:
+        """One poll from the watermark - of the global feed, or of one market's - logged whole."""
         sent = self.clock.now().timestamp()
-        if self.watermark is None:
-            self.watermark = sent - 60
-        min_ts = int(self.watermark) - int(self.params.tape_overlap_s)
-        cursor, pages, rows, error, cap_hit = None, 0, [], "", False
+        key = ticker or "*"
+        mark = self._tape_marks.get(key) if ticker else self.watermark
+        if mark is None:
+            mark = sent - 60
+        min_ts = int(mark) - int(self.params.tape_overlap_s)
+        cursor, pages, rows, error, cap_hit, reached = None, 0, [], "", False, False
         while True:
             params: dict[str, Any] = {"min_ts": min_ts, "limit": self.params.tape_limit}
+            if ticker:
+                params["ticker"] = ticker
             if cursor:
                 params["cursor"] = cursor
             try:
@@ -373,6 +475,10 @@ class LipRecorder:
             batch = (data or {}).get("trades") or []
             rows.extend(batch)
             cursor = (data or {}).get("cursor")
+            if not self.params.min_ts_honoured and any(
+                    r.get("created_time") and _ts(r["created_time"]).timestamp() < min_ts for r in batch):
+                reached = True  # min_ts ignored: this page reaches back past the watermark
+                break
             if not cursor or not batch:
                 break
             if pages >= self.params.tape_page_cap:
@@ -392,17 +498,23 @@ class LipRecorder:
                 self.seen_trades.add(tid)
                 kept.append({k: r.get(k) for k in ("ticker", "trade_id", "created_time", "yes_price_dollars",
                                                    "count_fp", "taker_side", "is_block_trade")})
-        complete = not error and not cap_hit
+        complete = not error and not cap_hit and (self.params.min_ts_honoured or reached or not cursor)
         poll = {"kind": "tape_poll", "sent_at": sent, "received_at": received, "min_ts": min_ts,
                 "pages": pages, "rows": len(rows), "kept": len(kept), "newest": newest,
                 "complete": complete, "page_cap_hit": cap_hit, "error": error}
+        if ticker:
+            poll["ticker"] = ticker
         if kept:
             self._write("trades", {"kind": "prints", "poll_sent_at": sent, "prints": kept})
         self._write("tape_polls", poll)
         if complete:
             # never let the next poll start after this one's start: continuity is what
             # makes consecutive complete polls one covered interval
-            self.watermark = max(self.watermark, newest or self.watermark, sent - 30)
+            new_mark = max(mark, newest or mark, sent - 30)
+            if ticker:
+                self._tape_marks[key] = new_mark
+            else:
+                self.watermark = new_mark
         return poll
 
     def _admitted_tickers(self) -> set[str]:
@@ -431,14 +543,16 @@ class LipRecorder:
                 if m["ticker"] in self.meta:
                     self.meta[m["ticker"]].update(status=m.get("status"), close_time=m.get("close_time"))
         exchange: dict[str, Any] = {}
+        exchange_error = ""
         try:
             exchange = await self._get("status", "/exchange/status") or {}
         except Exception as exc:
-            error = error or str(exc)[:300]
-        self._write("status", {"kind": "status", "at": at.timestamp(), "markets": markets,
+            exchange_error = str(exc)[:300]
+        # every requested market is named, so one the poll did not answer reads as unknown
+        self._write("status", {"kind": "status", "at": at.timestamp(), "requested": tickers, "markets": markets,
                                "exchange": {"trading_active": exchange.get("trading_active"),
                                             "exchange_active": exchange.get("exchange_active")},
-                               "error": error})
+                               "exchange_error": exchange_error, "error": error})
 
     # ------------------------------------------------------------------ control lane
     async def _control_lane(self) -> None:
@@ -475,7 +589,7 @@ class LipRecorder:
                     #: every row whose content matters to the payout check is written
                     #: when it changes, not only on the hourly full listing
                     changed = set(diff.added) | set(diff.terms_changed) | set(diff.newly_paid)
-                    self._write("programs", {"kind": "listing", "listing": listing, "at": t,
+                    self._write("programs", {"kind": "listing", "listing": listing, "at": t, "full": full,
                                              "added": diff.added, "withdrawn": diff.withdrawn,
                                              "terms_changed": diff.terms_changed, "newly_paid": diff.newly_paid,
                                              "rows": rows if full else [r for r in rows if r.get("id") in changed]})
@@ -502,9 +616,13 @@ class LipRecorder:
 
     async def _fetch_candidate_metadata(self, now: datetime) -> None:
         window_end = self.window.window_end
-        wanted = sorted({p.market_ticker for p in self.registry.programs.values()
-                         if p.id not in self.admission.decided and p.end > now and p.start <= window_end
-                         and program_eligible(p, self.params)[0] and p.market_ticker not in self.meta})
+        wanted = {p.market_ticker for p in self.registry.programs.values()
+                  if p.id not in self.admission.decided and p.end > now and p.start <= window_end
+                  and program_eligible(p, self.params)[0] and p.market_ticker not in self.meta}
+        # pairs admitted on earlier days need today's close time too
+        wanted |= {v.market for v in self.admission.admitted.values()
+                   if v.end > now.timestamp() and v.market not in self.meta}
+        wanted = sorted(wanted)
         for i in range(0, len(wanted), 100):
             chunk = wanted[i:i + 100]
             data = await self._get("control", "/markets", {"tickers": ",".join(chunk), "limit": len(chunk)})
@@ -589,8 +707,12 @@ class LipRecorder:
 
     def _write_health(self) -> dict[str, Any]:
         book_lanes = {k: v for k, v in self.lanes.items() if k.startswith("book")}
-        used = [v for v in book_lanes.values() if v.requests]
-        share = min((v.ok_ticks_in_window for v in used), default=0) / self.params.window_ticks
+        # ticks in the window at the lane's own cadence; a tick with nothing due is not
+        # a failure, a due tick without a successful read is
+        ticks = max(1, int((self.window.window_end - self.window.window_start).total_seconds()
+                           / self.params.book_cadence_s))
+        missed = sum(max(0, v.due_ticks_in_window - v.ok_ticks_in_window) for v in book_lanes.values())
+        share = max(0.0, 1.0 - missed / ticks)
         body = {
             "v": LIP_RECORDER_VERSION, "tag": "shakedown" if self.shakedown else "study",
             "day": self.window.day.isoformat(),
@@ -599,7 +721,9 @@ class LipRecorder:
             "markets_recorded": len(self.recorded_ever),
             "trades_kept": len(self.seen_trades),
             "book_success_share_of_window": share,
+            "window_ticks": ticks,
             "counted_day": (not self.shakedown) and share >= self.params.counted_day_share,
+            "streams": {k: list(v) for k, v in self.writer._tails.items()},
             "finished_at": _iso(self.clock.now()),
         }
         (self.out_dir / "health.json").write_text(json.dumps(body, indent=2) + "\n")

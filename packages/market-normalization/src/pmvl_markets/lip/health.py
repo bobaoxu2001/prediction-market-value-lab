@@ -43,8 +43,15 @@ def day_health(day_dir: Path, params: RecordingParams = RECORDING) -> dict[str, 
     for b in read_stream(day_dir, "universe"):
         if b.get("decision") == "rejected":
             rejected[b.get("reason", "")] = rejected.get(b.get("reason", ""), 0) + 1
-    used = [v for v in lanes.values() if v["requests"]]
-    share = min((v["ok_in_window"] for v in used), default=0) / params.window_ticks
+    # the recorder counts due and read ticks at the day's own cadence; read its figure
+    # when it wrote one, else approximate from the books at the recorded cadence
+    cadence = float(study.get("book_cadence_s") or params.book_cadence_s)
+    ticks = max(1, int((hi - lo) / cadence))
+    if "book_success_share_of_window" in recorded:
+        share = float(recorded["book_success_share_of_window"])
+    else:
+        used = [v for v in lanes.values() if v["requests"]]
+        share = min((v["ok_in_window"] for v in used), default=0) / ticks
     storage = sum(f.stat().st_size for f in day_dir.rglob("*") if f.is_file())
     return {
         "label": "INTERIM_NOT_A_DECISION",
@@ -54,7 +61,8 @@ def day_health(day_dir: Path, params: RecordingParams = RECORDING) -> dict[str, 
         "rejections": rejected,
         "book_lanes": lanes,
         "book_success_share_of_window": share,
-        "counted_day": study.get("tag") == "study" and share >= params.counted_day_share,
+        "counted_day": study.get("tag") == "study" and not study.get("skipped")
+                       and share >= params.counted_day_share,
         "tape_polls": len(polls),
         "tape_polls_complete": complete,
         "rate_limited": {k: v.get("rate_limited", 0) for k, v in (recorded.get("lanes") or {}).items()},

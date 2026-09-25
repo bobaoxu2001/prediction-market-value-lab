@@ -255,3 +255,8 @@ class MarketDay:
     status: StatusSeries
     #: YES payout if the market settled by the verdict date, else None
     settlement_yes: Decimal | None = None
+    #: local clock minus the venue's, in seconds (sntp, section 4.2); prints are moved
+    #: into local time by it, and fill windows are widened (HEAVY) or narrowed (THROUGH,
+    #: FIFO) by clock_eps = |offset| + 50 ms
+    clock_offset: float = 0.0
+    clock_eps: float = 0.05

@@ -64,9 +64,14 @@ class OrderState:
     parent: int | None = None
     improved: bool = False
     fills: list[Fill] = field(default_factory=list)
+    #: (decided_at, landed_at, contracts cut) - a decrease keeps queue priority but the
+    #: cut size stops resting (and so stops earning credit) when it lands; LOW stops
+    #: crediting it from the decision
+    decreases: list[tuple[float, float, float]] = field(default_factory=list)
 
-    def live(self, t: float) -> bool:
-        return self.live_from <= t < self.fillable_until and self.remaining > 0
+    def live(self, t: float, eps: float = 0.0) -> bool:
+        """Fillable at t. ``eps`` widens (HEAVY, > 0) or narrows (THROUGH/FIFO, < 0) the window."""
+        return self.live_from - eps <= t < self.fillable_until + eps and self.remaining > 0
 
     def take(self, qty: float, at: float, kind: str) -> float:
         qty = min(qty, self.remaining)
@@ -142,3 +147,48 @@ def apply_orphan(order: OrderState, scenario: FillScenario, others_best: int | N
     if others_best is None or others_best < order.price - offset:
         return order.take(order.remaining, at, "orphan")
     return 0.0
+
+
+def allocate_print(orders: list[OrderState], scenario: FillScenario, rel: str, size: float,
+                   at: float, kind: str = "at_level") -> list[tuple[OrderState, float]]:
+    """One print against all our live orders it can reach, in time priority.
+
+    Each order's ``queue`` counts everything ahead of it - others and our own earlier
+    orders at its price - so an at-level print passes through each queue independently
+    and still cannot fill more than it carried. A print *through* our price consumed our
+    whole level; it is shared out from one remainder, oldest order first. The total
+    filled never exceeds the print (a parent and its child cannot both take all of it).
+    """
+    out: list[tuple[OrderState, float]] = []
+    left = size
+    for o in orders:
+        if left <= 0:
+            break
+        if rel == "through":
+            got = o.take(left, at, "through")
+            if scenario is not FillScenario.THROUGH:
+                o.queue = 0.0
+        elif scenario is FillScenario.THROUGH:
+            continue
+        else:
+            ahead = min(o.queue, size)
+            o.queue -= ahead
+            got = o.take(min(size - ahead, left), at, kind)
+        left -= got
+        if got > 0:
+            out.append((o, got))
+    return out
+
+
+def allocate_quantity(orders: list[OrderState], qty: float, at: float, kind: str) -> list[tuple[OrderState, float]]:
+    """A quantity that consumed our level (HEAVY cross or gap), shared out oldest first."""
+    out: list[tuple[OrderState, float]] = []
+    left = qty
+    for o in orders:
+        if left <= 0:
+            break
+        got = o.take(left, at, kind)
+        left -= got
+        if got > 0:
+            out.append((o, got))
+    return out

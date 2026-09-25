@@ -55,3 +55,16 @@ def test_without_the_paid_listing_nothing_is_verified(tmp_path):
     (day / "registry.json").write_text(json.dumps({"withdrawn_at": {"a": T.timestamp()}}))
     verified, withdrawn = payment_status([day], None)
     assert verified == set() and withdrawn == {"a"}
+
+
+def test_a_program_that_leaves_the_active_list_between_days_is_withdrawn(tmp_path):
+    later = T + timedelta(hours=26)
+    first = lip_day(tmp_path / "d1", request_at=T, rows=[])
+    second = lip_day(tmp_path / "d2", request_at=later, rows=[])
+    long_program = {**row("a", 1_000_000, False), "end_date": (T + timedelta(days=5)).isoformat()}
+    SegmentWriter(first, gzip_closed=False).append(
+        "programs", {"at": T.timestamp(), "listing": "active", "full": True, "rows": [long_program]}, at=T)
+    SegmentWriter(second, gzip_closed=False).append(
+        "programs", {"at": later.timestamp(), "listing": "active", "full": True, "rows": []}, at=later)
+    verified, withdrawn = payment_status([first, second], None)
+    assert withdrawn == {"a"}

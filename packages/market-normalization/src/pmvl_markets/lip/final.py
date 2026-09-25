@@ -41,25 +41,30 @@ def maker_sessions(maker_root: Path) -> list[tuple[float, float]]:
     return out
 
 
-def _request_times(day_dir: Path) -> Iterable[float]:
+def _request_spans(day_dir: Path, offday_log: Path | None) -> Iterable[tuple[float, float]]:
+    """Every LIP request as a time span: the per-minute lane log covers every lane -
+    books, tape, status and control - and the off-day log covers the commands run
+    outside a recording day (programs-paid, preflight)."""
+    for body in read_stream(day_dir, "lanes"):
+        if body.get("kind") == "requests":
+            yield float(body["first"]), float(body["last"])
     for body in read_stream(day_dir, "books"):
-        yield float(body["sent_at"])
-    for body in read_stream(day_dir, "tape_polls"):
-        yield float(body["sent_at"])
-    for body in read_stream(day_dir, "status"):
-        yield float(body["at"])
+        yield float(body["sent_at"]), float(body["sent_at"])
+    if offday_log is not None and Path(offday_log).exists():
+        for entry in read_log(Path(offday_log)):
+            yield float(entry.body["first"]), float(entry.body["last"])
 
 
-def isolation_breaches(day_dir: Path, maker_root: Path) -> list[float]:
-    """LIP request times that fall inside any maker session's +-60 s envelope."""
+def isolation_breaches(day_dir: Path, maker_root: Path, offday_log: Path | None = None) -> list[float]:
+    """Start times of LIP request spans that overlap any maker session's +-60 s envelope."""
     spans = sorted(maker_sessions(maker_root))
     if not spans:
         return []
     breaches = []
-    for t in _request_times(day_dir):
+    for lo, hi in _request_spans(day_dir, offday_log):
         for a, b in spans:
-            if a <= t <= b:
-                breaches.append(t)
+            if lo <= b and a <= hi:
+                breaches.append(lo)
                 break
     return breaches
 
@@ -67,20 +72,30 @@ def isolation_breaches(day_dir: Path, maker_root: Path) -> list[float]:
 def payment_status(day_dirs: list[Path], paid_log: Path | None) -> tuple[set[str], set[str]]:
     """(verified, withdrawn) program ids.
 
-    Terms are compared with the first time each program was seen on any study day; a
-    program paid under different terms is not verified.
+    Verified: later seen paid_out, with the same terms in *every* row ever recorded for
+    it - a reward raised for a day and then restored is not verified (1, step 12).
+    Withdrawn: present in a complete active listing, then absent from a later complete
+    active listing before its end, and never paid. Complete listings are the ones the
+    recorder marks ``full``; a diff listing cannot show an absence.
     """
-    first_terms: dict[str, tuple] = {}
-    withdrawn_seen: set[str] = set()
+    terms: dict[str, set[tuple]] = {}
+    ends: dict[str, float] = {}
+    listings: list[tuple[float, set[str]]] = []
+    within: set[str] = set()
     for day in day_dirs:
         for body in read_stream(day, "programs"):
             for row in body.get("rows") or []:
-                first_terms.setdefault(str(row["id"]), _terms(row))
+                pid = str(row["id"])
+                terms.setdefault(pid, set()).add(_terms(row))
+                if row.get("end_date"):
+                    ends[pid] = _ts(row["end_date"])
+            if body.get("listing") == "active" and body.get("full"):
+                listings.append((float(body["at"]), {str(r["id"]) for r in body.get("rows") or []}))
         registry_file = day / "registry.json"
-        if registry_file.exists():
-            withdrawn_seen.update((json.loads(registry_file.read_text()).get("withdrawn_at") or {}).keys())
-    verified: set[str] = set()
+        if registry_file.exists():  # the recorder's own within-day withdrawals
+            within.update((json.loads(registry_file.read_text()).get("withdrawn_at") or {}).keys())
     paid: set[str] = set()
+    verified: set[str] = set()
     if paid_log is not None and Path(paid_log).exists():
         for entry in read_log(Path(paid_log)):
             row: dict[str, Any] = entry.body.get("row") or {}
@@ -88,9 +103,18 @@ def payment_status(day_dirs: list[Path], paid_log: Path | None) -> tuple[set[str
             if not pid or not row.get("paid_out"):
                 continue
             paid.add(pid)
-            if first_terms.get(pid) == _terms(row):
+            seen = terms.get(pid, set()) | {_terms(row)}
+            if len(seen) == 1:
                 verified.add(pid)
-    return verified, withdrawn_seen - paid
+    withdrawn: set[str] = set(within)
+    listings.sort()
+    for i, (_t, present) in enumerate(listings):
+        for pid in present:
+            for t2, later in listings[i + 1:]:
+                if pid not in later and t2 < ends.get(pid, float("inf")):
+                    withdrawn.add(pid)
+                    break
+    return verified, withdrawn - paid
 
 
 def _terms(row: dict[str, Any]) -> tuple:

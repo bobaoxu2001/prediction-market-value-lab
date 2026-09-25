@@ -32,9 +32,15 @@ class LaneClient(HttpClient):
         self.rate = rate
         #: requests started per UTC minute, for the lane-rate audit
         self.per_minute: Counter[int] = Counter()
-        #: epoch seconds of every 429 this lane received
+        #: epoch seconds of every 429 this lane received - counted where the response
+        #: arrives, so a 429 that a retry then got past is still counted
         self.rate_limited: list[float] = []
         self.failures: int = 0
+        self._client.event_hooks.setdefault("response", []).append(self._on_response)
+
+    async def _on_response(self, response: Any) -> None:
+        if getattr(response, "status_code", None) == 429:
+            self.rate_limited.append(time.time())
 
     def set_rate(self, rate: float) -> None:
         """The section 8 backoff: halve a lane's rate after a 429, restore it later."""
@@ -45,10 +51,8 @@ class LaneClient(HttpClient):
         self.per_minute[int(time.time() // 60)] += 1
         try:
             return await super().get_json(path, **kwargs)
-        except ProviderError as exc:
+        except ProviderError:
             self.failures += 1
-            if "429" in str(exc):
-                self.rate_limited.append(time.time())
             raise
 
 

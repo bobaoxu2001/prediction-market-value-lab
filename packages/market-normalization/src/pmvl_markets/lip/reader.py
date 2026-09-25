@@ -71,6 +71,12 @@ class DayData:
     _status: dict[str, list[StatusPoint]]
     settlements: dict[str, Decimal] = field(default_factory=dict)
     lane_ticks: dict[str, int] = field(default_factory=dict)
+    #: close times as the status lane last saw them, for markets with no metadata row
+    status_close: dict[str, str] = field(default_factory=dict)
+    #: per-ticker tape coverage when the per-ticker tape (TAPE_PT) was recorded
+    coverage_by_ticker: dict[str, TapeCoverage] = field(default_factory=dict)
+    clock_offset: float = 0.0
+    clock_eps: float = 0.25
 
     @property
     def counted(self) -> bool:
@@ -99,20 +105,26 @@ class DayData:
         )
 
     def market_day(self, pair: AdmittedPair) -> MarketDay:
-        program = self.registry.programs[pair.program_id]
+        # the program as published that day, or - if it has left the listing - the terms
+        # it was admitted under: a withdrawn program is still replayed (and pays nothing)
+        program = self.registry.programs.get(pair.program_id) or pair.program()
         lo = max(pair.start, pair.admitted_at, self.window[0])
         hi = min(pair.end, self.window[1])
         meta = self.meta.get(pair.market, {})
-        close = _ts(meta["close_time"]) if meta.get("close_time") else float("inf")
+        close_raw = meta.get("close_time") or self.status_close.get(pair.market)
+        if close_raw is None:
+            raise ValueError(f"{pair.market}: no close time recorded that day - the close stop cannot bind")
         fee = self.fees.get(program.series, {})
         return MarketDay(
             market=pair.market, family=pair.family, program=program,
-            admitted_from=lo, admitted_until=max(lo, hi), close_time=close,
+            admitted_from=lo, admitted_until=max(lo, hi), close_time=_ts(close_raw),
             fee_type=str(fee.get("fee_type") or ""),
             fee_multiplier=Decimal(str(fee.get("fee_multiplier") or 1)),
             books=self.book_series(pair.market), trades=self.trade_series(pair.market),
-            coverage=self.coverage, status=StatusSeries(list(self._status.get(pair.market, []))),
+            coverage=self.coverage_by_ticker.get(pair.market, self.coverage),
+            status=StatusSeries(list(self._status.get(pair.market, []))),
             settlement_yes=self.settlements.get(pair.market),
+            clock_offset=self.clock_offset, clock_eps=self.clock_eps,
         )
 
 
@@ -176,10 +188,11 @@ def load_day(day_dir: Path, *, settlements_path: Path | None = None,
         admitted[p.id] = AdmittedPair(p.id, p.market_ticker, body.get("family") or family_of(p.series, known),
                                       _ts(body["at"]), p.start_ts, p.end_ts, str(p.target))
     if state_path and Path(state_path).exists():
-        # pairs admitted on an earlier day keep their place (2.4 item 6)
+        # pairs admitted on an earlier day keep their place (2.4 item 6) - including one
+        # whose program has since left the listing: withdrawn is not a reason to drop it
         prior = AdmissionState.from_json(json.loads(Path(state_path).read_text()))
         for k, v in prior.admitted.items():
-            if k not in admitted and k in registry.programs and v.end > window[0]:
+            if k not in admitted and v.end > window[0] and v.admitted_at < window[1]:
                 admitted[k] = v
 
     states: list[tuple[BookSide, BookSide]] = []
@@ -220,15 +233,32 @@ def load_day(day_dir: Path, *, settlements_path: Path | None = None,
             global_ids.setdefault(r["ticker"], set()).add(row[5])
     polls = list(read_stream(day_dir, "tape_polls"))
     audits = list(read_stream(day_dir, "audit"))
-    coverage = tape_coverage(polls, audits, global_ids)
+    coverage = tape_coverage([p for p in polls if not p.get("ticker")], audits, global_ids)
+    coverage_by_ticker: dict[str, TapeCoverage] = {}
+    for ticker in sorted({p["ticker"] for p in polls if p.get("ticker")}):
+        mine = [p for p in polls if p.get("ticker") == ticker]
+        coverage_by_ticker[ticker] = tape_coverage(mine, [a for a in audits if a["ticker"] == ticker], global_ids)
 
     status: dict[str, list[StatusPoint]] = {}
+    status_close: dict[str, str] = {}
     for body in read_stream(day_dir, "status"):
         ex = body.get("exchange") or {}
         active = ex.get("trading_active")
-        for ticker, m in (body.get("markets") or {}).items():
-            status.setdefault(ticker, []).append(
-                StatusPoint(float(body["at"]), str(m.get("status") or ""), None if active is None else bool(active)))
+        exchange = None if active is None or body.get("exchange_error") else bool(active)
+        markets = body.get("markets") or {}
+        for ticker, m in markets.items():
+            status.setdefault(ticker, []).append(StatusPoint(float(body["at"]), str(m.get("status") or ""), exchange))
+            if m.get("close_time"):
+                status_close[ticker] = m["close_time"]
+        # a requested market the poll did not answer for is *unknown*, not open
+        for ticker in body.get("requested") or []:
+            if ticker not in markets:
+                status.setdefault(ticker, []).append(StatusPoint(float(body["at"]), "", exchange))
+
+    offsets = sorted(float(b["offset_s"]) for b in read_stream(day_dir, "clock") if b.get("offset_s") is not None)
+    clock_offset = offsets[len(offsets) // 2] if offsets else 0.0
+    #: without any clock sample the uncertainty is not known to be small
+    clock_eps = abs(clock_offset) + 0.05 if offsets else 0.25
 
     settlements: dict[str, Decimal] = {}
     if settlements_path and Path(settlements_path).exists():
@@ -240,7 +270,8 @@ def load_day(day_dir: Path, *, settlements_path: Path | None = None,
     return DayData(day_dir=day_dir, study=study, health=health, pairs=list(admitted.values()),
                    registry=registry, meta=meta, fees=fees, window=window, coverage=coverage,
                    _books=books, _states=states, _trades=trades, _status=status,
-                   settlements=settlements, lane_ticks=lane_ticks)
+                   settlements=settlements, lane_ticks=lane_ticks, status_close=status_close,
+                   coverage_by_ticker=coverage_by_ticker, clock_offset=clock_offset, clock_eps=clock_eps)
 
 
 def registry_series(registry: ProgramRegistry) -> set[str]:

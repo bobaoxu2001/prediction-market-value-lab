@@ -29,6 +29,35 @@ KNOWN_SERIES = REPO / "artifacts" / "research" / "lip-1" / "known_series.json"
 PREREG = "docs/lip-preregistration.md"
 
 
+def _head_commit() -> str:
+    try:
+        return subprocess.run(["git", "-C", str(REPO), "rev-parse", "HEAD"],
+                              capture_output=True, text=True, timeout=10).stdout.strip()
+    except (OSError, subprocess.SubprocessError):
+        return ""
+
+
+def _offday_guard(command: str) -> None:
+    """Commands that call Kalshi outside a recording day obey the same isolation: never
+    inside the maker study's window, never while its recorder runs."""
+    from pmvl_markets.lip.recorder import maker_busy, refused
+
+    now = datetime.now(timezone.utc)
+    if refused(now.time()):
+        console.print(f"[red]{command} refused: {now.time()} UTC is inside the maker study's window 02:00-12:25")
+        raise typer.Exit(3)
+    if maker_busy():
+        console.print(f"[red]{command} refused: the maker study's recorder is running")
+        raise typer.Exit(3)
+
+
+def _log_offday(command: str, first: float, last: float, n: int) -> None:
+    from pmvl_markets.recording.writer import AppendOnlyLog
+
+    AppendOnlyLog(FORWARD / "lip-offday-requests.jsonl").append(
+        {"command": command, "first": first, "last": last, "n": n})
+
+
 def _prereg_commit() -> str:
     try:
         return subprocess.run(["git", "-C", str(REPO), "log", "-1", "--format=%H", "--", PREREG],
@@ -53,6 +82,9 @@ def record_day(
         raise typer.Exit(2)
     now = datetime.now(timezone.utc)
     window = day_window(now)
+    if until and not (now < datetime.fromisoformat(until) <= window.drain_at):
+        console.print(f"[red]--until must fall between now and the drain time {window.drain_at.isoformat()}")
+        raise typer.Exit(2)
     root = FORWARD / ("lip-shakedown" if shakedown else "lip-daily")
     out = root / window.day.isoformat()
     state = root / "admission_state.json"
@@ -70,7 +102,7 @@ def record_day(
             "lip-shakedown-settlements.jsonl" if shakedown else "lip-settlements.jsonl"),
         known_series=known, shakedown=shakedown,
         stop_at=datetime.fromisoformat(until) if until else None,
-        prereg_commit=_prereg_commit(), cadence_sha256=_cadence_sha(),
+        prereg_commit=_prereg_commit(), code_commit=_head_commit(), cadence_sha256=_cadence_sha(),
     )
     try:
         health = asyncio.run(recorder.run())
@@ -81,6 +113,8 @@ def record_day(
         console.print(f"[red]{exc}")
         raise typer.Exit(4) from exc
     console.print_json(json.dumps(health))
+    if health.get("skipped"):
+        raise typer.Exit(6)  # the cron script logs a skipped day like any other non-zero exit
 
 
 def _cadence_overrides() -> dict:
@@ -88,7 +122,13 @@ def _cadence_overrides() -> dict:
     if not path.exists():
         return {}
     body = json.loads(path.read_text())
-    return {k: body[k] for k in ("tape_limit", "book_cadence_s") if k in body}
+    out = {k: body[k] for k in ("tape_limit", "book_cadence_s") if k in body}
+    if "min_ts_honoured" in body:
+        out["min_ts_honoured"] = bool(body["min_ts_honoured"])
+    if body.get("tape_mode") == "TAPE_PT":
+        # the per-ticker tape: one book lane and a total cap of 100 (section 8)
+        out.update(tape_mode="per_ticker", book_lanes=1, total_cap=100)
+    return out
 
 
 @app.command("preflight")
@@ -139,7 +179,10 @@ def preflight(
         finally:
             await p.aclose()
 
+    _offday_guard("preflight")
+    t0 = datetime.now(timezone.utc).timestamp()
     probe = asyncio.run(live_probe())
+    _log_offday("preflight", t0, datetime.now(timezone.utc).timestamp(), 1)
     body = {
         "shakedown_dir": str(shakedown_dir), "minutes_in_window": round(minutes, 1),
         "tape_limit": 1000 if probe["rows_limit_1000"] > 200 else 200,
@@ -178,10 +221,12 @@ def replay_day_cmd(
     if health_only:
         console.print_json(json.dumps(day_health(day_dir)))
         return
-    if study.get("tag") == "study" and not (FORWARD / "lip-final.flag").exists():
-        console.print("[red]refused: study days are replayed for dollars only at the final analysis "
-                      "(create artifacts/forward/lip-final.flag after the verdict date)")
-        raise typer.Exit(5)
+    if study.get("tag") == "study":
+        verdict = _verdict_date()
+        if verdict is None or datetime.now(timezone.utc).date() < verdict or not (FORWARD / "lip-final.flag").exists():
+            console.print(f"[red]refused: study days are replayed for dollars only at the final analysis, "
+                          f"on or after the verdict date ({verdict}), with artifacts/forward/lip-final.flag")
+            raise typer.Exit(5)
     results = replay_day(day_dir, settlements_path=FORWARD / (
         "lip-shakedown-settlements.jsonl" if study.get("tag") == "shakedown" else "lip-settlements.jsonl"),
         state_path=root / "admission_state.json", workers=workers)
@@ -207,8 +252,10 @@ def programs_paid() -> None:
     from pmvl_markets.lip.store import read_stream
     from pmvl_markets.recording.writer import AppendOnlyLog
 
+    _offday_guard("programs-paid")
     admitted = {b["program_id"] for d in _study_days() for b in read_stream(d, "universe")
                 if b.get("decision") == "admitted"}
+    t0 = datetime.now(timezone.utc).timestamp()
 
     async def fetch() -> list[dict]:
         p = lane_provider("control", 0.3, attempts=2)
@@ -231,6 +278,7 @@ def programs_paid() -> None:
         return rows
 
     rows = asyncio.run(fetch())
+    _log_offday("programs-paid", t0, datetime.now(timezone.utc).timestamp(), 0)
     log = AppendOnlyLog(FORWARD / "lip-programs-paid.jsonl")
     at = datetime.now(timezone.utc).isoformat()
     for r in rows:
@@ -238,45 +286,113 @@ def programs_paid() -> None:
     console.print(f"{len(admitted)} admitted programs; {len(rows)} paid_out/closed rows appended")
 
 
-@app.command("study")
-def study_cmd(final: bool = typer.Option(False, "--final", help="The one final look, after the verdict date.")) -> None:
-    """Pool every study day's replay into cells and evaluate the decision table - once.
-
-    Without --final (or before the verdict date) it prints INTERIM_NOT_A_DECISION and no
-    dollar figure.
-    """
+def _calendar():
+    """(day 1, last day) from lip-gates.json: day 1 through the 20th counted day or day 1
+    + 29, whichever comes first (section 7). None before the gates are recorded."""
     from datetime import date, timedelta
 
-    from pmvl_markets.lip.final import isolation_breaches, payment_status
-    from pmvl_markets.lip.replay import build_cells
     from pmvl_markets.lip.sim_params import SIM
+
+    gates = FORWARD / "lip-gates.json"
+    if not gates.exists():
+        return None
+    day1 = date.fromisoformat(json.loads(gates.read_text())["day1"])
+    last = day1 + timedelta(days=SIM.max_calendar_days - 1)
+    counted, d = 0, day1
+    while d <= last:
+        health = FORWARD / "lip-daily" / d.isoformat() / "health.json"
+        if health.exists() and json.loads(health.read_text()).get("counted_day"):
+            counted += 1
+            if counted == SIM.min_counted_days:
+                return day1, d
+        d += timedelta(days=1)
+    return day1, last
+
+
+def _verdict_date():
+    from datetime import timedelta
+
+    from pmvl_markets.lip.sim_params import SIM
+
+    cal = _calendar()
+    return None if cal is None else cal[1] + timedelta(days=SIM.verdict_lag_days)
+
+
+@app.command("study")
+def study_cmd(final: bool = typer.Option(False, "--final", help="The one final look, after the verdict date.")) -> None:
+    """Pool the pre-registered calendar's days into cells and evaluate the decision table - once.
+
+    Every calendar day from day 1 enters: a day that was never recorded, or was
+    skipped, adds its live pairs' admitted hours at $0; a recorded day without its
+    replay stops the analysis rather than leaving quietly. Without --final, or before
+    the verdict date, it prints INTERIM_NOT_A_DECISION and no dollar figure.
+    """
+    from datetime import timedelta
+
+    from pmvl_markets.lip.final import isolation_breaches, payment_status
+    from pmvl_markets.lip.replay import build_cells, skipped_day_results
     from pmvl_markets.lip.study import decide
 
-    days = _study_days()
-    last = max((date.fromisoformat(json.loads((d / "study.json").read_text())["day"]) for d in days), default=None)
-    verdict_date = last + timedelta(days=SIM.verdict_lag_days) if last else None
-    is_final = final and verdict_date is not None and datetime.now(timezone.utc).date() >= verdict_date
-    results, versions, counted, breaches = [], set(), 0, 0
-    for d in days:
-        health_file = d / "health.json"
+    cal = _calendar()
+    if cal is None:
+        console.print_json(json.dumps({"verdict": "INTERIM_NOT_A_DECISION", "why": "no lip-gates.json: day 1 not set"}))
+        return
+    day1, last = cal
+    verdict_date = _verdict_date()
+    is_final = final and datetime.now(timezone.utc).date() >= verdict_date
+    state = FORWARD / "lip-daily" / "admission_state.json"
+    results, versions, counted, breaches, problems, recorded = [], set(), 0, 0, [], []
+    d = day1
+    while d <= last:
+        day_dir = FORWARD / "lip-daily" / d.isoformat()
+        study_file = day_dir / "study.json"
+        if not study_file.exists():
+            # never recorded (the machine slept, cron never fired): zeros for its live pairs
+            w = day_window(datetime(d.year, d.month, d.day, 12, 30, tzinfo=timezone.utc))
+            stub = {"day": d.isoformat(), "window": {"window_start": w.window_start.isoformat(),
+                                                     "window_end": w.window_end.isoformat()}}
+            results.extend(skipped_day_results(stub, state))
+            d += timedelta(days=1)
+            continue
+        study = json.loads(study_file.read_text())
+        if study.get("tag") != "study" or study.get("recorder_version") != "lip-1.0.0":
+            problems.append(f"{d}: tag {study.get('tag')!r} / recorder {study.get('recorder_version')!r}")
+        versions.add(f"recorder:{study.get('recorder_version')}")
+        health_file = day_dir / "health.json"
         if health_file.exists() and json.loads(health_file.read_text()).get("counted_day"):
             counted += 1
-        breaches += len(isolation_breaches(d, FORWARD / "maker-daily"))
-        replay_file = d / "replay.json"
-        if replay_file.exists():
-            body = json.loads(replay_file.read_text())
-            versions.add(body.get("sim_version"))
-            results.extend(body.get("results") or [])
+        if study.get("skipped"):
+            results.extend(skipped_day_results(study, state))
+        else:
+            recorded.append(day_dir)
+            breaches += len(isolation_breaches(day_dir, FORWARD / "maker-daily",
+                                               FORWARD / "lip-offday-requests.jsonl"))
+            replay_file = day_dir / "replay.json"
+            if replay_file.exists():
+                body = json.loads(replay_file.read_text())
+                versions.add(f"sim:{body.get('sim_version')}")
+                results.extend(body.get("results") or [])
+            elif is_final:
+                problems.append(f"{d}: recorded but not replayed")
+        d += timedelta(days=1)
     if not is_final:
-        console.print_json(json.dumps({"verdict": "INTERIM_NOT_A_DECISION", "study_days": len(days),
+        console.print_json(json.dumps({"verdict": "INTERIM_NOT_A_DECISION", "calendar": [str(day1), str(last)],
                                        "counted_days": counted, "isolation_breaches": breaches,
-                                       "verdict_date": verdict_date.isoformat() if verdict_date else None}))
+                                       "verdict_date": verdict_date.isoformat()}))
         return
-    verified, withdrawn = payment_status(days, FORWARD / "lip-programs-paid.jsonl")
+    if problems:
+        console.print("[red]refused - the calendar is incomplete:\n  " + "\n  ".join(problems))
+        raise typer.Exit(7)
+    verified, withdrawn = payment_status(recorded, FORWARD / "lip-programs-paid.jsonl")
     cells = build_cells(results, verified=verified, withdrawn=withdrawn)
-    gates = FORWARD / "lip-gates.json"
+    # the precondition wants exactly one recorder and one sim version across the study:
+    # anything else is handed to decide() as more than one version, and it refuses
+    recorders = {v for v in versions if v.startswith("recorder:")}
+    sims = {v for v in versions if v.startswith("sim:")}
+    one = len(recorders) == 1 and len(sims) == 1
     v = decide(cells, policies=["J1", "I1", "J5", "I5"], counted_days=counted, final=True,
-               versions=versions or {"none"}, gates_closed=gates.exists(), isolation_ok=breaches == 0)
+               versions={"|".join(sorted(versions))} if one else (versions or {"none", "missing"}),
+               gates_closed=True, isolation_ok=breaches == 0)
     out = FORWARD / "lip-verdict.json"
     out.write_text(json.dumps(v.as_dict(), indent=2, default=str) + "\n")
     console.print(f"[bold]{v.verdict}[/bold]: {v.why}\nwrote {out}")

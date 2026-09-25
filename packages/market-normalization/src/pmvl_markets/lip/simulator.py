@@ -28,10 +28,8 @@ from .fills import (
     Fill,
     FillScenario,
     OrderState,
-    apply_cross,
-    apply_orphan,
-    apply_print,
-    apply_shrink,
+    allocate_print,
+    allocate_quantity,
     print_relation,
 )
 from .model import BookSide, BookSnapshot, LipSide, MarketDay
@@ -58,32 +56,29 @@ REG_HIGH = Regime("REG_HIGH", False)
 
 
 class WriteQueue:
-    """A token bucket; each action costs one token. ``rate=None`` is unlimited."""
+    """A per-market token bucket: one token per action, no burst beyond one token.
 
-    def __init__(self, rate: float | None) -> None:
+    ``rate=None`` is unlimited (REG_HIGH). ``sync_delay`` models the shared account-wide
+    queue at the instants every market acts at once - the start of a segment, a gate
+    opening, a lane-wide dead-man re-entry: the market's first action after such an
+    instant waits ``sync_delay`` seconds, its place in that queue (index / W).
+    """
+
+    def __init__(self, rate: float | None, sync_delay: float = 0.0) -> None:
         self.rate = rate
-        self.capacity = max(1.0, rate) if rate else math.inf
-        self.tokens = self.capacity
-        self.at = -math.inf
+        self.sync_delay = sync_delay
         self.next_free = -math.inf
+
+    def mark_sync(self, t: float) -> None:
+        if self.rate is not None:
+            self.next_free = max(self.next_free, t + self.sync_delay)
 
     def send_time(self, t: float) -> float:
         if self.rate is None:
             return t
-        start = max(t, self.next_free)
-        if self.at == -math.inf:
-            self.tokens = self.capacity
-        else:
-            self.tokens = min(self.capacity, self.tokens + (start - self.at) * self.rate)
-        self.at = start
-        if self.tokens >= 1:
-            self.tokens -= 1
-            return start
-        wait = (1 - self.tokens) / self.rate
-        self.at = start + wait
-        self.tokens = 0.0
-        self.next_free = start + wait
-        return start + wait
+        sent = max(t, self.next_free)
+        self.next_free = sent + 1.0 / self.rate
+        return sent
 
 
 @dataclass
@@ -119,15 +114,17 @@ def segment_starts(lo: float, hi: float, anchor: float) -> list[float]:
     return sorted(set(out))
 
 
-def _levels(side: BookSide) -> tuple[tuple[int, float], ...]:
-    return tuple(zip((int(p) for p in side.px), (float(q) for q in side.sz)))
-
-
 def _is_open(md: MarketDay, t: float, low: bool) -> bool:
+    """Credit's open test. LOW needs BOTH bracketing polls, and unknown is not open."""
     before, after = md.status.bracketing(t)
-    pts = [p for p in (before, after) if p is not None] if low else [p for p in (before,) if p is not None]
-    if not pts:
-        return not low
+    if low:
+        if before is None or after is None:
+            return False
+        pts = [before, after]
+    else:
+        pts = [p for p in (before,) if p is not None]
+        if not pts:
+            return t < md.close_time
     for p in pts:
         if p.market_status.lower() not in OPEN_STATUSES:
             return False
@@ -136,9 +133,19 @@ def _is_open(md: MarketDay, t: float, low: bool) -> bool:
     return t < md.close_time
 
 
+def _known_open(md: MarketDay, t: float) -> bool:
+    """A decision's open test: the latest poll at or before t only - never a later one."""
+    before, _ = md.status.bracketing(t)
+    if before is None:
+        return False
+    return (before.market_status.lower() in OPEN_STATUSES and before.exchange_active is not False
+            and t < md.close_time)
+
+
 def simulate(md: MarketDay, policy: LipPolicy, scenario: FillScenario, regime: Regime, *,
-             writes_per_s: float | None = None, window_anchor: float | None = None,
-             window_end: float | None = None, params: SimParams = SIM) -> SimPath:
+             writes_per_s: float | None = None, sync_delay_s: float = 0.0,
+             window_anchor: float | None = None, window_end: float | None = None,
+             params: SimParams = SIM) -> SimPath:
     """Event-driven replay of one policy on one admitted market-day."""
     target = float(md.program.target)
     size = policy.size(target)
@@ -149,15 +156,18 @@ def simulate(md: MarketDay, policy: LipPolicy, scenario: FillScenario, regime: R
     if end <= start:
         return path
 
-    queue = WriteQueue((writes_per_s or params.writes_per_s_low) if regime.low else None)
-    books = [b for b in md.books.snapshots if b.received_at >= start - 60 and b.received_at <= end + 120]
+    #: HEAVY widens every fillable window by the clock uncertainty; THROUGH and FIFO narrow it
+    live_eps = md.clock_eps if scenario is FillScenario.HEAVY else -md.clock_eps
+    queue = WriteQueue((writes_per_s or params.writes_per_s_low) if regime.low else None, sync_delay_s)
+    horizon = end + 900.0
+    books = [b for b in md.books.snapshots if start - 60 <= b.received_at <= horizon]
     trades = md.trades
-    idx = trades.between(start, end + 120)
+    idx = trades.between(start + md.clock_offset - 1, horizon + md.clock_offset)
     events: list[tuple[float, int, int, Any]] = []
     for i, b in enumerate(books):
         events.append((b.received_at, 2, i, ("book", b)))
     for j in idx:
-        events.append((float(trades.ts[j]), 1, int(j), ("print", int(j))))
+        events.append((float(trades.ts[j]) - md.clock_offset, 1, int(j), ("print", int(j))))
     for p in md.status.points:
         if start <= p.at <= end:
             events.append((p.at, 0, 0, ("status", p)))
@@ -168,29 +178,30 @@ def simulate(md: MarketDay, policy: LipPolicy, scenario: FillScenario, regime: R
     events.sort(key=lambda e: (e[0], e[1], e[2]))
 
     internal: list[tuple[float, int, int, Any]] = []  # landings
+    known: list[tuple[float, int, LipSide, float]] = []  # fills becoming known
     seq = 0
     resting: dict[LipSide, list[OrderState]] = {LipSide.YES: [], LipSide.NO: []}
     pending_first_book: set[int] = set()
     held = {LipSide.YES: 0.0, LipSide.NO: 0.0}
+    known_held = {LipSide.YES: 0.0, LipSide.NO: 0.0}
     last_book: BookSnapshot | None = None
     last_book_at = -math.inf
     at_level_volume: dict[tuple[LipSide, int], float] = {}
     filled_since: dict[LipSide, float] = {LipSide.YES: 0.0, LipSide.NO: 0.0}
-    last_fill_known: dict[LipSide, float] = {LipSide.YES: math.inf, LipSide.NO: math.inf}
     last_replenish: dict[LipSide, float] = {LipSide.YES: -math.inf, LipSide.NO: -math.inf}
     gate = {"state": "closed", "count": 0}
     stopped_until_segment = False
+    ended = False
     oid = 0
-
-    def record_queue(o: OrderState, t: float) -> None:
-        path.queue_history.setdefault(o.oid, []).append((t, o.queue))
-
     #: a queued placement per side that has not landed yet - coalesced, never duplicated
     pending_place: dict[LipSide, dict | None] = {LipSide.YES: None, LipSide.NO: None}
     pending_child: dict[LipSide, dict | None] = {LipSide.YES: None, LipSide.NO: None}
     decreasing: set[int] = set()
 
-    def schedule(t_decide: float, kind: str, payload: dict, rtt: float) -> None:
+    def record_queue(o: OrderState, t: float) -> None:
+        path.queue_history.setdefault(o.oid, []).append((t, o.queue))
+
+    def schedule(t_decide: float, kind: str, payload: dict, rtt: float) -> float:
         nonlocal seq
         sent = queue.send_time(t_decide)
         landed = sent + regime.latency(rtt, params)
@@ -198,8 +209,9 @@ def simulate(md: MarketDay, policy: LipPolicy, scenario: FillScenario, regime: R
         path.writes.append((t_decide, sent, landed, kind, False))
         seq += 1
         heapq.heappush(internal, (landed, 0, seq, (kind, payload, t_decide)))
+        return landed
 
-    def cancel_side(t: float, side: LipSide, rtt: float, why: str) -> None:
+    def cancel_side(t: float, side: LipSide, rtt: float) -> None:
         for o in list(resting[side]):
             o.credit_end_low = min(o.credit_end_low, t)
             schedule(t, "cancel", {"order": o}, rtt)
@@ -216,10 +228,15 @@ def simulate(md: MarketDay, policy: LipPolicy, scenario: FillScenario, regime: R
             pending[side] = None
 
     def cancel_all(t: float, rtt: float, why: str) -> None:
-        if resting[LipSide.YES] or resting[LipSide.NO]:
+        if resting[LipSide.YES] or resting[LipSide.NO] or pending_place[LipSide.YES] or pending_place[LipSide.NO]:
             path.stops.append((t, why))
         for side in (LipSide.YES, LipSide.NO):
-            cancel_side(t, side, rtt, why)
+            cancel_side(t, side, rtt)
+
+    def own_ahead(side: LipSide, price: int, before_oid: int | None = None) -> float:
+        """Our own resting size at a price, ahead of an order (all of it if None)."""
+        return sum(o.remaining for o in resting[side]
+                   if o.price == price and (before_oid is None or o.oid < before_oid))
 
     def place(t: float, side: LipSide, price: int, qty: float, book: BookSnapshot, parent: int | None,
               improved: bool) -> None:
@@ -227,31 +244,35 @@ def simulate(md: MarketDay, policy: LipPolicy, scenario: FillScenario, regime: R
             return
         slot = pending_child if parent is not None else pending_place
         item = slot[side]
+        # everything ahead of the new order: others at the price, and our own orders there
+        ahead = book.side(side).size_at(price) + own_ahead(side, price)
         if item is not None and t < item["sent"]:
-            # coalesce: the queued action takes the new desired state in place
-            item.update(price=price, qty=qty, queue=book.side(side).size_at(price), improved=improved, decided=t)
+            item.update(price=price, qty=qty, queue=ahead, improved=improved, decided=t)
             path.writes.append((t, t, t, "coalesce", True))
             return
         if item is not None:
             return  # sent and in flight: the next decision after it lands handles the rest
-        payload = {"side": side, "price": price, "qty": qty, "queue": book.side(side).size_at(price),
+        payload = {"side": side, "price": price, "qty": qty, "queue": ahead,
                    "parent": parent, "improved": improved, "decided": t}
         slot[side] = payload
         schedule(t, "place", payload, book.rtt)
-
-    def inventory() -> float:
-        return held[LipSide.YES] - held[LipSide.NO]
 
     def on_fill(o: OrderState, qty: float, t: float) -> None:
         if qty <= 0:
             return
         held[o.side] += qty
-        filled_since[o.side] += qty
-        known = t + regime.latency(last_book.rtt if last_book else 0.0, params)
-        last_fill_known[o.side] = min(last_fill_known[o.side], known)
+        # known to the maker only a latency later (3.5): inventory and replenishment read
+        # the known position, never the true one
+        heapq.heappush(known, (t + regime.latency(last_book.rtt if last_book else 0.0, params), o.oid, o.side, qty))
+
+    def drain_known(t: float) -> None:
+        while known and known[0][0] <= t:
+            _, _, side, qty = heapq.heappop(known)
+            known_held[side] += qty
+            filled_since[side] += qty
 
     def live_orders(t: float) -> list[OrderState]:
-        return [o for o in path.orders if o.live(t)]
+        return sorted((o for o in path.orders if o.live(t, live_eps)), key=lambda o: o.oid)
 
     def land(t: float, item: tuple) -> None:
         nonlocal oid
@@ -269,13 +290,15 @@ def simulate(md: MarketDay, policy: LipPolicy, scenario: FillScenario, regime: R
                            live_from=t, parent=payload["parent"], improved=payload["improved"])
             path.orders.append(o)
             record_queue(o, t)
+            if scenario is not FillScenario.THROUGH:
+                pending_first_book.add(o.oid)
+            else:
+                pending_first_book.add(-o.oid)  # THROUGH: still gets its first-book checks
             if "cancel_on_land" in payload:
                 o.credit_end_low = min(o.credit_end_low, payload["cancel_on_land"])
                 schedule(t, "cancel", {"order": o}, last_book.rtt if last_book else 0.0)
                 return
             resting[side].append(o)
-            if scenario is not FillScenario.THROUGH:
-                pending_first_book.add(o.oid)
         elif kind == "cancel":
             o = payload["order"]
             o.fillable_until = min(o.fillable_until, t)
@@ -285,7 +308,10 @@ def simulate(md: MarketDay, policy: LipPolicy, scenario: FillScenario, regime: R
         elif kind == "decrease":
             o = payload["order"]
             decreasing.discard(o.oid)
-            o.remaining = min(o.remaining, payload["to"])
+            cut = max(0.0, o.remaining - payload["to"])
+            if cut > 0:
+                o.remaining -= cut
+                o.decreases.append((decided, t, cut))
 
     def drain_internal(upto: float) -> None:
         while internal and internal[0][0] <= upto:
@@ -293,18 +319,19 @@ def simulate(md: MarketDay, policy: LipPolicy, scenario: FillScenario, regime: R
             land(t, item)
 
     def decide(book: BookSnapshot, t: float) -> None:
-        if gate["state"] != "open" or stopped_until_segment:
+        if gate["state"] != "open" or stopped_until_segment or ended:
             return
         if not (md.program.start_ts <= t < md.program.end_ts) or t >= end:
             return
+        drain_known(t)
         rest_px = {s: (resting[s][0].price if resting[s] else None) for s in (LipSide.YES, LipSide.NO)}
         tgt = targets(book, policy, rest_px, params)
-        allowed = allowed_sizes(inventory(), size)
+        allowed = allowed_sizes(known_held[LipSide.YES] - known_held[LipSide.NO], size)
         for side in (LipSide.YES, LipSide.NO):
             want = tgt[side]
             if want is None:
-                if resting[side]:
-                    cancel_side(t, side, book.rtt, "unquotable")
+                if resting[side] or pending_place[side]:
+                    cancel_side(t, side, book.rtt)
                 continue
             improved = policy.placement is Placement.IMPROVE and want > book.side(side).best
             on_book = resting[side]
@@ -315,10 +342,9 @@ def simulate(md: MarketDay, policy: LipPolicy, scenario: FillScenario, regime: R
                 continue
             if not on_book or any(o.price != want for o in on_book):
                 if on_book:
-                    cancel_side(t, side, book.rtt, "reprice")
+                    cancel_side(t, side, book.rtt)
                 place(t, side, want, allowed[side], book, None, improved)
                 filled_since[side] = 0.0
-                last_fill_known[side] = math.inf
                 continue
             total = sum(o.remaining for o in on_book)
             if total > allowed[side] + 1e-9:
@@ -330,8 +356,7 @@ def simulate(md: MarketDay, policy: LipPolicy, scenario: FillScenario, regime: R
                         schedule(t, "decrease", {"order": o, "to": o.remaining - cut}, book.rtt)
                         excess -= cut
                 continue
-            if (filled_since[side] > 0 and t >= last_fill_known[side]
-                    and t - last_replenish[side] >= params.replenish_every_s):
+            if filled_since[side] > 0 and t - last_replenish[side] >= params.replenish_every_s:
                 room = allowed[side] - total
                 qty = min(filled_since[side], room)
                 if qty > 0 and pending_child[side] is None:
@@ -341,60 +366,112 @@ def simulate(md: MarketDay, policy: LipPolicy, scenario: FillScenario, regime: R
                     filled_since[side] -= qty
                     if filled_since[side] <= 1e-9:
                         filled_since[side] = 0.0
-                        last_fill_known[side] = math.inf
 
+    def on_print(t: float, j: int) -> None:
+        if bool(trades.block[j]):
+            return
+        yes_px, sz, taker_yes = int(trades.yes_px[j]), float(trades.size[j]), bool(trades.taker_yes[j])
+        live = live_orders(t)
+        for side in (LipSide.YES, LipSide.NO):
+            through, at_level = [], []
+            for o in live:
+                if o.side is not side:
+                    continue
+                rel = print_relation(side, o.price, yes_px, taker_yes)
+                if rel == "through":
+                    through.append(o)
+                elif rel == "at":
+                    at_level.append(o)
+            if not through and not at_level:
+                continue
+            left = sz
+            # better-priced (through) orders first, oldest first within a price
+            through.sort(key=lambda o: (-o.price, o.oid))
+            for o, got in allocate_print(through, scenario, "through", left, t):
+                left -= got
+                on_fill(o, got, t)
+            if at_level:
+                at_level_volume[(side, at_level[0].price)] = at_level_volume.get((side, at_level[0].price), 0.0) + sz
+                at_level.sort(key=lambda o: o.oid)
+                before = [o.queue for o in at_level]
+                for o, got in allocate_print(at_level, scenario, "at", left, t):
+                    on_fill(o, got, t)
+                for o, b in zip(at_level, before):
+                    if o.queue != b:
+                        record_queue(o, t)
+
+    def on_book(book: BookSnapshot, t: float) -> None:
+        prev = last_book
+        levels: dict[tuple[LipSide, int], list[OrderState]] = {}
+        for o in live_orders(t):
+            levels.setdefault((o.side, o.price), []).append(o)
+        for (side, price), orders in levels.items():
+            side_now = book.side(side)
+            level_now = side_now.size_at(price)
+            prev_t = prev.received_at if prev is not None else t
+            explained = at_level_volume.pop((side, price), 0.0)
+            shrink = (prev.side(side).size_at(price) - level_now) if prev is not None else 0.0
+            unexplained = shrink - explained
+            covered = md.coverage.covered(prev_t, t)
+            fresh = [o for o in orders if o.oid in pending_first_book or -o.oid in pending_first_book]
+            stale = [o for o in orders if o not in fresh]
+            before = {o.oid: o.queue for o in orders}
+            if scenario is FillScenario.HEAVY and unexplained > 0 and stale:
+                if covered:
+                    for o in stale:  # cancels ahead of us
+                        o.queue = max(0.0, o.queue - unexplained)
+                else:
+                    # shrinkage the tape cannot explain, read as prints through our queue
+                    for o, got in allocate_print(stale, scenario, "at", unexplained, t, kind="gap"):
+                        on_fill(o, got, t)
+            for o in orders:
+                cap = level_now + sum(x.remaining for x in orders if x.oid < o.oid)
+                if o in fresh:
+                    pending_first_book.discard(o.oid)
+                    pending_first_book.discard(-o.oid)
+                    if scenario is FillScenario.FIFO:
+                        o.queue = max(o.queue, cap)
+                    elif scenario is FillScenario.HEAVY:
+                        o.queue = min(o.queue, cap)
+                if scenario is not FillScenario.THROUGH:
+                    o.queue = min(o.queue, cap)  # never more ahead of us than there is
+                if o.queue != before[o.oid]:
+                    record_queue(o, t)
+            if scenario is FillScenario.HEAVY:
+                opposite = book.side(side.other)
+                crossing = float(opposite.sz[opposite.px >= 100 - price].sum()) if not opposite.empty else 0.0
+                if crossing > 0:
+                    when = max(prev_t, min(o.live_from for o in orders))
+                    for o, got in allocate_quantity(orders, crossing, when, "cross"):
+                        on_fill(o, got, when)
+                offset = 1 if any(o.improved for o in orders) else 0
+                best = side_now.best
+                if best is None or best < price - offset:
+                    for o in orders:
+                        when = max(prev_t, o.live_from)
+                        on_fill(o, o.take(o.remaining, when, "orphan"), when)
+        at_level_volume.clear()
+
+    stop_after = math.inf
     for t, _, _, (kind, obj) in events:
+        if ended and t > stop_after:
+            break
         drain_internal(t)
-        if last_book is not None and t - last_book_at > params.dead_man_s and (resting[LipSide.YES] or resting[LipSide.NO]):
+        if (not ended and last_book is not None and t - last_book_at > params.dead_man_s
+                and (resting[LipSide.YES] or resting[LipSide.NO])):
             cancel_all(last_book_at + params.dead_man_s, last_book.rtt, "dead_man")
             gate["state"], gate["count"] = "evaluating", 0
             drain_internal(t)
         if kind == "print":
-            j = obj
-            yes_px, sz, taker_yes = int(trades.yes_px[j]), float(trades.size[j]), bool(trades.taker_yes[j])
-            if bool(trades.block[j]):
-                continue
-            for o in live_orders(t):
-                rel = print_relation(o.side, o.price, yes_px, taker_yes)
-                if rel is None:
-                    continue
-                if rel == "at":
-                    key = (o.side, o.price)
-                    at_level_volume[key] = at_level_volume.get(key, 0.0) + sz
-                before = o.queue
-                on_fill(o, apply_print(o, scenario, rel, sz, t), t)
-                if o.queue != before:
-                    record_queue(o, t)
+            on_print(t, obj)
         elif kind == "book":
             book: BookSnapshot = obj
-            prev = last_book
-            for o in live_orders(t):
-                side_now = book.side(o.side)
-                level_now = side_now.size_at(o.price)
-                if o.oid in pending_first_book:
-                    pending_first_book.discard(o.oid)
-                    o.queue = max(o.queue, level_now) if scenario is FillScenario.FIFO else min(o.queue, level_now)
-                    record_queue(o, t)
-                    continue
-                if prev is None:
-                    continue
-                prev_t = prev.received_at
-                shrink = prev.side(o.side).size_at(o.price) - level_now
-                explained = at_level_volume.pop((o.side, o.price), 0.0)
-                unexplained = shrink - explained
-                covered = md.coverage.covered(prev_t, t)
-                before = o.queue
-                on_fill(o, apply_shrink(o, scenario, level_now, unexplained, covered, t), t)
-                opposite = book.side(o.side.other)
-                crossing = float(opposite.sz[opposite.px >= 100 - o.price].sum()) if not opposite.empty else 0.0
-                on_fill(o, apply_cross(o, scenario, crossing, prev_t), prev_t)
-                on_fill(o, apply_orphan(o, scenario, side_now.best, prev_t), prev_t)
-                if o.queue != before:
-                    record_queue(o, t)
-            at_level_volume.clear()
+            on_book(book, t)
             last_book, last_book_at = book, t
+            if ended:
+                continue
             if gate["state"] == "evaluating":
-                ok = (gate_passes(book, target) and _is_open(md, t, True)
+                ok = (gate_passes(book, target) and _known_open(md, t)
                       and md.program.start_ts <= t < md.program.end_ts and t < end)
                 if not ok:
                     gate["state"] = "closed"
@@ -405,24 +482,27 @@ def simulate(md: MarketDay, policy: LipPolicy, scenario: FillScenario, regime: R
                     if gate["count"] >= params.gate_books:
                         gate["state"] = "open"
                         path.gate_log.append((t, True))
+                        queue.mark_sync(t)  # every market's gate opens together
             if gate["state"] == "open":
                 decide(book, t)
-        elif kind == "status":
+        elif kind == "status" and not ended:
             p = obj
             if p.market_status.lower() not in OPEN_STATUSES or p.exchange_active is False:
                 if last_book is not None:
                     cancel_all(t, last_book.rtt, "status")
                 stopped_until_segment = True
-        elif kind == "segment":
+        elif kind == "segment" and not ended:
             stopped_until_segment = False
             gate["state"], gate["count"] = "evaluating", 0
         elif kind == "end":
             rtt = last_book.rtt if last_book is not None else 0.0
             cancel_all(t, rtt, "end")
-            drain_internal(t + 30)
-            _flatten(path, md, held, t, regime, queue, rtt, params)
-            break
+            ended = True
+            # orders stay fillable until their cancels land (3.7): keep applying fills
+            stop_after = max([x[0] for x in internal] + [t]) + max(0.0, live_eps)
     drain_internal(math.inf)
+    t_exit = stop_after if math.isfinite(stop_after) else end
+    _flatten(path, md, held, t_exit, regime, queue, last_book.rtt if last_book else 0.0, params)
     return path
 
 
@@ -435,7 +515,7 @@ def _flatten(path: SimPath, md: MarketDay, held: dict[LipSide, float], t: float,
     side = LipSide.YES if net > 0 else LipSide.NO
     at = queue.send_time(t) + regime.latency(rtt, params)
     book = next((b for b in md.books.snapshots if b.received_at >= at), None)
-    qty, proceeds, fee = abs(net), 0.0, 0.0
+    qty = abs(net)
     if book is not None:
         from .valuation import walk_bids
 
@@ -485,19 +565,24 @@ class _BookIndex:
 
 @dataclass
 class _Ledger:
-    """One order's fills as prefix sums, and its queue history, for O(log n) lookups."""
+    """One order's fills and decreases as prefix sums, and its queue history.
+
+    A decrease stops the cut size resting when it lands; LOW stops crediting it from
+    the decision, as it does a cancel. ``done_at`` is when fills and decreases together
+    reach the order's size - it earns nothing after that.
+    """
 
     order: OrderState
-    fill_t: list[float]
-    fill_cum: list[float]
+    #: every reduction in resting size: (time, cumulative contracts), sorted
+    cut_t: list[float]
+    cut_cum: list[float]
     queue_t: list[float]
     queue_v: list[float]
-    #: when the order was filled out, if it ever was: it earns nothing after that
     done_at: float = math.inf
 
     def remaining(self, t: float) -> float:
-        i = bisect_left(self.fill_t, t)
-        return self.order.size - (self.fill_cum[i - 1] if i > 0 else 0.0)
+        i = bisect_left(self.cut_t, t)
+        return max(0.0, self.order.size - (self.cut_cum[i - 1] if i > 0 else 0.0))
 
     def queue(self, t: float) -> float:
         i = bisect_right(self.queue_t, t) - 1
@@ -516,14 +601,18 @@ def score_path(path: SimPath, md: MarketDay, *, low: bool, params: SimParams = S
     index = _BookIndex(md)
     ledgers = []
     for o in path.orders:
-        ft, fc, run = [], [], 0.0
-        for f in sorted(o.fills, key=lambda f: f.at):
-            run += f.qty
-            ft.append(f.at)
-            fc.append(run)
+        cuts = [(f.at, f.qty) for f in o.fills]
+        cuts += [((decided if low else landed), qty) for decided, landed, qty in o.decreases]
+        cuts.sort()
+        ct, cc, run, done = [], [], 0.0, math.inf
+        for at, qty in cuts:
+            run += qty
+            ct.append(at)
+            cc.append(run)
+            if run >= o.size - 1e-9 and done == math.inf:
+                done = at
         hist = path.queue_history.get(o.oid) or [(o.live_from, o.queue)]
-        done = ft[-1] if fc and fc[-1] >= o.size - 1e-9 else math.inf
-        ledgers.append(_Ledger(o, ft, fc, [h[0] for h in hist], [h[1] for h in hist], done))
+        ledgers.append(_Ledger(o, ct, cc, [h[0] for h in hist], [h[1] for h in hist], done))
     ledgers.sort(key=lambda lg: lg.order.live_from)
     absorbed = sorted((f for f in path.fills if f.kind in ("at_level", "through", "gap", "orphan")), key=lambda f: f.at)
     absorbed_t = [f.at for f in absorbed]
@@ -531,7 +620,7 @@ def score_path(path: SimPath, md: MarketDay, *, low: bool, params: SimParams = S
     crosses_t = [f.at for f in crosses]
     level_cache: dict[int, tuple] = {}
     target_cache: dict[tuple, int | None] = {}
-    v_sum, seconds, counted, observed, credited = 0.0, 0, 0, 0, 0
+    v_sum, seconds, counted, observed, credited, closed_high = 0.0, 0, 0, 0, 0, 0
     last_v = 0.0
     active: list[_Ledger] = []
     nxt = 0
@@ -555,8 +644,13 @@ def score_path(path: SimPath, md: MarketDay, *, low: bool, params: SimParams = S
                 base[f.price] = base.get(f.price, 0.0) + f.qty
         for f in crosses[c0:c1]:
             if f.side is side.other:
-                for px in [px for px in base if px >= 100 - f.price]:
-                    base[px] = max(0.0, base[px] - f.qty)
+                left = f.qty
+                for px in sorted((px for px in base if px >= 100 - f.price), reverse=True):
+                    took = min(base[px], left)
+                    base[px] -= took
+                    left -= took
+                    if left <= 0:
+                        break
         return tuple(sorted(((px, q) for px, q in base.items() if q > 0), key=lambda x: -x[0]))
 
     def credited_price(before: BookSnapshot | None, side: LipSide, price: int) -> int:
@@ -582,6 +676,8 @@ def score_path(path: SimPath, md: MarketDay, *, low: bool, params: SimParams = S
             continue
         observed += 1
         if not _is_open(md, k, low):
+            if not low:
+                closed_high += 1
             last_v = 0.0 if low else last_v
             continue
         before = index.before(k)
@@ -595,6 +691,7 @@ def score_path(path: SimPath, md: MarketDay, *, low: bool, params: SimParams = S
                     others = levels(b.side(side))
                     high_orders, low_orders = [], []
                     cf = counterfactual(b, side, k) if low else others
+                    candidates = []
                     for lg in active:
                         o = lg.order
                         if o.side is not side:
@@ -606,17 +703,23 @@ def score_path(path: SimPath, md: MarketDay, *, low: bool, params: SimParams = S
                                 high_orders.append(OwnOrder(o.price, q))
                         if low and o.live_from <= k and o.credit_end_low >= k + 1:
                             q = lg.remaining(k + 1)
-                            if q <= 0:
-                                continue
-                            price = credited_price(before, side, o.price)
-                            better = sum(qq for px, qq in cf if px > price)
-                            if path.scenario is FillScenario.THROUGH:
-                                ahead = next((qq for px, qq in cf if px == price), 0.0)
-                            else:
-                                ahead = lg.queue(k)
-                            q_eff = min(max(target - better - ahead, 0.0), q)
-                            if q_eff > 0:
-                                low_orders.append(OwnOrder(price, q_eff))
+                            if q > 0:
+                                candidates.append((credited_price(before, side, o.price), o.oid, q, lg))
+                    # LOW: each order gets only the room under T left after everything ahead
+                    # of it - others at better prices, our own orders at better prices, and
+                    # its queue at its own price (which already counts our earlier orders there)
+                    candidates.sort(key=lambda c: (-c[0], c[1]))
+                    for i, (price, _, q, lg) in enumerate(candidates):
+                        better = sum(qq for px, qq in cf if px > price)
+                        own_better = sum(c[2] for c in candidates[:i] if c[0] > price)
+                        if path.scenario is FillScenario.THROUGH:
+                            ahead = (next((qq for px, qq in cf if px == price), 0.0)
+                                     + sum(c[2] for c in candidates[:i] if c[0] == price))
+                        else:
+                            ahead = lg.queue(k)
+                        q_eff = min(max(target - better - own_better - ahead, 0.0), q)
+                        if q_eff > 0:
+                            low_orders.append(OwnOrder(price, q_eff))
                     h = share_high(others, tuple(high_orders), target, discount) if high_orders else 0.0
                     total_high += h
                     if low:
@@ -634,5 +737,5 @@ def score_path(path: SimPath, md: MarketDay, *, low: bool, params: SimParams = S
         v_sum += v
     return {
         "v_sum": v_sum, "seconds": seconds, "observed": observed, "counted": counted, "credited": credited,
-        "accrued": accrual(reward, v_sum, n_total), "n_total": n_total,
+        "accrued": accrual(reward, v_sum, n_total - closed_high), "n_total": n_total - closed_high,
     }

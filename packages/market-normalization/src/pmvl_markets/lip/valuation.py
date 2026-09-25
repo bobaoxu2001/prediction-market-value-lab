@@ -107,23 +107,50 @@ def _fallback(book: BookSnapshot | None, side: LipSide, low: bool) -> float:
 def mark_1h(path: SimPath, md: MarketDay, *, low: bool, params: SimParams = SIM) -> float:
     """$: fills marked an hour later, minus maker fees, minus the flatten's cost vs the mid."""
     value = 0.0
+    marked = {LipSide.YES: [0.0, 0.0], LipSide.NO: [0.0, 0.0]}  # contracts, sum of marks
     for f in path.fills:
-        value += f.qty * (_mark(md, f.side, f.at + params.mark_horizon_s, low=low, params=params) - f.price) / 100
+        m = _mark(md, f.side, f.at + params.mark_horizon_s, low=low, params=params)
+        value += f.qty * (m - f.price) / 100
+        marked[f.side][0] += f.qty
+        marked[f.side][1] += f.qty * m
     value -= fill_fees(path.fills, md, low=low, params=params)
-    value += _exit_charge(path, md, low=low)
+    value += _exit_charge(path, md, marked, low=low)
     return value
 
 
-def _exit_charge(path: SimPath, md: MarketDay, *, low: bool) -> float:
+def _last_mid(md: MarketDay, side: LipSide, at: float) -> float | None:
+    """The most recent two-sided mid at or before ``at``."""
+    for b in reversed(md.books.received_between(-math.inf, at + 1e-9)):
+        m = side_mid(b, side)
+        if m is not None:
+            return m
+    return None
+
+
+def _exit_charge(path: SimPath, md: MarketDay, marked: dict[LipSide, list[float]], *, low: bool) -> float:
+    """Flattening the residual, charged against what the marks said it was worth.
+
+    A missing mid never adds value: LOW measures the sale against the held side's best
+    bid, HIGH against the last two-sided mid. A remainder no bid could take is worth
+    nothing in LOW - the value its fills' marks gave it is taken back - and its mid in
+    HIGH, where it nets to zero.
+    """
     charge = 0.0
     for at, side, qty, proceeds, fee in path.exits:
         book = md.books.before(at)
-        mid = side_mid(book, side) if book is not None else None
-        mid_c = mid if mid is not None else 0.0
+        ref = side_mid(book, side) if book is not None else None
+        if ref is None:
+            if low:
+                bid = book.side(side).best if book is not None else None
+                ref = float(bid) if bid is not None else 0.0
+            else:
+                ref = _last_mid(md, side, at) or 0.0
         if math.isnan(proceeds):
-            charge += 0.0 if not low else -qty * mid_c / 100
+            if low:
+                n, total = marked[side]
+                charge -= qty * ((total / n) if n > 0 else 0.0) / 100
             continue
-        charge += proceeds - qty * mid_c / 100 - fee
+        charge += proceeds - qty * ref / 100 - fee
     return charge
 
 

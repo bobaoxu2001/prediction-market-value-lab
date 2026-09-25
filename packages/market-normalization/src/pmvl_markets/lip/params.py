@@ -47,6 +47,15 @@ class RecordingParams:
     programs_upcoming_every_s: float = 900.0
 
     # --- lanes (section 8) ------------------------------------------------------
+    #: "global" reads the whole trade feed; "per_ticker" (TAPE_PT, the pre-flight fallback)
+    #: reads each admitted market's tape every tape_per_ticker_every_s, with one book lane
+    #: and a total cap of 100
+    tape_mode: str = "global"
+    tape_per_ticker_every_s: float = 60.0
+    #: False when the pre-flight found min_ts ignored: pages are then read until one
+    #: reaches back past the watermark
+    min_ts_honoured: bool = True
+    book_lanes: int = 2
     book_cadence_s: float = 1.0
     book_jitter_s: float = 0.25
     book_lane_rate: float = 1.25

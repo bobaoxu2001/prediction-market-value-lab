@@ -151,12 +151,15 @@ class SegmentWriter:
     def __post_init__(self) -> None:
         self.day_dir = Path(self.day_dir)
         self.day_dir.mkdir(parents=True, exist_ok=True)
-        # resume: carry every stream's chain from the newest existing segment
+        # resume: carry every stream's chain from the newest existing segment, cutting a
+        # torn final line (a killed process) so the next append does not follow it
         for seg in sorted(p for p in self.day_dir.glob("segment-*") if p.is_dir()):
-            for f in seg.iterdir():
+            for f in sorted(seg.iterdir(), key=_file_order):
                 stream = f.name.split(".")[0]
+                if f.suffix == ".jsonl":
+                    _cut_torn_tail(f)
                 last = None
-                for entry in _raw_rows(f):
+                for entry in _raw_rows(f, tolerate_torn_tail=True):
                     last = entry
                 if last is not None:
                     self._tails[stream] = (last["digest"], int(last["seq"]) + 1)
@@ -192,38 +195,66 @@ class SegmentWriter:
 
 
 def gzip_file(path: Path) -> Path:
+    """Gzip a closed segment file. An existing .gz (a restart within the same hour) is
+    appended to as a new gzip member, never overwritten - gzip readers read members in
+    order, so the chain stays in the order it was written."""
     target = path.with_suffix(path.suffix + ".gz")
-    with path.open("rb") as src, gzip.open(target, "wb") as dst:
+    with path.open("rb") as src, gzip.open(target, "ab") as dst:
         shutil.copyfileobj(src, dst)
     path.unlink()
     return target
+
+
+def _file_order(path: Path) -> int:
+    """Within a segment the gzipped part is older than a live .jsonl beside it."""
+    return 0 if path.suffix == ".gz" else 1
 
 
 def _open(path: Path):
     return gzip.open(path, "rt") if path.suffix == ".gz" else path.open()
 
 
-def _raw_rows(path: Path) -> Iterator[dict[str, Any]]:
+def _cut_torn_tail(path: Path) -> None:
+    data = path.read_bytes()
+    if data and not data.endswith(b"\n"):
+        path.write_bytes(data[: data.rfind(b"\n") + 1])
+
+
+def _raw_rows(path: Path, *, tolerate_torn_tail: bool = False) -> Iterator[dict[str, Any]]:
+    """Rows of one file. An undecodable line is an integrity failure - unless it is the
+    very last line of a file the caller says may have been cut by a killed process."""
     with _open(path) as fh:
-        for line in fh:
-            line = line.strip()
-            if not line:
-                continue
-            try:
-                yield json.loads(line)
-            except json.JSONDecodeError:
+        lines = fh.read().split("\n")
+    for i, line in enumerate(lines):
+        line = line.strip()
+        if not line:
+            continue
+        try:
+            yield json.loads(line)
+        except json.JSONDecodeError as exc:
+            last = all(not x.strip() for x in lines[i + 1:])
+            if tolerate_torn_tail and last:
                 return
+            raise LogIntegrityError(f"{path}:{i + 1}: undecodable line") from exc
 
 
-def read_stream(day_dir: Path, stream: str, *, verify: bool = True) -> Iterator[dict[str, Any]]:
-    """Every body of one stream across all segments, with the chain verified end to end."""
-    prev = GENESIS
-    for seg in sorted(p for p in Path(day_dir).glob("segment-*") if p.is_dir()):
-        files = [seg / f"{stream}.jsonl", seg / f"{stream}.jsonl.gz"]
+def read_stream(day_dir: Path, stream: str, *, verify: bool = True,
+                expect_end: tuple[int, str] | None = None) -> Iterator[dict[str, Any]]:
+    """Every body of one stream across all segments, with the chain verified end to end.
+
+    ``expect_end`` = (entries, final digest) as the recorder wrote it into health.json:
+    a stream whose tail was cut short fails here instead of reading as complete.
+    """
+    prev, count = GENESIS, 0
+    segments = sorted(p for p in Path(day_dir).glob("segment-*") if p.is_dir())
+    newest = segments[-1] if segments else None
+    for seg in segments:
+        files = [seg / f"{stream}.jsonl.gz", seg / f"{stream}.jsonl"]
         for f in files:
             if not f.exists():
                 continue
-            for lineno, row in enumerate(_raw_rows(f), start=1):
+            torn_ok = seg == newest and f.suffix == ".jsonl"
+            for lineno, row in enumerate(_raw_rows(f, tolerate_torn_tail=torn_ok), start=1):
                 body = json.dumps(row["body"], sort_keys=True, separators=(",", ":"))
                 if verify:
                     if row["prev"] != prev:
@@ -232,4 +263,8 @@ def read_stream(day_dir: Path, stream: str, *, verify: bool = True) -> Iterator[
                     if row["digest"] != _digest(prev, body):
                         raise LogIntegrityError(f"{f}:{lineno}: body edited after it was written")
                 prev = row["digest"]
+                count += 1
                 yield row["body"]
+    if verify and expect_end is not None and (count, prev) != (int(expect_end[0]), str(expect_end[1])):
+        raise LogIntegrityError(f"{day_dir}/{stream}: chain ends at entry {count}, "
+                                f"the recorder closed it at {expect_end[0]} - the tail is missing")
