@@ -82,25 +82,23 @@ def _mark(md: MarketDay, side: LipSide, t: float, *, low: bool, params: SimParam
         paid = _payout(md, side)
         if paid is not None:
             return paid
-        last = md.books.before(md.close_time)
-        return _fallback(last, side, low)
+        return _fallback(md, side, md.close_time, low)
     for b in md.books.received_between(t, t + params.mark_search_s):
         m = side_mid(b, side)
         if m is not None:
             return m
-    return _fallback(md.books.before(t + params.mark_search_s), side, low)
+    return _fallback(md, side, t + params.mark_search_s, low)
 
 
-def _fallback(book: BookSnapshot | None, side: LipSide, low: bool) -> float:
-    if book is None:
-        return 0.0
-    if low:
-        bid = book.side(side).best
-        return float(bid) if bid is not None else 0.0
-    m = side_mid(book, side)
-    if m is not None:
-        return m
-    bid = book.side(side).best
+def _fallback(md: MarketDay, side: LipSide, at: float, low: bool) -> float:
+    """No two-sided mid where one was needed. LOW: the held side's best bid (0 if none) -
+    the lowest a holder could get. HIGH: the last two-sided mid, then the bid."""
+    book = md.books.before(at)
+    if not low:
+        m = _last_mid(md, side, at)
+        if m is not None:
+            return m
+    bid = book.side(side).best if book is not None else None
     return float(bid) if bid is not None else 0.0
 
 
@@ -128,28 +126,41 @@ def _last_mid(md: MarketDay, side: LipSide, at: float) -> float | None:
 
 
 def _exit_charge(path: SimPath, md: MarketDay, marked: dict[LipSide, list[float]], *, low: bool) -> float:
-    """Flattening the residual, charged against what the marks said it was worth.
+    """Flattening the residual, charged against what it was worth.
 
-    A missing mid never adds value: LOW measures the sale against the held side's best
-    bid, HIGH against the last two-sided mid. A remainder no bid could take is worth
-    nothing in LOW - the value its fills' marks gave it is taken back - and its mid in
-    HIGH, where it nets to zero.
+    charge = proceeds - qty x reference - fee, and for a charge a *higher* reference is
+    the pessimistic one. The candidates are the reference book's mid (or its held-side
+    bid), the walk book's held-side bid and the last two-sided mid. LOW takes the highest
+    of them - and never less than the sale's own average price, so a charge is never a
+    gain - and HIGH the lowest. A remainder no bid could take is worth nothing in LOW (the
+    value its fills' marks gave it is taken back) and nets to zero in HIGH.
     """
     charge = 0.0
     for at, side, qty, proceeds, fee in path.exits:
-        book = md.books.before(at)
-        ref = side_mid(book, side) if book is not None else None
-        if ref is None:
-            if low:
-                bid = book.side(side).best if book is not None else None
-                ref = float(bid) if bid is not None else 0.0
-            else:
-                ref = _last_mid(md, side, at) or 0.0
         if math.isnan(proceeds):
             if low:
                 n, total = marked[side]
                 charge -= qty * ((total / n) if n > 0 else 0.0) / 100
             continue
+        candidates = []
+        ref_book = md.books.before(at)
+        if ref_book is not None:
+            m = side_mid(ref_book, side)
+            if m is not None:
+                candidates.append(m)
+            elif ref_book.side(side).best is not None:
+                candidates.append(float(ref_book.side(side).best))
+        walk_book = next((b for b in md.books.snapshots if b.received_at >= at), None)
+        if walk_book is not None and walk_book.side(side).best is not None:
+            candidates.append(float(walk_book.side(side).best))
+        last = _last_mid(md, side, at)
+        if last is not None:
+            candidates.append(last)
+        sale = proceeds * 100 / qty if qty > 0 else 0.0
+        if low:
+            ref = max(candidates + [sale])
+        else:
+            ref = min(candidates) if candidates else sale
         charge += proceeds - qty * ref / 100 - fee
     return charge
 

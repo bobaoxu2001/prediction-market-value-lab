@@ -31,6 +31,7 @@ from .grid import to_cents
 from .version import LIP_RECORDER_VERSION
 
 __all__ = [
+    "stream_ends",
     "BookEncoder",
     "ChainedLog",
     "SegmentWriter",
@@ -268,3 +269,29 @@ def read_stream(day_dir: Path, stream: str, *, verify: bool = True,
     if verify and expect_end is not None and (count, prev) != (int(expect_end[0]), str(expect_end[1])):
         raise LogIntegrityError(f"{day_dir}/{stream}: chain ends at entry {count}, "
                                 f"the recorder closed it at {expect_end[0]} - the tail is missing")
+
+
+def stream_ends(day_dir: Path, *, required: bool = True) -> dict[str, tuple[int, str]]:
+    """{stream: (entries, final digest)} as the recorder closed each one in health.json.
+
+    A recorded day without them cannot prove its tails are whole: with ``required`` that
+    is an integrity failure rather than a day read as complete.
+    """
+    health = Path(day_dir) / "health.json"
+    if not health.exists():
+        if required:
+            raise LogIntegrityError(f"{day_dir}: no health.json - the streams' recorded ends are unknown")
+        return {}
+    streams = json.loads(health.read_text()).get("streams")
+    if streams is None:
+        if required:
+            raise LogIntegrityError(f"{day_dir}: health.json records no stream ends")
+        return {}
+    return {name: (int(v[1]), str(v[0])) for name, v in streams.items()}
+
+
+def read_checked(day_dir: Path, stream: str, ends: dict[str, tuple[int, str]]) -> Iterator[dict[str, Any]]:
+    """read_stream, held to the recorded end; a stream with files but no recorded end fails."""
+    if stream not in ends and any(Path(day_dir).glob(f"segment-*/{stream}.jsonl*")) and ends:
+        raise LogIntegrityError(f"{day_dir}/{stream}: written, but its end was never recorded")
+    return read_stream(day_dir, stream, expect_end=ends.get(stream))

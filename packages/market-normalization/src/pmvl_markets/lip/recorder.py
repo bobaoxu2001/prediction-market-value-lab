@@ -166,6 +166,8 @@ class LipRecorder:
         #: lane -> recent (t, was_429) for the trailing ten-minute 429 share
         self._recent: dict[str, list[tuple[float, bool]]] = {}
         self._tape_marks: dict[str, float] = {}
+        #: lane -> grid tick indices (at the recorded cadence) with a successful read
+        self._ok_ticks: dict[str, set[int]] = {}
         self._tape_last_poll: dict[str, float] = {}
         self.meta: dict[str, dict[str, Any]] = {}
         self.fees: dict[str, dict[str, Any]] = {}
@@ -324,7 +326,7 @@ class LipRecorder:
         stats.requests += 1
         client = self._client(lane)
         before = len(getattr(client, "rate_limited", []))
-        self._log_request(lane, self.clock.now().timestamp())
+        sent = self.clock.now().timestamp()
         try:
             data = await client.get_json(path, params=params, use_cache=False, allow_404=True)
             stats.ok += 1
@@ -333,10 +335,10 @@ class LipRecorder:
             stats.failed += 1
             raise
         finally:
-            after = len(getattr(client, "rate_limited", []))
-            if after > before:
-                stats.rate_limited += after - before
-                self._recent.setdefault(lane, []).append((self.clock.now().timestamp(), True))
+            hits = len(getattr(client, "rate_limited", [])) - before
+            self._log_request(lane, sent, was_429=hits > 0)
+            if hits > 0:
+                stats.rate_limited += hits
                 self._on_429(lane)
 
     def _on_429(self, lane: str) -> None:
@@ -391,9 +393,6 @@ class LipRecorder:
             tickers = markets[index * size:(index + 1) * size]
             if not tickers:
                 continue
-            now_ts = self.clock.now().timestamp()
-            if self.window.window_start.timestamp() <= now_ts < self.window.window_end.timestamp():
-                self.lanes[lane].due_ticks_in_window += 1
             if in_flight is not None and not in_flight.done():
                 self.lanes[lane].skipped_in_flight += 1
                 continue
@@ -411,17 +410,20 @@ class LipRecorder:
         provider = self._providers[lane]
         client = provider._client
         before = len(getattr(client, "rate_limited", []))
-        self._log_request(lane, self.clock.now().timestamp())
+        issued = self.clock.now().timestamp()
         result = await provider.get_orderbooks_synchronized(tickers, depth=self.params.book_depth)
-        after = len(getattr(client, "rate_limited", []))
-        if after > before:
-            stats.rate_limited += after - before
+        hits = len(getattr(client, "rate_limited", [])) - before
+        self._log_request(lane, issued, was_429=hits > 0)
+        if hits > 0:
+            stats.rate_limited += hits
             self._on_429(lane)
         sent, received = result.sent_at.timestamp(), result.received_at.timestamp()
         if result.ok:
             stats.ok += 1
-            if self.window.window_start.timestamp() <= received < self.window.window_end.timestamp():
+            lo = self.window.window_start.timestamp()
+            if lo <= sent < self.window.window_end.timestamp():
                 stats.ok_ticks_in_window += 1
+                self._ok_ticks.setdefault(lane, set()).add(int((sent - lo) // self.params.book_cadence_s))
         else:
             stats.failed += 1
         targets = {p.market: float(p.target) for p in self.admission.admitted.values()}
@@ -530,6 +532,7 @@ class LipRecorder:
         at = self.clock.now()
         tickers = self.recorded_markets(at.timestamp())
         markets: dict[str, Any] = {}
+        chunks: list[dict[str, Any]] = []
         error = ""
         for i in range(0, len(tickers), 100):
             chunk = tickers[i:i + 100]
@@ -537,7 +540,9 @@ class LipRecorder:
                 data = await self._get("status", "/markets", {"tickers": ",".join(chunk), "limit": len(chunk)})
             except Exception as exc:
                 error = str(exc)[:300]
+                chunks.append({"requested": chunk, "received_at": self.clock.now().timestamp(), "error": error})
                 continue
+            chunks.append({"requested": chunk, "received_at": self.clock.now().timestamp(), "error": ""})
             for m in (data or {}).get("markets") or []:
                 markets[m["ticker"]] = {"status": m.get("status"), "close_time": m.get("close_time")}
                 if m["ticker"] in self.meta:
@@ -548,8 +553,10 @@ class LipRecorder:
             exchange = await self._get("status", "/exchange/status") or {}
         except Exception as exc:
             exchange_error = str(exc)[:300]
-        # every requested market is named, so one the poll did not answer reads as unknown
+        # every requested market is named, with the time its answer (or failure) arrived, so a
+        # market the poll did not answer reads as unknown and nothing is acted on before it existed
         self._write("status", {"kind": "status", "at": at.timestamp(), "requested": tickers, "markets": markets,
+                               "chunks": chunks, "exchange_received_at": self.clock.now().timestamp(),
                                "exchange": {"trading_active": exchange.get("trading_active"),
                                             "exchange_active": exchange.get("exchange_active")},
                                "exchange_error": exchange_error, "error": error})
@@ -713,10 +720,37 @@ class LipRecorder:
         book_lanes = {k: v for k, v in self.lanes.items() if k.startswith("book")}
         # ticks in the window at the lane's own cadence; a tick with nothing due is not
         # a failure, a due tick without a successful read is
+        lo = self.window.window_start.timestamp()
         ticks = max(1, int((self.window.window_end - self.window.window_start).total_seconds()
                            / self.params.book_cadence_s))
-        missed = sum(max(0, v.due_ticks_in_window - v.ok_ticks_in_window) for v in book_lanes.values())
-        share = max(0.0, 1.0 - missed / ticks)
+        # section 7 as written: a day counts if successful reads cover 80% of the window's
+        # ticks. A tick is successful only if every lane with markets due at it read them -
+        # a tick the recorder slept through, paused over, or had nothing to read is not
+        size = self.params.book_lane_size
+        ok_ticks = due_ticks = 0
+        lane_names = [n for n in ("book-A", "book-B") if n in book_lanes]
+        # how many markets were due at each tick, by one sweep over the pairs' intervals
+        spans: dict[str, tuple[float, float]] = {}
+        for pair in self.admission.admitted.values():
+            a, b = pair.admitted_at, self._participation_end(pair) + self.params.mark_tail_s
+            old_span = spans.get(pair.market)
+            spans[pair.market] = (min(a, old_span[0]), max(b, old_span[1])) if old_span else (a, b)
+        edges = sorted([(a, 1) for a, _ in spans.values()] + [(b, -1) for _, b in spans.values()])
+        live, k = 0, 0
+        cap = len(lane_names) * size
+        for i in range(ticks):
+            t = lo + i * self.params.book_cadence_s
+            while k < len(edges) and edges[k][0] <= t:
+                live += edges[k][1]
+                k += 1
+            n = min(live, cap)
+            due = [name for j, name in enumerate(lane_names) if n > j * size]
+            if not due:
+                continue
+            due_ticks += 1
+            if all(i in self._ok_ticks.get(name, set()) for name in due):
+                ok_ticks += 1
+        share = ok_ticks / ticks
         body = {
             "v": LIP_RECORDER_VERSION, "tag": "shakedown" if self.shakedown else "study",
             "day": self.window.day.isoformat(),
@@ -725,7 +759,7 @@ class LipRecorder:
             "markets_recorded": len(self.recorded_ever),
             "trades_kept": len(self.seen_trades),
             "book_success_share_of_window": share,
-            "window_ticks": ticks,
+            "window_ticks": ticks, "due_ticks": due_ticks, "ok_ticks": ok_ticks,
             "counted_day": (not self.shakedown) and share >= self.params.counted_day_share,
             "streams": {k: list(v) for k, v in self.writer._tails.items()},
             "finished_at": _iso(self.clock.now()),

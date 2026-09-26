@@ -163,6 +163,13 @@ def build_cells(results: list[dict[str, Any]], *, verified: set[str] | None, wit
             cap_left = None if r.get("cap") is None else float(r["cap"]) - paid
             v["pay"] = daily_payout(v["accrued"], cap_left)
             capped[(r["program_id"], key)] = paid + v["pay"]
+        # the cap runs out sooner for HIGH, which accrues more; LOW never pays more than
+        # HIGH on the same day, so LOW <= HIGH holds per market-day under a cap too
+        for key, v in r["paths"].items():
+            if key.endswith("|LOW"):
+                high = r["paths"].get(key[: -len("LOW")] + "HIGH")
+                if high is not None:
+                    v["pay"] = min(v["pay"], high["pay"])
     cells: dict[tuple[str, str], Cell] = {}
     for r in results:
         c = cells.setdefault((r["day"], r["family"]), Cell(r["day"], r["family"]))

@@ -298,13 +298,19 @@ def _calendar():
         return None
     day1 = date.fromisoformat(json.loads(gates.read_text())["day1"])
     last = day1 + timedelta(days=SIM.max_calendar_days - 1)
-    counted, d = 0, day1
+    counted, empty_run, d = 0, 0, day1
     while d <= last:
-        health = FORWARD / "lip-daily" / d.isoformat() / "health.json"
-        if health.exists() and json.loads(health.read_text()).get("counted_day"):
+        day_dir = FORWARD / "lip-daily" / d.isoformat()
+        health = day_dir / "health.json"
+        body = json.loads(health.read_text()) if health.exists() else {}
+        if body.get("counted_day"):
             counted += 1
             if counted == SIM.min_counted_days:
                 return day1, d
+        # the exogenous stop: seven consecutive days with nothing admitted end the study
+        empty_run = empty_run + 1 if body and not body.get("skipped") and body.get("due_ticks") == 0 else 0
+        if empty_run >= 7:
+            return day1, d
         d += timedelta(days=1)
     return day1, last
 
@@ -346,6 +352,11 @@ def study_cmd(final: bool = typer.Option(False, "--final", help="The one final l
     while d <= last:
         day_dir = FORWARD / "lip-daily" / d.isoformat()
         study_file = day_dir / "study.json"
+        if not study_file.exists() and day_dir.exists() and (
+                any(day_dir.glob("segment-*")) or (day_dir / "replay.json").exists()):
+            problems.append(f"{d}: recordings but no study.json - the day cannot be identified")
+            d += timedelta(days=1)
+            continue
         if not study_file.exists():
             # never recorded (the machine slept, cron never fired): zeros for its live pairs
             w = day_window(datetime(d.year, d.month, d.day, 12, 30, tzinfo=timezone.utc))

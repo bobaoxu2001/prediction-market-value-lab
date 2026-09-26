@@ -93,6 +93,68 @@ at the planned rates moves the book cadence to 2 s for the whole study.
 
 ---
 
+## Amendment 2 (2026-09-25, before day 1): implementation decisions
+
+Recorded before any study data exists. Each item resolves a point the text above left open,
+or replaces a mechanism with one that is at least as strict against the strategy. The code is
+`pmvl_markets.lip` at the commit tagged `lip-sim-1.0.0`.
+
+1. **Write budget, REG_LOW.** One shared bucket across ~160 markets cannot be replayed market by
+   market in reasonable time. Each market instead gets an equal static share, 10 / (the day's
+   peak number of admitted markets) actions per second, with no burst beyond one token; and at
+   the instants every market acts together (a segment start, a gate opening) market *i*, in
+   admission order, waits *i* / 10 s - its place in the shared queue. REG_HIGH is unlimited.
+2. **The counterfactual book (5.3).** Volume our fills absorbed is added back to others at the
+   print price for 60 s after the fill; a HEAVY cross fill is removed from the opposite side
+   once, best level first; an orphan fill counts as absorbed volume on our side.
+3. **Clock (4.2).** The day's offset is the median `sntp` sample; prints are moved into local time
+   by it; ε = |offset| + 50 ms widens HEAVY's fillable windows and narrows THROUGH's and FIFO's.
+   A day with no clock sample uses ε = 250 ms.
+4. **Status.** Each market's status, and the exchange flag, is stamped when its response
+   arrived, not when the poll began. A decision reads only the latest status known at or before
+   it, and stops quoting only on an explicitly non-open status or an inactive exchange - an
+   unknown status stops nothing. LOW credit needs both bracketing polls known and open (a failed
+   poll, or a market the poll did not answer for, is unknown and counts as not open); HIGH
+   counts unknown as open.
+5. **Denominators.** LOW keeps closed seconds in N_total; HIGH leaves the ones it observed
+   closed out. Every admitted second stays in ΣH in both.
+6. **Counted day (7), as written.** A day counts if successful reads cover at least 80% of the
+   window's ticks, counted at the day's recorded book cadence. A tick is successful only if every
+   book lane that had admitted markets due at it read them. A tick the recorder slept through,
+   paused over, or had nothing to read at is not successful - so a day with nothing admitted, or
+   one the machine slept through, does not count.
+7. **The cap (5.8).** A program's per-account cap is applied across its days when results are
+   pooled: each day pays at most the cap less what its earlier days paid. Because HIGH accrues
+   more and exhausts the cap sooner, LOW's pay on a day is held at or below HIGH's.
+8. **Days that were not recorded.** The calendar runs from day 1 (in `lip-gates.json`) to the 20th
+   counted day, day 1 + 29, or the seventh consecutive day with no admitted market due at any
+   tick (the exogenous stop), whichever comes first. A day skipped by the recorder, or never
+   recorded at all (the machine slept), contributes every pair live in its window at its
+   admitted hours and $0. A recorded day without its replay, or a day directory holding
+   recordings but no `study.json`, stops the final analysis.
+9. **Verification and withdrawal.** A program is verified only if later seen `paid_out` and every
+   row ever recorded for it carries the same terms. Withdrawal is read from the recorder's
+   within-day registry and from complete active listings across days.
+10. **TAPE_PT.** If the pre-flight selects it: each recorded market's own tape every 60 s with its
+    own watermark and coverage, one book lane, and a total cap of 100. When `min_ts` is not
+    honoured, pages are read until one reaches back past the watermark.
+11. **Exit valuation.** When the day-end flatten has no two-sided mid to be measured against, its
+    charge (proceeds less quantity times a reference, less the fee) takes, among the reference
+    book's mid or bid, the walk book's bid and the last two-sided mid, the *highest* reference in
+    LOW - and never less than the sale's own average price, so a sale is never booked as a gain -
+    and the lowest in HIGH. HIGH's fallback marks use the last two-sided mid.
+12. **Integrity.** Every stream of a recorded day is read against the entry count and final
+    digest the recorder wrote into `health.json`; a day without them, or a stream that ends early,
+    is an integrity failure, not a quiet day.
+13. **Isolation.** Every lane's requests are logged per minute, and the off-day commands
+    (`preflight`, `programs-paid`) refuse 02:00-12:25 UTC and the maker lock and log their
+    requests; any of them within 60 s of a maker session is a breach.
+
+The adversarial review that led to these (35 reproduced findings) and the re-review of its fixes
+(19 more) are recorded in `docs/lip-review.md` and are part of gate G4.
+
+---
+
 ## 1. Scoring rule as implemented
 
 **Sources.** Public documents; the design record (grounding reports, the three designs, both judges) is in `artifacts/research/lip-1/design/`.

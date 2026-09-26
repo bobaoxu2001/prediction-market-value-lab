@@ -19,7 +19,7 @@ from pathlib import Path
 from typing import Any, Iterable
 
 from ..recording.writer import read_log
-from .store import read_stream
+from .store import read_checked, stream_ends
 
 __all__ = ["isolation_breaches", "maker_sessions", "payment_status"]
 
@@ -45,10 +45,11 @@ def _request_spans(day_dir: Path, offday_log: Path | None) -> Iterable[tuple[flo
     """Every LIP request as a time span: the per-minute lane log covers every lane -
     books, tape, status and control - and the off-day log covers the commands run
     outside a recording day (programs-paid, preflight)."""
-    for body in read_stream(day_dir, "lanes"):
+    ends = stream_ends(day_dir, required=False)
+    for body in read_checked(day_dir, "lanes", ends):
         if body.get("kind") == "requests":
             yield float(body["first"]), float(body["last"])
-    for body in read_stream(day_dir, "books"):
+    for body in read_checked(day_dir, "books", ends):
         yield float(body["sent_at"]), float(body["sent_at"])
     if offday_log is not None and Path(offday_log).exists():
         for entry in read_log(Path(offday_log)):
@@ -83,7 +84,7 @@ def payment_status(day_dirs: list[Path], paid_log: Path | None) -> tuple[set[str
     listings: list[tuple[float, set[str]]] = []
     within: set[str] = set()
     for day in day_dirs:
-        for body in read_stream(day, "programs"):
+        for body in read_checked(day, "programs", stream_ends(day, required=False)):
             for row in body.get("rows") or []:
                 pid = str(row["id"])
                 terms.setdefault(pid, set()).add(_terms(row))

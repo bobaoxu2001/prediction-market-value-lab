@@ -122,7 +122,8 @@ def _is_open(md: MarketDay, t: float, low: bool) -> bool:
             return False
         pts = [before, after]
     else:
-        pts = [p for p in (before,) if p is not None]
+        # HIGH: unknown (no poll, a failed poll, an unanswered market) counts as open
+        pts = [p for p in (before,) if p is not None and p.market_status != ""]
         if not pts:
             return t < md.close_time
     for p in pts:
@@ -214,7 +215,7 @@ def simulate(md: MarketDay, policy: LipPolicy, scenario: FillScenario, regime: R
     def cancel_side(t: float, side: LipSide, rtt: float) -> None:
         for o in list(resting[side]):
             o.credit_end_low = min(o.credit_end_low, t)
-            schedule(t, "cancel", {"order": o}, rtt)
+            o.cancel_lands_at = min(o.cancel_lands_at, schedule(t, "cancel", {"order": o}, rtt))
         resting[side] = []
         for pending in (pending_place, pending_child):
             item = pending[side]
@@ -265,11 +266,18 @@ def simulate(md: MarketDay, policy: LipPolicy, scenario: FillScenario, regime: R
         # the known position, never the true one
         heapq.heappush(known, (t + regime.latency(last_book.rtt if last_book else 0.0, params), o.oid, o.side, qty))
 
+    known_filled: dict[int, float] = {}
+
     def drain_known(t: float) -> None:
         while known and known[0][0] <= t:
-            _, _, side, qty = heapq.heappop(known)
+            _, fid, side, qty = heapq.heappop(known)
             known_held[side] += qty
             filled_since[side] += qty
+            known_filled[fid] = known_filled.get(fid, 0.0) + qty
+
+    def known_remaining(o: OrderState) -> float:
+        """What the maker believes still rests: size less fills it has heard of and landed cuts."""
+        return max(0.0, o.size - known_filled.get(o.oid, 0.0) - sum(c for _, _, c in o.decreases))
 
     def live_orders(t: float) -> list[OrderState]:
         return sorted((o for o in path.orders if o.live(t, live_eps)), key=lambda o: o.oid)
@@ -296,7 +304,7 @@ def simulate(md: MarketDay, policy: LipPolicy, scenario: FillScenario, regime: R
                 pending_first_book.add(-o.oid)  # THROUGH: still gets its first-book checks
             if "cancel_on_land" in payload:
                 o.credit_end_low = min(o.credit_end_low, payload["cancel_on_land"])
-                schedule(t, "cancel", {"order": o}, last_book.rtt if last_book else 0.0)
+                o.cancel_lands_at = schedule(t, "cancel", {"order": o}, last_book.rtt if last_book else 0.0)
                 return
             resting[side].append(o)
         elif kind == "cancel":
@@ -346,14 +354,14 @@ def simulate(md: MarketDay, policy: LipPolicy, scenario: FillScenario, regime: R
                 place(t, side, want, allowed[side], book, None, improved)
                 filled_since[side] = 0.0
                 continue
-            total = sum(o.remaining for o in on_book)
+            total = sum(known_remaining(o) for o in on_book)
             if total > allowed[side] + 1e-9:
                 excess = total - allowed[side]
                 for o in reversed(on_book):
-                    cut = min(o.remaining, excess)
+                    cut = min(known_remaining(o), excess)
                     if cut > 0 and o.oid not in decreasing:
                         decreasing.add(o.oid)
-                        schedule(t, "decrease", {"order": o, "to": o.remaining - cut}, book.rtt)
+                        schedule(t, "decrease", {"order": o, "to": known_remaining(o) - cut}, book.rtt)
                         excess -= cut
                 continue
             if filled_since[side] > 0 and t - last_replenish[side] >= params.replenish_every_s:
@@ -453,14 +461,22 @@ def simulate(md: MarketDay, policy: LipPolicy, scenario: FillScenario, regime: R
         at_level_volume.clear()
 
     stop_after = math.inf
+
+    def settled(t: float) -> bool:
+        """After the end: nothing still queued to land, and no order still fillable."""
+        if any(x[0] > t for x in internal):
+            return False
+        return not any(o.fillable_until + max(0.0, live_eps) > t and o.remaining > 0 for o in path.orders)
+
     for t, _, _, (kind, obj) in events:
-        if ended and t > stop_after:
+        if ended and t > stop_after and settled(t):
             break
         # HEAVY treats an order as able to fill from eps before it landed (the clock may
         # have put the print early); its credit still starts at the landing itself
         drain_internal(t + max(0.0, live_eps))
         if (not ended and last_book is not None and t - last_book_at > params.dead_man_s
                 and (resting[LipSide.YES] or resting[LipSide.NO])):
+            queue.mark_sync(last_book_at + params.dead_man_s)  # every market's lane died at once
             cancel_all(last_book_at + params.dead_man_s, last_book.rtt, "dead_man")
             gate["state"], gate["count"] = "evaluating", 0
             drain_internal(t)
@@ -489,7 +505,8 @@ def simulate(md: MarketDay, policy: LipPolicy, scenario: FillScenario, regime: R
                 decide(book, t)
         elif kind == "status" and not ended:
             p = obj
-            if p.market_status.lower() not in OPEN_STATUSES or p.exchange_active is False:
+            explicit_closed = p.market_status != "" and p.market_status.lower() not in OPEN_STATUSES
+            if explicit_closed or p.exchange_active is False:
                 if last_book is not None:
                     cancel_all(t, last_book.rtt, "status")
                 stopped_until_segment = True
@@ -498,12 +515,14 @@ def simulate(md: MarketDay, policy: LipPolicy, scenario: FillScenario, regime: R
             gate["state"], gate["count"] = "evaluating", 0
         elif kind == "end":
             rtt = last_book.rtt if last_book is not None else 0.0
+            queue.mark_sync(t)  # every market's day ends at once
             cancel_all(t, rtt, "end")
             ended = True
-            # orders stay fillable until their cancels land (3.7): keep applying fills
-            stop_after = max([x[0] for x in internal] + [t]) + max(0.0, live_eps)
+            stop_after = t
+    last_landing = max([x[0] for x in internal], default=stop_after if math.isfinite(stop_after) else end)
     drain_internal(math.inf)
-    t_exit = stop_after if math.isfinite(stop_after) else end
+    t_exit = max(last_landing, max((o.fillable_until for o in path.orders
+                                    if math.isfinite(o.fillable_until)), default=end), end)
     _flatten(path, md, held, t_exit, regime, queue, last_book.rtt if last_book else 0.0, params)
     return path
 

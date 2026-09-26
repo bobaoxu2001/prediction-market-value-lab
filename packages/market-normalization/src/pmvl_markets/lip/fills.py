@@ -69,9 +69,14 @@ class OrderState:
     #: crediting it from the decision
     decreases: list[tuple[float, float, float]] = field(default_factory=list)
 
+    #: when this order's cancel will land, known as soon as the cancel is scheduled -
+    #: so a narrowed window (THROUGH, FIFO) can close eps before it
+    cancel_lands_at: float = float("inf")
+
     def live(self, t: float, eps: float = 0.0) -> bool:
         """Fillable at t. ``eps`` widens (HEAVY, > 0) or narrows (THROUGH/FIFO, < 0) the window."""
-        return self.live_from - eps <= t < self.fillable_until + eps and self.remaining > 0
+        until = min(self.fillable_until, self.cancel_lands_at) if eps < 0 else self.fillable_until
+        return self.live_from - eps <= t < until + eps and self.remaining > 0
 
     def take(self, qty: float, at: float, kind: str) -> float:
         qty = min(qty, self.remaining)

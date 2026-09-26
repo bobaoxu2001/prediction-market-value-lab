@@ -162,24 +162,25 @@ def _levels(rows: list[list[float]]) -> BookSide:
 
 def load_day(day_dir: Path, *, settlements_path: Path | None = None,
              state_path: Path | None = None) -> DayData:
-    from .store import read_stream
+    from .store import read_checked, stream_ends
 
     day_dir = Path(day_dir)
+    ends = stream_ends(day_dir)
     study = json.loads((day_dir / "study.json").read_text())
     health = json.loads((day_dir / "health.json").read_text()) if (day_dir / "health.json").exists() else {}
     window = (_ts(study["window"]["window_start"]), _ts(study["window"]["window_end"]))
 
     registry = ProgramRegistry()
-    for body in read_stream(day_dir, "programs"):
+    for body in read_checked(day_dir, "programs", ends):
         registry.observe(body.get("rows") or [], float(body["at"]), listing="history")
     meta: dict[str, dict[str, Any]] = {}
-    for body in read_stream(day_dir, "markets"):
+    for body in read_checked(day_dir, "markets", ends):
         meta[body["ticker"]] = body
-    fees = {b["series"]: b for b in read_stream(day_dir, "series")}
+    fees = {b["series"]: b for b in read_checked(day_dir, "series", ends)}
 
     admitted: dict[str, AdmittedPair] = {}
     known = set(registry_series(registry))
-    for body in read_stream(day_dir, "universe"):
+    for body in read_checked(day_dir, "universe", ends):
         if body.get("decision") != "admitted":
             continue
         p = registry.programs.get(body["program_id"])
@@ -200,7 +201,7 @@ def load_day(day_dir: Path, *, settlements_path: Path | None = None,
     current: dict[str, int] = {}
     books: dict[str, _MarketBooks] = {}
     lane_ticks: dict[str, int] = {}
-    for body in read_stream(day_dir, "books"):
+    for body in read_checked(day_dir, "books", ends):
         if not body.get("ok"):
             continue
         lane = body.get("lane", "")
@@ -221,7 +222,7 @@ def load_day(day_dir: Path, *, settlements_path: Path | None = None,
 
     trades: dict[str, list[tuple[float, int, float, bool, bool, str]]] = {}
     global_ids: dict[str, set[str]] = {}
-    for body in read_stream(day_dir, "trades"):
+    for body in read_checked(day_dir, "trades", ends):
         for r in body.get("prints") or []:
             try:
                 row = (_ts(r["created_time"]), int(round(float(r["yes_price_dollars"]) * 100)),
@@ -231,8 +232,8 @@ def load_day(day_dir: Path, *, settlements_path: Path | None = None,
                 continue
             trades.setdefault(r["ticker"], []).append(row)
             global_ids.setdefault(r["ticker"], set()).add(row[5])
-    polls = list(read_stream(day_dir, "tape_polls"))
-    audits = list(read_stream(day_dir, "audit"))
+    polls = list(read_checked(day_dir, "tape_polls", ends))
+    audits = list(read_checked(day_dir, "audit", ends))
     coverage = tape_coverage([p for p in polls if not p.get("ticker")], audits, global_ids)
     coverage_by_ticker: dict[str, TapeCoverage] = {}
     for ticker in sorted({p["ticker"] for p in polls if p.get("ticker")}):
@@ -241,21 +242,28 @@ def load_day(day_dir: Path, *, settlements_path: Path | None = None,
 
     status: dict[str, list[StatusPoint]] = {}
     status_close: dict[str, str] = {}
-    for body in read_stream(day_dir, "status"):
+    for body in read_checked(day_dir, "status", ends):
         ex = body.get("exchange") or {}
         active = ex.get("trading_active")
         exchange = None if active is None or body.get("exchange_error") else bool(active)
         markets = body.get("markets") or {}
         for ticker, m in markets.items():
-            status.setdefault(ticker, []).append(StatusPoint(float(body["at"]), str(m.get("status") or ""), exchange))
             if m.get("close_time"):
                 status_close[ticker] = m["close_time"]
-        # a requested market the poll did not answer for is *unknown*, not open
-        for ticker in body.get("requested") or []:
-            if ticker not in markets:
-                status.setdefault(ticker, []).append(StatusPoint(float(body["at"]), "", exchange))
+        chunks = body.get("chunks")
+        if chunks is None:  # recorded before responses were stamped: the poll's start
+            chunks = [{"requested": body.get("requested") or list(markets), "received_at": body["at"]}]
+        ex_at = float(body.get("exchange_received_at") or body["at"])
+        for chunk in chunks:
+            # a point is known only once both its market answer and the exchange flag are in
+            at = max(float(chunk["received_at"]), ex_at)
+            for ticker in chunk["requested"]:
+                m = markets.get(ticker)
+                # a requested market the poll did not answer for is *unknown*, not open
+                status.setdefault(ticker, []).append(
+                    StatusPoint(at, str(m.get("status") or "") if m else "", exchange))
 
-    offsets = sorted(float(b["offset_s"]) for b in read_stream(day_dir, "clock") if b.get("offset_s") is not None)
+    offsets = sorted(float(b["offset_s"]) for b in read_checked(day_dir, "clock", ends) if b.get("offset_s") is not None)
     clock_offset = offsets[len(offsets) // 2] if offsets else 0.0
     #: without any clock sample the uncertainty is not known to be small
     clock_eps = abs(clock_offset) + 0.05 if offsets else 0.25
