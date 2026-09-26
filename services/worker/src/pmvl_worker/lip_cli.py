@@ -398,6 +398,37 @@ def study_cmd(final: bool = typer.Option(False, "--final", help="The one final l
     console.print(f"[bold]{v.verdict}[/bold]: {v.why}\nwrote {out}")
 
 
+@app.command("close-gates")
+def close_gates(day1: str = typer.Option(..., help="Day 1, YYYY-MM-DD: the first 12:30 UTC window after this.")) -> None:
+    """Record that every gate is closed and fix day 1 (section 8). Refuses unless the
+    pre-flight cadence exists and the code is tagged lip-sim-1.0.0."""
+    from datetime import date
+
+    cadence = FORWARD / "lip-cadence.json"
+    if not cadence.exists():
+        console.print("[red]refused: G5 is open - no artifacts/forward/lip-cadence.json")
+        raise typer.Exit(2)
+    tag = subprocess.run(["git", "-C", str(REPO), "rev-list", "-n", "1", "lip-sim-1.0.0"],
+                         capture_output=True, text=True, timeout=10).stdout.strip()
+    if not tag:
+        console.print("[red]refused: G4 is open - the code is not tagged lip-sim-1.0.0")
+        raise typer.Exit(2)
+    if date.fromisoformat(day1) <= datetime.now(timezone.utc).date() and datetime.now(timezone.utc).hour >= 12:
+        console.print("[red]refused: day 1 must be a window that has not started")
+        raise typer.Exit(2)
+    gates = FORWARD / "lip-gates.json"
+    if gates.exists():
+        console.print(f"[red]refused: {gates} already exists - day 1 is fixed once")
+        raise typer.Exit(2)
+    body = {"day1": day1, "closed_at": datetime.now(timezone.utc).isoformat(),
+            "prereg_commit": _prereg_commit(), "code_tag": "lip-sim-1.0.0", "code_commit": tag,
+            "cadence_sha256": _cadence_sha(),
+            "gates": {"G1": "Amendment 1", "G2": "Amendment 1", "G3": "user, 2026-09-24",
+                      "G4": f"tag lip-sim-1.0.0 at {tag}", "G5": "lip-cadence.json", "G6": "cron line installed"}}
+    gates.write_text(json.dumps(body, indent=2) + "\n")
+    console.print_json(json.dumps(body))
+
+
 @app.command("health")
 def health(day_dir: Path = typer.Argument(..., help="A recorded day directory.")) -> None:
     """Coverage and lane health only. No credit, fills or dollars - ever."""
