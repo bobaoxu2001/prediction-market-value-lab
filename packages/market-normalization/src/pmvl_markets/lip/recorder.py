@@ -25,6 +25,7 @@ from __future__ import annotations
 import asyncio
 import hashlib
 import json
+import math
 import random
 import subprocess
 from dataclasses import dataclass, field
@@ -37,7 +38,7 @@ from ..recording.writer import AppendOnlyLog
 from .http import LaneClient, lane_provider
 from .params import RECORDING, RecordingParams
 from .programs import ProgramRegistry
-from .store import BookEncoder, SegmentWriter
+from .store import BookEncoder, SegmentWriter, write_checkpoint
 from .universe import AdmissionState, AdmittedPair, program_eligible
 from .version import LIP_RECORDER_VERSION, LIP_SIM_VERSION, SAMPLE_SALT
 
@@ -127,6 +128,8 @@ class LaneStats:
     ok: int = 0
     failed: int = 0
     skipped_in_flight: int = 0
+    #: grid ticks that passed while the lane was not running (the machine slept)
+    late_ticks: int = 0
     #: ticks in the quoting window on which this lane had markets to read, and on which
     #: it read them - the counted-day test is on these, at the lane's own cadence
     due_ticks_in_window: int = 0
@@ -199,6 +202,7 @@ class LipRecorder:
                 return self._write_skipped("the wait ran into the maker study's window")
             self.writer = SegmentWriter(self.out_dir)
             self._write_study_json()
+            self._checkpoint()
             self._providers = {
                 "book-A": self.make_provider("book-A", self.params.book_lane_rate, attempts=1),
                 "tape": self.make_provider("tape", self.params.tape_rate, attempts=2),
@@ -230,6 +234,7 @@ class LipRecorder:
             for p in self._providers.values():
                 await p.aclose()
             if hasattr(self, "writer"):
+                self._checkpoint()  # an exception or a cancel still leaves exact ends
                 self.writer.close()
             try:
                 lock.rmdir()
@@ -251,9 +256,18 @@ class LipRecorder:
     async def _stopper(self) -> None:
         # never past the pre-registered drain time, whatever --until asked for
         drain = min(self.stop_at or self.window.drain_at, self.window.drain_at)
+        last = self.clock.now().timestamp()
         while self.clock.now() < drain:
             await self.clock.sleep(min(5.0, max(0.05, (drain - self.clock.now()).total_seconds())))
+            if self.clock.now().timestamp() - last >= self.params.checkpoint_every_s:
+                self._checkpoint()
+                last = self.clock.now().timestamp()
         self._stop.set()
+
+    def _checkpoint(self) -> None:
+        """Every stream's end so far, so a day whose process dies is read up to here
+        (Amendment 3) instead of being unreadable for want of health.json."""
+        write_checkpoint(self.out_dir, dict(self.writer._tails), self.clock.now().timestamp())
 
     def _write_skipped(self, reason: str) -> dict[str, Any]:
         """A day that did not record still exists: its admitted hours enter as zeros."""
@@ -377,18 +391,31 @@ class LipRecorder:
 
     # ------------------------------------------------------------------ book lanes
     async def _book_lane(self, lane: str, index: int) -> None:
+        """One read per tick of the window's own grid (window_start + i x cadence), each
+        sent within the jitter of its tick. A read is credited to the tick it was
+        scheduled for, so the counted-day test does not depend on the sub-second phase
+        the process started at. A lane that wakes more than a tick late - the machine
+        slept - rejoins the grid at the next tick; the ticks in between are misses."""
         rng = random.Random(f"{SAMPLE_SALT}|{self.window.day}|{lane}")
         in_flight: asyncio.Task | None = None
-        next_tick = self.clock.now().timestamp()
+        lo, cadence = self.window.window_start.timestamp(), self.params.book_cadence_s
+        i = math.ceil((self.clock.now().timestamp() - lo) / cadence)
         while not self._stop.is_set():
-            next_tick += self.params.book_cadence_s
+            tick = lo + i * cadence
             jitter = rng.uniform(-self.params.book_jitter_s, self.params.book_jitter_s)
-            await self.clock.sleep(next_tick + jitter - self.clock.now().timestamp())
+            await self.clock.sleep(tick + jitter - self.clock.now().timestamp())
             if self._stop.is_set():
                 break
-            if self.clock.now().timestamp() < self._pause_books_until:
+            now = self.clock.now().timestamp()
+            if now - tick > cadence:
+                rejoin = math.ceil((now - lo) / cadence)
+                self.lanes[lane].late_ticks += rejoin - i
+                i = rejoin
                 continue
-            markets = self.recorded_markets(self.clock.now().timestamp())
+            this, i = i, i + 1
+            if now < self._pause_books_until:
+                continue
+            markets = self.recorded_markets(now)
             size = self.params.book_lane_size
             tickers = markets[index * size:(index + 1) * size]
             if not tickers:
@@ -396,11 +423,11 @@ class LipRecorder:
             if in_flight is not None and not in_flight.done():
                 self.lanes[lane].skipped_in_flight += 1
                 continue
-            in_flight = asyncio.create_task(self._read_books(lane, tickers))
+            in_flight = asyncio.create_task(self._read_books(lane, tickers, this))
         if in_flight is not None:
             await asyncio.gather(in_flight, return_exceptions=True)
 
-    async def _read_books(self, lane: str, tickers: list[str]) -> None:
+    async def _read_books(self, lane: str, tickers: list[str], tick: int | None = None) -> None:
         try:
             self._guard()
         except WindowRefused:
@@ -420,10 +447,9 @@ class LipRecorder:
         sent, received = result.sent_at.timestamp(), result.received_at.timestamp()
         if result.ok:
             stats.ok += 1
-            lo = self.window.window_start.timestamp()
-            if lo <= sent < self.window.window_end.timestamp():
+            if tick is not None and 0 <= tick < self._window_ticks():
                 stats.ok_ticks_in_window += 1
-                self._ok_ticks.setdefault(lane, set()).add(int((sent - lo) // self.params.book_cadence_s))
+                self._ok_ticks.setdefault(lane, set()).add(tick)
         else:
             stats.failed += 1
         targets = {p.market: float(p.target) for p in self.admission.admitted.values()}
@@ -716,13 +742,16 @@ class LipRecorder:
                             "fetched_at": _iso(self.clock.now())})
         (self.out_dir / "registry.json").write_text(json.dumps(self.registry.to_json(), indent=1))
 
+    def _window_ticks(self) -> int:
+        return max(1, int((self.window.window_end - self.window.window_start).total_seconds()
+                          / self.params.book_cadence_s))
+
     def _write_health(self) -> dict[str, Any]:
         book_lanes = {k: v for k, v in self.lanes.items() if k.startswith("book")}
         # ticks in the window at the lane's own cadence; a tick with nothing due is not
         # a failure, a due tick without a successful read is
         lo = self.window.window_start.timestamp()
-        ticks = max(1, int((self.window.window_end - self.window.window_start).total_seconds()
-                           / self.params.book_cadence_s))
+        ticks = self._window_ticks()
         # section 7 as written: a day counts if successful reads cover 80% of the window's
         # ticks. A tick is successful only if every lane with markets due at it read them -
         # a tick the recorder slept through, paused over, or had nothing to read is not

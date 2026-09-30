@@ -90,3 +90,33 @@ problems the fixes introduced. 19 findings, all accepted, with a regression test
 | R17 | regressions | low | `simulator.py:504` | `stop_after` is fixed when the end event is processed, as the latest landing then queued. |
 | R18 | regressions | low | `simulator.py:461` | THROUGH and FIFO are supposed to narrow every fillable window by eps (Amendment 2 item 3), but this only works at the start of the window. |
 | R19 | regressions | low | `replay.py:163` | The cross-day cap is tracked separately per envelope. |
+
+## The third check (2026-09-30)
+
+One more pass over the re-review's fixes, re-running each reproduction against the code and
+then reading the lines those fixes changed. Six findings, each reproduced, all accepted, with a
+regression test for each (`tests/test_lip_thirdcheck.py`, and `tests/test_lip_recorder.py` for
+F1 and F4). All six came from the 19 re-review fixes; four of them would have misled the
+analysis in the strategy's favour or blocked it outright:
+
+- F1: the re-review's counted-day rule (R12) credited reads to the grid second their jittered
+  send landed in, so a day on which every read succeeded scored 0.58-0.76 and did not count for
+  a third of possible process start phases;
+- F3: the exit-charge fix (R11/R13) applied its no-mid rule to every exit, letting HIGH value an
+  ordinary flatten at the bid instead of the mid - half a spread per contract in HIGH's favour.
+  It is likely most of the 7-10% rise in HIGH's MARK_1H between the shakedown's replays of
+  2026-09-26 and 2026-09-30;
+- F4: requiring `health.json` (R-integrity) made a day whose recorder died unreadable, and one
+  such day would have refused every verdict.
+
+| # | severity | where | what was wrong | fix |
+|---|---|---|---|---|
+| F1 | high | `recorder.py` | Reads credited to the grid second of their jittered send; a perfect day could fail the 80% test | Ticks on the window's grid; a read credited to its scheduled tick; a late wake rejoins the grid (Amendment 3.1) |
+| F2 | medium | `valuation.py` | HIGH's fallback mark (last mid) could sit below LOW's (current bid): LOW > HIGH on MARK_1H | HIGH takes the higher of the last mid and the bid (3.2) |
+| F3 | medium | `valuation.py` | HIGH charged a two-sided exit against the bid, not the mid | The mid in both envelopes when there is one; candidates only without (3.2) |
+| F4 | medium | `reader.py` / `store.py` | A day without `health.json` could never be read, and blocked the final analysis | Stream ends checkpointed each minute; such a day read to its checkpoint, the rest unobserved (3.3) |
+| F5 | low | `simulator.py` | The post-end loop could stop before a late placement landed, dropping its fills | Drain due landings before testing for the end (3.5) |
+| F6 | low | `simulator.py` | The gate read an unknown latest poll as closed and sat out the hour | The latest known status only; unknown stops nothing (3.4) |
+
+Found while fixing them: `close-gates` would have accepted a day 1 already in the past when run
+before 12:00 UTC, and a study with nothing admitted crashed the bootstrap. Both fixed and tested.

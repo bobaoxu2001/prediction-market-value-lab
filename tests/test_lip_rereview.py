@@ -44,13 +44,32 @@ def test_r1_a_truncated_tail_fails_to_load(tmp_path):
 
 
 def test_r1_a_recorded_day_without_health_cannot_load(tmp_path):
+    """Neither closing ends (health.json) nor a running checkpoint (ends.json, Amendment 3):
+    the tails cannot be proven whole, so the day does not load. With only the checkpoint
+    it loads as a verified prefix (test_lip_recorder, the died-recorder test)."""
     from tests.test_lip_recorder import START, FakeVenue, VirtualClock, make_recorder
 
     clock = VirtualClock(START, scale=0.002)
     asyncio.run(make_recorder(tmp_path, clock, FakeVenue(clock), stop_minutes=3.0).run())
     (tmp_path / "day" / "health.json").unlink()
+    (tmp_path / "day" / "ends.json").unlink()
     with pytest.raises(LogIntegrityError):
         load_day(tmp_path / "day")
+
+
+def test_r1_a_checkpoint_that_claims_more_than_the_disk_holds_fails(tmp_path):
+    from tests.test_lip_recorder import START, FakeVenue, VirtualClock, make_recorder
+
+    clock = VirtualClock(START, scale=0.002)
+    asyncio.run(make_recorder(tmp_path, clock, FakeVenue(clock), stop_minutes=3.0).run())
+    day = tmp_path / "day"
+    (day / "health.json").unlink()
+    ends = json.loads((day / "ends.json").read_text())
+    digest, count = ends["streams"]["books"]
+    ends["streams"]["books"] = [digest, count + 5]
+    (day / "ends.json").write_text(json.dumps(ends))
+    with pytest.raises(LogIntegrityError):
+        load_day(day)
 
 
 def _one_sided_exit_day(seed: int):
@@ -253,3 +272,13 @@ def test_close_gates_accepts_only_a_day_1_whose_window_is_still_ahead():
     assert _day1_ahead(date(2026, 10, 1), morning)
     assert not _day1_ahead(date(2026, 9, 30), datetime(2026, 9, 30, 12, 25, tzinfo=UTC))
     assert _day1_ahead(date(2026, 10, 1), datetime(2026, 9, 30, 23, 0, tzinfo=UTC))
+
+
+def test_a_study_with_no_cells_is_insufficient_evidence_not_a_crash():
+    """Third check (seen running F4's reproduction): a study in which nothing was ever
+    admitted reached the bootstrap with no dates and divided by zero."""
+    from pmvl_markets.lip.study import decide
+
+    v = decide([], policies=["J1", "I1", "J5", "I5"], counted_days=0, final=True,
+               versions={"lip-sim-1.0.0"}, gates_closed=True, isolation_ok=True)
+    assert v.verdict == "INSUFFICIENT_EVIDENCE"

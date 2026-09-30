@@ -71,4 +71,7 @@ def day_health(day_dir: Path, params: RecordingParams = RECORDING) -> dict[str, 
         "tape_polls_complete": complete,
         "rate_limited": {k: v.get("rate_limited", 0) for k, v in (recorded.get("lanes") or {}).items()},
         "storage_bytes": storage,
+        #: the recorder died before closing the day: read to its last checkpoint only
+        "crashed": bool(ends.prefix),
+        "verified_until": ends.at,
     }

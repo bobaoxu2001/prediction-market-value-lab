@@ -18,6 +18,7 @@ from __future__ import annotations
 
 import gzip
 import json
+import os
 import shutil
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
@@ -240,13 +241,17 @@ def _raw_rows(path: Path, *, tolerate_torn_tail: bool = False) -> Iterator[dict[
 
 
 def read_stream(day_dir: Path, stream: str, *, verify: bool = True,
-                expect_end: tuple[int, str] | None = None) -> Iterator[dict[str, Any]]:
+                expect_end: tuple[int, str] | None = None, prefix: bool = False) -> Iterator[dict[str, Any]]:
     """Every body of one stream across all segments, with the chain verified end to end.
 
     ``expect_end`` = (entries, final digest) as the recorder wrote it into health.json:
-    a stream whose tail was cut short fails here instead of reading as complete.
+    a stream whose tail was cut short fails here instead of reading as complete. With
+    ``prefix`` the stream stops at that entry - which must carry that digest - and any
+    later lines are not read.
     """
     prev, count = GENESIS, 0
+    if prefix and expect_end is not None and int(expect_end[0]) == 0:
+        return
     segments = sorted(p for p in Path(day_dir).glob("segment-*") if p.is_dir())
     newest = segments[-1] if segments else None
     for seg in segments:
@@ -266,32 +271,76 @@ def read_stream(day_dir: Path, stream: str, *, verify: bool = True,
                 prev = row["digest"]
                 count += 1
                 yield row["body"]
+                if prefix and expect_end is not None and count == int(expect_end[0]):
+                    if prev != str(expect_end[1]):
+                        raise LogIntegrityError(f"{day_dir}/{stream}: entry {count} does not carry the "
+                                                f"checkpoint's digest - the log was changed after it")
+                    return
     if verify and expect_end is not None and (count, prev) != (int(expect_end[0]), str(expect_end[1])):
         raise LogIntegrityError(f"{day_dir}/{stream}: chain ends at entry {count}, "
                                 f"the recorder closed it at {expect_end[0]} - the tail is missing")
 
 
-def stream_ends(day_dir: Path, *, required: bool = True) -> dict[str, tuple[int, str]]:
-    """{stream: (entries, final digest)} as the recorder closed each one in health.json.
+CHECKPOINT = "ends.json"
 
-    A recorded day without them cannot prove its tails are whole: with ``required`` that
+
+class StreamEnds(dict):
+    """{stream: (entries, digest)}. ``prefix`` marks ends taken from the recorder's last
+    running checkpoint rather than from its closing health.json: the day's recorder died
+    (power loss, a kill), so each stream is read up to exactly that point, verified,
+    and whatever was written after it is left out as unverified."""
+
+    prefix: bool = False
+    at: float | None = None
+
+
+def write_checkpoint(day_dir: Path, tails: dict[str, tuple[str, int]], at: float) -> None:
+    """Atomically record every stream's current end. Lines are fsynced as they are
+    appended, so an end recorded here is on disk."""
+    target = Path(day_dir) / CHECKPOINT
+    tmp = target.with_suffix(".tmp")
+    with tmp.open("w") as fh:
+        fh.write(json.dumps({"at": at, "streams": {k: list(v) for k, v in tails.items()}}) + "\n")
+        fh.flush()
+        os.fsync(fh.fileno())
+    os.replace(tmp, target)
+
+
+def stream_ends(day_dir: Path, *, required: bool = True) -> StreamEnds:
+    """{stream: (entries, final digest)} as the recorder closed each one in health.json -
+    or, for a day whose recorder died before closing it, as its last checkpoint left them.
+
+    A recorded day with neither cannot prove its tails are whole: with ``required`` that
     is an integrity failure rather than a day read as complete.
     """
     health = Path(day_dir) / "health.json"
     if not health.exists():
+        checkpoint = Path(day_dir) / CHECKPOINT
+        if checkpoint.exists():
+            body = json.loads(checkpoint.read_text())
+            ends = StreamEnds({name: (int(v[1]), str(v[0])) for name, v in body["streams"].items()})
+            ends.prefix, ends.at = True, float(body["at"])
+            return ends
         if required:
             raise LogIntegrityError(f"{day_dir}: no health.json - the streams' recorded ends are unknown")
-        return {}
+        return StreamEnds()
     streams = json.loads(health.read_text()).get("streams")
     if streams is None:
         if required:
             raise LogIntegrityError(f"{day_dir}: health.json records no stream ends")
-        return {}
-    return {name: (int(v[1]), str(v[0])) for name, v in streams.items()}
+        return StreamEnds()
+    return StreamEnds({name: (int(v[1]), str(v[0])) for name, v in streams.items()})
 
 
 def read_checked(day_dir: Path, stream: str, ends: dict[str, tuple[int, str]]) -> Iterator[dict[str, Any]]:
-    """read_stream, held to the recorded end; a stream with files but no recorded end fails."""
+    """read_stream, held to the recorded end; a stream with files but no recorded end fails.
+
+    Held to a checkpoint (``ends.prefix``), a stream is read to that entry and no further,
+    and a stream first written after the checkpoint reads as empty.
+    """
+    prefix = bool(getattr(ends, "prefix", False))
     if stream not in ends and any(Path(day_dir).glob(f"segment-*/{stream}.jsonl*")) and ends:
+        if prefix:
+            return iter(())
         raise LogIntegrityError(f"{day_dir}/{stream}: written, but its end was never recorded")
-    return read_stream(day_dir, stream, expect_end=ends.get(stream))
+    return read_stream(day_dir, stream, expect_end=ends.get(stream), prefix=prefix)

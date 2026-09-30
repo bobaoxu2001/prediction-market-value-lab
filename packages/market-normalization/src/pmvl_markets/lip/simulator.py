@@ -135,12 +135,29 @@ def _is_open(md: MarketDay, t: float, low: bool) -> bool:
 
 
 def _known_open(md: MarketDay, t: float) -> bool:
-    """A decision's open test: the latest poll at or before t only - never a later one."""
-    before, _ = md.status.bracketing(t)
-    if before is None:
+    """A decision's open test, from polls at or before t only - never a later one.
+
+    An unknown answer stops nothing (Amendment 2, item 4; Amendment 3, F6): a failed poll,
+    a market the poll did not answer, or no poll yet leaves the gate to the books. Only
+    the latest *known* market status being non-open, or the exchange known inactive,
+    closes it. Credit is a separate test: LOW still needs both bracketing polls.
+    """
+    pts = md.status.points
+    i = bisect_right([p.at for p in pts], t)
+    market: str | None = None
+    exchange: bool | None = None
+    for p in reversed(pts[:i]):
+        if market is None and p.market_status != "":
+            market = p.market_status
+        if exchange is None and p.exchange_active is not None:
+            exchange = p.exchange_active
+        if market is not None and exchange is not None:
+            break
+    if market is not None and market.lower() not in OPEN_STATUSES:
         return False
-    return (before.market_status.lower() in OPEN_STATUSES and before.exchange_active is not False
-            and t < md.close_time)
+    if exchange is False:
+        return False
+    return t < md.close_time
 
 
 def simulate(md: MarketDay, policy: LipPolicy, scenario: FillScenario, regime: Regime, *,
@@ -469,11 +486,14 @@ def simulate(md: MarketDay, policy: LipPolicy, scenario: FillScenario, regime: R
         return not any(o.fillable_until + max(0.0, live_eps) > t and o.remaining > 0 for o in path.orders)
 
     for t, _, _, (kind, obj) in events:
-        if ended and t > stop_after and settled(t):
-            break
         # HEAVY treats an order as able to fill from eps before it landed (the clock may
         # have put the print early); its credit still starts at the landing itself
         drain_internal(t + max(0.0, live_eps))
+        # after the end, stop once nothing can fill - tested only after the landings due
+        # by now are drained, so a placement that lands after the end is live, with its
+        # own cancel scheduled, before the test can call the day settled (F5)
+        if ended and t > stop_after and settled(t):
+            break
         if (not ended and last_book is not None and t - last_book_at > params.dead_man_s
                 and (resting[LipSide.YES] or resting[LipSide.NO])):
             queue.mark_sync(last_book_at + params.dead_man_s)  # every market's lane died at once

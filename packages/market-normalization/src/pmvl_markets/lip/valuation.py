@@ -92,14 +92,15 @@ def _mark(md: MarketDay, side: LipSide, t: float, *, low: bool, params: SimParam
 
 def _fallback(md: MarketDay, side: LipSide, at: float, low: bool) -> float:
     """No two-sided mid where one was needed. LOW: the held side's best bid (0 if none) -
-    the lowest a holder could get. HIGH: the last two-sided mid, then the bid."""
+    the lowest a holder could get. HIGH: the higher of the last two-sided mid and that
+    same bid, so HIGH's mark is never below LOW's (Amendment 3, F2)."""
     book = md.books.before(at)
-    if not low:
-        m = _last_mid(md, side, at)
-        if m is not None:
-            return m
     bid = book.side(side).best if book is not None else None
-    return float(bid) if bid is not None else 0.0
+    held = float(bid) if bid is not None else 0.0
+    if low:
+        return held
+    m = _last_mid(md, side, at)
+    return held if m is None else max(m, held)
 
 
 def mark_1h(path: SimPath, md: MarketDay, *, low: bool, params: SimParams = SIM) -> float:
@@ -128,11 +129,13 @@ def _last_mid(md: MarketDay, side: LipSide, at: float) -> float | None:
 def _exit_charge(path: SimPath, md: MarketDay, marked: dict[LipSide, list[float]], *, low: bool) -> float:
     """Flattening the residual, charged against what it was worth.
 
-    charge = proceeds - qty x reference - fee, and for a charge a *higher* reference is
-    the pessimistic one. The candidates are the reference book's mid (or its held-side
-    bid), the walk book's held-side bid and the last two-sided mid. LOW takes the highest
-    of them - and never less than the sale's own average price, so a charge is never a
-    gain - and HIGH the lowest. A remainder no bid could take is worth nothing in LOW (the
+    charge = proceeds - qty x reference - fee (section 6). Where the reference book has a
+    two-sided mid, the reference is that mid in both envelopes. Only where it has none
+    (Amendment 2, item 11; Amendment 3, F3) is the reference chosen from candidates - the
+    reference book's held-side bid, the walk book's held-side bid and the last two-sided
+    mid - and for a charge a *higher* reference is the pessimistic one: LOW takes the
+    highest of them, never less than the sale's own average price, so a charge is never
+    a gain; HIGH the lowest. A remainder no bid could take is worth nothing in LOW (the
     value its fills' marks gave it is taken back) and nets to zero in HIGH.
     """
     charge = 0.0
@@ -144,12 +147,12 @@ def _exit_charge(path: SimPath, md: MarketDay, marked: dict[LipSide, list[float]
             continue
         candidates = []
         ref_book = md.books.before(at)
-        if ref_book is not None:
-            m = side_mid(ref_book, side)
-            if m is not None:
-                candidates.append(m)
-            elif ref_book.side(side).best is not None:
-                candidates.append(float(ref_book.side(side).best))
+        mid = side_mid(ref_book, side) if ref_book is not None else None
+        if mid is not None:
+            charge += proceeds - qty * mid / 100 - fee
+            continue
+        if ref_book is not None and ref_book.side(side).best is not None:
+            candidates.append(float(ref_book.side(side).best))
         walk_book = next((b for b in md.books.snapshots if b.received_at >= at), None)
         if walk_book is not None and walk_book.side(side).best is not None:
             candidates.append(float(walk_book.side(side).best))

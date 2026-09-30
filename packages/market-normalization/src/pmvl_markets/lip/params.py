@@ -82,6 +82,8 @@ class RecordingParams:
     backoff_s: float = 600.0
     #: a counted day needs successful book responses on this share of the window's ticks
     counted_day_share: float = 0.80
+    #: how often the recorder writes every stream's end to ends.json (Amendment 3)
+    checkpoint_every_s: float = 60.0
     window_ticks: int = 44_100
 
 

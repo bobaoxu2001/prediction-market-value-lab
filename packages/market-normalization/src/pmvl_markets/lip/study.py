@@ -74,6 +74,8 @@ def pigeonhole_bootstrap(cells: list[Cell], series: list[tuple], *, draws: int =
                          seed: int = SIM.seed) -> np.ndarray:
     """theta* for every series, all series sharing the same draws. Shape (series, draws)."""
     dates, fams, h, v = _matrices(cells, series)
+    if not dates or not fams:  # nothing admitted all study: no draw has a denominator
+        return np.full((len(series), draws), np.nan)
     rng = np.random.default_rng(seed)
     cd = rng.multinomial(len(dates), [1 / len(dates)] * len(dates), size=draws).astype(float)
     cf = rng.multinomial(len(fams), [1 / len(fams)] * len(fams), size=draws).astype(float)
@@ -137,7 +139,8 @@ def decide(cells: list[Cell], *, policies: list[str], counted_days: int, final: 
         pre.append("maker isolation breached")
     series = [(p, c, e) for p in policies for c in COMBOS for e in ENVELOPES]
     boot = pigeonhole_bootstrap(cells, series, draws=params.bootstrap_draws, seed=params.seed)
-    se = {s: float(np.nanstd(boot[i], ddof=1)) for i, s in enumerate(series)}
+    se = {s: float(np.nanstd(boot[i], ddof=1)) if np.isfinite(boot[i]).sum() > 1 else float("nan")
+          for i, s in enumerate(series)}
     rows = []
     positive_policies, all_negative = [], True
     for p in policies:

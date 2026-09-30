@@ -259,7 +259,110 @@ def test_a_wake_from_sleep_does_not_burst_the_missed_ticks(tmp_path):
     lo, hi = (START + timedelta(seconds=60)).timestamp(), (START + timedelta(seconds=660)).timestamp()
     assert not any(lo < b["sent_at"] < hi for b in read_stream(tmp_path / "day", "books")), \
         "nothing is stamped inside the time the machine slept"
+    assert health["lanes"]["book-A"]["late_ticks"] >= 590, "the slept ticks are counted as missed"
     assert health["streams"]
+
+
+class _VirtualSelector(__import__("selectors").DefaultSelector):
+    loop = None
+
+    def select(self, timeout=None):
+        if timeout is not None and timeout > 0:
+            self.loop._vt += timeout
+        return super().select(0)
+
+
+class VirtualLoop(asyncio.SelectorEventLoop):
+    """An event loop whose waits advance its clock instead of blocking: an hour in ms."""
+
+    def __init__(self) -> None:
+        sel = _VirtualSelector()
+        super().__init__(sel)
+        sel.loop = self
+        self._vt = 1_000_000.0
+
+    def time(self) -> float:
+        return self._vt
+
+
+def run_virtual(coro):
+    loop = VirtualLoop()
+    try:
+        return loop.run_until_complete(coro)
+    finally:
+        loop.close()
+
+
+@pytest.mark.parametrize("lanes", [1, 2])
+@pytest.mark.parametrize("phase", [0.0, 0.05, 0.5, 0.95])
+def test_a_day_on_which_every_read_succeeds_scores_every_tick(tmp_path, phase, lanes):
+    """Third check, F1: reads were credited to the grid second their jittered send landed
+    in, so two could share a second and leave the next empty - a perfect day scored 0.75
+    or 0.58 and did not count, depending on the sub-second phase the process started at."""
+    from dataclasses import replace
+
+    start = datetime(2026, 9, 25, 12, 29, 50, tzinfo=UTC) + timedelta(seconds=phase)
+
+    async def main():
+        clock = VirtualClock(start, scale=1.0)
+        venue = FakeVenue(clock)
+        venue.programs.append(prow("p4", "KXFOO-D"))
+        rec = make_recorder(tmp_path, clock, venue, stop_minutes=0)
+        rec.stop_at = start + timedelta(minutes=10)
+        if lanes == 2:
+            rec.params = replace(rec.params, book_lane_size=1)
+        await rec.run()
+        return rec
+
+    rec = run_virtual(main())
+    last = int((rec.stop_at - rec.window.window_start).total_seconds()) - 2
+    for name in ("book-A", "book-B")[:lanes]:
+        missing = set(range(0, last)) - rec._ok_ticks.get(name, set())
+        assert not missing, f"{name}: {len(missing)} of {last} ticks unscored, e.g. {sorted(missing)[:5]}"
+
+
+def test_a_day_whose_recorder_died_is_read_to_its_last_checkpoint(tmp_path):
+    """Third check, F4: health.json is written only when the day closes, and the reader
+    required it - a recorder killed mid-window (power loss, a kill) left a day that could
+    never be replayed, and study --final refused every verdict. The recorder now writes
+    every stream's end each minute; such a day is read to that point, verified, and the
+    rest of its window is unobserved."""
+    from pmvl_markets.lip.health import day_health
+    from pmvl_markets.lip.replay import replay_day
+    from pmvl_markets.lip.store import read_checked, stream_ends
+
+    captured = {}
+
+    async def main():
+        clock = VirtualClock(START, scale=1.0)
+        rec = make_recorder(tmp_path, clock, FakeVenue(clock), stop_minutes=0)
+        rec.stop_at, rec.shakedown = None, False
+        task = asyncio.create_task(rec.run())
+        await asyncio.sleep(15 * 60)
+        captured["ends"] = (tmp_path / "day" / "ends.json").read_text()
+        await asyncio.sleep(3 * 60)
+        task.cancel()
+        with pytest.raises(asyncio.CancelledError):
+            await task
+
+    run_virtual(main())
+    day = tmp_path / "day"
+    assert not (day / "health.json").exists()
+    # a kill leaves no closing checkpoint: put back the last periodic one
+    (day / "ends.json").write_text(captured["ends"])
+    at = json.loads(captured["ends"])["at"]
+    ends = stream_ends(day)
+    assert ends.prefix and ends.at == at
+    books = list(read_checked(day, "books", ends))
+    assert books and max(b["sent_at"] for b in books) <= at
+    assert len(list(read_stream(day, "books"))) > len(books), "lines after the checkpoint are left out"
+
+    assert [p.market for p in load_day(day, state_path=tmp_path / "state.json").pairs] == ["KXFOO-A"]
+    results = replay_day(day, state_path=tmp_path / "state.json", workers=1)
+    assert [r["market"] for r in results] == ["KXFOO-A"]
+    health = day_health(day)
+    assert health["crashed"] is True and health["verified_until"] == at
+    assert health["counted_day"] is False, "15 minutes of a 12-hour window"
 
 # ------------------------------------------------------------------ an evening against a fake venue
 @pytest.fixture(scope="module")

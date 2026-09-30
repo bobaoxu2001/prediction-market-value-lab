@@ -286,6 +286,17 @@ def programs_paid() -> None:
     console.print(f"{len(admitted)} admitted programs; {len(rows)} paid_out/closed rows appended")
 
 
+def _day_status(day_dir: Path) -> dict:
+    """health.json as the recorder closed the day - or, for a day whose recorder died,
+    the outcome-blind health of what it verifiably recorded up to its last checkpoint."""
+    health = day_dir / "health.json"
+    if health.exists():
+        return json.loads(health.read_text())
+    if (day_dir / "study.json").exists() and (day_dir / "ends.json").exists():
+        return day_health(day_dir)
+    return {}
+
+
 def _calendar():
     """(day 1, last day) from lip-gates.json: day 1 through the 20th counted day or day 1
     + 29, whichever comes first (section 7). None before the gates are recorded."""
@@ -301,8 +312,7 @@ def _calendar():
     counted, empty_run, d = 0, 0, day1
     while d <= last:
         day_dir = FORWARD / "lip-daily" / d.isoformat()
-        health = day_dir / "health.json"
-        body = json.loads(health.read_text()) if health.exists() else {}
+        body = _day_status(day_dir)
         if body.get("counted_day"):
             counted += 1
             if counted == SIM.min_counted_days:
@@ -369,8 +379,7 @@ def study_cmd(final: bool = typer.Option(False, "--final", help="The one final l
         if study.get("tag") != "study" or study.get("recorder_version") != "lip-1.0.0":
             problems.append(f"{d}: tag {study.get('tag')!r} / recorder {study.get('recorder_version')!r}")
         versions.add(f"recorder:{study.get('recorder_version')}")
-        health_file = day_dir / "health.json"
-        if health_file.exists() and json.loads(health_file.read_text()).get("counted_day"):
+        if _day_status(day_dir).get("counted_day"):
             counted += 1
         if study.get("skipped"):
             results.extend(skipped_day_results(study, state))

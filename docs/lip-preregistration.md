@@ -153,6 +153,40 @@ or replaces a mechanism with one that is at least as strict against the strategy
 The adversarial review that led to these (35 reproduced findings) and the re-review of its fixes
 (19 more) are recorded in `docs/lip-review.md` and are part of gate G4.
 
+## Amendment 3 (2026-09-30, before day 1): the third check
+
+Recorded before any study data exists: day 1 has not been fixed and no study day has been
+recorded. A third check of the code (six reproduced findings, `docs/lip-review.md`) changed the
+following. Where an item of Amendment 2 is named, this replaces its mechanism; its rule stands.
+
+1. **Counted-day ticks (Amendment 2, item 6).** Each book lane reads on the window's own grid,
+   window start + *i* x cadence, sending within the jitter of its tick, and a successful read is
+   credited to the tick it was scheduled for. A lane that wakes more than one tick late - the
+   machine slept - rejoins the grid at the next tick, and the ticks in between are misses. (Before,
+   a read was credited to the grid second its jittered send fell in, and a day on which every
+   read succeeded could score 58-76% for some sub-second start phases.)
+2. **Exit valuation (item 11).** Where the exit's reference book has a two-sided mid, the charge
+   is proceeds - |N| x that mid - fee in both envelopes, as section 6 states; the candidate rule
+   of item 11 applies only where it has none. HIGH's fallback mark is the higher of the last
+   two-sided mid and the held side's current best bid, so HIGH's mark is never below LOW's.
+3. **A day whose recorder died (item 12).** The recorder writes every stream's entry count and
+   digest to `ends.json` each minute and on any exit it survives. A recorded day with no
+   `health.json` is read up to its last checkpoint, each stream verified to exactly that entry;
+   whatever was written after it is left out as unverified, and the rest of the window is
+   unobserved - zeros in the denominator, like a slept-through gap. Whether it is a counted day
+   is computed from its verified books by the outcome-blind health report. A day with neither
+   file remains an integrity failure.
+4. **Status at the gate (item 4).** A decision - including the gate's - reads the latest *known*
+   market status and exchange flag at or before its time. A failed poll, an unanswered market or
+   no poll yet does not close the gate; only a known non-open status or a known inactive exchange
+   does. LOW's credit still needs both bracketing polls known and open.
+5. **After the end.** The replay drains every landing due by an event before it tests whether
+   the day is settled, so a placement that lands after the end is live, with its own cancel.
+6. **Operations.** `close-gates` accepts day 1 only while its 12:25 UTC admission is still ahead.
+   A study in which nothing was admitted is INSUFFICIENT_EVIDENCE. The cron script runs the
+   recorder under `caffeinate -i -s`; a lid-close sleep on battery is not something a process
+   can prevent, and the runbook says so.
+
 ---
 
 ## 1. Scoring rule as implemented
