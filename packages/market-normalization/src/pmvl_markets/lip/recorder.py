@@ -317,7 +317,7 @@ class LipRecorder:
         (Amendment 3) instead of being unreadable for want of health.json."""
         at = self.clock.now().timestamp()
         try:
-            write_checkpoint(self.out_dir, dict(self.writer._tails), at)
+            write_checkpoint(self.out_dir, dict(self.writer._tails), at, due=self._due_runs(at))
         except OSError:
             return  # best effort: the next minute tries again, and a failure here must never
             # keep a segment open, a lock held, or the recording from going on
@@ -865,23 +865,16 @@ class LipRecorder:
                             "fetched_at": _iso(self.clock.now())})
         (self.out_dir / "registry.json").write_text(json.dumps(self.registry.to_json(), indent=1))
 
-    def _window_ticks(self) -> int:
-        return max(1, int((self.window.window_end - self.window.window_start).total_seconds()
-                          / self.params.book_cadence_s))
+    def _book_lane_names(self) -> list[str]:
+        return [n for n in ("book-A", "book-B") if n in self.lanes]
 
-    def _write_health(self) -> dict[str, Any]:
-        book_lanes = {k: v for k, v in self.lanes.items() if k.startswith("book")}
-        # ticks in the window at the lane's own cadence; a tick with nothing due is not
-        # a failure, a due tick without a successful read is
-        lo = self.window.window_start.timestamp()
-        ticks = self._window_ticks()
-        # section 7 as written: a day counts if successful reads cover 80% of the window's
-        # ticks. A tick is successful only if every lane with markets due at it read them -
-        # a tick the recorder slept through, paused over, or had nothing to read is not
-        size = self.params.book_lane_size
-        ok_ticks = due_ticks = 0
-        lane_names = [n for n in ("book-A", "book-B") if n in book_lanes]
-        # how many markets were due at each tick, by one sweep over the pairs' intervals
+    def _due_lanes(self, upto: int):
+        """(tick, number of book lanes due) for window ticks 0..upto-1. A lane is due when it
+        had admitted markets to read (Amendment 2 item 6): the markets live at the tick, by
+        one sweep over the pairs' intervals, fill the lanes in order, book_lane_size each.
+        The one definition of "due" - the closing health and every checkpoint use it."""
+        lo, cadence = self.window.window_start.timestamp(), self.params.book_cadence_s
+        size, n_lanes = self.params.book_lane_size, len(self._book_lane_names())
         spans: dict[str, tuple[float, float]] = {}
         for pair in self.admission.admitted.values():
             a, b = pair.admitted_at, self._participation_end(pair) + self.params.mark_tail_s
@@ -889,19 +882,53 @@ class LipRecorder:
             spans[pair.market] = (min(a, old_span[0]), max(b, old_span[1])) if old_span else (a, b)
         edges = sorted([(a, 1) for a, _ in spans.values()] + [(b, -1) for _, b in spans.values()])
         live, k = 0, 0
-        cap = len(lane_names) * size
-        #: runs of due ticks without a successful read, [first, last] - for diagnosis only;
-        #: the counted-day test is the share below
-        gaps: list[list[int]] = []
-        for i in range(ticks):
-            t = lo + i * self.params.book_cadence_s
+        cap = n_lanes * size
+        for i in range(upto):
+            t = lo + i * cadence
             while k < len(edges) and edges[k][0] <= t:
                 live += edges[k][1]
                 k += 1
             n = min(live, cap)
-            due = [name for j, name in enumerate(lane_names) if n > j * size]
-            if not due:
+            yield i, sum(1 for j in range(n_lanes) if n > j * size)
+
+    def _due_runs(self, at: float) -> dict[str, Any]:
+        """The due lanes of every tick a verified read could belong to by ``at`` - one sent up
+        to the jitter early - run-length encoded as [first, last, lanes due], zeros left out.
+        Stored in each checkpoint so a day whose recorder dies is judged by the same rule
+        as one that closed (Amendment 3.3)."""
+        lo, cadence = self.window.window_start.timestamp(), self.params.book_cadence_s
+        bound = min(self._window_ticks(), max(0, math.floor((at + self.params.book_jitter_s - lo) / cadence) + 1))
+        runs: list[list[int]] = []
+        for i, n_due in self._due_lanes(bound):
+            if not n_due:
                 continue
+            if runs and runs[-1][1] == i - 1 and runs[-1][2] == n_due:
+                runs[-1][1] = i
+            else:
+                runs.append([i, i, n_due])
+        return {"lanes": self._book_lane_names(), "cadence_s": cadence, "window_ticks": self._window_ticks(),
+                "bound": bound, "runs": runs}
+
+    def _window_ticks(self) -> int:
+        return max(1, int((self.window.window_end - self.window.window_start).total_seconds()
+                          / self.params.book_cadence_s))
+
+    def _write_health(self) -> dict[str, Any]:
+        # ticks in the window at the lane's own cadence; a tick with nothing due is not
+        # a failure, a due tick without a successful read is
+        ticks = self._window_ticks()
+        # section 7 as written: a day counts if successful reads cover 80% of the window's
+        # ticks. A tick is successful only if every lane with markets due at it read them -
+        # a tick the recorder slept through, paused over, or had nothing to read is not
+        ok_ticks = due_ticks = 0
+        lane_names = self._book_lane_names()
+        #: runs of due ticks without a successful read, [first, last] - for diagnosis only;
+        #: the counted-day test is the share below
+        gaps: list[list[int]] = []
+        for i, n_due in self._due_lanes(ticks):
+            if not n_due:
+                continue
+            due = lane_names[:n_due]
             due_ticks += 1
             if all(i in self._ok_ticks.get(name, set()) for name in due):
                 ok_ticks += 1

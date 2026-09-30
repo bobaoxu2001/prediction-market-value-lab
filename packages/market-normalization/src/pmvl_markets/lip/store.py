@@ -288,19 +288,27 @@ class StreamEnds(dict):
     """{stream: (entries, digest)}. ``prefix`` marks ends taken from the recorder's last
     running checkpoint rather than from its closing health.json: the day's recorder died
     (power loss, a kill), so each stream is read up to exactly that point, verified,
-    and whatever was written after it is left out as unverified."""
+    and whatever was written after it is left out as unverified. ``known`` is False only
+    when neither file exists (``required=False``); ``due`` is the checkpoint's record of
+    which book lanes were due at each tick, for the counted-day rule."""
 
     prefix: bool = False
+    known: bool = False
     at: float | None = None
+    due: dict | None = None
 
 
-def write_checkpoint(day_dir: Path, tails: dict[str, tuple[str, int]], at: float) -> None:
+def write_checkpoint(day_dir: Path, tails: dict[str, tuple[str, int]], at: float,
+                     due: dict | None = None) -> None:
     """Atomically record every stream's current end. Lines are fsynced as they are
     appended, so an end recorded here is on disk."""
     target = Path(day_dir) / CHECKPOINT
     tmp = target.with_suffix(".tmp")
+    body: dict[str, Any] = {"at": at, "streams": {k: list(v) for k, v in tails.items()}}
+    if due is not None:
+        body["due"] = due
     with tmp.open("w") as fh:
-        fh.write(json.dumps({"at": at, "streams": {k: list(v) for k, v in tails.items()}}) + "\n")
+        fh.write(json.dumps(body) + "\n")
         fh.flush()
         os.fsync(fh.fileno())
     os.replace(tmp, target)
@@ -319,7 +327,7 @@ def stream_ends(day_dir: Path, *, required: bool = True) -> StreamEnds:
         if checkpoint.exists():
             body = json.loads(checkpoint.read_text())
             ends = StreamEnds({name: (int(v[1]), str(v[0])) for name, v in body["streams"].items()})
-            ends.prefix, ends.at = True, float(body["at"])
+            ends.prefix, ends.known, ends.at, ends.due = True, True, float(body["at"]), body.get("due")
             return ends
         if required:
             raise LogIntegrityError(f"{day_dir}: no health.json - the streams' recorded ends are unknown")
@@ -329,7 +337,9 @@ def stream_ends(day_dir: Path, *, required: bool = True) -> StreamEnds:
         if required:
             raise LogIntegrityError(f"{day_dir}: health.json records no stream ends")
         return StreamEnds()
-    return StreamEnds({name: (int(v[1]), str(v[0])) for name, v in streams.items()})
+    ends = StreamEnds({name: (int(v[1]), str(v[0])) for name, v in streams.items()})
+    ends.known = True
+    return ends
 
 
 def read_checked(day_dir: Path, stream: str, ends: dict[str, tuple[int, str]]) -> Iterator[dict[str, Any]]:
@@ -339,8 +349,12 @@ def read_checked(day_dir: Path, stream: str, ends: dict[str, tuple[int, str]]) -
     and a stream first written after the checkpoint reads as empty.
     """
     prefix = bool(getattr(ends, "prefix", False))
-    if stream not in ends and any(Path(day_dir).glob(f"segment-*/{stream}.jsonl*")) and ends:
+    if stream not in ends:
         if prefix:
+            # the checkpoint certifies exactly the streams it lists, to exactly their ends;
+            # a stream it does not list - every stream, when it is the empty first one -
+            # has nothing verified, whatever is on disk (Amendment 3.3)
             return iter(())
-        raise LogIntegrityError(f"{day_dir}/{stream}: written, but its end was never recorded")
+        if (getattr(ends, "known", False) or ends) and any(Path(day_dir).glob(f"segment-*/{stream}.jsonl*")):
+            raise LogIntegrityError(f"{day_dir}/{stream}: written, but its end was never recorded")
     return read_stream(day_dir, stream, expect_end=ends.get(stream), prefix=prefix)

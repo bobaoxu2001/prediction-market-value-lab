@@ -113,8 +113,16 @@ def mark_1h(path: SimPath, md: MarketDay, *, low: bool, params: SimParams = SIM)
         marked[f.side][0] += f.qty
         marked[f.side][1] += f.qty * m
     value -= fill_fees(path.fills, md, low=low, params=params)
-    value += _exit_charge(path, md, marked, low=low)
+    value += _exit_charge(path, md, marked, low=low, params=params)
     return value
+
+
+def _observed(md: MarketDay, k: float, params: SimParams) -> bool:
+    """Section 5.1: second k is OBSERVED when the last book received by k and the first
+    book sent at or after k + 1 both exist and span at most the span limit (2c + 1.5 s).
+    The same test the credit computation applies (simulator._BookIndex.bracket)."""
+    first, last = md.books.before(k), md.books.after(k + 1)
+    return first is not None and last is not None and last.sent_at - first.received_at <= params.span_limit_s
 
 
 def _last_mid(md: MarketDay, side: LipSide, at: float) -> float | None:
@@ -126,14 +134,17 @@ def _last_mid(md: MarketDay, side: LipSide, at: float) -> float | None:
     return None
 
 
-def _exit_charge(path: SimPath, md: MarketDay, marked: dict[LipSide, list[float]], *, low: bool) -> float:
+def _exit_charge(path: SimPath, md: MarketDay, marked: dict[LipSide, list[float]], *, low: bool,
+                 params: SimParams = SIM) -> float:
     """Flattening the residual, charged against what it was worth.
 
-    charge = proceeds - qty x reference - fee (section 6). Where the reference book has a
-    two-sided mid, the reference is that mid in both envelopes. Only where it has none
-    (Amendment 2, item 11; Amendment 3, F3) is the reference chosen from candidates - the
-    reference book's held-side bid, the walk book's held-side bid and the last two-sided
-    mid - and for a charge a *higher* reference is the pessimistic one: LOW takes the
+    charge = proceeds - qty x reference - fee (section 6), against mid_held at the exit. That
+    mid exists only where the exit's second is OBSERVED (section 5.1) and the reference book
+    is two-sided: then it is the reference in both envelopes (Amendment 3.2). Across a gap
+    the book before it is not the mid at the exit, so the flatten has no two-sided mid to be
+    measured against, and (Amendment 2, item 11) the reference is chosen from candidates - the
+    reference book's mid (its held-side bid where it has no mid), the walk book's held-side
+    bid and the last two-sided mid - and for a charge a *higher* reference is the pessimistic one: LOW takes the
     highest of them, never less than the sale's own average price, so a charge is never
     a gain; HIGH the lowest. A remainder no bid could take is worth nothing in LOW (the
     value its fills' marks gave it is taken back) and nets to zero in HIGH.
@@ -148,10 +159,12 @@ def _exit_charge(path: SimPath, md: MarketDay, marked: dict[LipSide, list[float]
         candidates = []
         ref_book = md.books.before(at)
         mid = side_mid(ref_book, side) if ref_book is not None else None
-        if mid is not None:
+        if mid is not None and _observed(md, math.floor(at), params):
             charge += proceeds - qty * mid / 100 - fee
             continue
-        if ref_book is not None and ref_book.side(side).best is not None:
+        if mid is not None:  # item 11: the reference book's mid, or its bid where it has none
+            candidates.append(mid)
+        elif ref_book is not None and ref_book.side(side).best is not None:
             candidates.append(float(ref_book.side(side).best))
         walk_book = next((b for b in md.books.snapshots if b.received_at >= at), None)
         if walk_book is not None and walk_book.side(side).best is not None:

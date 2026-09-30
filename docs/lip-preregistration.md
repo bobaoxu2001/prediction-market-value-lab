@@ -187,6 +187,32 @@ following. Where an item of Amendment 2 is named, this replaces its mechanism; i
    recorder under `caffeinate -i -s`; a lid-close sleep on battery is not something a process
    can prevent, and the runbook says so.
 
+**Corrections to the implementation of Amendment 3 (2026-09-30, before day 1).** A fourth check
+found three places where the code did not do what items 2 and 3 above, read with the sections
+they amend, already require (`docs/lip-prefreeze-audit.md`, G1-G3). They were corrected before
+any study day; nothing below adds or changes a rule, and the items above stand as written.
+
+- *Item 2 - which mid is "the exit's reference book's".* Section 6 charges the flatten against
+  `mid_held(t_e)`, the mid *at* the exit, and section 5.1 is the rule for whether the book at a
+  second is known: the exit's second must be OBSERVED (bracket span within 2c + 1.5 s). Where it
+  is not - a gap spans the exit - the book before the gap is not the mid at the exit, so the
+  flatten "has no two-sided mid to be measured against" and Amendment 2 item 11 applies: LOW
+  the highest candidate and never below the sale's own price, HIGH the lowest. (The code had
+  taken the last book's mid however old it was, and LOW could book a gain from a stale price.)
+- *Item 3 - the counted-day figure of a day whose recorder died.* It is Amendment 2 item 6
+  applied to the verified books: a tick counts only if every book lane due at it has a verified
+  successful read credited to it. Which lanes were due is the recorder's own record, written into
+  each checkpoint by the same code that computes the closing figure; ticks after the checkpoint
+  are misses. (The code had used the smallest per-lane count of successful reads, which is not
+  item 6 and could be too high or too low.)
+- *Item 3 - what a checkpoint certifies.* Exactly the streams it lists, to exactly their ends; an
+  empty checkpoint certifies nothing, so a day killed before its first non-empty checkpoint has
+  no verified data. A pair of which the verified record holds nothing - not even its close time -
+  enters at its admitted hours and $0, as on a day never recorded (Amendment 2 item 8; section 6:
+  no admitted hour is dropped). A day with neither file remains an integrity failure, and on a day
+  the recorder closed a missing close time remains an error. (The code had read every stream in
+  full when the checkpoint was empty.)
+
 ---
 
 ## 1. Scoring rule as implemented

@@ -94,6 +94,24 @@ def _one(args: tuple) -> dict[str, Any]:
                                 sync_delay_s=sync, params=_params_for(data.study)))
 
 
+def _zero_result(day: str, pair: Any, lo: float, hi: float) -> dict[str, Any] | None:
+    """A pair with nothing recorded for the day: its admitted hours at $0 on every path
+    (section 8 item 8 of Amendment 2), or None if it was not live in the window."""
+    a, b = max(pair.start, pair.admitted_at, lo), min(pair.end, hi)
+    if b <= a:
+        return None
+    r = MarketDayResult(day, pair.market, pair.program_id, pair.family, (b - a) / 3600,
+                        cap=None if pair.cap in (None, "") else float(pair.cap))
+    zero = {"accrued": 0.0, "pay": 0.0, "MARK_1H": 0.0, "DAY_EXIT": 0.0, "fills": 0.0, "orders": 0.0,
+            "seconds": 0, "observed": 0, "credited": 0}
+    for policy in POLICIES:
+        for scenario in FillScenario:
+            for regime in REGIMES:
+                for env in ("LOW", "HIGH"):
+                    r.paths[f"{policy.name}|{scenario.value}|{regime.name}|{env}"] = dict(zero)
+    return asdict(r)
+
+
 def skipped_day_results(study: dict[str, Any], state_path: Path | None) -> list[dict[str, Any]]:
     """A day the recorder did not record: every pair live in its window adds its hours at $0."""
     if not state_path or not Path(state_path).exists():
@@ -101,22 +119,7 @@ def skipped_day_results(study: dict[str, Any], state_path: Path | None) -> list[
     lo = datetime.fromisoformat(study["window"]["window_start"]).timestamp()
     hi = datetime.fromisoformat(study["window"]["window_end"]).timestamp()
     state = AdmissionState.from_json(json.loads(Path(state_path).read_text()))
-    out = []
-    for pair in state.admitted.values():
-        a, b = max(pair.start, pair.admitted_at, lo), min(pair.end, hi)
-        if b <= a:
-            continue
-        r = MarketDayResult(study["day"], pair.market, pair.program_id, pair.family, (b - a) / 3600,
-                            cap=None if pair.cap in (None, "") else float(pair.cap))
-        zero = {"accrued": 0.0, "pay": 0.0, "MARK_1H": 0.0, "DAY_EXIT": 0.0, "fills": 0.0, "orders": 0.0,
-                "seconds": 0, "observed": 0, "credited": 0}
-        for policy in POLICIES:
-            for scenario in FillScenario:
-                for regime in REGIMES:
-                    for env in ("LOW", "HIGH"):
-                        r.paths[f"{policy.name}|{scenario.value}|{regime.name}|{env}"] = dict(zero)
-        out.append(asdict(r))
-    return out
+    return [r for r in (_zero_result(study["day"], pair, lo, hi) for pair in state.admitted.values()) if r]
 
 
 def replay_day(day_dir: Path, *, settlements_path: Path | None = None, state_path: Path | None = None,
@@ -140,12 +143,20 @@ def replay_day(day_dir: Path, *, settlements_path: Path | None = None, state_pat
         peak = max(peak, live)
     writes = WRITES_PER_S / peak
     ordered = sorted(data.pairs, key=lambda p: (p.admitted_at, p.program_id))
+    # a day whose recorder died is read to its last checkpoint (Amendment 3.3). A pair of
+    # which the verified record holds nothing - not even its close time - was entirely
+    # unobserved: its admitted hours enter at $0, as on a day never recorded (item 8).
+    # On a day the recorder closed, a missing close time is still an error.
+    unrecorded = {p.program_id for p in ordered if data.prefix and not data.has_close(p)}
+    zeros = [_zero_result(data.study["day"], p, *data.window) for p in ordered if p.program_id in unrecorded]
     jobs = [(str(day_dir), settlements_path, state_path, p.program_id, writes, data.window, i / WRITES_PER_S)
-            for i, p in enumerate(ordered)]
+            for i, p in enumerate(ordered) if p.program_id not in unrecorded]
     if workers <= 1:
-        return [_one(j) for j in jobs]
-    with ProcessPoolExecutor(max_workers=workers) as pool:
-        return list(pool.map(_one, jobs))
+        replayed = [_one(j) for j in jobs]
+    else:
+        with ProcessPoolExecutor(max_workers=workers) as pool:
+            replayed = list(pool.map(_one, jobs))
+    return replayed + [z for z in zeros if z]
 
 
 def build_cells(results: list[dict[str, Any]], *, verified: set[str] | None, withdrawn: set[str]) -> list[Cell]:

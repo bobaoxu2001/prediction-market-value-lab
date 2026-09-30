@@ -146,6 +146,97 @@ and any duplicate (`integrity.duplicate_trade_ids`).
    carried pair then has no recorded close time.
 4. *Version.* Before day 1: a note to Amendment 3.3.
 
+### Resolution of G1-G3 (2026-09-30, before day 1)
+
+All three were reproduced again independently before any change, with parameters different
+from the fourth check's; each matched the audit. They are **implementation corrections to
+semantics Amendment 3 already registered** - no new rule, no Amendment 4, no version bump
+(no study day exists). The pre-registration carries a dated correction note under Amendment 3
+that says so; the items as registered are unchanged.
+
+**G1 - a crashed day's counted figure.**
+1. *Bug.* `health.day_health` judged a day with no `health.json` by the smallest per-lane count
+   of successful reads - not the registered rule. Independent reproduction: two lanes failing
+   12% independently, killed at 00:44 UTC: 0.8800 counted where the rule gives 0.7756; lane B's
+   program ending after 6 h: 0.5715 not counted where the rule gives 0.9984.
+2. *Registered.* Amendment 2 item 6, applied to the verified books (Amendment 3.3): a tick counts
+   only if every book lane due at it read it; ticks with nothing due, and ticks the recorder
+   never reached, do not.
+3. *Change.* The recorder's definition of "due" is one generator (`_due_lanes`) used both by the
+   closing figure (`_write_health`, behaviour unchanged) and by every checkpoint, which now
+   stores the due lanes per tick, run-length encoded, up to its time. `day_health` applies item 6
+   to the verified book lines' ticks with those due lanes; ticks after the checkpoint are misses.
+   A checkpoint without the record (none can exist from this code) cannot be judged and does not
+   count. Cost: about 15 ms of CPU per checkpoint at the end of the day, once a minute - no
+   request is added, moved or re-timed by logic.
+4. *Evidence.* `tests/test_lip_fourthcheck.py` G1 section, 7 tests: both directions of the
+   discrepancy (0.88 -> 0.76 and 0.40 -> 1.00), the 80% boundary, ticks past the checkpoint and
+   ticks with nothing due, a missing record, a real recorder killed eight hours in (equals an
+   independent item-6 computation), and a closed day's final checkpoint reproducing its closing
+   ok_ticks exactly. The re-run reproduction now gives 0.7756 and 0.9984 = the rule.
+5. *Re-registration.* None: item 6 and Amendment 3.3 are applied as written.
+
+**G2 - a stale day-end exit reference.**
+1. *Bug.* `valuation._exit_charge` took the mid of the last book before the exit as the reference
+   however old it was. Independent reproduction: a gap from T0+596 to T0+690 spanning the exit,
+   the price moving inside it: LOW's exit charge +$17.51 (a gain), MARK_1H LOW +$43.51.
+2. *Registered.* Section 6 prices the flatten against `mid_held(t_e)`, the mid *at* the exit;
+   section 5.1 is the registered rule for whether the book at a second is known (bracket span at
+   most 2c + 1.5 s, 3.5 s at 1 Hz); Amendment 2 item 11 covers a flatten with "no two-sided mid
+   to be measured against": LOW the highest candidate and never below the sale's own price, HIGH
+   the lowest. No new price model, no interpolation, and no later observation is used as the
+   mid: the walk book's bid is a candidate only because item 11 names it.
+3. *Change.* The mid branch (Amendment 3.2) applies only when the exit's second is OBSERVED by
+   section 5.1 (`_observed`, the same comparison as the credit's `_BookIndex.bracket`, at the
+   day's recorded cadence). Otherwise item 11 - whose candidate list now takes the reference
+   book's mid where it has one, as item 11 says ("the reference book's mid or bid").
+4. *Evidence.* G2 section, 8 tests: the stale-gap gain (LOW now -$3.49 = minus the fee, the sale's
+   own price; HIGH +$17.51, its lowest candidate), an observed exit unchanged (-$8.36 both), the
+   boundary at exactly 3.5 s (observed: section 6 in both envelopes) and 3.51 s (unobserved: item
+   11), `_observed` equal to the credit's bracket on random books, and a random-gap property:
+   LOW's charge is never a gain on an unobserved exit and MARK_1H LOW <= HIGH throughout.
+5. *Re-registration.* None: section 6, section 5.1 and item 11 are applied as written.
+
+*What LOW and HIGH do when the registered exit cannot be verified* (the exit's second is
+UNOBSERVED, or its reference book has no two-sided mid): the charge is proceeds - |N| x reference
+- fee, with the reference chosen from the reference book's mid (or its bid), the walk book's bid
+and the last two-sided mid. LOW takes the highest of them and never less than the sale's own
+average price, so the flatten is never booked as a gain; HIGH takes the lowest, the favourable
+reading, so LOW <= HIGH. When the second is observed and the book two-sided, both use that mid as
+section 6 states - where the price moves in the fraction of a second before the walk, section 6
+itself can show a small gain in both envelopes; that is the registered rule, unchanged.
+
+**G3 - an empty first checkpoint.**
+1. *Bug.* `store.read_checked` short-circuited on an empty set of ends, so the checkpoint written
+   before any stream existed let every stream be read in full as if verified. Independent
+   reproduction, recorder killed 45 s in: 45 book lines, 23 tape polls, 3 universe rows and 23
+   trade batches read as verified. With the read fixed alone, the replay then failed on the first
+   pair with no verified close time - which would have blocked every verdict.
+2. *Registered.* Amendment 3.3: a crashed day is read up to its last checkpoint, each stream to
+   exactly that entry, the rest left out and the rest of the window unobserved; a day with
+   neither file is an integrity failure. Amendment 2 item 8 and section 6: a pair with nothing
+   recorded enters at its admitted hours and $0; no admitted hour is dropped.
+3. *Change.* A checkpoint certifies exactly the streams it lists (an empty one certifies nothing);
+   closing ends that omit a stream with files on disk are an integrity failure, empty or not;
+   with neither file the optional readers behave as before. On a crashed day, a pair whose close
+   time is not in the verified record gets the same zero record as a day never recorded; on a day
+   the recorder closed, a missing close time still raises.
+4. *Evidence.* G3 section, 9 tests: an empty checkpoint certifies nothing; a day killed before
+   its first non-empty checkpoint replays exactly as a never-recorded day (all zeros); a valid
+   first checkpoint is read to exactly its ends; neither file still fails to load; health.json
+   wins over a checkpoint and is read whole; empty closing ends do not certify; the optional
+   readers are unchanged; a carried pair with nothing verified enters at zero on a crashed day and
+   still raises on a closed one.
+5. *Re-registration.* None: Amendment 3.3, item 8 and section 6 are applied as written.
+
+Measured on the code at ce24618 (the six changed modules swapped back): of the 25 tests, 15
+fail - 14 reproduce a G1-G3 defect for the reason they test (G1: 6, both directions among them;
+G2: 4, the stale gain among them; G3: 4) and 1 checks the new `_observed` against the credit's
+bracket - and 10 pass on both versions because they guard behaviour that must not change (the 80%
+boundary with one lane, an observed exit, the 3.5 s observed boundary, F4's neither-file rule, a
+valid checkpoint's prefix, health.json winning, a closed day's missing close time, the optional
+readers).
+
 **No automatic restart** was added (Phase I): a restart would change tape recovery (above), the
 closing tick count, and so the counted-day figure. A failed run is observable instead.
 

@@ -77,6 +77,12 @@ class DayData:
     coverage_by_ticker: dict[str, TapeCoverage] = field(default_factory=dict)
     clock_offset: float = 0.0
     clock_eps: float = 0.25
+    #: read to the recorder's last checkpoint: it died before closing the day (Amendment 3.3)
+    prefix: bool = False
+
+    def has_close(self, pair: AdmittedPair) -> bool:
+        """Whether the verified record holds the market's close time (market_day needs it)."""
+        return bool(self.meta.get(pair.market, {}).get("close_time") or self.status_close.get(pair.market))
 
     @property
     def counted(self) -> bool:
@@ -279,7 +285,8 @@ def load_day(day_dir: Path, *, settlements_path: Path | None = None,
                    registry=registry, meta=meta, fees=fees, window=window, coverage=coverage,
                    _books=books, _states=states, _trades=trades, _status=status,
                    settlements=settlements, lane_ticks=lane_ticks, status_close=status_close,
-                   coverage_by_ticker=coverage_by_ticker, clock_offset=clock_offset, clock_eps=clock_eps)
+                   coverage_by_ticker=coverage_by_ticker, clock_offset=clock_offset, clock_eps=clock_eps,
+                   prefix=bool(getattr(ends, "prefix", False)))
 
 
 def registry_series(registry: ProgramRegistry) -> set[str]:
