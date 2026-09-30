@@ -24,6 +24,7 @@ from pmvl_markets.lip.http import LaneClient, lane_provider
 from pmvl_markets.lip.reader import load_day, tape_coverage
 from pmvl_markets.lip.recorder import LipRecorder, LockHeld, WindowRefused, day_window, refused
 from pmvl_markets.lip.store import BookEncoder, SegmentWriter, encode_side, read_stream
+from pmvl_markets.providers.http import ProviderError
 from pmvl_markets.providers.kalshi import SynchronizedBooks
 from pmvl_markets.recording.writer import LogIntegrityError
 from pmvl_shared.enums import Platform
@@ -83,6 +84,9 @@ class FakeProvider:
 
     async def get_orderbooks_synchronized(self, tickers, depth=None):
         sent = self.clock.now()
+        if self.venue.down():  # the real provider turns a transport error into ok=False
+            return SynchronizedBooks(requested=tuple(tickers), books={}, sent_at=sent, received_at=self.clock.now(),
+                                     ok=False, detail=f"request failed: {self.venue.outage_error}")
         await self.clock.sleep(self.venue.book_delay_s)
         received = self.clock.now()
         self.venue.book_calls.append((self.name, list(tickers), depth))
@@ -111,9 +115,19 @@ class FakeVenue:
         self.book_delay_s = 0.2
         self.book_calls: list = []
         self.programs = [prow("p1", "KXFOO-A"), prow("p2", "KXBTCD-B"), prow("p3", "KXBAR-C", usd=10)]
+        #: [from, to) in venue time during which every request fails as it did on the
+        #: maker study's days after a wake from sleep: DNS not yet back
+        self.outage: tuple[datetime, datetime] | None = None
+        self.outage_error = ("kalshi exhausted retries: kalshi transport: "
+                             "[Errno 8] nodename nor servname provided, or not known")
+
+    def down(self) -> bool:
+        return self.outage is not None and self.outage[0] <= self.clock.now() < self.outage[1]
 
     def answer(self, path: str, params: dict):
         now = self.clock.now()
+        if self.down():
+            raise ProviderError(self.outage_error)
         if path == "/incentive_programs":
             return {"incentive_programs": self.programs if params.get("status") == "active" else [], "cursor": ""}
         if path == "/markets":
@@ -188,6 +202,64 @@ def test_a_second_recorder_cannot_take_the_lock(tmp_path):
     with pytest.raises(LockHeld):
         asyncio.run(make_recorder(tmp_path, clock, FakeVenue(clock)).run())
 
+
+
+def test_a_network_outage_is_recorded_as_a_gap_and_the_day_carries_on(tmp_path):
+    """The maker study lost three days in a row to a DNS failure just after a wake from
+    sleep, because one exhausted retry ended its run. A lost minute here must be a
+    recorded gap in every lane - never the end of the day, never a quiet stretch."""
+    clock = VirtualClock(START, scale=0.002)
+    venue = FakeVenue(clock)
+    down_from, down_to = START + timedelta(seconds=60), START + timedelta(seconds=120)
+    venue.outage = (down_from, down_to)
+    health = asyncio.run(make_recorder(tmp_path, clock, venue, stop_minutes=3.0).run())
+    day = tmp_path / "day"
+    assert (day / "health.json").exists() and health["streams"], "the day closed normally"
+
+    lo, hi = down_from.timestamp(), down_to.timestamp()
+    books = list(read_stream(day, "books"))
+    during = [b for b in books if lo <= b["sent_at"] < hi]
+    after = [b for b in books if b["sent_at"] >= hi + 5]
+    assert during and not any(b["ok"] for b in during), "each failed read is a line, marked failed"
+    assert after and all(b["ok"] for b in after), "the lane resumed on its own"
+
+    polls = list(read_stream(day, "tape_polls"))
+    failed = [p for p in polls if lo <= p["sent_at"] < hi]
+    assert failed and not any(p["complete"] for p in failed)
+    assert all("nodename" in p["error"] for p in failed)
+    before = [p for p in polls if p["complete"] and p["sent_at"] < lo]
+    resumed = next(p for p in polls if p["complete"] and p["sent_at"] >= hi)
+    assert resumed["min_ts"] <= before[-1]["sent_at"], "the first poll back reaches over the gap"
+
+    status = [b for b in read_stream(day, "status") if lo <= b["at"] < hi]
+    assert status and all(b["error"] or b["exchange_error"] for b in status)
+    assert load_day(day).pairs, "the day still loads"
+
+
+class SleepingClock(VirtualClock):
+    """The machine sleeps once: the wall clock jumps ahead, the event loop's monotonic
+    clock (what asyncio sleeps on) does not - as on macOS after a lid close."""
+
+    def __init__(self, start: datetime, scale: float, sleep_at_s: float, sleep_for_s: float) -> None:
+        super().__init__(start, scale)
+        self.sleep_at_s, self.sleep_for_s = sleep_at_s, sleep_for_s
+
+    def now(self) -> datetime:
+        e = self.awake_s = self._elapsed()
+        return self.start + timedelta(seconds=e + (self.sleep_for_s if e >= self.sleep_at_s else 0.0))
+
+
+def test_a_wake_from_sleep_does_not_burst_the_missed_ticks(tmp_path):
+    clock = SleepingClock(START, scale=0.002, sleep_at_s=60, sleep_for_s=600)
+    venue = FakeVenue(clock)
+    health = asyncio.run(make_recorder(tmp_path, clock, venue, stop_minutes=12.0).run())
+    awake_s = clock.awake_s
+    calls = [c for c in venue.book_calls if c[0] == "book-A"]
+    assert len(calls) <= awake_s / 1.0 + 5, "one read per awake second at most, not one per missed tick"
+    lo, hi = (START + timedelta(seconds=60)).timestamp(), (START + timedelta(seconds=660)).timestamp()
+    assert not any(lo < b["sent_at"] < hi for b in read_stream(tmp_path / "day", "books")), \
+        "nothing is stamped inside the time the machine slept"
+    assert health["streams"]
 
 # ------------------------------------------------------------------ an evening against a fake venue
 @pytest.fixture(scope="module")
