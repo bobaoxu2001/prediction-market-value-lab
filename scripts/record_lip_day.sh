@@ -95,22 +95,23 @@ on_signal() {
 
 record "{\"event\":\"start\",\"run_id\":\"$RUN_ID\",\"day\":\"$DAY\",\"started_at\":\"$STARTED\",\"wrapper_pid\":$$}"
 trap finish EXIT
-trap 'on_signal 15' TERM
-trap 'on_signal 2' INT
-trap 'on_signal 1' HUP
+# every catchable terminating signal is recorded and passed on (numbers differ by platform)
+for sig in TERM INT HUP QUIT USR1 USR2 ALRM; do
+    trap "on_signal $(kill -l "$sig")" "$sig"
+done
 
 cd "$REPO" || exit 70
 
-# caffeinate holds the machine awake for as long as this script runs: -i against idle
+# caffeinate holds the machine awake for as long as the recorder runs: -i against idle
 # sleep, -s against system sleep on mains power. It cannot stop a lid-close sleep on
 # battery - the maker study lost 2026-09-25 and -27 outright and three more days in part
 # to that - so the laptop has to stay open (or on power with an external display)
 # 20:25-10:00 local. A sleep inside the window is recorded as a gap (a wall-clock jump
 # in the lanes stream), and a day under 80% of its ticks is not counted.
-/usr/bin/caffeinate -i -s -w $$ >/dev/null 2>&1 &
-
 PMVL_LIP_RUN_ID="$RUN_ID" "$PY" -m pmvl_worker.lip_cli record-day >> "$LOG" 2>&1 &
 child=$!
+# held for as long as the recorder runs, even if this script is killed first
+/usr/bin/caffeinate -i -s -w "$child" >/dev/null 2>&1 &
 
 # every past day's final status - including a day cron never started - goes to the
 # run-status ledger; local files only, and it runs beside the recorder, not before it

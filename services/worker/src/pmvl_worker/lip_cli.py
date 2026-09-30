@@ -148,7 +148,8 @@ def run_until_signalled(coro):
 
         def on_signal(signum: int) -> None:
             received.append(signum)
-            task.cancel()
+            if len(received) == 1:  # a second signal must not cancel the cleanup the first began
+                task.cancel()
 
         for sig in (signal.SIGTERM, signal.SIGHUP, signal.SIGINT):
             loop.add_signal_handler(sig, on_signal, sig)
@@ -704,7 +705,9 @@ def _replay_validation(path: Path) -> dict | None:
                 h = r["paths"][k[: -len("LOW")] + "HIGH"]
                 pairs += 1
                 violations += sum(1 for f in ("accrued", "pay", "MARK_1H", "DAY_EXIT") if v[f] > h[f] + 1e-9)
-    return {"file": str(path.relative_to(REPO)), "sha256": _sha_file(path), "sim_version": body.get("sim_version"),
+    full = Path(path).resolve()
+    rel = str(full.relative_to(REPO.resolve())) if full.is_relative_to(REPO.resolve()) else str(full)
+    return {"file": rel, "sha256": _sha_file(path), "sim_version": body.get("sim_version"),
             "label": (body.get("presentation") or {}).get("label"), "market_days": len(res),
             "low_high_pairs": pairs, "low_above_high": violations, "non_finite": nonfinite,
             "passed": bool(res) and violations == 0 and nonfinite == 0}

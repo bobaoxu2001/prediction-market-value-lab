@@ -114,3 +114,18 @@ def test_a_wrapper_that_fails_before_the_recorder_still_leaves_both_records(tmp_
     start, end = _records(repo)
     assert start["event"] == "start" and end["event"] == "end"
     assert end["status"] in ("UNKNOWN_FAILURE", "RECORDER_FAILURE") and end["exit_code"] == done.returncode
+
+
+@pytest.mark.parametrize("sig", [signal.SIGQUIT, signal.SIGUSR1, signal.SIGHUP])
+def test_any_catchable_signal_still_leaves_an_end_record(tmp_path, sig):
+    repo, env = _setup(tmp_path, "wait")
+    proc = subprocess.Popen(["bash", str(WRAPPER)], env=env)
+    for _ in range(100):
+        if (tmp_path / "recorder_pid").exists():
+            break
+        time.sleep(0.05)
+    proc.send_signal(sig)
+    assert proc.wait(timeout=30) == 143, "the recorder was stopped with TERM and exited 128+15"
+    events = [r["event"] for r in _records(repo)]
+    assert events == ["start", "end"]
+    assert _records(repo)[-1]["status"] == "SIGNALLED"

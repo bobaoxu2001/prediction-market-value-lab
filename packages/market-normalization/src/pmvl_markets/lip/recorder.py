@@ -253,17 +253,23 @@ class LipRecorder:
             self._closed = True
             return health
         finally:
-            for p in self._providers.values():
-                await p.aclose()
+            # synchronous cleanup first, so nothing that suspends can be cancelled before
+            # the ends are checkpointed, the segment closed and the lock released
             if hasattr(self, "writer"):
                 self._checkpoint()  # an exception or a cancel still leaves exact ends
                 self.writer.close()
+                self._writer_closed = True
             if hasattr(self, "window") and self._state != "skipped":
                 self._heartbeat("closed" if self._closed else "aborted")
             try:
                 lock.rmdir()
             except OSError:
                 pass
+            for p in self._providers.values():
+                try:
+                    await p.aclose()
+                except BaseException:  # noqa: BLE001 - a second cancel must not undo the above
+                    pass
 
     async def _wait_for_maker(self) -> bool:
         while self.is_maker_busy():
@@ -387,6 +393,9 @@ class LipRecorder:
         (self.out_dir / "study.json").write_text(json.dumps(body, indent=2) + "\n")
 
     def _write(self, stream: str, body: dict[str, Any]) -> None:
+        if getattr(self, "_writer_closed", False):
+            return  # a read still in flight at shutdown lands after the closing checkpoint:
+            # it is not part of the day, and must not reopen a closed segment
         body = {"v": LIP_RECORDER_VERSION, **body}
         self.writer.append(stream, body, at=self.clock.now())
 

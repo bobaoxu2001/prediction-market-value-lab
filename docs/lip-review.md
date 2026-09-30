@@ -120,3 +120,19 @@ analysis in the strategy's favour or blocked it outright:
 
 Found while fixing them: `close-gates` would have accepted a day 1 already in the past when run
 before 12:00 UTC, and a study with nothing admitted crashed the bootstrap. Both fixed and tested.
+
+## The fourth check (2026-09-30)
+
+A read-only check of the third check's fixes (e41da4f) and of the pre-freeze hardening
+(f22acd8). Six findings, each reproduced; the three in study-semantic code are **documented,
+not fixed**, pending a decision (see `docs/lip-prefreeze-audit.md`); the three operational
+ones are fixed.
+
+| # | commit | severity | where | what is wrong | status |
+|---|---|---|---|---|---|
+| G1 | e41da4f | medium | `health.py` `day_health`, via `lip_cli._day_status` and `daymanifest.qualify` | a crashed day's counted figure uses min-over-lanes of ok lines, not Amendment 2 item 6 (every due lane at each tick): 0.877 counted where the rule gives 0.774; 0.572 not counted where it gives 0.999 | **open - semantic** |
+| G2 | e41da4f | medium | `valuation.py` `_exit_charge` | the reference mid has no staleness bound: across a book gap spanning the exit, LOW books the move across the gap as a gain (+$11.50 exit charge; MARK_1H +$31.50 vs +$16.50 before e41da4f) | **open - semantic** |
+| G3 | e41da4f | low | `store.py` `read_checked` | the first checkpoint is empty; a kill before the next one makes every stream read in full as if verified | **open - semantic** |
+| G4 | f22acd8 | low | `lip_cli.py` `run_until_signalled`, `recorder.py` finally | a second signal a millisecond later cancelled the cleanup: stale lock, open segment, the next day lost | fixed: cancel once; synchronous cleanup before any await; no write after close |
+| G5 | f22acd8 | low | `scripts/record_lip_day.sh` | SIGQUIT (and USR1/USR2/ALRM) killed the wrapper with no end record; caffeinate ended with the wrapper | fixed: all catchable signals trapped; caffeinate waits on the recorder |
+| G6 | f22acd8 | low | `recorder.py` `_note_wall_jump` | the commit said only a `tick` field was added; `wall_jump` rows also enter the chained `lanes` stream | documented: they stay (tamper-evident), ignored by every study computation |

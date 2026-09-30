@@ -611,3 +611,36 @@ def test_a_heartbeat_or_checkpoint_that_cannot_be_written_never_stops_the_record
     health = run_virtual(main())
     assert health["ok_ticks"] > 200, "four minutes recorded despite both failing"
     assert not (tmp_path / "lock").exists()
+
+
+def test_a_second_signal_does_not_cut_the_cleanup_short(tmp_path, monkeypatch):
+    """Fourth check, G4: the wrapper forwards a TERM on top of the signal the process group
+    already got, so two arrive a millisecond apart; the second cancel used to land inside
+    the finally-block's suspending aclose and leave the lock, the segment and the
+    checkpoint behind - and the next day lost to a stale lock."""
+    import tests.test_lip_recorder as T
+    from pmvl_worker.lip_cli import Signalled, run_until_signalled
+
+    async def slow_aclose(self):
+        await asyncio.sleep(0.05)   # httpx's aclose suspends on a live connection
+
+    monkeypatch.setattr(T.FakeProvider, "aclose", slow_aclose)
+    clock = VirtualClock(START, scale=0.002)
+    rec = make_recorder(tmp_path, clock, FakeVenue(clock), stop_minutes=0)
+    rec.stop_at = START + timedelta(hours=2)
+
+    async def run_then_two_signals():
+        loop = asyncio.get_running_loop()
+        loop.call_later(0.4, os.kill, os.getpid(), signal.SIGINT)
+        loop.call_later(0.401, os.kill, os.getpid(), signal.SIGTERM)
+        return await rec.run()
+
+    with pytest.raises(Signalled) as exc:
+        run_until_signalled(run_then_two_signals())
+    assert exc.value.signum == signal.SIGINT, "the first signal decides the exit code"
+    day = tmp_path / "day"
+    assert not (tmp_path / "lock").exists(), "the lock was released"
+    assert json.loads((day / "heartbeat.json").read_text())["state"] == "aborted"
+    assert not list(day.glob("segment-*/*.jsonl")), "every segment closed"
+    assert stream_ends(day)["books"] == (len(list(read_stream(day, "books"))),
+                                         stream_ends(day)["books"][1]), "the checkpoint is the exact end"
