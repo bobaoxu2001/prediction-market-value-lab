@@ -14,7 +14,15 @@ DAY="$(date -u +%Y-%m-%d)"
 
 # The recorder takes its own lock (/tmp/pmvl-lip-day.lock.d) and releases it on exit;
 # a stale lock after a crash is reported and the day is skipped, never shared.
-if ! .venv/bin/python -m pmvl_worker.lip_cli record-day >> "artifacts/forward/lip-daily/$DAY.log" 2>&1; then
+#
+# caffeinate holds the machine awake while the recorder runs: -i against idle sleep,
+# -s against system sleep on mains power. It cannot stop a lid-close sleep on battery -
+# the maker study lost 2026-09-25 and -27 outright and three more days in part to that -
+# so the laptop has to stay open (or on power with an external display) 20:25-10:00
+# local. A sleep inside the window is recorded as a gap, and a day under 80% of its
+# ticks is not counted.
+if ! /usr/bin/caffeinate -i -s .venv/bin/python -m pmvl_worker.lip_cli record-day \
+        >> "artifacts/forward/lip-daily/$DAY.log" 2>&1; then
     echo "$(date -u +%FT%TZ) $DAY recorder exited non-zero (see $DAY.log)" \
         >> artifacts/forward/lip-daily/skipped.log
 fi

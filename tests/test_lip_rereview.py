@@ -238,3 +238,18 @@ def test_r10_a_day_with_recordings_but_no_study_json_stops_the_final_analysis(tm
     (tmp_path / "lip-daily" / "admission_state.json").write_text(json.dumps({"admitted": {}, "decided": []}))
     with pytest.raises(typer.Exit):
         lip_cli.study_cmd(final=True)
+
+
+def test_close_gates_accepts_only_a_day_1_whose_window_is_still_ahead():
+    """The first version refused a past day 1 only when asked after 12:00 UTC: at 06:00
+    on 2026-09-30 it would have fixed day 1 as 2026-09-27, three days already gone."""
+    from datetime import date
+
+    from pmvl_worker.lip_cli import _day1_ahead
+
+    morning = datetime(2026, 9, 30, 6, 0, tzinfo=UTC)
+    assert not _day1_ahead(date(2026, 9, 27), morning)
+    assert _day1_ahead(date(2026, 9, 30), morning)
+    assert _day1_ahead(date(2026, 10, 1), morning)
+    assert not _day1_ahead(date(2026, 9, 30), datetime(2026, 9, 30, 12, 25, tzinfo=UTC))
+    assert _day1_ahead(date(2026, 10, 1), datetime(2026, 9, 30, 23, 0, tzinfo=UTC))

@@ -409,6 +409,15 @@ def study_cmd(final: bool = typer.Option(False, "--final", help="The one final l
     console.print(f"[bold]{v.verdict}[/bold]: {v.why}\nwrote {out}")
 
 
+def _day1_ahead(day1, now: datetime) -> bool:
+    """Day 1's admission (12:25 UTC) is still ahead - a past date never qualifies,
+    whatever the hour it is asked at."""
+    from pmvl_markets.lip.params import RECORDING
+
+    start = datetime.combine(day1, RECORDING.admission_from, tzinfo=timezone.utc)
+    return now < start
+
+
 @app.command("close-gates")
 def close_gates(day1: str = typer.Option(..., help="Day 1, YYYY-MM-DD: the first 12:30 UTC window after this.")) -> None:
     """Record that every gate is closed and fix day 1 (section 8). Refuses unless the
@@ -424,7 +433,7 @@ def close_gates(day1: str = typer.Option(..., help="Day 1, YYYY-MM-DD: the first
     if not tag:
         console.print("[red]refused: G4 is open - the code is not tagged lip-sim-1.0.0")
         raise typer.Exit(2)
-    if date.fromisoformat(day1) <= datetime.now(timezone.utc).date() and datetime.now(timezone.utc).hour >= 12:
+    if not _day1_ahead(date.fromisoformat(day1), datetime.now(timezone.utc)):
         console.print("[red]refused: day 1 must be a window that has not started")
         raise typer.Exit(2)
     gates = FORWARD / "lip-gates.json"

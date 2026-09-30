@@ -18,6 +18,16 @@ and 20:25 local and stay awake through each run**: macOS cron does not run a job
 machine slept through, and a closed lid on battery sleeps. A missed day is a gap, recorded
 in `artifacts/forward/lip-daily/skipped.log`; it is never re-run at another hour.
 
+This is the study's largest practical risk. Between 2026-09-25 and 2026-09-30 the maker
+study lost two whole days to a closed lid and three more in part: each woke into a DNS
+failure that ended its run. The LIP recorder does not end on a failed request - every lane
+records the failure as a gap and resumes (tested) - and the cron script runs it under
+`caffeinate -i -s`, which stops idle sleep and, on mains power, system sleep. Nothing a
+process can do stops a lid-close sleep on battery. So, from 20:25 to 10:00 local: **on
+power, lid open** (or closed with an external display attached). A night that sleeps
+through more than a fifth of the window is not a counted day, and seven empty days in a
+row stop the study.
+
 ## Commands
 
 ```bash
