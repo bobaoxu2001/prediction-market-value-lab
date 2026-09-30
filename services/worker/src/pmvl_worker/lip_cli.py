@@ -10,6 +10,8 @@ from __future__ import annotations
 import asyncio
 import hashlib
 import json
+import os
+import signal
 import subprocess
 from datetime import datetime, timezone
 from pathlib import Path
@@ -71,6 +73,11 @@ def _cadence_sha() -> str:
     return hashlib.sha256(path.read_bytes()).hexdigest() if path.exists() else ""
 
 
+def _freeze_sha() -> str:
+    path = FORWARD / "lip-freeze.json"
+    return hashlib.sha256(path.read_bytes()).hexdigest() if path.exists() else ""
+
+
 @app.command("record-day")
 def record_day(
     shakedown: bool = typer.Option(False, help="Record under lip-shakedown/: never scored or pooled."),
@@ -103,9 +110,14 @@ def record_day(
         known_series=known, shakedown=shakedown,
         stop_at=datetime.fromisoformat(until) if until else None,
         prereg_commit=_prereg_commit(), code_commit=_head_commit(), cadence_sha256=_cadence_sha(),
+        freeze_sha256=_freeze_sha(),
+        run_id=os.environ.get("PMVL_LIP_RUN_ID") or f"{window.day.isoformat()}-{int(now.timestamp())}-{os.getpid()}",
     )
     try:
-        health = asyncio.run(recorder.run())
+        health = run_until_signalled(recorder.run())
+    except Signalled as exc:
+        console.print(f"[red]stopped by signal {exc.signum}: checkpoint written, lock released")
+        raise typer.Exit(128 + exc.signum) from exc
     except WindowRefused as exc:
         console.print(f"[red]refused: {exc}")
         raise typer.Exit(3) from exc
@@ -115,6 +127,39 @@ def record_day(
     console.print_json(json.dumps(health))
     if health.get("skipped"):
         raise typer.Exit(6)  # the cron script logs a skipped day like any other non-zero exit
+
+
+class Signalled(Exception):
+    def __init__(self, signum: int) -> None:
+        super().__init__(f"signal {signum}")
+        self.signum = signum
+
+
+def run_until_signalled(coro):
+    """Run the recorder; SIGTERM, SIGHUP or SIGINT cancel it, so its finally-block still
+    runs - the stream ends checkpointed, the segment closed, the lock released - and the
+    process then exits 128 + the signal, which the cron wrapper records as SIGNALLED.
+    SIGKILL cannot be caught: the last minute's checkpoint and the stale lock remain."""
+    received: list[int] = []
+
+    async def main():
+        loop = asyncio.get_running_loop()
+        task = asyncio.current_task()
+
+        def on_signal(signum: int) -> None:
+            received.append(signum)
+            task.cancel()
+
+        for sig in (signal.SIGTERM, signal.SIGHUP, signal.SIGINT):
+            loop.add_signal_handler(sig, on_signal, sig)
+        return await coro
+
+    try:
+        return asyncio.run(main())
+    except asyncio.CancelledError:
+        if received:
+            raise Signalled(received[0]) from None
+        raise
 
 
 def _cadence_overrides() -> dict:
@@ -231,8 +276,44 @@ def replay_day_cmd(
         "lip-shakedown-settlements.jsonl" if study.get("tag") == "shakedown" else "lip-settlements.jsonl"),
         state_path=root / "admission_state.json", workers=workers)
     out = day_dir / "replay.json"
-    write_results(results, out)
+    presentation = replay_presentation(day_dir)
+    write_results(results, out, presentation=presentation)
+    if presentation["not_performance_result"]:
+        console.print(f"[bold yellow]{presentation['label']}[/bold yellow]: {presentation['why']}")
     console.print(f"{len(results)} market-days replayed -> {out}")
+
+
+def replay_presentation(day_dir: Path) -> dict:
+    """How a replay.json must be read. The replay charges every admitted hour of the window
+    and counts unrecorded seconds as zeros (pre-registered), so a day recorded for part of
+    its window - every shakedown - yields dollar figures that are not a performance result."""
+    study = json.loads((day_dir / "study.json").read_text())
+    health = json.loads((day_dir / "health.json").read_text()) if (day_dir / "health.json").exists() else {}
+    lo = datetime.fromisoformat(study["window"]["window_start"]).timestamp()
+    hi = datetime.fromisoformat(study["window"]["window_end"]).timestamp()
+    start = datetime.fromisoformat(study["started_at"]).timestamp() if study.get("started_at") else lo
+    end = (datetime.fromisoformat(health["finished_at"].replace("Z", "+00:00")).timestamp()
+           if health.get("finished_at") else None)
+    if end is None:
+        from pmvl_markets.lip.store import read_checked, stream_ends
+
+        sent = [b["sent_at"] for b in read_checked(day_dir, "books", stream_ends(day_dir, required=False))]
+        end = max(sent) if sent else start
+    recorded = max(0.0, min(end, hi) - max(start, lo))
+    share = recorded / (hi - lo)
+    study_day = study.get("tag") == "study"
+    return {
+        # a study day's unrecorded seconds are zeros by the pre-registered rule, so it is
+        # evidence at any coverage - but only inside the one pooled final analysis
+        "label": "STUDY_DAY_POOLED_ONLY" if study_day else "INCOMPLETE_COVERAGE_NOT_PERFORMANCE_RESULT",
+        "not_performance_result": not study_day,
+        "tag": study.get("tag"),
+        "recorded_seconds_in_window": round(recorded, 1), "window_seconds": hi - lo,
+        "recording_coverage_share": round(share, 4),
+        "why": (f"{study.get('tag')} day recorded for {recorded / 60:.0f} of {(hi - lo) / 60:.0f} window minutes "
+                f"({share:.1%}); the replay counts every admitted hour and treats unrecorded seconds as zero, "
+                "so its dollar figures are a plumbing check, not evidence about the strategy"),
+    }
 
 
 def _study_days() -> list[Path]:
@@ -445,17 +526,236 @@ def close_gates(day1: str = typer.Option(..., help="Day 1, YYYY-MM-DD: the first
     if not _day1_ahead(date.fromisoformat(day1), datetime.now(timezone.utc)):
         console.print("[red]refused: day 1 must be a window that has not started")
         raise typer.Exit(2)
+    freeze = FORWARD / "lip-freeze.json"
+    if not freeze.exists():
+        console.print("[red]refused: no artifacts/forward/lip-freeze.json - run freeze-manifest --write first")
+        raise typer.Exit(2)
+    stored = json.loads(freeze.read_text())
+    if stored["code"]["git"]["commit"] != tag:
+        console.print(f"[red]refused: the freeze manifest is for {stored['code']['git']['commit'][:12]}, "
+                      f"the tag lip-sim-1.0.0 is at {tag[:12]}")
+        raise typer.Exit(2)
+    drift = _freeze_drift(stored)
+    if drift:
+        console.print("[red]refused: files changed since the freeze manifest: " + ", ".join(drift[:10]))
+        raise typer.Exit(2)
     gates = FORWARD / "lip-gates.json"
     if gates.exists():
         console.print(f"[red]refused: {gates} already exists - day 1 is fixed once")
         raise typer.Exit(2)
     body = {"day1": day1, "closed_at": datetime.now(timezone.utc).isoformat(),
             "prereg_commit": _prereg_commit(), "code_tag": "lip-sim-1.0.0", "code_commit": tag,
-            "cadence_sha256": _cadence_sha(),
+            "cadence_sha256": _cadence_sha(), "freeze_sha256": _freeze_sha(),
             "gates": {"G1": "Amendment 1", "G2": "Amendment 1", "G3": "user, 2026-09-24",
                       "G4": f"tag lip-sim-1.0.0 at {tag}", "G5": "lip-cadence.json", "G6": "cron line installed"}}
     gates.write_text(json.dumps(body, indent=2) + "\n")
     console.print_json(json.dumps(body))
+
+
+@app.command("manifest")
+def manifest_cmd(
+    day_dir: Path = typer.Argument(..., help="A study day directory (lip-daily/YYYY-MM-DD)."),
+    write: bool = typer.Option(True, help="Write manifest.json into the day directory."),
+) -> None:
+    """The day's run manifest: lifecycle, coverage, gaps, faults, integrity, provenance and
+    the pre-registered day status. Local files only; no dollars. The cron wrapper runs it
+    when the recorder exits; it can be re-run at any time and gives the same answer."""
+    from pmvl_markets.lip.daymanifest import build_manifest
+
+    m = build_manifest(day_dir, runs_log=day_dir.parent / "runs.jsonl", freeze_path=FORWARD / "lip-freeze.json")
+    if write:
+        _atomic_write(day_dir / "manifest.json", json.dumps(m, indent=1, sort_keys=True) + "\n")
+    q, life = m["qualification"], m["lifecycle"]
+    gaps = (m.get("coverage") or {}).get("book_gaps") or {}
+    console.print_json(json.dumps({
+        "day": m["day"], "status": q["status"], "termination": life["termination"],
+        "run_status": life["run_status"], "exit_code": life["exit_code"], "restarts": life["restarts"],
+        "book_success_share": (m.get("coverage") or {}).get("book_success_share"),
+        "gaps": {k: gaps.get(k) for k in ("count", "total_seconds", "largest_seconds", "unrecovered_seconds")},
+        "integrity_verified": (m.get("integrity") or {}).get("verified"),
+        "duplicate_trade_ids": (m.get("integrity") or {}).get("duplicate_trade_ids"),
+        "slept_seconds": (m.get("faults") or {}).get("slept_seconds"),
+    }))
+
+
+@app.command("run-status")
+def run_status_cmd(
+    day: str = typer.Option("", help="YYYY-MM-DD; default: the study day whose window contains now."),
+    record: bool = typer.Option(False, help="Append the final status of every past day from day 1 to "
+                                            "lip-daily/run-status.jsonl (once per day and status)."),
+    now: str = typer.Option("", help="Evaluate as of this ISO time (for checking a past day)."),
+) -> None:
+    """The missed-run sentinel: did the scheduled run happen? Local files only. It never
+    creates a day and never re-runs one - a missed day stays missed (section 8)."""
+    from datetime import date as _date
+
+    from pmvl_markets.lip.daymanifest import record_final_statuses, run_status
+
+    t = datetime.fromisoformat(now) if now else datetime.now(timezone.utc)
+    root = FORWARD / "lip-daily"
+    if record:
+        gates = FORWARD / "lip-gates.json"
+        if not gates.exists():
+            console.print_json(json.dumps({"recorded": [], "why": "no lip-gates.json: day 1 not set"}))
+            return
+        day1 = _date.fromisoformat(json.loads(gates.read_text())["day1"])
+        written = record_final_statuses(root, day1, t)
+        console.print_json(json.dumps({"recorded": written}))
+        return
+    d = _date.fromisoformat(day) if day else day_window(t).day
+    console.print_json(json.dumps(run_status(d, t, root)))
+
+
+FREEZE_EXTRA = (PREREG, "docs/lip-runbook.md", "scripts/record_lip_day.sh", "requirements.txt",
+                "requirements.lock.txt", "requirements-dev.txt", "packages/market-normalization/pyproject.toml",
+                "packages/shared/pyproject.toml", "services/worker/pyproject.toml",
+                "artifacts/research/lip-1/known_series.json", "artifacts/forward/lip-cadence.json", "pytest.ini")
+
+
+def _sha_file(path: Path) -> str | None:
+    return hashlib.sha256(path.read_bytes()).hexdigest() if path.exists() else None
+
+
+def _freeze_code() -> dict:
+    """What produced the data: every repository module the recorder, the replay and this
+    CLI load (their import closure), the documents and scripts that define the run, the
+    parameters, the dependency locks and the installed environment."""
+    import platform
+    import sys
+    from dataclasses import asdict
+
+    import pmvl_markets.lip.daymanifest  # noqa: F401
+    import pmvl_markets.lip.final  # noqa: F401
+    import pmvl_markets.lip.replay  # noqa: F401
+    from pmvl_markets.lip.params import RECORDING
+    from pmvl_markets.lip.sim_params import SIM
+    from pmvl_markets.lip.version import LIP_RECORDER_VERSION, LIP_SIM_VERSION, SAMPLE_SALT
+
+    root = REPO.resolve()
+    modules = {}
+    for mod in list(sys.modules.values()):
+        f = getattr(mod, "__file__", None)
+        if not f:
+            continue
+        path = Path(f).resolve()
+        if path.is_relative_to(root) and ".venv" not in path.parts and "tests" not in path.parts:
+            modules[str(path.relative_to(root))] = _sha_file(path)
+    files = {rel: _sha_file(REPO / rel) for rel in FREEZE_EXTRA}
+    freeze = subprocess.run([sys.executable, "-m", "pip", "freeze", "--exclude-editable"],
+                            capture_output=True, text=True, timeout=120).stdout
+    status = subprocess.run(["git", "-C", str(REPO), "status", "--porcelain", "--", "packages", "services",
+                             "scripts", "tests", "docs", "pytest.ini", "requirements.txt",
+                             "requirements.lock.txt", "requirements-dev.txt"],
+                            capture_output=True, text=True, timeout=30).stdout.splitlines()
+    config = {"recording": asdict(RECORDING), "sim": asdict(SIM)}
+    config_json = json.dumps(config, sort_keys=True, default=str)
+    return {
+        "git": {"commit": _head_commit(), "dirty": sorted(status)},
+        "versions": {"recorder": LIP_RECORDER_VERSION, "sim": LIP_SIM_VERSION, "sample_salt": SAMPLE_SALT},
+        "modules": dict(sorted(modules.items())), "files": files,
+        "config": json.loads(config_json), "config_sha256": hashlib.sha256(config_json.encode()).hexdigest(),
+        "environment": {"python": platform.python_version(), "implementation": platform.python_implementation(),
+                        "pip_freeze_sha256": hashlib.sha256(freeze.encode()).hexdigest(),
+                        "packages": len(freeze.splitlines())},
+    }
+
+
+def _freeze_drift(stored: dict) -> list[str]:
+    """Every path whose hash differs from the stored freeze manifest, and the config."""
+    now = _freeze_code()
+    drift = [k for k in sorted(set(stored["code"]["modules"]) | set(now["modules"]))
+             if stored["code"]["modules"].get(k) != now["modules"].get(k)]
+    drift += [k for k in sorted(set(stored["code"]["files"]) | set(now["files"]))
+              if stored["code"]["files"].get(k) != now["files"].get(k)]
+    for key in ("config_sha256", "versions", "environment", "git"):
+        if stored["code"][key] != now[key]:
+            drift.append(key)
+    return drift
+
+
+def _suite_result(log: Path | None) -> dict | None:
+    import re
+
+    if log is None:
+        return None
+    text = log.read_text()
+    lines = [ln for ln in text.splitlines() if re.search(r"\d+ (passed|failed)", ln)]
+    if not lines:
+        return {"log_sha256": _sha_file(log), "parsed": False}
+    last = lines[-1]
+    counts = {k: int(m.group(1)) for k in ("passed", "failed", "skipped", "error", "errors", "xfailed")
+              for m in [re.search(rf"(\d+) {k}\b", last)] if m}
+    return {"log_sha256": _sha_file(log), "summary": last.strip(" ="), **counts,
+            "green": counts.get("failed", 0) == 0 and counts.get("error", 0) == 0 and counts.get("errors", 0) == 0}
+
+
+def _replay_validation(path: Path) -> dict | None:
+    import math
+
+    if not path.exists():
+        return None
+    body = json.loads(path.read_text())
+    res = body.get("results") or []
+    pairs = violations = nonfinite = 0
+    for r in res:
+        for k, v in r["paths"].items():
+            nonfinite += sum(1 for f in ("MARK_1H", "DAY_EXIT", "accrued", "pay") if not math.isfinite(v[f]))
+            if k.endswith("|LOW"):
+                h = r["paths"][k[: -len("LOW")] + "HIGH"]
+                pairs += 1
+                violations += sum(1 for f in ("accrued", "pay", "MARK_1H", "DAY_EXIT") if v[f] > h[f] + 1e-9)
+    return {"file": str(path.relative_to(REPO)), "sha256": _sha_file(path), "sim_version": body.get("sim_version"),
+            "label": (body.get("presentation") or {}).get("label"), "market_days": len(res),
+            "low_high_pairs": pairs, "low_above_high": violations, "non_finite": nonfinite,
+            "passed": bool(res) and violations == 0 and nonfinite == 0}
+
+
+@app.command("freeze-manifest")
+def freeze_manifest_cmd(
+    write: bool = typer.Option(False, help="Write artifacts/forward/lip-freeze.json."),
+    suite_log: Path = typer.Option(None, help="The full test-suite log to attest (pytest output)."),
+    check: bool = typer.Option(False, help="Compare the code, config and environment with the stored manifest."),
+) -> None:
+    """Bind the implementation the counted days will run: hashes of every module and file
+    that defines the run, the parameters, the environment, and the validation results.
+    Generated, never embedded in source; regenerating on unchanged files gives the same
+    semantic_digest."""
+    path = FORWARD / "lip-freeze.json"
+    if check:
+        if not path.exists():
+            console.print("[red]no lip-freeze.json")
+            raise typer.Exit(1)
+        drift = _freeze_drift(json.loads(path.read_text()))
+        console.print_json(json.dumps({"unchanged": not drift, "drift": drift}))
+        raise typer.Exit(0 if not drift else 1)
+    body = build_freeze(suite_log)
+    if write:
+        if body["code"]["git"]["dirty"]:
+            console.print("[red]refused: tracked code or docs have uncommitted changes: "
+                          + ", ".join(body["code"]["git"]["dirty"][:10]))
+            raise typer.Exit(2)
+        _atomic_write(path, json.dumps(body, indent=1, sort_keys=True) + "\n")
+    console.print_json(json.dumps({k: body[k] for k in ("semantic_digest", "validation")} |
+                                  {"commit": body["code"]["git"]["commit"], "dirty": body["code"]["git"]["dirty"],
+                                   "modules": len(body["code"]["modules"])}))
+
+
+def build_freeze(suite_log: Path | None) -> dict:
+    semantic = {"freeze_version": 1, "study": "lip-shadow", "code": _freeze_code(),
+                "validation": {"shakedown_replay": _replay_validation(
+                                   FORWARD / "lip-shakedown" / "2026-09-25" / "replay.json"),
+                               "suite": _suite_result(suite_log)}}
+    digest = hashlib.sha256(json.dumps(semantic, sort_keys=True).encode()).hexdigest()
+    return {**semantic, "semantic_digest": digest, "generated_at": datetime.now(timezone.utc).isoformat()}
+
+
+def _atomic_write(path: Path, text: str) -> None:
+    tmp = path.with_suffix(path.suffix + ".tmp")
+    with tmp.open("w") as fh:
+        fh.write(text)
+        fh.flush()
+        os.fsync(fh.fileno())
+    os.replace(tmp, path)
 
 
 @app.command("health")

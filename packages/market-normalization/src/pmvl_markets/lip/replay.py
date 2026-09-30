@@ -190,5 +190,11 @@ def build_cells(results: list[dict[str, Any]], *, verified: set[str] | None, wit
     return list(cells.values())
 
 
-def write_results(results: list[dict[str, Any]], path: Path) -> None:
-    path.write_text(json.dumps({"sim_version": LIP_SIM_VERSION, "results": results}) + "\n")
+def write_results(results: list[dict[str, Any]], path: Path, *, presentation: dict[str, Any] | None = None) -> None:
+    """``presentation`` labels the file for readers (coverage, and whether it is evidence);
+    it is written beside the results and changes none of them."""
+    body: dict[str, Any] = {"sim_version": LIP_SIM_VERSION}
+    if presentation is not None:
+        body["presentation"] = presentation
+    body["results"] = results
+    path.write_text(json.dumps(body) + "\n")

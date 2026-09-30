@@ -84,6 +84,11 @@ class RecordingParams:
     counted_day_share: float = 0.80
     #: how often the recorder writes every stream's end to ends.json (Amendment 3)
     checkpoint_every_s: float = 60.0
+    #: liveness only - never a request: how often heartbeat.json is rewritten, and how far
+    #: the wall clock may run ahead of the event loop's monotonic clock before the gap is
+    #: logged as a sleep (macOS stops the monotonic clock while the machine sleeps)
+    heartbeat_every_s: float = 30.0
+    wall_jump_s: float = 5.0
     window_ticks: int = 44_100
 
 
