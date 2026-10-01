@@ -136,3 +136,24 @@ ones are fixed.
 | G4 | f22acd8 | low | `lip_cli.py` `run_until_signalled`, `recorder.py` finally | a second signal a millisecond later cancelled the cleanup: stale lock, open segment, the next day lost | fixed: cancel once; synchronous cleanup before any await; no write after close |
 | G5 | f22acd8 | low | `scripts/record_lip_day.sh` | SIGQUIT (and USR1/USR2/ALRM) killed the wrapper with no end record; caffeinate ended with the wrapper | fixed: all catchable signals trapped; caffeinate waits on the recorder |
 | G6 | f22acd8 | low | `recorder.py` `_note_wall_jump` | the commit said only a `tick` field was added; `wall_jump` rows also enter the chained `lanes` stream | documented: they stay (tamper-evident), ignored by every study computation |
+
+## The fifth check (2026-10-01)
+
+A read-only check of the G1-G3 corrections (07fdf8c): verifiers for G1, G2, G3 and regressions,
+each with fresh reproductions, then a follow-up verifier for the corrections it prompted. Every
+check the verifiers ran held (G1 9/9, G2 10/10, G3 9/9, regression 12/12, follow-up 9/9). Their
+findings, with the full write-up and options in `docs/lip-prefreeze-audit.md`:
+
+| # | severity | where | what is wrong | status |
+|---|---|---|---|---|
+| G1-1 | medium | `lip_cli._calendar` | a crashed day counted toward the empty-day stop (introduced by 07fdf8c) | fixed, 5221289 |
+| G1-3 | medium | `recorder._checkpoint` | a failing due record skipped cleanup (07fdf8c), then replaced the last good checkpoint (5221289) | fixed, 5221289 and 1070cf6 |
+| F1 | medium | `valuation._fallback` | LOW's 1-hour mark can use a stale bid across a gap covering the mark window | **open - decision** |
+| F2 | medium | `valuation._exit_charge` | the exit's mid is read at the flatten's arrival, not at t_e as section 6 says | **open - decision** |
+| G1-2 | medium | `recorder._due_lanes` | per-market span: a re-admitted market is "due" in the gap between its pairs | **open - decision** |
+| G3-2 | low | `final.payment_status` | a crashed day ignores verified within-day withdrawals (HIGH only) | **open - decision** |
+| G3-3 | low | `replay.replay_day` | zeroes a crashed-day pair without a close time even when it has verified books; the note says "holds nothing" | **open - decision** |
+| E1 | low | `lip_cli._calendar` | a closed day on which no admission could be seen counts as empty | **open - decision** |
+| G3-4 | low | `store.gzip_file` | not atomic: a kill during rotation leaves a truncated `.gz` that every reader rejects | open - operational |
+| G3-5 | low | `recorder._write_health` | `health.json` not written atomically | open - operational |
+| F3 | low | `replay._params_for` | docstring says 2 s fallback; the code uses 1 s | open - documentation |

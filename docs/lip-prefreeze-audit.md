@@ -1,5 +1,11 @@
 # LIP shadow study: pre-freeze audit (2026-09-30)
 
+> **Status 2026-10-01, after the fifth check: `READY_TO_FREEZE = NO`.** G1-G3 are resolved
+> (07fdf8c) and so are three regressions the fifth check found in that resolution (5221289,
+> 1070cf6). Six further semantic questions - all but one pre-existing, none introduced by the
+> G1-G3 corrections - are open and need a decision; see "The fifth check" and section D. The
+> verdict block in A below is the state at the end of the hardening pass (ce24618).
+
 An operational reliability and auditability pass before `lip-sim-1.0.0` is tagged, so that
 every study day can be reconstructed and diagnosed after the fact. Study semantics were not
 to change in this pass; where a correctness bug turned up, it is documented here and left for
@@ -166,7 +172,8 @@ that says so; the items as registered are unchanged.
    closing figure (`_write_health`, behaviour unchanged) and by every checkpoint, which now
    stores the due lanes per tick, run-length encoded, up to its time. `day_health` applies item 6
    to the verified book lines' ticks with those due lanes; ticks after the checkpoint are misses.
-   A checkpoint without the record (none can exist from this code) cannot be judged and does not
+   A checkpoint is never written without the record (since 1070cf6: if it cannot be computed,
+   the last good checkpoint stands); one written by older code cannot be judged and does not
    count. Cost: about 15 ms of CPU per checkpoint at the end of the day, once a minute - no
    request is added, moved or re-timed by logic.
 4. *Evidence.* `tests/test_lip_fourthcheck.py` G1 section, 7 tests: both directions of the
@@ -240,6 +247,81 @@ readers).
 **No automatic restart** was added (Phase I): a restart would change tape recovery (above), the
 closing tick count, and so the counted-day figure. A failed run is observable instead.
 
+## The fifth check (2026-10-01)
+
+Read-only and narrower than the fourth: one verifier each for G1, G2, G3 and regressions, each
+building fresh reproductions rather than relying on the unit tests, then a follow-up verifier for
+the corrections the check itself prompted. Three independent skeptics adjudicated G1-1 (three of
+three confirmed); session limits interrupted the other skeptic runs, so every finding listed as
+open below was reproduced again independently - F1, F2, G1-2, G3-2 and G3-3 by me, the G1-3
+regression by both the regression and the follow-up verifier.
+
+**Verified - every check held.**
+- *G1 (9 of 9).* The crashed-day figure equals an independent item-6 implementation at 90 kill
+  points across 33 scenarios (independent lane failures, a lane due for part of the window, late
+  admissions, sleeps of 20 min to 7 h, 2 s cadence, one lane); restored SIGKILL checkpoints and
+  torn tails give the same; closed-day `health.json` is identical to ce24618; the books request
+  stream is identical on six identical runs; the 80% boundary is inclusive; both directions of
+  the old discrepancy are gone.
+- *G2 (10 of 10).* About 100,000 paths (random gaps, moves inside gaps, 1 s and 2 s cadence, all
+  policies, scenarios and regimes, the replay's REG_LOW budget): no LOW gain on any of 27,000+
+  unobserved or no-mid exits (ce24618 booked one 12,371 times); observed exits and DAY_EXIT
+  bitwise identical to ce24618; LOW <= HIGH on every path; the span-limit boundary exact; no
+  observation later than the exit used as its mid; the day's cadence reaches the valuation.
+- *G3 (9 of 9).* No line beyond a checkpoint reaches any study computation; an empty checkpoint
+  replays exactly as a never-recorded day; a day with neither file fails to load; a closed day's
+  validation is not weakened; tampering before the checkpoint is detected; the optional readers
+  are unchanged.
+- *Regression (12 of 12).* The only behavioural changes ce24618..5221289 are G1-G3, G1-1 and G1-3;
+  `scripts/` is untouched; the third and fourth checks' reproductions show F1-F6 and G4-G6 still
+  fixed; requests, streams, heartbeats and wrapper run records are identical across ce24618,
+  07fdf8c and 5221289 on identical runs; the day manifest differs only in a crashed day's share.
+- *Shakedown replay at HEAD:* labelled `INCOMPLETE_COVERAGE_NOT_PERFORMANCE_RESULT`; 173
+  market-days, 4,152 LOW/HIGH pairs, 0 LOW > HIGH in any field, 0 non-finite - byte-identical to
+  the pre-fix replay, because with recording stopped at 13:37 no exit has a walk book after it.
+
+**Fixed in this round - regressions in the G1 correction itself (in scope).**
+
+| # | commit | what was wrong | fix |
+|---|---|---|---|
+| G1-1 | 5221289 | a crashed day reported `due_ticks` for its verified prefix only, so one killed before the window counted toward the seven-empty-days stop and could end the study early | a crashed day is not known to be empty: it resets the run, like a day never recorded |
+| G1-3 | 5221289 | a failure computing the checkpoint's due record (an unparseable close time) escaped the recorder's `finally`: lock held, segments open, the next days lost | caught |
+| G1-3' | 1070cf6 | the first G1-3 fix still wrote that checkpoint, without the record: it replaced the last good one, so the day was never counted - and a carried pair's unparseable close time became verified, so replay-day raised and `study --final` refused the whole study | no checkpoint is written; the last good one stands, as if killed there (verified through the real CLI); the manifest passes `rule_inputs_missing` through |
+
+**Open - semantic; not fixed under the stop rule. Each needs a decision before day 1.**
+
+| # | where | demonstrated | origin | options (recommended first) |
+|---|---|---|---|---|
+| F1 | `valuation._fallback` (1-hour mark, no two-sided book in [t+3600, t+3900]) | a gap covering a fill's whole mark window - a sleep of 5 minutes or more - makes LOW mark at the last bid before the gap: MARK_1H LOW +$32.76 instead of -$42.24. The close branch does the same across a gap spanning the close | pre-existing (identical at ce24618); section 6 says only "the held side's best bid", not when | (a) LOW takes a bid only from a book in the window or an OBSERVED second (section 5.1), else 0 - LOW stays pessimistic, as G2 made it for the exit; (b) ratify the stale-bid reading in the correction note |
+| F2 | `valuation._exit_charge` | section 6 charges the flatten against `mid_held(t_e)` at participation end; the code reads it at the flatten's arrival t_e + queue delay + L - 42 s later under the REG_LOW budget: charge -$7.94 where the text gives -$27.94. Either direction, depending on the drift | since the first implementation (681c4c3); the G2 test follows the code's `at` | (a) read the reference and its section 5.1 test at t_e, the walk still at t_e + delay + L, as section 6 is written; (b) register the arrival-time reading |
+| G1-2 | `recorder._due_lanes` | one span per market across its pairs, so a market re-admitted after a gap is "due" in the gap with nothing to read: closed day 0.8707 where per-pair item 6 gives 0.99998; a crashed day not counted (0.7279) where the rule counts it (0.8571). Only ever lowers the figure; with one book lane (TAPE_PT) it needs the re-admitted market to be the only live one | since 7a6f6f6 | (a) per-pair liveness, exactly what `recorded_markets` reads; (b) register the per-market span |
+| G3-2 | `final.payment_status` | on a crashed day a verified within-day withdrawal is ignored (`registry.json` is written only at close): a withdrawn, never-paid program pays in HIGH (up to $25.57 in the reproduction) | since e41da4f; HIGH only | (a) also read withdrawals from the verified programs rows; (b) leave |
+| G3-3 | `replay.replay_day` vs the correction note | the note zeroes a pair "of which the verified record holds nothing"; the code zeroes any crashed-day pair without a verified close time, even one with 900 verified book rows (a closed day still raises) | 07fdf8c (this round) | (a) reword the note to the code: such a pair enters at zero whatever else it holds, since the replay cannot run without a close time; (b) zero only pairs with no verified data and raise otherwise - which can block the study |
+| E1 | `lip_cli._calendar` | a day the recorder closed but on which it could see no admission - the machine asleep through the window, the venue unreachable all evening, close times that never parse - has `due_ticks` 0 and counts toward the seven-empty-days stop, which can end the study early (never flatters a result) | pre-existing, the same reasoning as G1-1 | (a) count a closed day as empty only if it obtained a complete active listing in the admission period, logged no control errors and had no wall jump over the window; (b) register that such days count |
+
+All six are decisions about what the registration means, or code that does not match it. Decided
+now, each is one more line in the dated correction note under Amendment 3 - before day 1, so no
+version bump.
+
+**Operational, pre-existing - not semantic, outside G1-G3, recommended before the freeze on your
+go-ahead** (after it, any change to these modules shows as drift in `freeze-manifest --check`):
+- the hourly gzip of a segment is not atomic: a kill in its 1-2 s window leaves a truncated `.gz`
+  beside the intact `.jsonl`, and every reader raises `EOFError` - which stops `study` until the
+  day is repaired by hand (reproduced with a real SIGKILL);
+- `health.json` is written in place, not atomically (`ends.json` and the heartbeat are);
+- under TAPE_PT - the mode the pre-flight selected - the day manifest's tape section counts only
+  global-tape polls and reports 0 polls and 0 covered seconds, and the heartbeat's `watermark` is
+  `None`; the reader's per-ticker coverage, which the replay uses, is correct;
+- `replay._params_for`'s docstring says "2 s fallback" where the code falls back to 1 s;
+- not reproduced, from code reading: after one lane raises, sibling lanes are not cancelled and,
+  with real httpx providers whose close yields, could rewrite the heartbeat after cleanup.
+
+**The pre-flight ran.** The 12:26 UTC waiter I reported on 2026-09-30 as gone was not: it ran the
+G5 pre-flight at 12:26:21 UTC - one read-only request, logged in `lip-offday-requests.jsonl` -
+and wrote `artifacts/forward/lip-cadence.json`: **TAPE_PT** (the global tape's p95 cost 6.5
+requests/s against the 1.5 threshold), tape limit 1000, `min_ts` honoured, book cadence 1 s. The
+file is untracked and left in place; delete it to run G5 yourself.
+
 ## C. Remaining risks software cannot solve
 
 - **Lid-close (clamshell) sleep on battery.** No process can prevent it. The maker study lost
@@ -276,6 +358,16 @@ whose window has not started. The operational hardening itself (f22acd8 and the 
 G4-G6) is complete and needs no further change.
 
 The restart duplicate is not a blocker as long as study days are never restarted by hand.
+
+### After the fifth check (2026-10-01)
+
+The blockers above are resolved: G1-G3 (07fdf8c, 5221289, 1070cf6), and G5 (the pre-flight ran).
+The commit at HEAD is **not yet safe to tag**. The remaining blockers are the six open semantic
+decisions of the fifth check - F1, F2, G1-2, G3-2, G3-3 and E1 - and your acceptance of the
+semantic commits made since e41da4f. Once decided and implemented, the freeze needs a short check
+of those lines only, the suite, `freeze-manifest --write` twice with identical digests, and then
+the operator steps in E. Day 1 moves to the first window after that; `close-gates` accepts any
+day whose window has not started.
 
 ## E. Commands (run from the repository root)
 
