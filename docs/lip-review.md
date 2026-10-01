@@ -157,3 +157,15 @@ findings, with the full write-up and options in `docs/lip-prefreeze-audit.md`:
 | G3-4 | low | `store.gzip_file` | not atomic: a kill during rotation leaves a truncated `.gz` that every reader rejects | open - operational |
 | G3-5 | low | `recorder._write_health` | `health.json` not written atomically | open - operational |
 | F3 | low | `replay._params_for` | docstring says 2 s fallback; the code uses 1 s | open - documentation |
+
+## The sixth check (2026-10-01)
+
+A read-only check of the author's 2026-10-01 decisions (2afe10b: F1, F2, G1-2) and the approved
+operational fixes (75a5356), in three tracks - valuation; recorder and operations; regression,
+separability and test genuineness - with two independent skeptics per finding. Every check of the
+code held (details in `docs/lip-prefreeze-audit.md`). Findings:
+
+| # | severity | where | what is wrong | status |
+|---|---|---|---|---|
+| T1 | low | `tests/test_lip_ops_fixes.py` (for `store.gzip_file`) | no test detected a reversion of the atomic gzip: reverted alone, it passed every test while a kill mid-copy left a truncated `.gz` that no reader could open | fixed, 0ee7d83 (test only) |
+| T2 | low | the audit's test counts | "6 fail at ba2fbab, 3 guard" needed its interpretation: 4 of the 6 detect real defects, 1 concerns a file only the new code creates, 1 is a guard that fails only on a new key | documented |

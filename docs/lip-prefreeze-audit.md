@@ -1,5 +1,11 @@
 # LIP shadow study: pre-freeze audit (2026-09-30)
 
+> **Status 2026-10-01, after the sixth check: no open software finding.** The author decided the
+> fifth check's six questions (2afe10b: F1, F2, G1-2; G3-2, G3-3 and E1 registered as the code
+> stands); the approved operational fixes are in 75a5356; the sixth check's one surviving finding
+> (T1, a missing test) is closed by 0ee7d83. Full suite at 0ee7d83: 3,110 passed, 1 skipped, 1 xfailed (3,112 collected). See "The 2026-10-01
+> decisions and the sixth check" and section D. The paragraph below is the earlier status.
+>
 > **Status 2026-10-01, after the fifth check: `READY_TO_FREEZE = NO`.** G1-G3 are resolved
 > (07fdf8c) and so are three regressions the fifth check found in that resolution (5221289,
 > 1070cf6). Six further semantic questions - all but one pre-existing, none introduced by the
@@ -322,6 +328,67 @@ and wrote `artifacts/forward/lip-cadence.json`: **TAPE_PT** (the global tape's p
 requests/s against the 1.5 threshold), tape limit 1000, `min_ts` honoured, book cadence 1 s. The
 file is untracked and left in place; delete it to run G5 yourself.
 
+## The 2026-10-01 decisions and the sixth check
+
+**The decisions** (the author's, recorded in the dated correction note under Amendment 3):
+F1 - LOW's 1-hour mark takes a bid only from a book in the mark window or at a section 5.1
+OBSERVED second, else 0 (the close branch likewise); F2 - the exit is charged against
+`mid_held(t_e)` at participation end, with section 5.1's test on t_e's second and item 11's last
+mid by t_e; G1-2 - a market is due while one of its own pairs is live. G3-2, G3-3 and E1 are
+registered as the code stands (G3-3's note wording corrected to match the code).
+
+| commit | kind | content | tests |
+|---|---|---|---|
+| 2afe10b | semantic | F1, F2 (`valuation.py`), G1-2 (`recorder._due_lanes`); the decisions block of the correction note | `tests/test_lip_decisions.py`: 11 tests - **8 fail at ba2fbab** (all on semantic assertions) **and 3 guard unchanged behaviour**. The commit message said 9 and 2; that count was wrong and is corrected here and in 75a5356's message (the commit is not amended) |
+| 75a5356 | operational | atomic segment gzip with read-side recognition of a repeated row (whole-row identical, else an integrity failure); atomic `health.json`; per-feed tape figures under TAPE_PT in the manifest and heartbeat; a docstring | `tests/test_lip_ops_fixes.py`: 9 tests - 6 fail at ba2fbab and 3 pass there. Of the 6: 4 detect real ba2fbab defects (the read-side de-duplication, the TAPE_PT figures, and the two `health.json` tests - the latter fail by `AttributeError` on the new helper, which is how a test of a missing fix fails); 1 concerns a stray `.gz.tmp` that only the new code creates; 1 (`test_the_global_tape_figures_are_unchanged`) is a guard of unchanged behaviour that fails at ba2fbab only because it also asserts the new `mode` key |
+| 0ee7d83 | test only | closes T1 below | 2 tests (with and without an earlier same-hour `.gz`) that SIGKILL `gzip_file` in a child process half way through the copy; both fail against the reverted function and pass at HEAD |
+
+**The sixth check** - read-only, against 75a5356, in three tracks (valuation; recorder and
+operations; regression, separability and test genuineness), each building fresh reproductions and
+keeping running notes; every substantive finding then went to two independent skeptics. Session
+limits and dropped connections ended the first three launches before any agent returned; the
+evidence was recovered from the tracks' notes, the one unfinished check (attribution of every
+changed value) was completed by hand, and the skeptics ran separately.
+
+*Verified - every check held:*
+- F1 and F2 equal an independent implementation of the decided rules, mark by mark and exit by
+  exit; a perturbation test - book prices scrambled wherever the rules say they must not matter -
+  finds 0 violations over 11,191 marks and 1,494 exits at HEAD, and catches the old code.
+- Every changed value is accounted for: ba2fbab to 75a5356 changes only MARK_1H (1,460 of 51,840
+  values on 120 random days); each change decomposes exactly into F1 mark changes (7,658, all LOW,
+  each meeting F1's condition) and exit-charge changes (650 from F2's reference time, 192 from F1
+  through a walk remainder valued at the fills' average mark); 0 unexplained. HIGH marks never
+  change; DAY_EXIT, accrued, pay, fills and orders are bitwise identical to ba2fbab.
+- LOW <= HIGH and no non-finite value: 17,320 values on degenerate days (no books, one book,
+  one-sided, closes at the first second, zero fills, no walk book), 0 violations.
+- G1-2: due equals what the lanes read - 0 mismatching ticks over 2,000 random admission states
+  (ba2fbab: over a million); 9 full-day scenarios across the three commits: days without a
+  re-admitted market byte-identical, requests and every stream identical.
+- Separability: 2afe10b holds only F1, F2 and G1-2; 75a5356 only the operational fixes; each passes
+  the LIP suite on its own (269 + 1 xfailed; 278 + 1 xfailed). Eligibility, fills, simulator,
+  scoring, study, final, reader and the CLI are byte-identical to ba2fbab; aggregation unchanged.
+- Test genuineness by mutation (each change reverted alone): every change is caught by a test
+  aimed at it - except the atomic gzip (T1).
+
+*Findings after the skeptics:*
+- **T1 - survived (both skeptics confirmed, and an independent reproduction):** no test detected
+  a reversion of the atomic `gzip_file`: with it alone reverted, all 278 LIP tests passed, while a
+  kill mid-copy left a truncated `.gz` that every reader rejected. Operational test coverage; the
+  code at 75a5356 was correct. Closed by 0ee7d83.
+- **T2 - narrowed (one skeptic confirmed with a correction, one refuted the main claim):** what
+  stands is the interpretation of the 6-and-3 count, given in the table above. Documentation only.
+
+*Validation at 0ee7d83:* full suite 3,110 passed, 1 skipped, 1 xfailed (3,112 collected); LIP suite 280 passed, 1 xfailed; ruff clean; compileall clean.
+
+*Shakedown replay at 75a5356 (code unchanged since):* `INCOMPLETE_COVERAGE_NOT_PERFORMANCE_RESULT`;
+173 market-days, 4,152 LOW/HIGH pairs, 0 LOW > HIGH in any field, 0 non-finite; sha256 changed to
+`56c3dd4c...` as F1 says it should - recording stopped at 13:37, so fills after about 12:37 have no
+book in their mark window and LOW no longer marks them at the last pre-gap bid. **It is a plumbing
+check of 72 recorded minutes out of 735, not evidence about the strategy, and must never be read
+as performance.** Gaps in recording are a limitation of the study's coverage, not a result about
+the software's correctness: the software records them, and the pre-registered rules decide what a
+day with gaps counts for.
+
 ## C. Remaining risks software cannot solve
 
 - **Lid-close (clamshell) sleep on battery.** No process can prevent it. The maker study lost
@@ -368,6 +435,14 @@ semantic commits made since e41da4f. Once decided and implemented, the freeze ne
 of those lines only, the suite, `freeze-manifest --write` twice with identical digests, and then
 the operator steps in E. Day 1 moves to the first window after that; `close-gates` accepts any
 day whose window has not started.
+
+### After the sixth check (2026-10-01)
+
+No software finding is open. The blockers of the fifth check are decided and implemented
+(2afe10b, 75a5356) and the sixth check's one surviving finding is closed (0ee7d83). What remains
+before day 1 are the operator steps in E - the freeze manifest (generated twice from unchanged
+files with identical digests), the tag, the cron line and `close-gates` - and the author's
+acceptance of the semantic commits since e41da4f. The G5 pre-flight has run (TAPE_PT).
 
 ## E. Commands (run from the repository root)
 
