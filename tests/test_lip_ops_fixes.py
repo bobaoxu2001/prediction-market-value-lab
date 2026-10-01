@@ -8,6 +8,11 @@ from __future__ import annotations
 import asyncio
 import gzip
 import json
+import signal
+import subprocess
+import sys
+import textwrap
+import time
 from dataclasses import replace
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
@@ -79,6 +84,82 @@ def test_a_restart_within_the_hour_keeps_the_earlier_member_first(tmp_path):
         assert len(fh.read().splitlines()) == 6
     assert [b["i"] for b in read_stream(day, "books")] == list(range(6))
 
+
+
+REPO = Path(__file__).resolve().parents[1]
+KILL_IN_GZIP = textwrap.dedent("""
+    import shutil, sys, time
+    from pathlib import Path
+    sys.path.insert(0, {repo!r})
+    from pmvl_markets.lip import store
+    src, half, ready = Path({jsonl!r}), {half}, Path({ready!r})
+
+    def slow_copy(fsrc, fdst, length=0):
+        written = 0
+        while True:
+            buf = fsrc.read(65536)
+            if not buf:
+                return
+            fdst.write(buf)
+            written += len(buf)
+            if written >= half and not ready.exists():
+                fdst.flush()
+                ready.write_text("half")      # the parent kills us here, mid-copy
+                time.sleep(60)
+
+    store.shutil.copyfileobj = slow_copy
+    store.gzip_file(src)
+""")
+
+
+def _kill_gzip_midway(tmp_path, jsonl: Path) -> None:
+    """Run gzip_file on ``jsonl`` in a child process and SIGKILL it half way through the copy -
+    a real interruption of the function itself, not a hand-made picture of what it leaves."""
+    ready = tmp_path / "ready"
+    child = subprocess.Popen([sys.executable, "-c", KILL_IN_GZIP.format(
+        repo=str(REPO), jsonl=str(jsonl), half=jsonl.stat().st_size // 2, ready=str(ready))])
+    deadline = time.time() + 60
+    while not ready.exists() and time.time() < deadline:
+        time.sleep(0.05)
+    assert ready.exists(), "the child never reached the middle of the copy"
+    child.send_signal(signal.SIGKILL)
+    child.wait(timeout=10)
+
+
+def _big_segment(tmp_path, n: int, existing_gz: bool = False):
+    day = tmp_path / "day"
+    start_i = 0
+    if existing_gz:   # an earlier run in the same hour already gzipped its rows
+        w = SegmentWriter(day, gzip_closed=False)
+        for i in range(50):
+            w.append("books", {"i": i, "pad": "y" * 500}, at=datetime(2026, 10, 1, 12, 30, tzinfo=UTC))
+        gzip_file(next(day.glob("segment-*")) / "books.jsonl")
+        start_i = 50
+    w = SegmentWriter(day, gzip_closed=False)
+    for i in range(start_i, start_i + n):
+        w.append("books", {"i": i, "pad": "x" * 2000}, at=datetime(2026, 10, 1, 12, 30, tzinfo=UTC))
+    return day, next(day.glob("segment-*")) / "books.jsonl"
+
+
+@pytest.mark.parametrize("existing_gz", [False, True])
+def test_gzip_killed_mid_copy_leaves_every_row_readable(tmp_path, existing_gz):
+    """Sixth check, T1: no test exercised gzip_file itself being interrupted. Reverting it to
+    the old in-place append passed every test, yet a kill mid-copy then leaves a truncated
+    .gz beside the intact .jsonl and every reader raises EOFError. Here a real child process
+    is killed half way through the copy: the old .gz (if any) must be untouched, nothing
+    truncated may sit under the stream's name, and every row must read back in order."""
+    day, jsonl = _big_segment(tmp_path, 2000, existing_gz=existing_gz)
+    gz = jsonl.with_suffix(".jsonl.gz")
+    before = gz.read_bytes() if gz.exists() else None
+    _kill_gzip_midway(tmp_path, jsonl)
+    assert jsonl.exists(), "the source is only removed after a complete rename"
+    after = gz.read_bytes() if gz.exists() else None
+    assert after == before, "the .gz under the stream's name was not touched by the interrupted copy"
+    expected = list(range(50 + 2000)) if existing_gz else list(range(2000))
+    assert [b["i"] for b in read_stream(day, "books")] == expected
+    assert SegmentWriter(day)._tails["books"][1] == len(expected), "a resumed writer continues the chain"
+    gzip_file(jsonl)                                      # and a later, complete gzip is clean
+    assert [b["i"] for b in read_stream(day, "books")] == expected
 
 # ================================================================== ops: atomic health.json
 def test_health_json_is_replaced_whole(tmp_path, monkeypatch):
