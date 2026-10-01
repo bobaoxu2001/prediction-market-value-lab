@@ -299,8 +299,16 @@ def build_manifest(day_dir: Path, *, runs_log: Path | None = None, freeze_path: 
     rates = {"tape": params.tape_rate, "status": params.status_rate, "control": params.control_rate}
     burst = {lane: n for lane, n in per_minute.items()
              if n > rates.get(lane, params.book_lane_rate) * 60 + 1}
-    complete = [p for p in polls if p.get("complete") and not p.get("ticker")]
-    breaks = sum(1 for a, b in zip(complete, complete[1:]) if float(b["min_ts"]) > float(a["sent_at"]))
+    # one feed per tape: the global feed ("*"), or each market's own under TAPE_PT; continuity
+    # and coverage are properties of a feed, so they are computed feed by feed
+    feeds: dict[str, list[dict[str, Any]]] = {}
+    for p in polls:
+        feeds.setdefault(p.get("ticker") or "*", []).append(p)
+    per_ticker = any(k != "*" for k in feeds)
+    complete_by_feed = {k: [p for p in v if p.get("complete")] for k, v in feeds.items()}
+    complete = [p for v in complete_by_feed.values() for p in v]
+    breaks = sum(1 for v in complete_by_feed.values() for a, b in zip(v, v[1:])
+                 if float(b["min_ts"]) > float(a["sent_at"]))
     out["integrity"] = {
         "verified": not error, "error": error,
         "read_to": "checkpoint" if ends_rec.prefix else "health.json", "verified_until": ends_rec.at,
@@ -309,7 +317,7 @@ def build_manifest(day_dir: Path, *, runs_log: Path | None = None, freeze_path: 
         "duplicate_trade_ids": dup_ids, "duplicate_book_reads": dup_reads,
         "first_book_sent_at": min((b["sent_at"] for b in books), default=None),
         "last_book_sent_at": max((b["sent_at"] for b in books), default=None),
-        "tape_first_min_ts": complete[0]["min_ts"] if complete else None,
+        "tape_first_min_ts": min((v[0]["min_ts"] for v in complete_by_feed.values() if v), default=None),
         "tape_last_newest": max((p.get("newest") or 0 for p in complete), default=None),
         "tape_continuity_breaks": breaks,
         "max_requests_per_minute": per_minute, "burst_lanes": burst,
@@ -326,15 +334,34 @@ def build_manifest(day_dir: Path, *, runs_log: Path | None = None, freeze_path: 
     due_end = None
     if gap_runs is not None and health.get("due_ticks"):
         due_end = max([r[1] for r in gap_runs] + [max((max(s) for s in ok_by_lane.values() if s), default=0)])
-    spans = sorted((max(lo, float(p["min_ts"])), min(hi, float(p["sent_at"]))) for p in complete)
-    merged: list[list[float]] = []
-    for a, b in spans:
-        if b <= a:
-            continue
-        if merged and a <= merged[-1][1]:
-            merged[-1][1] = max(merged[-1][1], b)
-        else:
-            merged.append([a, b])
+    def covered(feed_polls: list[dict[str, Any]]) -> float:
+        spans = sorted((max(lo, float(p["min_ts"])), min(hi, float(p["sent_at"]))) for p in feed_polls)
+        merged: list[list[float]] = []
+        for a, b in spans:
+            if b <= a:
+                continue
+            if merged and a <= merged[-1][1]:
+                merged[-1][1] = max(merged[-1][1], b)
+            else:
+                merged.append([a, b])
+        return round(sum(b - a for a, b in merged), 3)
+
+    covered_by_feed = {k: covered(v) for k, v in sorted(complete_by_feed.items())}
+    tape: dict[str, Any] = {
+        "mode": "per_ticker" if per_ticker else "global",
+        "polls": len(polls), "complete": len(complete),
+        "incomplete": sum(1 for p in polls if not p.get("complete")),
+        "pages": sum(int(p.get("pages", 0)) for p in polls),
+        "page_cap_hits": sum(1 for p in polls if p.get("page_cap_hit")),
+        "covered_seconds_in_window": None if per_ticker else covered_by_feed.get("*", 0.0),
+        "window_seconds": hi - lo,
+    }
+    if per_ticker:
+        per = sorted(v for k, v in covered_by_feed.items() if k != "*")
+        tape.update(feeds=len(per), covered_seconds_in_window_by_ticker={
+                        k: v for k, v in covered_by_feed.items() if k != "*"},
+                    covered_seconds_min=per[0] if per else 0.0,
+                    covered_seconds_median=per[len(per) // 2] if per else 0.0)
     out["coverage"] = {
         "window_ticks": health.get("window_ticks"), "due_ticks": health.get("due_ticks"),
         "ok_ticks": health.get("ok_ticks"), "book_success_share": health.get("book_success_share_of_window"),
@@ -342,12 +369,7 @@ def build_manifest(day_dir: Path, *, runs_log: Path | None = None, freeze_path: 
         "ok_ticks_by_lane_recorded": {k: v.get("ok_ticks_in_window") for k, v in
                                       sorted((health.get("lanes") or {}).items()) if k.startswith("book")},
         "book_gaps": None if gap_runs is None else _gaps(gap_runs, cadence, due_end),
-        "tape": {"polls": len([p for p in polls if not p.get("ticker")]), "complete": len(complete),
-                 "incomplete": sum(1 for p in polls if not p.get("complete")),
-                 "pages": sum(int(p.get("pages", 0)) for p in polls),
-                 "page_cap_hits": sum(1 for p in polls if p.get("page_cap_hit")),
-                 "covered_seconds_in_window": round(sum(b - a for a, b in merged), 3),
-                 "window_seconds": hi - lo},
+        "tape": tape,
     }
 
     # ---- faults, by lane and class, from each failed request's own error text

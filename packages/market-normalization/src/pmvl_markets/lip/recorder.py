@@ -39,7 +39,7 @@ from ..recording.writer import AppendOnlyLog
 from .http import LaneClient, lane_provider
 from .params import RECORDING, RecordingParams
 from .programs import ProgramRegistry
-from .store import BookEncoder, SegmentWriter, write_checkpoint
+from .store import BookEncoder, SegmentWriter, atomic_write_text, write_checkpoint
 from .universe import AdmissionState, AdmittedPair, program_eligible
 from .version import LIP_RECORDER_VERSION, LIP_SIM_VERSION, SAMPLE_SALT
 
@@ -352,7 +352,10 @@ class LipRecorder:
                           "gap_seconds": max(0, v.due_ticks_in_window - v.ok_ticks_in_window) * cadence,
                           "slept_ticks": v.late_ticks}
                       for k, v in self.lanes.items() if k.startswith("book")},
-            "tape": {**self._tape_stats, "watermark": self.watermark},
+            # under TAPE_PT each market has its own watermark: report the least advanced
+            "tape": {**self._tape_stats, "mode": self.params.tape_mode, "feeds": len(self._tape_marks),
+                     "watermark": self.watermark if self.params.tape_mode != "per_ticker"
+                     else min(self._tape_marks.values(), default=None)},
             "wall_jumps": len(self._wall_jumps),
             "slept_seconds": round(sum(j["jump_s"] for j in self._wall_jumps), 3),
             "checkpoint_at": self._last_checkpoint,
@@ -380,7 +383,7 @@ class LipRecorder:
         (self.out_dir / "study.json").write_text(json.dumps(body, indent=2) + "\n")
         health = {"v": LIP_RECORDER_VERSION, "skipped": reason, "counted_day": False,
                   "day": self.window.day.isoformat()}
-        (self.out_dir / "health.json").write_text(json.dumps(health, indent=2) + "\n")
+        atomic_write_text(self.out_dir / "health.json", json.dumps(health, indent=2) + "\n")
         self._heartbeat("skipped")
         return {"skipped": True, "reason": reason}
 
@@ -965,5 +968,5 @@ class LipRecorder:
             "streams": {k: list(v) for k, v in self.writer._tails.items()},
             "finished_at": _iso(self.clock.now()),
         }
-        (self.out_dir / "health.json").write_text(json.dumps(body, indent=2) + "\n")
+        atomic_write_text(self.out_dir / "health.json", json.dumps(body, indent=2) + "\n")
         return body

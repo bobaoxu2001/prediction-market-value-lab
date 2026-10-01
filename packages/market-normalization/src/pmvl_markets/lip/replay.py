@@ -80,7 +80,8 @@ def replay_market(md: MarketDay, day: str, program_id: str, *, writes_per_s: flo
 
 
 def _params_for(study: dict[str, Any]) -> SimParams:
-    """The span limit follows the cadence the day was actually recorded at (2 s fallback)."""
+    """The span limit follows the cadence the day was actually recorded at (SIM's 1 s when a
+    study.json does not say - the recorder always writes it)."""
     cadence = float(study.get("book_cadence_s") or SIM.cadence_s)
     return replace(SIM, cadence_s=cadence)
 

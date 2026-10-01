@@ -17,6 +17,7 @@ changed: a subclass seeds a new file's chain from the previous segment.
 from __future__ import annotations
 
 import gzip
+import hashlib
 import json
 import os
 import shutil
@@ -157,6 +158,8 @@ class SegmentWriter:
         # torn final line (a killed process) so the next append does not follow it
         for seg in sorted(p for p in self.day_dir.glob("segment-*") if p.is_dir()):
             for f in sorted(seg.iterdir(), key=_file_order):
+                if not (f.name.endswith(".jsonl") or f.name.endswith(".jsonl.gz")):
+                    continue  # e.g. a gzip's temporary file left by a kill: not part of the chain
                 stream = f.name.split(".")[0]
                 if f.suffix == ".jsonl":
                     _cut_torn_tail(f)
@@ -197,14 +200,38 @@ class SegmentWriter:
 
 
 def gzip_file(path: Path) -> Path:
-    """Gzip a closed segment file. An existing .gz (a restart within the same hour) is
-    appended to as a new gzip member, never overwritten - gzip readers read members in
-    order, so the chain stays in the order it was written."""
+    """Gzip a closed segment file, atomically. An existing .gz (a restart within the same
+    hour) is kept as the first members and the file is added as a new member, so the chain
+    stays in the order it was written. Everything goes to a temporary file that is fsynced
+    and then renamed over the .gz, and only then is the .jsonl removed: a kill at any point
+    leaves either the old .gz with the intact .jsonl, or the complete .gz with the .jsonl
+    still beside it (rows the reader recognises as the same, by sequence and digest) -
+    never a truncated .gz."""
     target = path.with_suffix(path.suffix + ".gz")
-    with path.open("rb") as src, gzip.open(target, "ab") as dst:
-        shutil.copyfileobj(src, dst)
+    tmp = target.with_name(target.name + ".tmp")
+    with tmp.open("wb") as raw:
+        if target.exists():
+            with target.open("rb") as old:
+                shutil.copyfileobj(old, raw)
+        with path.open("rb") as src, gzip.GzipFile(fileobj=raw, mode="wb") as dst:
+            shutil.copyfileobj(src, dst)
+        raw.flush()
+        os.fsync(raw.fileno())
+    os.replace(tmp, target)
     path.unlink()
     return target
+
+
+def atomic_write_text(path: Path, text: str) -> None:
+    """Write a whole file so a kill or a power cut leaves the old one or the new one, never
+    a torn one: a temporary file, fsynced, renamed over it."""
+    path = Path(path)
+    tmp = path.with_name(path.name + ".tmp")
+    with tmp.open("w") as fh:
+        fh.write(text)
+        fh.flush()
+        os.fsync(fh.fileno())
+    os.replace(tmp, path)
 
 
 def _file_order(path: Path) -> int:
@@ -240,6 +267,10 @@ def _raw_rows(path: Path, *, tolerate_torn_tail: bool = False) -> Iterator[dict[
             raise LogIntegrityError(f"{path}:{i + 1}: undecodable line") from exc
 
 
+def _row_hash(row: dict[str, Any]) -> str:
+    return hashlib.sha256(json.dumps(row, sort_keys=True, separators=(",", ":")).encode()).hexdigest()
+
+
 def read_stream(day_dir: Path, stream: str, *, verify: bool = True,
                 expect_end: tuple[int, str] | None = None, prefix: bool = False) -> Iterator[dict[str, Any]]:
     """Every body of one stream across all segments, with the chain verified end to end.
@@ -256,11 +287,22 @@ def read_stream(day_dir: Path, stream: str, *, verify: bool = True,
     newest = segments[-1] if segments else None
     for seg in segments:
         files = [seg / f"{stream}.jsonl.gz", seg / f"{stream}.jsonl"]
+        #: rows of this segment's .gz by sequence: a .jsonl still beside a complete .gz (a kill
+        #: between the gzip's rename and the unlink) repeats them, and is skipped row by row
+        #: only where the whole row is identical - any difference is an integrity failure
+        gz_rows: dict[int, str] = {}
         for f in files:
             if not f.exists():
                 continue
             torn_ok = seg == newest and f.suffix == ".jsonl"
             for lineno, row in enumerate(_raw_rows(f, tolerate_torn_tail=torn_ok), start=1):
+                seq = row.get("seq")
+                if f.suffix == ".gz" and seq is not None:
+                    gz_rows[int(seq)] = _row_hash(row)
+                elif seq is not None and int(seq) in gz_rows:
+                    if gz_rows[int(seq)] != _row_hash(row):
+                        raise LogIntegrityError(f"{f}:{lineno}: differs from the gzipped row it repeats")
+                    continue
                 body = json.dumps(row["body"], sort_keys=True, separators=(",", ":"))
                 if verify:
                     if row["prev"] != prev:
