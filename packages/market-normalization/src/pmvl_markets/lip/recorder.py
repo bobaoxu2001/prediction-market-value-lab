@@ -319,7 +319,10 @@ class LipRecorder:
         try:
             due = self._due_runs(at)
         except Exception:  # noqa: BLE001 - e.g. a close time that does not parse
-            due = None  # no record: such a day, if it dies, cannot be judged and is not counted
+            # no new checkpoint: the last good one stands, exactly as if the process had been
+            # killed there - nothing written since is certified, and the day is judged by the
+            # due record that checkpoint carries (and the cleanup that called us goes on)
+            return
         try:
             write_checkpoint(self.out_dir, dict(self.writer._tails), at, due=due)
         except OSError:

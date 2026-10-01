@@ -216,6 +216,10 @@ any study day; nothing below adds or changes a rule, and the items above stand a
   died is not known to have had "no admitted market due at any tick": its due ticks cover only
   its verified prefix. Like a day never recorded, it does not count toward the seven empty days.
   (Found by the fifth check in the correction above, which had let such a day count as empty.)
+- *Item 3 - a checkpoint that cannot carry its due record.* Each checkpoint carries the due
+  record the counted-day rule needs. Where that record cannot be computed (a close time that
+  does not parse), no checkpoint is written: the last good one stands, exactly as if the process
+  had been killed there, and the day is judged by it.
 
 ---
 

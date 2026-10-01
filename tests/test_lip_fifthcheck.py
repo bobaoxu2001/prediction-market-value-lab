@@ -106,4 +106,64 @@ def test_g1_3_a_failing_due_record_cannot_skip_the_recorders_cleanup(tmp_path):
     assert not list(day.glob("segment-*/*.jsonl")), "every segment was closed"
     assert json.loads((day / "heartbeat.json").read_text())["state"] == "aborted"
     ends = json.loads((day / "ends.json").read_text())
-    assert "due" not in ends, "no due record could be computed, so none is claimed"
+    assert "due" in ends and ends["at"] < (START + timedelta(minutes=2)).timestamp() + 60, \
+        "no checkpoint was written once its due record failed: the last good one stands"
+
+
+class LateUnparseableCloseVenue(FakeVenue):
+    """Fine all evening; from 13:40 one market's close time stops parsing."""
+
+    def answer(self, path, params):
+        out = super().answer(path, params)
+        if path == "/markets" and self.clock.now() >= START + timedelta(hours=1, minutes=15):
+            for m in out["markets"]:
+                if m["ticker"] == "KXFOO-A":
+                    m["close_time"] = "garbage"
+        return out
+
+
+def test_g1_3_a_day_that_dies_late_this_way_is_judged_by_its_last_good_checkpoint(tmp_path):
+    """Regression in the first G1-3 fix: a checkpoint without a due record replaced the last
+    good one, so such a day was never counted - and an unparseable close time certified on
+    a carried pair made the day unreplayable. Now the last good checkpoint stands."""
+    from pmvl_markets.lip.health import day_health
+    from pmvl_markets.lip.replay import replay_day
+
+    async def main():
+        clock = VirtualClock(START, scale=1.0)
+        rec = make_recorder(tmp_path, clock, LateUnparseableCloseVenue(clock), stop_minutes=0)
+        rec.stop_at, rec.shakedown = START + timedelta(hours=3), False
+        with pytest.raises(ValueError):
+            await rec.run()
+
+    run_virtual(main())
+    day = tmp_path / "day"
+    assert not (tmp_path / "lock").exists()
+    ends = json.loads((day / "ends.json").read_text())
+    assert "due" in ends and ends["due"]["bound"] > 0, "judged by the last good checkpoint"
+    h = day_health(day)
+    assert not h.get("rule_inputs_missing") and h["ok_ticks"] > 0
+    assert "garbage" not in json.dumps(list(_verified_markets(day))), "the bad close time is not certified"
+    assert replay_day(day, state_path=tmp_path / "state.json", workers=1), "the day replays"
+
+
+def _verified_markets(day):
+    from pmvl_markets.lip.store import read_checked, stream_ends
+
+    ends = stream_ends(day)
+    yield from read_checked(day, "markets", ends)
+    yield from read_checked(day, "status", ends)
+
+
+def test_g1_3_the_manifest_says_when_the_rule_could_not_be_applied(tmp_path):
+    from pmvl_markets.lip.daymanifest import qualify
+
+    day = tmp_path / "2026-10-01"
+    day.mkdir()
+    lo = datetime(2026, 10, 1, 12, 30, tzinfo=UTC)
+    (day / "study.json").write_text(json.dumps({
+        "tag": "study", "day": "2026-10-01", "book_cadence_s": 1.0,
+        "window": {"window_start": lo.isoformat(), "window_end": (lo + timedelta(seconds=100)).isoformat()}}))
+    (day / "ends.json").write_text(json.dumps({"at": lo.timestamp(), "streams": {}}))
+    q = qualify(day)
+    assert q["status"] == "NOT_COUNTED" and q["rule_inputs_missing"] is True

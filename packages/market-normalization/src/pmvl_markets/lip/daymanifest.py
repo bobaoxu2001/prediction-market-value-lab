@@ -212,7 +212,8 @@ def qualify(day_dir: Path, params: RecordingParams = RECORDING) -> dict[str, Any
     return {"status": "COUNTED" if counted else "NOT_COUNTED", "counted_day": counted,
             "source": "checkpoint (the recorder died)", "tag": study.get("tag"),
             "share": h.get("book_success_share_of_window"), "threshold": params.counted_day_share,
-            "verified_until": h.get("verified_until"), "rule": rule}
+            "verified_until": h.get("verified_until"),
+            "rule_inputs_missing": bool(h.get("rule_inputs_missing")), "rule": rule}
 
 
 # ---------------------------------------------------------------------------------- manifest
