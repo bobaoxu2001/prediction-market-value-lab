@@ -317,7 +317,11 @@ class LipRecorder:
         (Amendment 3) instead of being unreadable for want of health.json."""
         at = self.clock.now().timestamp()
         try:
-            write_checkpoint(self.out_dir, dict(self.writer._tails), at, due=self._due_runs(at))
+            due = self._due_runs(at)
+        except Exception:  # noqa: BLE001 - e.g. a close time that does not parse
+            due = None  # no record: such a day, if it dies, cannot be judged and is not counted
+        try:
+            write_checkpoint(self.out_dir, dict(self.writer._tails), at, due=due)
         except OSError:
             return  # best effort: the next minute tries again, and a failure here must never
             # keep a segment open, a lock held, or the recording from going on

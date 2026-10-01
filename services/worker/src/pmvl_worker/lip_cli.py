@@ -400,7 +400,10 @@ def _calendar():
             if counted == SIM.min_counted_days:
                 return day1, d
         # the exogenous stop: seven consecutive days with nothing admitted end the study
-        empty_run = empty_run + 1 if body and not body.get("skipped") and body.get("due_ticks") == 0 else 0
+        # (a day whose recorder died is not known to be empty: its due ticks cover only its
+        # verified prefix, so it resets the run as a day never recorded does)
+        empty_run = (empty_run + 1 if body and not body.get("skipped") and not body.get("crashed")
+                     and body.get("due_ticks") == 0 else 0)
         if empty_run >= 7:
             return day1, d
         d += timedelta(days=1)

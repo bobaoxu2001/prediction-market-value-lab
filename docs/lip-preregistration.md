@@ -212,6 +212,10 @@ any study day; nothing below adds or changes a rule, and the items above stand a
   no admitted hour is dropped). A day with neither file remains an integrity failure, and on a day
   the recorder closed a missing close time remains an error. (The code had read every stream in
   full when the checkpoint was empty.)
+- *Item 3 and Amendment 2 item 8 - a crashed day and the exogenous stop.* A day whose recorder
+  died is not known to have had "no admitted market due at any tick": its due ticks cover only
+  its verified prefix. Like a day never recorded, it does not count toward the seven empty days.
+  (Found by the fifth check in the correction above, which had let such a day count as empty.)
 
 ---
 
