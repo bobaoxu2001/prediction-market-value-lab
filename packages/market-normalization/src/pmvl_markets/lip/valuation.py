@@ -82,23 +82,29 @@ def _mark(md: MarketDay, side: LipSide, t: float, *, low: bool, params: SimParam
         paid = _payout(md, side)
         if paid is not None:
             return paid
-        return _fallback(md, side, md.close_time, low)
+        return _fallback(md, side, md.close_time, low, params=params)
     for b in md.books.received_between(t, t + params.mark_search_s):
         m = side_mid(b, side)
         if m is not None:
             return m
-    return _fallback(md, side, t + params.mark_search_s, low)
+    return _fallback(md, side, t + params.mark_search_s, low, params=params, since=t)
 
 
-def _fallback(md: MarketDay, side: LipSide, at: float, low: bool) -> float:
+def _fallback(md: MarketDay, side: LipSide, at: float, low: bool, *, params: SimParams = SIM,
+              since: float | None = None) -> float:
     """No two-sided mid where one was needed. LOW: the held side's best bid (0 if none) -
-    the lowest a holder could get. HIGH: the higher of the last two-sided mid and that
-    same bid, so HIGH's mark is never below LOW's (Amendment 3, F2)."""
+    the lowest a holder could get - and only a bid that was there to be had: from a book
+    received in the mark window [since, at], or at a second OBSERVED under section 5.1.
+    A bid from before a gap that covers the window (or spans the close) is stale, and LOW
+    takes 0 (Amendment 3 correction note, F1). HIGH: the higher of the last two-sided mid
+    and the held side's bid, however old, so HIGH's mark is never below LOW's."""
     book = md.books.before(at)
     bid = book.side(side).best if book is not None else None
     held = float(bid) if bid is not None else 0.0
     if low:
-        return held
+        fresh = book is not None and (
+            (since is not None and book.received_at >= since) or _observed(md, math.floor(at), params))
+        return held if fresh else 0.0
     m = _last_mid(md, side, at)
     return held if m is None else max(m, held)
 
@@ -138,17 +144,21 @@ def _exit_charge(path: SimPath, md: MarketDay, marked: dict[LipSide, list[float]
                  params: SimParams = SIM) -> float:
     """Flattening the residual, charged against what it was worth.
 
-    charge = proceeds - qty x reference - fee (section 6), against mid_held at the exit. That
-    mid exists only where the exit's second is OBSERVED (section 5.1) and the reference book
-    is two-sided: then it is the reference in both envelopes (Amendment 3.2). Across a gap
-    the book before it is not the mid at the exit, so the flatten has no two-sided mid to be
-    measured against, and (Amendment 2, item 11) the reference is chosen from candidates - the
+    charge = proceeds - qty x reference - fee (section 6), against mid_held(t_e) at
+    participation end t_e (Amendment 3 correction note, F2). That mid exists only where t_e's
+    second is OBSERVED (section 5.1) and the reference book is two-sided: then it is the
+    reference in both envelopes (Amendment 3.2). Across a gap the book before it is not the
+    mid at t_e, so the flatten has no two-sided mid to be measured against, and (Amendment 2,
+    item 11) the reference is chosen from candidates - the
     reference book's mid (its held-side bid where it has no mid), the walk book's held-side
-    bid and the last two-sided mid - and for a charge a *higher* reference is the pessimistic one: LOW takes the
+    bid and the last two-sided mid at or before t_e - and for a charge a *higher* reference is the pessimistic one: LOW takes the
     highest of them, never less than the sale's own average price, so a charge is never
     a gain; HIGH the lowest. A remainder no bid could take is worth nothing in LOW (the
     value its fills' marks gave it is taken back) and nets to zero in HIGH.
     """
+    # section 6: the reference is mid_held(t_e) at participation end t_e; the walk is the
+    # first book received at or after the flatten's arrival (``at`` = t_e + delay + L)
+    t_e = path.participation[1]
     charge = 0.0
     for at, side, qty, proceeds, fee in path.exits:
         if math.isnan(proceeds):
@@ -157,9 +167,9 @@ def _exit_charge(path: SimPath, md: MarketDay, marked: dict[LipSide, list[float]
                 charge -= qty * ((total / n) if n > 0 else 0.0) / 100
             continue
         candidates = []
-        ref_book = md.books.before(at)
+        ref_book = md.books.before(t_e)
         mid = side_mid(ref_book, side) if ref_book is not None else None
-        if mid is not None and _observed(md, math.floor(at), params):
+        if mid is not None and _observed(md, math.floor(t_e), params):
             charge += proceeds - qty * mid / 100 - fee
             continue
         if mid is not None:  # item 11: the reference book's mid, or its bid where it has none
@@ -169,7 +179,7 @@ def _exit_charge(path: SimPath, md: MarketDay, marked: dict[LipSide, list[float]
         walk_book = next((b for b in md.books.snapshots if b.received_at >= at), None)
         if walk_book is not None and walk_book.side(side).best is not None:
             candidates.append(float(walk_book.side(side).best))
-        last = _last_mid(md, side, at)
+        last = _last_mid(md, side, t_e)
         if last is not None:
             candidates.append(last)
         sale = proceeds * 100 / qty if qty > 0 else 0.0

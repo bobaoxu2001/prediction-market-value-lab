@@ -221,6 +221,35 @@ any study day; nothing below adds or changes a rule, and the items above stand a
   does not parse), no checkpoint is written: the last good one stands, exactly as if the process
   had been killed there, and the day is judged by it.
 
+**Decisions of 2026-10-01 (before day 1).** The fifth check found six places where the code and
+the registration did not meet, or the registration was silent. The author decided them as
+follows; the first three change the code, the last three register the code as it stands.
+
+- *F1 - section 6, LOW's fallback marks.* "The held side's best bid" is a bid that was there to be
+  had: from a book received inside the mark window [t_f + 3,600 s, t_f + 3,900 s], or at a second
+  OBSERVED under section 5.1. A bid from before a gap that covers the whole window is stale and
+  LOW uses 0 ("0 if there is none"). The close branch is the same: the held side's last bid only
+  if the close's second is observed, else 0. HIGH is unchanged.
+- *F2 - section 6, the exit charge.* `mid_held(t_e)` is read at participation end t_e, as written:
+  the reference book is the last one received by t_e, section 5.1's test is on t_e's second, and
+  item 11's "last two-sided mid" is the last one by t_e. The walk is unchanged: the first book
+  received at or after the flatten's arrival. A price move during the queue delay therefore
+  appears in the exit charge, in both envelopes.
+- *G1-2 - Amendment 2 item 6, "due".* A market is live at a tick while one of its own pairs is
+  (from its admission to its participation end plus the mark tail) - exactly the markets the book
+  lanes read. A market between two of its pairs is not due.
+- *G3-2 - item 9 on a day whose recorder died.* Within-day withdrawals are taken from the
+  recorder's `registry.json`, which only a closed day has; on a crashed day a withdrawal is seen
+  only through later complete active listings. Registered as it stands (it affects HIGH only).
+- *G3-3 - item 3 above, the zero record.* On a day whose recorder died, a pair whose verified
+  record lacks its close time - which the replay cannot run without - enters at its admitted
+  hours and $0, whatever else its record holds. This replaces the wording "of which the verified
+  record holds nothing - not even its close time", which described the rule too narrowly.
+- *E1 - Amendment 2 item 8, the exogenous stop.* A day the recorder closed counts toward the
+  seven empty days whenever no admitted market was due at any tick - including a day on which it
+  could see no admission (the machine asleep, the venue unreachable). Registered as it stands; it
+  can only end the study early.
+
 ---
 
 ## 1. Scoring rule as implemented

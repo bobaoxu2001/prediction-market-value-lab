@@ -877,23 +877,29 @@ class LipRecorder:
 
     def _due_lanes(self, upto: int):
         """(tick, number of book lanes due) for window ticks 0..upto-1. A lane is due when it
-        had admitted markets to read (Amendment 2 item 6): the markets live at the tick, by
-        one sweep over the pairs' intervals, fill the lanes in order, book_lane_size each.
-        The one definition of "due" - the closing health and every checkpoint use it."""
+        had admitted markets to read (Amendment 2 item 6): a market is live at the tick while
+        one of its own pairs is - [admitted_at, participation end + mark tail), exactly what
+        ``recorded_markets`` reads, so a market between two of its pairs is not (Amendment 3
+        correction note, G1-2) - and the live markets fill the lanes in order, book_lane_size
+        each. The one definition of "due" - the closing health and every checkpoint use it."""
         lo, cadence = self.window.window_start.timestamp(), self.params.book_cadence_s
         size, n_lanes = self.params.book_lane_size, len(self._book_lane_names())
-        spans: dict[str, tuple[float, float]] = {}
+        edges: list[tuple[float, int, str]] = []
         for pair in self.admission.admitted.values():
             a, b = pair.admitted_at, self._participation_end(pair) + self.params.mark_tail_s
-            old_span = spans.get(pair.market)
-            spans[pair.market] = (min(a, old_span[0]), max(b, old_span[1])) if old_span else (a, b)
-        edges = sorted([(a, 1) for a, _ in spans.values()] + [(b, -1) for _, b in spans.values()])
+            if b > a:  # a pair that is never live adds nothing
+                edges += [(a, 1, pair.market), (b, -1, pair.market)]
+        edges.sort(key=lambda e: e[0])
+        open_pairs: dict[str, int] = {}
         live, k = 0, 0
         cap = n_lanes * size
         for i in range(upto):
             t = lo + i * cadence
             while k < len(edges) and edges[k][0] <= t:
-                live += edges[k][1]
+                _, step, market = edges[k]
+                before = open_pairs.get(market, 0)
+                open_pairs[market] = before + step
+                live += (before + step > 0) - (before > 0)
                 k += 1
             n = min(live, cap)
             yield i, sum(1 for j in range(n_lanes) if n > j * size)

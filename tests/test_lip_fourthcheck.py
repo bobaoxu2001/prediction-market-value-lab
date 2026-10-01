@@ -60,15 +60,13 @@ def item6_reference(rec, bound: int) -> int:
     lo, c = rec.window.window_start.timestamp(), rec.params.book_cadence_s
     size = rec.params.book_lane_size
     names = [n for n in ("book-A", "book-B") if n in rec.lanes]
-    spans: dict[str, tuple[float, float]] = {}
-    for pair in rec.admission.admitted.values():
-        a, b = pair.admitted_at, rec._participation_end(pair) + rec.params.mark_tail_s
-        o = spans.get(pair.market)
-        spans[pair.market] = (min(a, o[0]), max(b, o[1])) if o else (a, b)
+    # a market is live while one of its own pairs is (the 2026-10-01 decision on G1-2)
+    pairs = [(pair.market, pair.admitted_at, rec._participation_end(pair) + rec.params.mark_tail_s)
+             for pair in rec.admission.admitted.values()]
     ok = 0
     for i in range(bound):
         t = lo + i * c
-        n = min(sum(1 for a, b in spans.values() if a <= t < b), len(names) * size)
+        n = min(len({m for m, a, b in pairs if a <= t < b}), len(names) * size)
         due = [nm for j, nm in enumerate(names) if n > j * size]
         if due and all(i in rec._ok_ticks.get(nm, set()) for nm in due):
             ok += 1
@@ -243,7 +241,7 @@ def test_g2_low_books_no_gain_from_a_reference_across_a_gap(regime):
     md = _gap_day((T0 + 596, T0 + 690))
     path = simulate(md, J5, FillScenario.THROUGH, regime)
     (at, side, qty, proceeds, fee), = path.exits
-    assert not observed_5_1(md, math.floor(at))
+    assert not observed_5_1(md, math.floor(path.participation[1]))
     assert _charge(path, md, low=True) == pytest.approx(-fee), "the sale's own price: never a gain"
     assert _charge(path, md, low=False) == pytest.approx(proceeds - qty * 42.5 / 100 - fee), "HIGH: the lowest"
     assert mark_1h(path, md, low=True) <= mark_1h(path, md, low=False)
@@ -254,8 +252,9 @@ def test_g2_an_observed_exit_is_unchanged(regime):
     md = _gap_day(None)
     path = simulate(md, J5, FillScenario.THROUGH, regime)
     (at, side, qty, proceeds, fee), = path.exits
-    assert observed_5_1(md, math.floor(at))
-    mid = side_mid(md.books.before(at), side)
+    t_e = path.participation[1]
+    assert observed_5_1(md, math.floor(t_e))
+    mid = side_mid(md.books.before(t_e), side)
     for low in (True, False):
         assert _charge(path, md, low) == pytest.approx(proceeds - qty * mid / 100 - fee)
 
@@ -277,7 +276,8 @@ def test_g2_the_boundary_is_the_registered_span_limit(rtt, observed):
     at = T0 + k + 0.3
     assert observed_5_1(md, math.floor(at)) is observed
     qty, proceeds, fee = 100.0, 50.0, 1.0   # sold 100 at 50 through the book after the gap
-    path = SimpleNamespace(exits=[(at, LipSide.YES, qty, proceeds, fee)])
+    # participation ends at `at` itself: the section 5.1 test is on the second of t_e (F2)
+    path = SimpleNamespace(exits=[(at, LipSide.YES, qty, proceeds, fee)], participation=(T0, at))
     ref_mid = side_mid(md.books.before(at), LipSide.YES)
     assert ref_mid == 42.5
     low, high = _charge(path, md, True), _charge(path, md, False)
@@ -319,12 +319,13 @@ def test_g2_across_random_gaps_low_never_gains_on_an_unobserved_exit():
         for scenario in (FillScenario.THROUGH, FillScenario.FIFO):
             for regime in (REG_LOW, REG_HIGH):
                 path = simulate(md, J5, scenario, regime)
+                t_e = path.participation[1]
                 for exit_ in path.exits:
-                    at, proceeds = exit_[0], exit_[3]
-                    if math.isnan(proceeds) or observed_5_1(md, math.floor(at)):
+                    proceeds = exit_[3]
+                    if math.isnan(proceeds) or observed_5_1(md, math.floor(t_e)):
                         continue
                     seen_unobserved += 1
-                    one = SimpleNamespace(exits=[exit_])
+                    one = SimpleNamespace(exits=[exit_], participation=path.participation)
                     assert _charge(one, md, low=True) <= 1e-9, (trial, exit_)
                 assert mark_1h(path, md, low=True) <= mark_1h(path, md, low=False) + 1e-9
     assert seen_unobserved > 20

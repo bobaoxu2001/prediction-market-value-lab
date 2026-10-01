@@ -86,7 +86,7 @@ def test_f3_a_two_sided_exit_is_charged_against_the_mid_in_both_envelopes(regime
     md = market_day(600, close_after=600 + 1800, prints=[(T0 + 30, 39, 200.0, False)])
     path = simulate(md, J5, FillScenario.THROUGH, regime)
     (at, side, qty, proceeds, fee), = path.exits
-    mid = side_mid(md.books.before(at), side)
+    mid = side_mid(md.books.before(path.participation[1]), side)   # mid_held(t_e), section 6
     assert mid is not None
     for low in (True, False):
         marks = sum(f.qty * (_mark(md, f.side, f.at + SIM.mark_horizon_s, low=low, params=SIM) - f.price) / 100
