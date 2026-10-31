@@ -1,0 +1,21 @@
+{
+  "tag": "shakedown",
+  "recorder_version": "lip-1.0.0",
+  "sim_version": "lip-sim-1.0.0",
+  "prereg_commit": "6e119902a7f18d86a424ca08cb50f9b9dd522780",
+  "code_commit": "9a47344c31302fc7816ed4ff1fb688b67003d8e7",
+  "cadence_sha256": "",
+  "day": "2026-09-25",
+  "started_at": "2026-09-25T12:25:02.863677+00:00",
+  "book_cadence_s": 1.0,
+  "tape_mode": "global",
+  "min_ts_honoured": true,
+  "total_cap": 200,
+  "window": {
+    "admission_from": "2026-09-25T12:25:00+00:00",
+    "window_start": "2026-09-25T12:30:00+00:00",
+    "window_end": "2026-09-26T00:45:00+00:00",
+    "drain_at": "2026-09-26T01:50:00+00:00",
+    "hard_stop": "2026-09-26T02:00:00+00:00"
+  }
+}

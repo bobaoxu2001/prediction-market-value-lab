@@ -1,0 +1,678 @@
+{
+  "pages_fetched": 21,
+  "page_budget": 400,
+  "pagination_exhausted": true,
+  "markets_scanned": 2872,
+  "events_seen": 166,
+  "events_too_wide_for_one_request": 0,
+  "events_two_sided_but_never_traded": 53,
+  "events_qualified": 92,
+  "qualification": "at least 2 two-sided legs, non-zero 24h volume, fits one request",
+  "ranking": "volume",
+  "selected": [
+    {
+      "event": "KXWTAMATCH-26SEP24VOLBIR",
+      "two_sided_legs": 2,
+      "legs": 2,
+      "volume_24h": 12225369.809999999
+    },
+    {
+      "event": "KXRAIN-26SEP25",
+      "two_sided_legs": 6,
+      "legs": 28,
+      "volume_24h": 648273.7000000001
+    },
+    {
+      "event": "KXMLBTOTAL-26SEP252140HOUATH",
+      "two_sided_legs": 11,
+      "legs": 11,
+      "volume_24h": 402414.54000000004
+    },
+    {
+      "event": "KXMLBHR-26SEP252140HOUATH",
+      "two_sided_legs": 17,
+      "legs": 36,
+      "volume_24h": 383801.19000000006
+    },
+    {
+      "event": "KXMLBTOTAL-26SEP252140AZSD",
+      "two_sided_legs": 8,
+      "legs": 8,
+      "volume_24h": 380582.82
+    },
+    {
+      "event": "KXMLBSPREAD-26SEP252215LADSF",
+      "two_sided_legs": 7,
+      "legs": 7,
+      "volume_24h": 380463.5
+    },
+    {
+      "event": "KXMLBTOTAL-26SEP252215LADSF",
+      "two_sided_legs": 10,
+      "legs": 11,
+      "volume_24h": 373014.13999999996
+    },
+    {
+      "event": "KXWTAMATCH-26SEP24BONRUS",
+      "two_sided_legs": 2,
+      "legs": 2,
+      "volume_24h": 355600.68
+    }
+  ],
+  "runners_up": [
+    {
+      "event": "KXMLBHR-26SEP252215LADSF",
+      "two_sided_legs": 17,
+      "legs": 32,
+      "volume_24h": 264656.10000000003
+    },
+    {
+      "event": "KXMLBTOTAL-26SEP252210LAASEA",
+      "two_sided_legs": 11,
+      "legs": 11,
+      "volume_24h": 256820.16999999998
+    },
+    {
+      "event": "KXMLBSPREAD-26SEP252140HOUATH",
+      "two_sided_legs": 6,
+      "legs": 6,
+      "volume_24h": 250624.39999999997
+    },
+    {
+      "event": "KXMLBSPREAD-26SEP252010TEXMIN",
+      "two_sided_legs": 6,
+      "legs": 13,
+      "volume_24h": 223717.1
+    },
+    {
+      "event": "KXMLBSPREAD-26SEP252140AZSD",
+      "two_sided_legs": 9,
+      "legs": 9,
+      "volume_24h": 206610.9
+    },
+    {
+      "event": "KXMLBHR-26SEP252140AZSD",
+      "two_sided_legs": 16,
+      "legs": 35,
+      "volume_24h": 199138.11000000002
+    },
+    {
+      "event": "KXMLBSPREAD-26SEP251940CLEKC",
+      "two_sided_legs": 7,
+      "legs": 7,
+      "volume_24h": 196838.87
+    },
+    {
+      "event": "KXMLBTOTAL-26SEP252010TEXMIN",
+      "two_sided_legs": 6,
+      "legs": 6,
+      "volume_24h": 141578.77
+    },
+    {
+      "event": "KXMLBHR-26SEP251940CLEKC",
+      "two_sided_legs": 9,
+      "legs": 33,
+      "volume_24h": 136646.49000000002
+    },
+    {
+      "event": "KXWTAMATCH-26SEP24TARJOI",
+      "two_sided_legs": 2,
+      "legs": 2,
+      "volume_24h": 121442.95999999999
+    }
+  ],
+  "qualified_universe": [
+    {
+      "event": "KXWTAMATCH-26SEP24VOLBIR",
+      "two_sided_legs": 2,
+      "legs": 2,
+      "volume_24h": 12225369.809999999
+    },
+    {
+      "event": "KXRAIN-26SEP25",
+      "two_sided_legs": 6,
+      "legs": 28,
+      "volume_24h": 648273.7000000001
+    },
+    {
+      "event": "KXMLBTOTAL-26SEP252140HOUATH",
+      "two_sided_legs": 11,
+      "legs": 11,
+      "volume_24h": 402414.54000000004
+    },
+    {
+      "event": "KXMLBHR-26SEP252140HOUATH",
+      "two_sided_legs": 17,
+      "legs": 36,
+      "volume_24h": 383801.19000000006
+    },
+    {
+      "event": "KXMLBTOTAL-26SEP252140AZSD",
+      "two_sided_legs": 8,
+      "legs": 8,
+      "volume_24h": 380582.82
+    },
+    {
+      "event": "KXMLBSPREAD-26SEP252215LADSF",
+      "two_sided_legs": 7,
+      "legs": 7,
+      "volume_24h": 380463.5
+    },
+    {
+      "event": "KXMLBTOTAL-26SEP252215LADSF",
+      "two_sided_legs": 10,
+      "legs": 11,
+      "volume_24h": 373014.13999999996
+    },
+    {
+      "event": "KXWTAMATCH-26SEP24BONRUS",
+      "two_sided_legs": 2,
+      "legs": 2,
+      "volume_24h": 355600.68
+    },
+    {
+      "event": "KXMLBHR-26SEP252215LADSF",
+      "two_sided_legs": 17,
+      "legs": 32,
+      "volume_24h": 264656.10000000003
+    },
+    {
+      "event": "KXMLBTOTAL-26SEP252210LAASEA",
+      "two_sided_legs": 11,
+      "legs": 11,
+      "volume_24h": 256820.16999999998
+    },
+    {
+      "event": "KXMLBSPREAD-26SEP252140HOUATH",
+      "two_sided_legs": 6,
+      "legs": 6,
+      "volume_24h": 250624.39999999997
+    },
+    {
+      "event": "KXMLBSPREAD-26SEP252010TEXMIN",
+      "two_sided_legs": 6,
+      "legs": 13,
+      "volume_24h": 223717.1
+    },
+    {
+      "event": "KXMLBSPREAD-26SEP252140AZSD",
+      "two_sided_legs": 9,
+      "legs": 9,
+      "volume_24h": 206610.9
+    },
+    {
+      "event": "KXMLBHR-26SEP252140AZSD",
+      "two_sided_legs": 16,
+      "legs": 35,
+      "volume_24h": 199138.11000000002
+    },
+    {
+      "event": "KXMLBSPREAD-26SEP251940CLEKC",
+      "two_sided_legs": 7,
+      "legs": 7,
+      "volume_24h": 196838.87
+    },
+    {
+      "event": "KXMLBTOTAL-26SEP252010TEXMIN",
+      "two_sided_legs": 6,
+      "legs": 6,
+      "volume_24h": 141578.77
+    },
+    {
+      "event": "KXMLBHR-26SEP251940CLEKC",
+      "two_sided_legs": 9,
+      "legs": 33,
+      "volume_24h": 136646.49000000002
+    },
+    {
+      "event": "KXWTAMATCH-26SEP24TARJOI",
+      "two_sided_legs": 2,
+      "legs": 2,
+      "volume_24h": 121442.95999999999
+    },
+    {
+      "event": "KXMLBTEAMTOTAL-26SEP252215LADSF",
+      "two_sided_legs": 13,
+      "legs": 14,
+      "volume_24h": 115335.42000000001
+    },
+    {
+      "event": "KXMLBF5-26SEP252140HOUATH",
+      "two_sided_legs": 3,
+      "legs": 3,
+      "volume_24h": 111967.47
+    },
+    {
+      "event": "KXMLBHR-26SEP252010TEXMIN",
+      "two_sided_legs": 12,
+      "legs": 35,
+      "volume_24h": 83974.91999999998
+    },
+    {
+      "event": "KXRAIN-26SEP26",
+      "two_sided_legs": 25,
+      "legs": 28,
+      "volume_24h": 77519.02999999998
+    },
+    {
+      "event": "KXMLBHIT-26SEP252215LADSF",
+      "two_sided_legs": 24,
+      "legs": 58,
+      "volume_24h": 75460.91
+    },
+    {
+      "event": "KXMLBHR-26SEP252210LAASEA",
+      "two_sided_legs": 17,
+      "legs": 34,
+      "volume_24h": 73939.87
+    },
+    {
+      "event": "KXMLBTOTAL-26SEP251940CLEKC",
+      "two_sided_legs": 5,
+      "legs": 5,
+      "volume_24h": 73551.2
+    },
+    {
+      "event": "KXMLBKS-26SEP252140HOUATH",
+      "two_sided_legs": 12,
+      "legs": 16,
+      "volume_24h": 72831.95999999999
+    },
+    {
+      "event": "KXMLBSPREAD-26SEP252210LAASEA",
+      "two_sided_legs": 6,
+      "legs": 6,
+      "volume_24h": 67702.91999999998
+    },
+    {
+      "event": "KXMLBHIT-26SEP252140AZSD",
+      "two_sided_legs": 24,
+      "legs": 57,
+      "volume_24h": 67119.38000000002
+    },
+    {
+      "event": "KXKBOGAME-26SEP250400SAMSSG",
+      "two_sided_legs": 2,
+      "legs": 2,
+      "volume_24h": 60118.12
+    },
+    {
+      "event": "KXMLBTEAMTOTAL-26SEP251940CLEKC",
+      "two_sided_legs": 4,
+      "legs": 14,
+      "volume_24h": 44917.8
+    },
+    {
+      "event": "KXWTAMATCH-26SEP25PREKOR",
+      "two_sided_legs": 2,
+      "legs": 2,
+      "volume_24h": 44887.41
+    },
+    {
+      "event": "KXMLBF5-26SEP252140AZSD",
+      "two_sided_legs": 3,
+      "legs": 3,
+      "volume_24h": 43470.44
+    },
+    {
+      "event": "KXMLBTEAMTOTAL-26SEP252140HOUATH",
+      "two_sided_legs": 14,
+      "legs": 14,
+      "volume_24h": 42080.369999999995
+    },
+    {
+      "event": "KXKBOGAME-26SEP250400LOTDOO",
+      "two_sided_legs": 2,
+      "legs": 2,
+      "volume_24h": 36991.270000000004
+    },
+    {
+      "event": "KXMLBTEAMTOTAL-26SEP252140AZSD",
+      "two_sided_legs": 8,
+      "legs": 14,
+      "volume_24h": 36915.74
+    },
+    {
+      "event": "KXMLBF5-26SEP252215LADSF",
+      "two_sided_legs": 3,
+      "legs": 3,
+      "volume_24h": 34948.95
+    },
+    {
+      "event": "KXMLBHIT-26SEP251940CLEKC",
+      "two_sided_legs": 15,
+      "legs": 58,
+      "volume_24h": 34838.0
+    },
+    {
+      "event": "KXMLBHIT-26SEP252010TEXMIN",
+      "two_sided_legs": 8,
+      "legs": 57,
+      "volume_24h": 33085.75
+    },
+    {
+      "event": "KXMLBHRR-26SEP252010TEXMIN",
+      "two_sided_legs": 8,
+      "legs": 89,
+      "volume_24h": 31343.240000000005
+    },
+    {
+      "event": "KXMLBHIT-26SEP252210LAASEA",
+      "two_sided_legs": 21,
+      "legs": 54,
+      "volume_24h": 30311.289999999997
+    },
+    {
+      "event": "KXMLBHIT-26SEP252140HOUATH",
+      "two_sided_legs": 24,
+      "legs": 58,
+      "volume_24h": 29345.669999999995
+    },
+    {
+      "event": "KXMLBTEAMTOTAL-26SEP252010TEXMIN",
+      "two_sided_legs": 4,
+      "legs": 14,
+      "volume_24h": 29312.62
+    },
+    {
+      "event": "KXMLBF5-26SEP252210LAASEA",
+      "two_sided_legs": 3,
+      "legs": 3,
+      "volume_24h": 29070.91
+    },
+    {
+      "event": "KXMLBKS-26SEP252215LADSF",
+      "two_sided_legs": 8,
+      "legs": 9,
+      "volume_24h": 28676.47
+    },
+    {
+      "event": "KXMLBF5SPREAD-26SEP252215LADSF",
+      "two_sided_legs": 4,
+      "legs": 4,
+      "volume_24h": 26965.45
+    },
+    {
+      "event": "KXWTAMATCH-26SEP26FERCHW",
+      "two_sided_legs": 2,
+      "legs": 2,
+      "volume_24h": 25144.1
+    },
+    {
+      "event": "KXMLBF5SPREAD-26SEP252140AZSD",
+      "two_sided_legs": 3,
+      "legs": 4,
+      "volume_24h": 19218.11
+    },
+    {
+      "event": "KXMLBKS-26SEP252210LAASEA",
+      "two_sided_legs": 14,
+      "legs": 16,
+      "volume_24h": 18589.109999999997
+    },
+    {
+      "event": "KXMLBTB-26SEP252215LADSF",
+      "two_sided_legs": 20,
+      "legs": 64,
+      "volume_24h": 18417.93
+    },
+    {
+      "event": "KXMLBHRR-26SEP252140AZSD",
+      "two_sided_legs": 43,
+      "legs": 89,
+      "volume_24h": 16988.120000000003
+    },
+    {
+      "event": "KXMLBHRR-26SEP252215LADSF",
+      "two_sided_legs": 48,
+      "legs": 81,
+      "volume_24h": 15166.740000000002
+    },
+    {
+      "event": "KXMLBTB-26SEP252140HOUATH",
+      "two_sided_legs": 17,
+      "legs": 71,
+      "volume_24h": 14578.39
+    },
+    {
+      "event": "KXMLBKS-26SEP252140AZSD",
+      "two_sided_legs": 7,
+      "legs": 14,
+      "volume_24h": 12787.1
+    },
+    {
+      "event": "KXMLBHRR-26SEP252140HOUATH",
+      "two_sided_legs": 45,
+      "legs": 90,
+      "volume_24h": 11380.539999999999
+    },
+    {
+      "event": "KXTEMPNYCHS-26SEP2523",
+      "two_sided_legs": 4,
+      "legs": 10,
+      "volume_24h": 9749.810000000001
+    },
+    {
+      "event": "KXMLBF5SPREAD-26SEP252140HOUATH",
+      "two_sided_legs": 4,
+      "legs": 4,
+      "volume_24h": 9639.36
+    },
+    {
+      "event": "KXMLBHRR-26SEP251940CLEKC",
+      "two_sided_legs": 3,
+      "legs": 88,
+      "volume_24h": 9625.21
+    },
+    {
+      "event": "KXMLBTB-26SEP252140AZSD",
+      "two_sided_legs": 26,
+      "legs": 69,
+      "volume_24h": 8492.33
+    },
+    {
+      "event": "KXKBOGAME-26SEP260400KIWKTW",
+      "two_sided_legs": 2,
+      "legs": 2,
+      "volume_24h": 6627.429999999999
+    },
+    {
+      "event": "KXMLBRBI-26SEP252215LADSF",
+      "two_sided_legs": 7,
+      "legs": 36,
+      "volume_24h": 5259.4
+    },
+    {
+      "event": "KXMLBTEAMTOTAL-26SEP252210LAASEA",
+      "two_sided_legs": 14,
+      "legs": 14,
+      "volume_24h": 4745.48
+    },
+    {
+      "event": "KXMLBHRR-26SEP252210LAASEA",
+      "two_sided_legs": 50,
+      "legs": 84,
+      "volume_24h": 4578.64
+    },
+    {
+      "event": "KXMLBTB-26SEP252210LAASEA",
+      "two_sided_legs": 17,
+      "legs": 63,
+      "volume_24h": 3228.55
+    },
+    {
+      "event": "KXTEMPMIAH-26SEP2523",
+      "two_sided_legs": 2,
+      "legs": 10,
+      "volume_24h": 2931.57
+    },
+    {
+      "event": "KXMLBHRR-26SEP251905BALNYYG2",
+      "two_sided_legs": 7,
+      "legs": 19,
+      "volume_24h": 2844.9599999999996
+    },
+    {
+      "event": "KXMLBTOTAL-26SEP261910CLEKC",
+      "two_sided_legs": 11,
+      "legs": 11,
+      "volume_24h": 2037.88
+    },
+    {
+      "event": "KXTEMPCHIHS-26SEP2523",
+      "two_sided_legs": 2,
+      "legs": 10,
+      "volume_24h": 1881.74
+    },
+    {
+      "event": "KXKBOGAME-26SEP260400LGKIA",
+      "two_sided_legs": 2,
+      "legs": 2,
+      "volume_24h": 1590.81
+    },
+    {
+      "event": "KXMLBTOTAL-26SEP261910STLMIL",
+      "two_sided_legs": 11,
+      "legs": 11,
+      "volume_24h": 1319.0
+    },
+    {
+      "event": "KXMLBSPREAD-26SEP261605NYMWSH",
+      "two_sided_legs": 6,
+      "legs": 6,
+      "volume_24h": 1222.0
+    },
+    {
+      "event": "KXTEMPLAXHS-26SEP2523",
+      "two_sided_legs": 2,
+      "legs": 10,
+      "volume_24h": 1050.49
+    },
+    {
+      "event": "KXMLBTB-26SEP251905BALNYYG2",
+      "two_sided_legs": 2,
+      "legs": 15,
+      "volume_24h": 928.46
+    },
+    {
+      "event": "KXMLBF5SPREAD-26SEP252210LAASEA",
+      "two_sided_legs": 4,
+      "legs": 4,
+      "volume_24h": 910.0
+    },
+    {
+      "event": "KXMLBF5-26SEP261910STLMIL",
+      "two_sided_legs": 3,
+      "legs": 3,
+      "volume_24h": 775.0
+    },
+    {
+      "event": "KXMLBSPREAD-26SEP261605LADSF",
+      "two_sided_legs": 6,
+      "legs": 6,
+      "volume_24h": 540.8000000000001
+    },
+    {
+      "event": "KXMLBSPREAD-26SEP261910COLCWS",
+      "two_sided_legs": 6,
+      "legs": 6,
+      "volume_24h": 538.68
+    },
+    {
+      "event": "KXMLBTOTAL-26SEP261605LADSF",
+      "two_sided_legs": 11,
+      "legs": 11,
+      "volume_24h": 438.85
+    },
+    {
+      "event": "KXKBOGAME-26SEP260400HANNCD",
+      "two_sided_legs": 2,
+      "legs": 2,
+      "volume_24h": 393.05
+    },
+    {
+      "event": "KXMLBF5-26SEP261605LADSF",
+      "two_sided_legs": 3,
+      "legs": 3,
+      "volume_24h": 350.0
+    },
+    {
+      "event": "KXMLBTEAMTOTAL-26SEP261605LADSF",
+      "two_sided_legs": 14,
+      "legs": 14,
+      "volume_24h": 120.71
+    },
+    {
+      "event": "KXKBOGAME-26SEP270400KTWDOO",
+      "two_sided_legs": 2,
+      "legs": 2,
+      "volume_24h": 97.75999999999999
+    },
+    {
+      "event": "KXMLBTOTAL-26SEP261910COLCWS",
+      "two_sided_legs": 11,
+      "legs": 11,
+      "volume_24h": 71.15
+    },
+    {
+      "event": "KXMLBTOTAL-26SEP261605NYMWSH",
+      "two_sided_legs": 11,
+      "legs": 11,
+      "volume_24h": 50.39
+    },
+    {
+      "event": "KXKBOGAME-26SEP270400KIWNCD",
+      "two_sided_legs": 2,
+      "legs": 2,
+      "volume_24h": 39.4
+    },
+    {
+      "event": "KXMLBTOTAL-26SEP262140LAASEA",
+      "two_sided_legs": 11,
+      "legs": 11,
+      "volume_24h": 28.36
+    },
+    {
+      "event": "KXKBOGAME-26SEP270400LGKIA",
+      "two_sided_legs": 2,
+      "legs": 2,
+      "volume_24h": 17.44
+    },
+    {
+      "event": "KXMLBTOTAL-26SEP261507CINTOR",
+      "two_sided_legs": 11,
+      "legs": 11,
+      "volume_24h": 15.0
+    },
+    {
+      "event": "KXMLBSPREAD-26SEP261910STLMIL",
+      "two_sided_legs": 6,
+      "legs": 6,
+      "volume_24h": 14.45
+    },
+    {
+      "event": "KXMLBF5-26SEP261605NYMWSH",
+      "two_sided_legs": 3,
+      "legs": 3,
+      "volume_24h": 12.0
+    },
+    {
+      "event": "KXLOLMAP-26SEP280200CPDT1A-1",
+      "two_sided_legs": 2,
+      "legs": 2,
+      "volume_24h": 2.1
+    },
+    {
+      "event": "KXLOLMAP-26SEP280200CPDT1A-2",
+      "two_sided_legs": 2,
+      "legs": 2,
+      "volume_24h": 2.1
+    },
+    {
+      "event": "KXLOLMAP-26SEP280200CPDT1A-3",
+      "two_sided_legs": 2,
+      "legs": 2,
+      "volume_24h": 2.1
+    }
+  ]
+}

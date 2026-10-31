@@ -1,0 +1,17 @@
+{
+  "day1": "2026-10-01",
+  "closed_at": "2026-10-01T10:56:41.599966+00:00",
+  "prereg_commit": "2afe10bceaccb9e2ce173e2a3b1c619c81d1fb71",
+  "code_tag": "lip-sim-1.0.0",
+  "code_commit": "5e28428a925d367813f580f4ab43aa4b26fb8cea",
+  "cadence_sha256": "694b6145b9c25a0af56e1556acacd3579dc3c2abbf62bcb70dab7c0194bcdb03",
+  "freeze_sha256": "b9a5776910fc8d97e291b7c518520e60348420f99e0dde297a5049b19acbbf7a",
+  "gates": {
+    "G1": "Amendment 1",
+    "G2": "Amendment 1",
+    "G3": "user, 2026-09-24",
+    "G4": "tag lip-sim-1.0.0 at 5e28428a925d367813f580f4ab43aa4b26fb8cea",
+    "G5": "lip-cadence.json",
+    "G6": "cron line installed"
+  }
+}

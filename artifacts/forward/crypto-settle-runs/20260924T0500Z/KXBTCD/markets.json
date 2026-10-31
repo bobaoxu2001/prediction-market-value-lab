@@ -1,0 +1,408 @@
+{
+  "event": "KXBTCD-26SEP2401",
+  "product": "BTC-USD",
+  "spot_at_start": 83775.49,
+  "close_time": "2026-09-24T05:00:00Z",
+  "markets": {
+    "KXBTCD-26SEP2401-T83799.99": {
+      "floor_strike": 83799.99,
+      "strike_type": "greater"
+    },
+    "KXBTCD-26SEP2401-T83699.99": {
+      "floor_strike": 83699.99,
+      "strike_type": "greater"
+    },
+    "KXBTCD-26SEP2401-T83899.99": {
+      "floor_strike": 83899.99,
+      "strike_type": "greater"
+    },
+    "KXBTCD-26SEP2401-T83599.99": {
+      "floor_strike": 83599.99,
+      "strike_type": "greater"
+    },
+    "KXBTCD-26SEP2401-T83999.99": {
+      "floor_strike": 83999.99,
+      "strike_type": "greater"
+    },
+    "KXBTCD-26SEP2401-T83499.99": {
+      "floor_strike": 83499.99,
+      "strike_type": "greater"
+    },
+    "KXBTCD-26SEP2401-T84099.99": {
+      "floor_strike": 84099.99,
+      "strike_type": "greater"
+    },
+    "KXBTCD-26SEP2401-T83399.99": {
+      "floor_strike": 83399.99,
+      "strike_type": "greater"
+    },
+    "KXBTCD-26SEP2401-T84199.99": {
+      "floor_strike": 84199.99,
+      "strike_type": "greater"
+    },
+    "KXBTCD-26SEP2401-T83299.99": {
+      "floor_strike": 83299.99,
+      "strike_type": "greater"
+    },
+    "KXBTCD-26SEP2401-T84299.99": {
+      "floor_strike": 84299.99,
+      "strike_type": "greater"
+    },
+    "KXBTCD-26SEP2401-T83199.99": {
+      "floor_strike": 83199.99,
+      "strike_type": "greater"
+    },
+    "KXBTCD-26SEP2401-T84399.99": {
+      "floor_strike": 84399.99,
+      "strike_type": "greater"
+    },
+    "KXBTCD-26SEP2401-T83099.99": {
+      "floor_strike": 83099.99,
+      "strike_type": "greater"
+    },
+    "KXBTCD-26SEP2401-T84499.99": {
+      "floor_strike": 84499.99,
+      "strike_type": "greater"
+    },
+    "KXBTCD-26SEP2401-T82999.99": {
+      "floor_strike": 82999.99,
+      "strike_type": "greater"
+    },
+    "KXBTCD-26SEP2401-T84599.99": {
+      "floor_strike": 84599.99,
+      "strike_type": "greater"
+    },
+    "KXBTCD-26SEP2401-T82899.99": {
+      "floor_strike": 82899.99,
+      "strike_type": "greater"
+    },
+    "KXBTCD-26SEP2401-T84699.99": {
+      "floor_strike": 84699.99,
+      "strike_type": "greater"
+    },
+    "KXBTCD-26SEP2401-T82799.99": {
+      "floor_strike": 82799.99,
+      "strike_type": "greater"
+    },
+    "KXBTCD-26SEP2401-T84799.99": {
+      "floor_strike": 84799.99,
+      "strike_type": "greater"
+    },
+    "KXBTCD-26SEP2401-T82699.99": {
+      "floor_strike": 82699.99,
+      "strike_type": "greater"
+    },
+    "KXBTCD-26SEP2401-T84899.99": {
+      "floor_strike": 84899.99,
+      "strike_type": "greater"
+    },
+    "KXBTCD-26SEP2401-T82599.99": {
+      "floor_strike": 82599.99,
+      "strike_type": "greater"
+    },
+    "KXBTCD-26SEP2401-T84999.99": {
+      "floor_strike": 84999.99,
+      "strike_type": "greater"
+    },
+    "KXBTCD-26SEP2401-T82499.99": {
+      "floor_strike": 82499.99,
+      "strike_type": "greater"
+    },
+    "KXBTCD-26SEP2401-T85099.99": {
+      "floor_strike": 85099.99,
+      "strike_type": "greater"
+    },
+    "KXBTCD-26SEP2401-T82399.99": {
+      "floor_strike": 82399.99,
+      "strike_type": "greater"
+    },
+    "KXBTCD-26SEP2401-T85199.99": {
+      "floor_strike": 85199.99,
+      "strike_type": "greater"
+    },
+    "KXBTCD-26SEP2401-T82299.99": {
+      "floor_strike": 82299.99,
+      "strike_type": "greater"
+    },
+    "KXBTCD-26SEP2401-T85299.99": {
+      "floor_strike": 85299.99,
+      "strike_type": "greater"
+    },
+    "KXBTCD-26SEP2401-T82199.99": {
+      "floor_strike": 82199.99,
+      "strike_type": "greater"
+    },
+    "KXBTCD-26SEP2401-T85399.99": {
+      "floor_strike": 85399.99,
+      "strike_type": "greater"
+    },
+    "KXBTCD-26SEP2401-T82099.99": {
+      "floor_strike": 82099.99,
+      "strike_type": "greater"
+    },
+    "KXBTCD-26SEP2401-T85499.99": {
+      "floor_strike": 85499.99,
+      "strike_type": "greater"
+    },
+    "KXBTCD-26SEP2401-T81999.99": {
+      "floor_strike": 81999.99,
+      "strike_type": "greater"
+    },
+    "KXBTCD-26SEP2401-T85599.99": {
+      "floor_strike": 85599.99,
+      "strike_type": "greater"
+    },
+    "KXBTCD-26SEP2401-T81899.99": {
+      "floor_strike": 81899.99,
+      "strike_type": "greater"
+    },
+    "KXBTCD-26SEP2401-T85699.99": {
+      "floor_strike": 85699.99,
+      "strike_type": "greater"
+    },
+    "KXBTCD-26SEP2401-T81799.99": {
+      "floor_strike": 81799.99,
+      "strike_type": "greater"
+    },
+    "KXBTCD-26SEP2401-T85799.99": {
+      "floor_strike": 85799.99,
+      "strike_type": "greater"
+    },
+    "KXBTCD-26SEP2401-T81699.99": {
+      "floor_strike": 81699.99,
+      "strike_type": "greater"
+    },
+    "KXBTCD-26SEP2401-T85899.99": {
+      "floor_strike": 85899.99,
+      "strike_type": "greater"
+    },
+    "KXBTCD-26SEP2401-T81599.99": {
+      "floor_strike": 81599.99,
+      "strike_type": "greater"
+    },
+    "KXBTCD-26SEP2401-T85999.99": {
+      "floor_strike": 85999.99,
+      "strike_type": "greater"
+    },
+    "KXBTCD-26SEP2401-T81499.99": {
+      "floor_strike": 81499.99,
+      "strike_type": "greater"
+    },
+    "KXBTCD-26SEP2401-T86099.99": {
+      "floor_strike": 86099.99,
+      "strike_type": "greater"
+    },
+    "KXBTCD-26SEP2401-T81399.99": {
+      "floor_strike": 81399.99,
+      "strike_type": "greater"
+    },
+    "KXBTCD-26SEP2401-T86199.99": {
+      "floor_strike": 86199.99,
+      "strike_type": "greater"
+    },
+    "KXBTCD-26SEP2401-T81299.99": {
+      "floor_strike": 81299.99,
+      "strike_type": "greater"
+    },
+    "KXBTCD-26SEP2401-T86299.99": {
+      "floor_strike": 86299.99,
+      "strike_type": "greater"
+    },
+    "KXBTCD-26SEP2401-T81199.99": {
+      "floor_strike": 81199.99,
+      "strike_type": "greater"
+    },
+    "KXBTCD-26SEP2401-T86399.99": {
+      "floor_strike": 86399.99,
+      "strike_type": "greater"
+    },
+    "KXBTCD-26SEP2401-T81099.99": {
+      "floor_strike": 81099.99,
+      "strike_type": "greater"
+    },
+    "KXBTCD-26SEP2401-T86499.99": {
+      "floor_strike": 86499.99,
+      "strike_type": "greater"
+    },
+    "KXBTCD-26SEP2401-T80999.99": {
+      "floor_strike": 80999.99,
+      "strike_type": "greater"
+    },
+    "KXBTCD-26SEP2401-T86599.99": {
+      "floor_strike": 86599.99,
+      "strike_type": "greater"
+    },
+    "KXBTCD-26SEP2401-T80899.99": {
+      "floor_strike": 80899.99,
+      "strike_type": "greater"
+    },
+    "KXBTCD-26SEP2401-T86699.99": {
+      "floor_strike": 86699.99,
+      "strike_type": "greater"
+    },
+    "KXBTCD-26SEP2401-T80799.99": {
+      "floor_strike": 80799.99,
+      "strike_type": "greater"
+    },
+    "KXBTCD-26SEP2401-T86799.99": {
+      "floor_strike": 86799.99,
+      "strike_type": "greater"
+    },
+    "KXBTCD-26SEP2401-T80699.99": {
+      "floor_strike": 80699.99,
+      "strike_type": "greater"
+    },
+    "KXBTCD-26SEP2401-T86899.99": {
+      "floor_strike": 86899.99,
+      "strike_type": "greater"
+    },
+    "KXBTCD-26SEP2401-T80599.99": {
+      "floor_strike": 80599.99,
+      "strike_type": "greater"
+    },
+    "KXBTCD-26SEP2401-T86999.99": {
+      "floor_strike": 86999.99,
+      "strike_type": "greater"
+    },
+    "KXBTCD-26SEP2401-T80499.99": {
+      "floor_strike": 80499.99,
+      "strike_type": "greater"
+    },
+    "KXBTCD-26SEP2401-T87099.99": {
+      "floor_strike": 87099.99,
+      "strike_type": "greater"
+    },
+    "KXBTCD-26SEP2401-T80399.99": {
+      "floor_strike": 80399.99,
+      "strike_type": "greater"
+    },
+    "KXBTCD-26SEP2401-T87199.99": {
+      "floor_strike": 87199.99,
+      "strike_type": "greater"
+    },
+    "KXBTCD-26SEP2401-T80299.99": {
+      "floor_strike": 80299.99,
+      "strike_type": "greater"
+    },
+    "KXBTCD-26SEP2401-T87299.99": {
+      "floor_strike": 87299.99,
+      "strike_type": "greater"
+    },
+    "KXBTCD-26SEP2401-T80199.99": {
+      "floor_strike": 80199.99,
+      "strike_type": "greater"
+    },
+    "KXBTCD-26SEP2401-T87399.99": {
+      "floor_strike": 87399.99,
+      "strike_type": "greater"
+    },
+    "KXBTCD-26SEP2401-T80099.99": {
+      "floor_strike": 80099.99,
+      "strike_type": "greater"
+    },
+    "KXBTCD-26SEP2401-T87499.99": {
+      "floor_strike": 87499.99,
+      "strike_type": "greater"
+    },
+    "KXBTCD-26SEP2401-T79999.99": {
+      "floor_strike": 79999.99,
+      "strike_type": "greater"
+    },
+    "KXBTCD-26SEP2401-T87599.99": {
+      "floor_strike": 87599.99,
+      "strike_type": "greater"
+    },
+    "KXBTCD-26SEP2401-T79899.99": {
+      "floor_strike": 79899.99,
+      "strike_type": "greater"
+    },
+    "KXBTCD-26SEP2401-T87699.99": {
+      "floor_strike": 87699.99,
+      "strike_type": "greater"
+    },
+    "KXBTCD-26SEP2401-T79799.99": {
+      "floor_strike": 79799.99,
+      "strike_type": "greater"
+    },
+    "KXBTCD-26SEP2401-T87799.99": {
+      "floor_strike": 87799.99,
+      "strike_type": "greater"
+    },
+    "KXBTCD-26SEP2401-T79699.99": {
+      "floor_strike": 79699.99,
+      "strike_type": "greater"
+    },
+    "KXBTCD-26SEP2401-T87899.99": {
+      "floor_strike": 87899.99,
+      "strike_type": "greater"
+    },
+    "KXBTCD-26SEP2401-T79599.99": {
+      "floor_strike": 79599.99,
+      "strike_type": "greater"
+    },
+    "KXBTCD-26SEP2401-T87999.99": {
+      "floor_strike": 87999.99,
+      "strike_type": "greater"
+    },
+    "KXBTCD-26SEP2401-T79499.99": {
+      "floor_strike": 79499.99,
+      "strike_type": "greater"
+    },
+    "KXBTCD-26SEP2401-T88099.99": {
+      "floor_strike": 88099.99,
+      "strike_type": "greater"
+    },
+    "KXBTCD-26SEP2401-T79399.99": {
+      "floor_strike": 79399.99,
+      "strike_type": "greater"
+    },
+    "KXBTCD-26SEP2401-T88199.99": {
+      "floor_strike": 88199.99,
+      "strike_type": "greater"
+    },
+    "KXBTCD-26SEP2401-T79299.99": {
+      "floor_strike": 79299.99,
+      "strike_type": "greater"
+    },
+    "KXBTCD-26SEP2401-T88299.99": {
+      "floor_strike": 88299.99,
+      "strike_type": "greater"
+    },
+    "KXBTCD-26SEP2401-T79199.99": {
+      "floor_strike": 79199.99,
+      "strike_type": "greater"
+    },
+    "KXBTCD-26SEP2401-T88399.99": {
+      "floor_strike": 88399.99,
+      "strike_type": "greater"
+    },
+    "KXBTCD-26SEP2401-T79099.99": {
+      "floor_strike": 79099.99,
+      "strike_type": "greater"
+    },
+    "KXBTCD-26SEP2401-T88499.99": {
+      "floor_strike": 88499.99,
+      "strike_type": "greater"
+    },
+    "KXBTCD-26SEP2401-T78999.99": {
+      "floor_strike": 78999.99,
+      "strike_type": "greater"
+    },
+    "KXBTCD-26SEP2401-T88599.99": {
+      "floor_strike": 88599.99,
+      "strike_type": "greater"
+    },
+    "KXBTCD-26SEP2401-T78899.99": {
+      "floor_strike": 78899.99,
+      "strike_type": "greater"
+    },
+    "KXBTCD-26SEP2401-T88699.99": {
+      "floor_strike": 88699.99,
+      "strike_type": "greater"
+    },
+    "KXBTCD-26SEP2401-T78799.99": {
+      "floor_strike": 78799.99,
+      "strike_type": "greater"
+    }
+  }
+}

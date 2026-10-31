@@ -1,0 +1,1143 @@
+{
+ "coverage": {
+  "book_gaps": {
+   "count": 5394,
+   "largest_seconds": 319.0,
+   "recovered": 5394,
+   "runs": [
+    [
+     0,
+     318
+    ],
+    [
+     320,
+     321
+    ],
+    [
+     325,
+     326
+    ],
+    [
+     328,
+     328
+    ],
+    [
+     332,
+     332
+    ],
+    [
+     334,
+     340
+    ],
+    [
+     342,
+     343
+    ],
+    [
+     345,
+     346
+    ],
+    [
+     348,
+     348
+    ],
+    [
+     350,
+     351
+    ],
+    [
+     353,
+     353
+    ],
+    [
+     355,
+     355
+    ],
+    [
+     357,
+     357
+    ],
+    [
+     361,
+     361
+    ],
+    [
+     363,
+     363
+    ],
+    [
+     365,
+     365
+    ],
+    [
+     367,
+     367
+    ],
+    [
+     369,
+     369
+    ],
+    [
+     374,
+     374
+    ],
+    [
+     377,
+     377
+    ],
+    [
+     381,
+     381
+    ],
+    [
+     383,
+     383
+    ],
+    [
+     385,
+     385
+    ],
+    [
+     388,
+     388
+    ],
+    [
+     390,
+     390
+    ],
+    [
+     392,
+     392
+    ],
+    [
+     395,
+     395
+    ],
+    [
+     398,
+     398
+    ],
+    [
+     400,
+     400
+    ],
+    [
+     402,
+     403
+    ],
+    [
+     405,
+     406
+    ],
+    [
+     408,
+     409
+    ],
+    [
+     411,
+     413
+    ],
+    [
+     415,
+     417
+    ],
+    [
+     419,
+     420
+    ],
+    [
+     422,
+     422
+    ],
+    [
+     424,
+     424
+    ],
+    [
+     426,
+     426
+    ],
+    [
+     428,
+     428
+    ],
+    [
+     430,
+     430
+    ],
+    [
+     432,
+     433
+    ],
+    [
+     435,
+     436
+    ],
+    [
+     438,
+     441
+    ],
+    [
+     443,
+     443
+    ],
+    [
+     445,
+     446
+    ],
+    [
+     448,
+     448
+    ],
+    [
+     450,
+     452
+    ],
+    [
+     454,
+     455
+    ],
+    [
+     457,
+     459
+    ],
+    [
+     461,
+     462
+    ],
+    [
+     464,
+     464
+    ],
+    [
+     466,
+     466
+    ],
+    [
+     468,
+     468
+    ],
+    [
+     470,
+     471
+    ],
+    [
+     473,
+     473
+    ],
+    [
+     475,
+     477
+    ],
+    [
+     479,
+     481
+    ],
+    [
+     483,
+     483
+    ],
+    [
+     485,
+     486
+    ],
+    [
+     488,
+     489
+    ],
+    [
+     491,
+     492
+    ],
+    [
+     494,
+     496
+    ],
+    [
+     498,
+     500
+    ],
+    [
+     502,
+     507
+    ],
+    [
+     509,
+     531
+    ],
+    [
+     533,
+     534
+    ],
+    [
+     537,
+     537
+    ],
+    [
+     539,
+     539
+    ],
+    [
+     542,
+     542
+    ],
+    [
+     544,
+     544
+    ],
+    [
+     548,
+     549
+    ],
+    [
+     551,
+     551
+    ],
+    [
+     553,
+     554
+    ],
+    [
+     556,
+     556
+    ],
+    [
+     558,
+     558
+    ],
+    [
+     560,
+     561
+    ],
+    [
+     563,
+     564
+    ],
+    [
+     566,
+     567
+    ],
+    [
+     569,
+     569
+    ],
+    [
+     571,
+     571
+    ],
+    [
+     573,
+     573
+    ],
+    [
+     575,
+     576
+    ],
+    [
+     578,
+     578
+    ],
+    [
+     580,
+     580
+    ],
+    [
+     582,
+     582
+    ],
+    [
+     584,
+     584
+    ],
+    [
+     586,
+     586
+    ],
+    [
+     588,
+     588
+    ],
+    [
+     590,
+     590
+    ],
+    [
+     592,
+     593
+    ],
+    [
+     595,
+     596
+    ],
+    [
+     598,
+     598
+    ],
+    [
+     600,
+     602
+    ],
+    [
+     604,
+     605
+    ],
+    [
+     607,
+     607
+    ],
+    [
+     609,
+     612
+    ],
+    [
+     614,
+     615
+    ],
+    [
+     617,
+     617
+    ],
+    [
+     619,
+     622
+    ],
+    [
+     624,
+     630
+    ],
+    [
+     632,
+     634
+    ],
+    [
+     636,
+     638
+    ],
+    [
+     640,
+     644
+    ],
+    [
+     646,
+     649
+    ],
+    [
+     651,
+     673
+    ],
+    [
+     675,
+     676
+    ],
+    [
+     678,
+     678
+    ],
+    [
+     680,
+     680
+    ],
+    [
+     683,
+     683
+    ],
+    [
+     687,
+     688
+    ],
+    [
+     690,
+     691
+    ],
+    [
+     693,
+     693
+    ],
+    [
+     695,
+     695
+    ],
+    [
+     698,
+     698
+    ],
+    [
+     700,
+     700
+    ],
+    [
+     702,
+     703
+    ],
+    [
+     705,
+     705
+    ],
+    [
+     707,
+     725
+    ],
+    [
+     727,
+     728
+    ],
+    [
+     730,
+     730
+    ],
+    [
+     732,
+     732
+    ],
+    [
+     734,
+     734
+    ],
+    [
+     736,
+     736
+    ],
+    [
+     738,
+     738
+    ],
+    [
+     740,
+     740
+    ],
+    [
+     743,
+     743
+    ],
+    [
+     747,
+     747
+    ],
+    [
+     749,
+     750
+    ],
+    [
+     752,
+     752
+    ],
+    [
+     754,
+     756
+    ],
+    [
+     758,
+     758
+    ],
+    [
+     760,
+     760
+    ],
+    [
+     762,
+     762
+    ],
+    [
+     764,
+     765
+    ],
+    [
+     767,
+     767
+    ],
+    [
+     769,
+     769
+    ],
+    [
+     772,
+     772
+    ],
+    [
+     774,
+     774
+    ],
+    [
+     776,
+     776
+    ],
+    [
+     779,
+     779
+    ],
+    [
+     781,
+     781
+    ],
+    [
+     784,
+     784
+    ],
+    [
+     786,
+     786
+    ],
+    [
+     789,
+     789
+    ],
+    [
+     791,
+     791
+    ],
+    [
+     793,
+     793
+    ],
+    [
+     795,
+     795
+    ],
+    [
+     798,
+     798
+    ],
+    [
+     800,
+     800
+    ],
+    [
+     803,
+     803
+    ],
+    [
+     805,
+     805
+    ],
+    [
+     807,
+     807
+    ],
+    [
+     809,
+     809
+    ],
+    [
+     811,
+     811
+    ],
+    [
+     813,
+     814
+    ],
+    [
+     816,
+     817
+    ],
+    [
+     820,
+     820
+    ],
+    [
+     822,
+     823
+    ],
+    [
+     826,
+     826
+    ],
+    [
+     828,
+     828
+    ],
+    [
+     834,
+     834
+    ],
+    [
+     836,
+     837
+    ],
+    [
+     840,
+     840
+    ],
+    [
+     843,
+     843
+    ],
+    [
+     845,
+     845
+    ],
+    [
+     847,
+     847
+    ],
+    [
+     849,
+     849
+    ],
+    [
+     851,
+     851
+    ],
+    [
+     853,
+     853
+    ],
+    [
+     855,
+     855
+    ],
+    [
+     857,
+     857
+    ],
+    [
+     859,
+     859
+    ],
+    [
+     861,
+     862
+    ],
+    [
+     864,
+     864
+    ],
+    [
+     866,
+     867
+    ],
+    [
+     869,
+     869
+    ],
+    [
+     871,
+     871
+    ],
+    [
+     873,
+     873
+    ],
+    [
+     875,
+     875
+    ],
+    [
+     877,
+     877
+    ],
+    [
+     879,
+     879
+    ],
+    [
+     882,
+     883
+    ],
+    [
+     885,
+     885
+    ],
+    [
+     887,
+     887
+    ],
+    [
+     889,
+     889
+    ],
+    [
+     891,
+     892
+    ],
+    [
+     894,
+     894
+    ],
+    [
+     896,
+     898
+    ],
+    [
+     900,
+     902
+    ],
+    [
+     904,
+     906
+    ],
+    [
+     908,
+     909
+    ],
+    [
+     911,
+     913
+    ],
+    [
+     915,
+     916
+    ],
+    [
+     918,
+     919
+    ],
+    [
+     921,
+     937
+    ],
+    [
+     939,
+     941
+    ],
+    [
+     943,
+     943
+    ],
+    [
+     945,
+     945
+    ],
+    [
+     951,
+     951
+    ],
+    [
+     956,
+     956
+    ]
+   ],
+   "runs_truncated": true,
+   "total_seconds": 7790.0,
+   "unrecovered_seconds": 0
+  },
+  "book_success_share": 0.8233560090702948,
+  "due_ticks": 44100,
+  "ok_ticks": 36310,
+  "ok_ticks_by_lane_from_books": {
+   "book-A": 36310
+  },
+  "ok_ticks_by_lane_recorded": {
+   "book-A": 36310
+  },
+  "tape": {
+   "complete": 61781,
+   "covered_seconds_in_window": null,
+   "covered_seconds_in_window_by_ticker": {
+    "KXAAAGASDCT-26OCT23-4.3250": 43810.0,
+    "KXAAAGASDMT-26OCT23-4.4550": 43809.0,
+    "KXAAAGASDNE-26OCT23-4.3950": 43812.0,
+    "KXAAAGASDTX-26OCT23-3.7400": 43824.0,
+    "KXAAAGASDWY-26OCT23-4.4100": 43783.0,
+    "KXACTBLUETOP-26OCT23-ANIX": 22022.0,
+    "KXACTBLUETOP-26OCT23-GHIN": 43791.0,
+    "KXACTBLUETOP-26OCT23-JOSS": 43808.0,
+    "KXACTBLUETOP-26OCT23-MPEL": 43832.0,
+    "KXACTBLUETOP-26OCT23-SBRO": 43768.0,
+    "KXACTBLUETOP-26OCT23-TJAC": 22019.0,
+    "KXALBERTASNAP-27-27APR01": 9456.0,
+    "KXALBERTASNAP-27-27JAN01": 9455.0,
+    "KXAPRPOTUS-26OCT23-37.7": 43766.0,
+    "KXAPRPOTUS-26OCT23-37.9": 30725.0,
+    "KXAPRPOTUS-26OCT23-38.2": 30723.0,
+    "KXAPRPOTUS-26OCT23-38.5": 43816.0,
+    "KXAPRPOTUS-26OCT23-38.8": 43835.0,
+    "KXAPRPOTUS-26OCT23-39.1": 43811.0,
+    "KXAPRPOTUS-26OCT23-39.4": 43808.0,
+    "KXAPRPOTUS-26OCT23-39.6": 30724.0,
+    "KXASPENMTNOPEN-27-13DEC26": 43838.0,
+    "KXASPENMTNOPEN-27-15NOV26": 43837.0,
+    "KXASPENMTNOPEN-27-29NOV26": 43839.0,
+    "KXAUSEUFTA-27JUL01": 9453.0,
+    "KXBABELMANDEBWEEKLY-26OCT25-T160": 43786.0,
+    "KXBABELMANDEBWEEKLY-26OCT25-T170": 25665.0,
+    "KXBABELMANDEBWEEKLY-26OCT25-T190": 23880.0,
+    "KXBABELMANDEBWEEKLY-26OCT25-T195": 23871.0,
+    "KXBABELMANDEBWEEKLY-26OCT25-T200": 43835.0,
+    "KXBABELMANDEBWEEKLY-26OCT25-T205": 43773.0,
+    "KXBABELMANDEBWEEKLY-26OCT25-T210": 43779.0,
+    "KXBABELMANDEBWEEKLY-26OCT25-T220": 43796.0,
+    "KXBBCFEEONLINE-26OCT-27JAN01": 9457.0,
+    "KXBRRUNOFFSP-26OCT25-1-FBOL": 8899.0,
+    "KXBRRUNOFFSP-26OCT25-1-LSIL": 9456.0,
+    "KXCHILEBOLIVIA-28JAN01-27JAN01": 43813.0,
+    "KXCHILEBOLIVIA-28JAN01-28JAN01": 43788.0,
+    "KXCISAEXTEND-26OCT": 43821.0,
+    "KXDANIELLESMITHOUT-28-27JUL01": 0,
+    "KXDANIELLESMITHOUT-28-28JAN01": 0,
+    "KXEOWEEK-26OCT17-1": 43801.0,
+    "KXEOWEEK-26OCT17-2": 43833.0,
+    "KXEOWEEK-26OCT17-4": 43824.0,
+    "KXEOWEEK-26OCT24-1": 43797.0,
+    "KXEOWEEK-26OCT24-2": 43798.0,
+    "KXEOWEEK-26OCT24-4": 34646.0,
+    "KXEUBLOCKICC-26OCT-27JUL01": 9454.0,
+    "KXFRANCE493-27JAN01": 43798.0,
+    "KXFRANCEBUDGET-27JAN01": 43820.0,
+    "KXFRANCEEMERGENCY-27-26NOV01": 43844.0,
+    "KXFRENCHPRES1R-27APR18": 43841.0,
+    "KXHORMUZMAX-26OCT25-OCT21": 43793.0,
+    "KXHORMUZMAX-26OCT25-OCT22": 43783.0,
+    "KXHORMUZMAX-26OCT25-OCT23": 23870.0,
+    "KXHORMUZMAX-26OCT25-OCT24": 43786.0,
+    "KXHORMUZMAX-26OCT25-OCT25": 43770.0,
+    "KXHORMUZPEAK-26OCT25-T10": 43788.0,
+    "KXHORMUZPEAK-26OCT25-T3": 43799.0,
+    "KXHORMUZPEAK-26OCT25-T4": 20260.0,
+    "KXHORMUZPEAK-26OCT25-T5": 20261.0,
+    "KXHORMUZPEAK-26OCT25-T6": 43816.0,
+    "KXHORMUZPEAK-26OCT25-T8": 43819.0,
+    "KXHORMUZWEEKLY-26OCT25-T15": 43810.0,
+    "KXHORMUZWEEKLY-26OCT25-T20": 25665.0,
+    "KXHORMUZWEEKLY-26OCT25-T25": 23877.0,
+    "KXHORMUZWEEKLY-26OCT25-T27": 43815.0,
+    "KXHORMUZWEEKLY-26OCT25-T30": 43787.0,
+    "KXHORMUZWEEKLY-26OCT25-T35": 23872.0,
+    "KXHORMUZWEEKLY-26OCT25-T40": 25664.0,
+    "KXJPSGINFL-26NOV24-JPVSG": 13075.0,
+    "KXMAMDANIEO-26OCT24-T0": 43821.0,
+    "KXNETANYAHURETIRE-27JUL01-27JAN01": 43843.0,
+    "KXNETANYAHURETIRE-27JUL01-27JUL01": 43843.0,
+    "KXNEXTPRESSECPERM-29JAN20-DALV": 43847.0,
+    "KXNEXTSTATEFLOCK-27-27APR01": 43841.0,
+    "KXNEXTSTATEFLOCK-27-27JAN01": 43840.0,
+    "KXNEXTSTATEFLOCK-27-27JUL01": 43842.0,
+    "KXPANAMAWEEKLY-26OCT25-T180": 23879.0,
+    "KXPANAMAWEEKLY-26OCT25-T190": 43770.0,
+    "KXPANAMAWEEKLY-26OCT25-T195": 43833.0,
+    "KXPANAMAWEEKLY-26OCT25-T200": 23875.0,
+    "KXPANAMAWEEKLY-26OCT25-T205": 43767.0,
+    "KXPANAMAWEEKLY-26OCT25-T210": 43815.0,
+    "KXPANAMAWEEKLY-26OCT25-T220": 43784.0,
+    "KXPHPKEV-26OCT-26OCT23": 43796.0,
+    "KXPOLANDABORTION-28JAN01-YES": 9452.0,
+    "KXREMOVEDAPPSTOREDEEPSEEK-27": 43806.0,
+    "KXRT-AVE-70": 43794.0,
+    "KXRT-DUNE-95": 43781.0,
+    "KXRT-EBE-35": 43789.0,
+    "KXRT-WIC-82": 43779.0,
+    "KXRT-WIC-96": 5274.0,
+    "KXRT-WILDW-97": 43800.0,
+    "KXRT-WILDW-98": 12479.0,
+    "KXRT-WILDW-99": 12479.0,
+    "KXSUEZWEEKLY-26OCT25-T260": 43834.0,
+    "KXSUEZWEEKLY-26OCT25-T270": 43802.0,
+    "KXSUEZWEEKLY-26OCT25-T290": 23877.0,
+    "KXSUEZWEEKLY-26OCT25-T300": 43764.0,
+    "KXSUEZWEEKLY-26OCT25-T310": 23873.0,
+    "KXSUEZWEEKLY-26OCT25-T320": 43822.0,
+    "KXSUEZWEEKLY-26OCT25-T330": 43792.0,
+    "KXTRUMPACT-26OCT18-T10": 27509.0,
+    "KXTRUMPACT-26OCT18-T12": 43772.0,
+    "KXTRUMPACT-26OCT18-T2": 43780.0,
+    "KXTRUMPACT-26OCT18-T4": 43773.0,
+    "KXTRUMPACT-26OCT18-T5": 43785.0,
+    "KXTRUMPACT-26OCT18-T6": 27507.0,
+    "KXTRUMPACT-26OCT18-T7": 27507.0,
+    "KXTRUMPACT-26OCT18-T9": 43800.0,
+    "KXTRUMPAPPROVE-26OCT22-E37.9": 43778.0,
+    "KXTRUMPAPPROVE-26OCT22-E38.0": 43807.0,
+    "KXTRUMPAPPROVE-26OCT22-E38.1": 43804.0,
+    "KXTRUMPAPPROVE-26OCT22-E38.3": 43812.0,
+    "KXTRUMPAPPROVE-26OCT22-E38.4": 43790.0,
+    "KXTRUMPAPPROVE-26OCT23-E38.1": 35507.0,
+    "KXTRUMPAPPROVE-26OCT23-E38.4": 35506.0,
+    "KXTRUMPAPPROVE-26OCT23-E38.5": 35505.0,
+    "KXTRUMPAPPROVE-26OCT23-E38.7": 34647.0,
+    "KXTRUMPAPPROVE-26OCT23-U38.1": 34647.0,
+    "KXTRUMPNOMNUM-26OCT18-T1": 43804.0,
+    "KXTRUMPNOMNUM-26OCT18-T10": 43805.0,
+    "KXTRUMPNOMNUM-26OCT18-T20": 43769.0,
+    "KXTRUMPNOMNUM-26OCT18-T40": 43823.0,
+    "KXTRUMPPHOTO-26OCT25-4": 43814.0,
+    "KXTRUMPPHOTO-26OCT25-6": 43781.0,
+    "KXUKEAINFL-26NOV18-UKVEA": 43806.0,
+    "KXUSIRANCHINAMEET-27-27FEB01": 43844.0,
+    "KXUST10AD-26OCT22-T4.95": 43768.0,
+    "KXUST10AD-26OCT22-T4.99": 43791.0,
+    "KXUST10AD-26OCT22-T5.03": 43782.0,
+    "KXUST10AD-26OCT22-T5.05": 43795.0,
+    "KXUST10AD-26OCT22-T5.07": 43825.0,
+    "KXVHGCB-26OCT22-E7.8": 43802.0,
+    "KXVHGCB-26OCT22-E7.9": 43794.0,
+    "KXVHGCB-26OCT22-E8.0": 43765.0,
+    "KXVHGCB-26OCT22-E8.2": 43771.0,
+    "KXVHGCB-26OCT22-U7.7": 43775.0,
+    "KXVONCFR-27": 43772.0,
+    "KXWHPOOLANNOUNCE-28-27JAN01": 43765.0,
+    "KXWHPRESSMOVE-27": 9454.0,
+    "KXWOODCABINET50-27": 43839.0
+   },
+   "covered_seconds_median": 43786.0,
+   "covered_seconds_min": 0,
+   "feeds": 143,
+   "incomplete": 9,
+   "mode": "per_ticker",
+   "page_cap_hits": 0,
+   "pages": 61781,
+   "polls": 61790,
+   "window_seconds": 44100.0
+  },
+  "window_ticks": 44100
+ },
+ "day": "2026-10-22",
+ "expected": {
+  "admission_from": "2026-10-22T12:25:00+00:00",
+  "drain_at": "2026-10-23T01:50:00+00:00",
+  "expected_duration_s": 48300.0,
+  "hard_stop": "2026-10-23T02:00:00+00:00",
+  "window_end": "2026-10-23T00:45:00+00:00",
+  "window_start": "2026-10-22T12:30:00+00:00"
+ },
+ "faults": {
+  "books": {
+   "connection": 18,
+   "http_429": 1,
+   "other": 120
+  },
+  "control": {
+   "connection": 3
+  },
+  "control_or_final_errors": 3,
+  "rate_limited": 16,
+  "restarts": 0,
+  "slept_seconds": 0,
+  "status": {
+   "connection": 8
+  },
+  "tape": {
+   "connection": 5,
+   "http_429": 4
+  },
+  "wall_jumps": []
+ },
+ "identity": {
+  "book_cadence_s": 1.0,
+  "cadence_sha256": "694b6145b9c25a0af56e1556acacd3579dc3c2abbf62bcb70dab7c0194bcdb03",
+  "code_commit": "5e28428a925d367813f580f4ab43aa4b26fb8cea",
+  "freeze_manifest_sha256_now": "b9a5776910fc8d97e291b7c518520e60348420f99e0dde297a5049b19acbbf7a",
+  "freeze_sha256": "b9a5776910fc8d97e291b7c518520e60348420f99e0dde297a5049b19acbbf7a",
+  "prereg_commit": "2afe10bceaccb9e2ce173e2a3b1c619c81d1fb71",
+  "recorder_version": "lip-1.0.0",
+  "run_id": "2026-10-22-122502-7286",
+  "sim_version": "lip-sim-1.0.0",
+  "study_json_sha256": "b024b4ae23cf7b35dd80dad6b3a37c9d96813433170de76de0eb40edd953eb6b",
+  "tag": "study",
+  "tape_mode": "per_ticker"
+ },
+ "integrity": {
+  "burst_lanes": {},
+  "data_digest": "e85b14cf7ca52417f289a5026836401954b20140c16907f85bcae32b6f0092ec",
+  "duplicate_book_reads": 0,
+  "duplicate_trade_ids": 0,
+  "error": "",
+  "first_book_sent_at": 1792672519.094882,
+  "last_book_sent_at": 1792720186.843287,
+  "max_requests_per_minute": {
+   "book-A": 61,
+   "control": 18,
+   "status": 4,
+   "tape": 91
+  },
+  "read_to": "health.json",
+  "streams": {
+   "audit": {
+    "digest": "8def78a8cabf6cfb17ca2bc70e916634ac7ac26524acff69f0ed8c9e0a560068",
+    "rows": 316
+   },
+   "books": {
+    "digest": "4c1f9312b2b3f3133a7f423db644597dd24aa0a924cffced2e959986ea56d77e",
+    "rows": 37920
+   },
+   "clock": {
+    "digest": "6c5336a6b1a116ebe213ae511dce9a82421930432967247eb24ee29a4c286d60",
+    "rows": 81
+   },
+   "lanes": {
+    "digest": "b7a9518bae48178955fa583339203b243661d358368a231705add071dec8f147",
+    "rows": 2635
+   },
+   "markets": {
+    "digest": "0b42688f879b91686c5d008a28137fa36cff3d9980d696526fa2533b747fc6a6",
+    "rows": 1441
+   },
+   "programs": {
+    "digest": "10ca1dc5d9898d2abdbbc91dabe1296a29a9cbc97eef7d946c1e3c5564860607",
+    "rows": 213
+   },
+   "series": {
+    "digest": "358dd2a846c7d0ef9034df46d71810c67164a19b5f4843565f38d028eb9a04e3",
+    "rows": 173
+   },
+   "status": {
+    "digest": "e916ffc717bc8b7c60e6d92505adc7b064adc5204c0e4c4288eceb2ab2b90ba6",
+    "rows": 1371
+   },
+   "tape_polls": {
+    "digest": "005e00538e04627e2da90da22e0619a2d19a32d7f8f85ae419e2dff210b3878a",
+    "rows": 61790
+   },
+   "trades": {
+    "digest": "629fdce8e2559bb34da390c4ab171c6be375929f4b76d773fc20099940b0aeae",
+    "rows": 1371
+   },
+   "universe": {
+    "digest": "f6d99426f7c3e6e5f32dc899edc4aec379b8fb28bd278b7058bbcdccdc9f915b",
+    "rows": 7234
+   }
+  },
+  "tape_continuity_breaks": 0,
+  "tape_first_min_ts": 1792672453,
+  "tape_last_newest": 1792720355.44277,
+  "verified": true,
+  "verified_until": null
+ },
+ "lifecycle": {
+  "alive_seconds": 48666.594,
+  "ended_at": "2026-10-23T01:56:19.529764+00:00",
+  "exit_code": 0,
+  "last_heartbeat": {
+   "at": "2026-10-23T01:56:19.783421+00:00",
+   "pid": 7300,
+   "state": "closed"
+  },
+  "restarts": 0,
+  "run_status": "SUCCESS",
+  "started_at": "2026-10-22T12:25:12.936237+00:00",
+  "startup_delay_s": 12.936,
+  "termination": "closed",
+  "wrapper_runs": [
+   {
+    "day": "2026-10-22",
+    "event": "start",
+    "run_id": "2026-10-22-122502-7286",
+    "started_at": "2026-10-22T12:25:02Z",
+    "wrapper_pid": 7286
+   },
+   {
+    "day": "2026-10-22",
+    "ended_at": "2026-10-23T01:56:20Z",
+    "event": "end",
+    "exit_code": 0,
+    "reason": "recorded",
+    "recorder_pid": "7300",
+    "run_id": "2026-10-22-122502-7286",
+    "started_at": "2026-10-22T12:25:02Z",
+    "status": "SUCCESS",
+    "wrapper_pid": 7286
+   }
+  ]
+ },
+ "manifest_version": 1,
+ "qualification": {
+  "counted_day": true,
+  "ok_ticks": 36310,
+  "rule": "COUNTED if ok_ticks >= 0.80 x window_ticks at the recorded book cadence (pre-registration, Amendment 2 item 6 and Amendment 3.1); shakedowns never count",
+  "share": 0.8233560090702948,
+  "source": "health.json",
+  "status": "COUNTED",
+  "tag": "study",
+  "threshold": 0.8,
+  "window_ticks": 44100
+ },
+ "study": "lip-shadow"
+}

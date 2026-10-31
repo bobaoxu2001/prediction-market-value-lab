@@ -1,0 +1,105 @@
+{
+  "v": "lip-1.0.0",
+  "tag": "shakedown",
+  "day": "2026-09-25",
+  "lanes": {
+    "book-A": {
+      "requests": 4130,
+      "ok": 4130,
+      "failed": 0,
+      "skipped_in_flight": 108,
+      "due_ticks_in_window": 4201,
+      "ok_ticks_in_window": 4093,
+      "rate_limited": 0
+    },
+    "tape": {
+      "requests": 4717,
+      "ok": 4717,
+      "failed": 0,
+      "skipped_in_flight": 0,
+      "due_ticks_in_window": 0,
+      "ok_ticks_in_window": 0,
+      "rate_limited": 0
+    },
+    "status": {
+      "requests": 345,
+      "ok": 345,
+      "failed": 0,
+      "skipped_in_flight": 0,
+      "due_ticks_in_window": 0,
+      "ok_ticks_in_window": 0,
+      "rate_limited": 0
+    },
+    "control": {
+      "requests": 147,
+      "ok": 147,
+      "failed": 0,
+      "skipped_in_flight": 0,
+      "due_ticks_in_window": 0,
+      "ok_ticks_in_window": 0,
+      "rate_limited": 0
+    },
+    "book-B": {
+      "requests": 4147,
+      "ok": 4147,
+      "failed": 0,
+      "skipped_in_flight": 91,
+      "due_ticks_in_window": 4201,
+      "ok_ticks_in_window": 4110,
+      "rate_limited": 0
+    }
+  },
+  "admitted_pairs": 173,
+  "markets_recorded": 173,
+  "trades_kept": 778,
+  "book_success_share_of_window": 0.9954875283446712,
+  "window_ticks": 44100,
+  "counted_day": false,
+  "streams": {
+    "programs": [
+      "2b644aea5c3b707c5a0a405adcf75544d6685b439a646d980d7c2e739ca0aae0",
+      22
+    ],
+    "markets": [
+      "2e187a100c4a1fe40f98a86d0a88f1f814d3edbb1b75976e11186dc421d76386",
+      888
+    ],
+    "universe": [
+      "c3433d1732e6b11d81cb9c9e362a4831aaffa85eed852f6e86b137b5d6cc7155",
+      6943
+    ],
+    "series": [
+      "5cd90ddbf4ceb4aa1f157843e84de821d8728ba0f4fb415ac9d9383e6294bb97",
+      64
+    ],
+    "lanes": [
+      "8a6a0f5cf38e19a47f9476bdda78f396987c99ec659c4b2fe9deb013140ddf81",
+      322
+    ],
+    "clock": [
+      "9eeef61d081567327940af488be4c8a506b9243fa36f1698f40bbd8f614d65df",
+      8
+    ],
+    "books": [
+      "9c91ea85a1654f7a518fe415652d2aafd729ef4c8940675f80a4a1133fe29b7a",
+      8277
+    ],
+    "audit": [
+      "93887540a0037c56d419276bc73a8fcbb3e4ead85f9fc5974785f87e49e3338f",
+      30
+    ],
+    "status": [
+      "3096f74c7ffc3a4ccace51efbe6a24abca86ddd583dc268ef8fb8824f6752c12",
+      115
+    ],
+    "trades": [
+      "65ef6c99e1c3f644c7e6bd2fd9e1518bdae386ce92f21714f882dbd2a21def56",
+      159
+    ],
+    "tape_polls": [
+      "26b5b2690504edaf0ffea3918d35ddb4b654829f0a546c46aff54512a510e99c",
+      604
+    ]
+  },
+  "finished_at": "2026-09-25T13:42:10.227827+00:00"
+}

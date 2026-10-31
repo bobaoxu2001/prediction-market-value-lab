@@ -1,0 +1,15 @@
+===== KXBTCD-26SEP2402 (recorder exit 1) =====
+KXBTCD-26SEP2402: no above-the-strike rungs found
+
+===== KXETHD-26SEP2402 (recorder exit 1) =====
+KXETHD-26SEP2402: no above-the-strike rungs found
+
+===== KXSOLD-26SEP2402 (recorder exit 1) =====
+KXSOLD-26SEP2402: no above-the-strike rungs found
+
+===== KXXRPD-26SEP2402 (recorder exit 1) =====
+KXXRPD-26SEP2402: no above-the-strike rungs found
+
+===== KXDOGED-26SEP2402 (recorder exit 1) =====
+KXDOGED-26SEP2402: no above-the-strike rungs found
+

@@ -1,0 +1,186 @@
+{
+  "pages_fetched": 21,
+  "page_budget": 400,
+  "pagination_exhausted": true,
+  "markets_scanned": 119,
+  "events_seen": 26,
+  "events_too_wide_for_one_request": 0,
+  "events_two_sided_but_never_traded": 7,
+  "events_qualified": 14,
+  "qualification": "at least 2 two-sided legs, non-zero 24h volume, fits one request",
+  "ranking": "volume",
+  "selected": [
+    {
+      "event": "KXWTAMATCH-26OCT31SUNDAR",
+      "two_sided_legs": 2,
+      "legs": 2,
+      "volume_24h": 228579.07
+    },
+    {
+      "event": "KXRAIN-26OCT31",
+      "two_sided_legs": 26,
+      "legs": 35,
+      "volume_24h": 140890.00000000003
+    },
+    {
+      "event": "KXWTAMATCH-26OCT31QUETAG",
+      "two_sided_legs": 2,
+      "legs": 2,
+      "volume_24h": 53894.97
+    },
+    {
+      "event": "KXWTAMATCH-26OCT31OKARAM",
+      "two_sided_legs": 2,
+      "legs": 2,
+      "volume_24h": 27084.15
+    },
+    {
+      "event": "KXWTAMATCH-26OCT31KULKOT",
+      "two_sided_legs": 2,
+      "legs": 2,
+      "volume_24h": 21649.98
+    },
+    {
+      "event": "KXWTAMATCH-26OCT31TKAZOL",
+      "two_sided_legs": 2,
+      "legs": 2,
+      "volume_24h": 19243.23
+    },
+    {
+      "event": "KXWTAMATCH-26OCT31MATKOB",
+      "two_sided_legs": 2,
+      "legs": 2,
+      "volume_24h": 7294.5
+    },
+    {
+      "event": "KXWTAMATCH-26OCT31MORBHA",
+      "two_sided_legs": 2,
+      "legs": 2,
+      "volume_24h": 6871.11
+    }
+  ],
+  "runners_up": [
+    {
+      "event": "KXWTAMATCH-26OCT31FALYAS",
+      "two_sided_legs": 2,
+      "legs": 2,
+      "volume_24h": 6755.91
+    },
+    {
+      "event": "KXWTAMATCH-26OCT31KANFAL",
+      "two_sided_legs": 2,
+      "legs": 2,
+      "volume_24h": 5262.75
+    },
+    {
+      "event": "KXWTAMATCH-26OCT31YAMDES",
+      "two_sided_legs": 2,
+      "legs": 2,
+      "volume_24h": 630.13
+    },
+    {
+      "event": "KXLOLMAP-26OCT311300LYLOS-1",
+      "two_sided_legs": 2,
+      "legs": 2,
+      "volume_24h": 562.24
+    },
+    {
+      "event": "KXWTAMATCH-26OCT31FERSHN",
+      "two_sided_legs": 2,
+      "legs": 2,
+      "volume_24h": 8.11
+    },
+    {
+      "event": "KXWTAMATCH-26OCT31SASLEE",
+      "two_sided_legs": 2,
+      "legs": 2,
+      "volume_24h": 2.05
+    }
+  ],
+  "qualified_universe": [
+    {
+      "event": "KXWTAMATCH-26OCT31SUNDAR",
+      "two_sided_legs": 2,
+      "legs": 2,
+      "volume_24h": 228579.07
+    },
+    {
+      "event": "KXRAIN-26OCT31",
+      "two_sided_legs": 26,
+      "legs": 35,
+      "volume_24h": 140890.00000000003
+    },
+    {
+      "event": "KXWTAMATCH-26OCT31QUETAG",
+      "two_sided_legs": 2,
+      "legs": 2,
+      "volume_24h": 53894.97
+    },
+    {
+      "event": "KXWTAMATCH-26OCT31OKARAM",
+      "two_sided_legs": 2,
+      "legs": 2,
+      "volume_24h": 27084.15
+    },
+    {
+      "event": "KXWTAMATCH-26OCT31KULKOT",
+      "two_sided_legs": 2,
+      "legs": 2,
+      "volume_24h": 21649.98
+    },
+    {
+      "event": "KXWTAMATCH-26OCT31TKAZOL",
+      "two_sided_legs": 2,
+      "legs": 2,
+      "volume_24h": 19243.23
+    },
+    {
+      "event": "KXWTAMATCH-26OCT31MATKOB",
+      "two_sided_legs": 2,
+      "legs": 2,
+      "volume_24h": 7294.5
+    },
+    {
+      "event": "KXWTAMATCH-26OCT31MORBHA",
+      "two_sided_legs": 2,
+      "legs": 2,
+      "volume_24h": 6871.11
+    },
+    {
+      "event": "KXWTAMATCH-26OCT31FALYAS",
+      "two_sided_legs": 2,
+      "legs": 2,
+      "volume_24h": 6755.91
+    },
+    {
+      "event": "KXWTAMATCH-26OCT31KANFAL",
+      "two_sided_legs": 2,
+      "legs": 2,
+      "volume_24h": 5262.75
+    },
+    {
+      "event": "KXWTAMATCH-26OCT31YAMDES",
+      "two_sided_legs": 2,
+      "legs": 2,
+      "volume_24h": 630.13
+    },
+    {
+      "event": "KXLOLMAP-26OCT311300LYLOS-1",
+      "two_sided_legs": 2,
+      "legs": 2,
+      "volume_24h": 562.24
+    },
+    {
+      "event": "KXWTAMATCH-26OCT31FERSHN",
+      "two_sided_legs": 2,
+      "legs": 2,
+      "volume_24h": 8.11
+    },
+    {
+      "event": "KXWTAMATCH-26OCT31SASLEE",
+      "two_sided_legs": 2,
+      "legs": 2,
+      "volume_24h": 2.05
+    }
+  ]
+}

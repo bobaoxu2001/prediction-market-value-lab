@@ -1,0 +1,408 @@
+{
+  "event": "KXETHD-26SEP2400",
+  "product": "ETH-USD",
+  "spot_at_start": 2674.67,
+  "close_time": "2026-09-24T04:00:00Z",
+  "markets": {
+    "KXETHD-26SEP2400-T2674.99": {
+      "floor_strike": 2674.99,
+      "strike_type": "greater"
+    },
+    "KXETHD-26SEP2400-T2669.99": {
+      "floor_strike": 2669.99,
+      "strike_type": "greater"
+    },
+    "KXETHD-26SEP2400-T2679.99": {
+      "floor_strike": 2679.99,
+      "strike_type": "greater"
+    },
+    "KXETHD-26SEP2400-T2664.99": {
+      "floor_strike": 2664.99,
+      "strike_type": "greater"
+    },
+    "KXETHD-26SEP2400-T2684.99": {
+      "floor_strike": 2684.99,
+      "strike_type": "greater"
+    },
+    "KXETHD-26SEP2400-T2659.99": {
+      "floor_strike": 2659.99,
+      "strike_type": "greater"
+    },
+    "KXETHD-26SEP2400-T2689.99": {
+      "floor_strike": 2689.99,
+      "strike_type": "greater"
+    },
+    "KXETHD-26SEP2400-T2654.99": {
+      "floor_strike": 2654.99,
+      "strike_type": "greater"
+    },
+    "KXETHD-26SEP2400-T2694.99": {
+      "floor_strike": 2694.99,
+      "strike_type": "greater"
+    },
+    "KXETHD-26SEP2400-T2649.99": {
+      "floor_strike": 2649.99,
+      "strike_type": "greater"
+    },
+    "KXETHD-26SEP2400-T2699.99": {
+      "floor_strike": 2699.99,
+      "strike_type": "greater"
+    },
+    "KXETHD-26SEP2400-T2644.99": {
+      "floor_strike": 2644.99,
+      "strike_type": "greater"
+    },
+    "KXETHD-26SEP2400-T2704.99": {
+      "floor_strike": 2704.99,
+      "strike_type": "greater"
+    },
+    "KXETHD-26SEP2400-T2639.99": {
+      "floor_strike": 2639.99,
+      "strike_type": "greater"
+    },
+    "KXETHD-26SEP2400-T2709.99": {
+      "floor_strike": 2709.99,
+      "strike_type": "greater"
+    },
+    "KXETHD-26SEP2400-T2634.99": {
+      "floor_strike": 2634.99,
+      "strike_type": "greater"
+    },
+    "KXETHD-26SEP2400-T2714.99": {
+      "floor_strike": 2714.99,
+      "strike_type": "greater"
+    },
+    "KXETHD-26SEP2400-T2629.99": {
+      "floor_strike": 2629.99,
+      "strike_type": "greater"
+    },
+    "KXETHD-26SEP2400-T2719.99": {
+      "floor_strike": 2719.99,
+      "strike_type": "greater"
+    },
+    "KXETHD-26SEP2400-T2624.99": {
+      "floor_strike": 2624.99,
+      "strike_type": "greater"
+    },
+    "KXETHD-26SEP2400-T2724.99": {
+      "floor_strike": 2724.99,
+      "strike_type": "greater"
+    },
+    "KXETHD-26SEP2400-T2619.99": {
+      "floor_strike": 2619.99,
+      "strike_type": "greater"
+    },
+    "KXETHD-26SEP2400-T2729.99": {
+      "floor_strike": 2729.99,
+      "strike_type": "greater"
+    },
+    "KXETHD-26SEP2400-T2614.99": {
+      "floor_strike": 2614.99,
+      "strike_type": "greater"
+    },
+    "KXETHD-26SEP2400-T2734.99": {
+      "floor_strike": 2734.99,
+      "strike_type": "greater"
+    },
+    "KXETHD-26SEP2400-T2609.99": {
+      "floor_strike": 2609.99,
+      "strike_type": "greater"
+    },
+    "KXETHD-26SEP2400-T2739.99": {
+      "floor_strike": 2739.99,
+      "strike_type": "greater"
+    },
+    "KXETHD-26SEP2400-T2604.99": {
+      "floor_strike": 2604.99,
+      "strike_type": "greater"
+    },
+    "KXETHD-26SEP2400-T2744.99": {
+      "floor_strike": 2744.99,
+      "strike_type": "greater"
+    },
+    "KXETHD-26SEP2400-T2599.99": {
+      "floor_strike": 2599.99,
+      "strike_type": "greater"
+    },
+    "KXETHD-26SEP2400-T2749.99": {
+      "floor_strike": 2749.99,
+      "strike_type": "greater"
+    },
+    "KXETHD-26SEP2400-T2594.99": {
+      "floor_strike": 2594.99,
+      "strike_type": "greater"
+    },
+    "KXETHD-26SEP2400-T2754.99": {
+      "floor_strike": 2754.99,
+      "strike_type": "greater"
+    },
+    "KXETHD-26SEP2400-T2589.99": {
+      "floor_strike": 2589.99,
+      "strike_type": "greater"
+    },
+    "KXETHD-26SEP2400-T2759.99": {
+      "floor_strike": 2759.99,
+      "strike_type": "greater"
+    },
+    "KXETHD-26SEP2400-T2584.99": {
+      "floor_strike": 2584.99,
+      "strike_type": "greater"
+    },
+    "KXETHD-26SEP2400-T2764.99": {
+      "floor_strike": 2764.99,
+      "strike_type": "greater"
+    },
+    "KXETHD-26SEP2400-T2579.99": {
+      "floor_strike": 2579.99,
+      "strike_type": "greater"
+    },
+    "KXETHD-26SEP2400-T2769.99": {
+      "floor_strike": 2769.99,
+      "strike_type": "greater"
+    },
+    "KXETHD-26SEP2400-T2574.99": {
+      "floor_strike": 2574.99,
+      "strike_type": "greater"
+    },
+    "KXETHD-26SEP2400-T2774.99": {
+      "floor_strike": 2774.99,
+      "strike_type": "greater"
+    },
+    "KXETHD-26SEP2400-T2569.99": {
+      "floor_strike": 2569.99,
+      "strike_type": "greater"
+    },
+    "KXETHD-26SEP2400-T2779.99": {
+      "floor_strike": 2779.99,
+      "strike_type": "greater"
+    },
+    "KXETHD-26SEP2400-T2564.99": {
+      "floor_strike": 2564.99,
+      "strike_type": "greater"
+    },
+    "KXETHD-26SEP2400-T2784.99": {
+      "floor_strike": 2784.99,
+      "strike_type": "greater"
+    },
+    "KXETHD-26SEP2400-T2559.99": {
+      "floor_strike": 2559.99,
+      "strike_type": "greater"
+    },
+    "KXETHD-26SEP2400-T2789.99": {
+      "floor_strike": 2789.99,
+      "strike_type": "greater"
+    },
+    "KXETHD-26SEP2400-T2554.99": {
+      "floor_strike": 2554.99,
+      "strike_type": "greater"
+    },
+    "KXETHD-26SEP2400-T2794.99": {
+      "floor_strike": 2794.99,
+      "strike_type": "greater"
+    },
+    "KXETHD-26SEP2400-T2549.99": {
+      "floor_strike": 2549.99,
+      "strike_type": "greater"
+    },
+    "KXETHD-26SEP2400-T2799.99": {
+      "floor_strike": 2799.99,
+      "strike_type": "greater"
+    },
+    "KXETHD-26SEP2400-T2544.99": {
+      "floor_strike": 2544.99,
+      "strike_type": "greater"
+    },
+    "KXETHD-26SEP2400-T2804.99": {
+      "floor_strike": 2804.99,
+      "strike_type": "greater"
+    },
+    "KXETHD-26SEP2400-T2539.99": {
+      "floor_strike": 2539.99,
+      "strike_type": "greater"
+    },
+    "KXETHD-26SEP2400-T2809.99": {
+      "floor_strike": 2809.99,
+      "strike_type": "greater"
+    },
+    "KXETHD-26SEP2400-T2534.99": {
+      "floor_strike": 2534.99,
+      "strike_type": "greater"
+    },
+    "KXETHD-26SEP2400-T2814.99": {
+      "floor_strike": 2814.99,
+      "strike_type": "greater"
+    },
+    "KXETHD-26SEP2400-T2529.99": {
+      "floor_strike": 2529.99,
+      "strike_type": "greater"
+    },
+    "KXETHD-26SEP2400-T2819.99": {
+      "floor_strike": 2819.99,
+      "strike_type": "greater"
+    },
+    "KXETHD-26SEP2400-T2524.99": {
+      "floor_strike": 2524.99,
+      "strike_type": "greater"
+    },
+    "KXETHD-26SEP2400-T2824.99": {
+      "floor_strike": 2824.99,
+      "strike_type": "greater"
+    },
+    "KXETHD-26SEP2400-T2519.99": {
+      "floor_strike": 2519.99,
+      "strike_type": "greater"
+    },
+    "KXETHD-26SEP2400-T2829.99": {
+      "floor_strike": 2829.99,
+      "strike_type": "greater"
+    },
+    "KXETHD-26SEP2400-T2514.99": {
+      "floor_strike": 2514.99,
+      "strike_type": "greater"
+    },
+    "KXETHD-26SEP2400-T2834.99": {
+      "floor_strike": 2834.99,
+      "strike_type": "greater"
+    },
+    "KXETHD-26SEP2400-T2509.99": {
+      "floor_strike": 2509.99,
+      "strike_type": "greater"
+    },
+    "KXETHD-26SEP2400-T2839.99": {
+      "floor_strike": 2839.99,
+      "strike_type": "greater"
+    },
+    "KXETHD-26SEP2400-T2504.99": {
+      "floor_strike": 2504.99,
+      "strike_type": "greater"
+    },
+    "KXETHD-26SEP2400-T2844.99": {
+      "floor_strike": 2844.99,
+      "strike_type": "greater"
+    },
+    "KXETHD-26SEP2400-T2499.99": {
+      "floor_strike": 2499.99,
+      "strike_type": "greater"
+    },
+    "KXETHD-26SEP2400-T2849.99": {
+      "floor_strike": 2849.99,
+      "strike_type": "greater"
+    },
+    "KXETHD-26SEP2400-T2494.99": {
+      "floor_strike": 2494.99,
+      "strike_type": "greater"
+    },
+    "KXETHD-26SEP2400-T2854.99": {
+      "floor_strike": 2854.99,
+      "strike_type": "greater"
+    },
+    "KXETHD-26SEP2400-T2489.99": {
+      "floor_strike": 2489.99,
+      "strike_type": "greater"
+    },
+    "KXETHD-26SEP2400-T2859.99": {
+      "floor_strike": 2859.99,
+      "strike_type": "greater"
+    },
+    "KXETHD-26SEP2400-T2484.99": {
+      "floor_strike": 2484.99,
+      "strike_type": "greater"
+    },
+    "KXETHD-26SEP2400-T2864.99": {
+      "floor_strike": 2864.99,
+      "strike_type": "greater"
+    },
+    "KXETHD-26SEP2400-T2479.99": {
+      "floor_strike": 2479.99,
+      "strike_type": "greater"
+    },
+    "KXETHD-26SEP2400-T2869.99": {
+      "floor_strike": 2869.99,
+      "strike_type": "greater"
+    },
+    "KXETHD-26SEP2400-T2474.99": {
+      "floor_strike": 2474.99,
+      "strike_type": "greater"
+    },
+    "KXETHD-26SEP2400-T2874.99": {
+      "floor_strike": 2874.99,
+      "strike_type": "greater"
+    },
+    "KXETHD-26SEP2400-T2469.99": {
+      "floor_strike": 2469.99,
+      "strike_type": "greater"
+    },
+    "KXETHD-26SEP2400-T2879.99": {
+      "floor_strike": 2879.99,
+      "strike_type": "greater"
+    },
+    "KXETHD-26SEP2400-T2464.99": {
+      "floor_strike": 2464.99,
+      "strike_type": "greater"
+    },
+    "KXETHD-26SEP2400-T2884.99": {
+      "floor_strike": 2884.99,
+      "strike_type": "greater"
+    },
+    "KXETHD-26SEP2400-T2459.99": {
+      "floor_strike": 2459.99,
+      "strike_type": "greater"
+    },
+    "KXETHD-26SEP2400-T2889.99": {
+      "floor_strike": 2889.99,
+      "strike_type": "greater"
+    },
+    "KXETHD-26SEP2400-T2454.99": {
+      "floor_strike": 2454.99,
+      "strike_type": "greater"
+    },
+    "KXETHD-26SEP2400-T2894.99": {
+      "floor_strike": 2894.99,
+      "strike_type": "greater"
+    },
+    "KXETHD-26SEP2400-T2449.99": {
+      "floor_strike": 2449.99,
+      "strike_type": "greater"
+    },
+    "KXETHD-26SEP2400-T2899.99": {
+      "floor_strike": 2899.99,
+      "strike_type": "greater"
+    },
+    "KXETHD-26SEP2400-T2444.99": {
+      "floor_strike": 2444.99,
+      "strike_type": "greater"
+    },
+    "KXETHD-26SEP2400-T2904.99": {
+      "floor_strike": 2904.99,
+      "strike_type": "greater"
+    },
+    "KXETHD-26SEP2400-T2439.99": {
+      "floor_strike": 2439.99,
+      "strike_type": "greater"
+    },
+    "KXETHD-26SEP2400-T2909.99": {
+      "floor_strike": 2909.99,
+      "strike_type": "greater"
+    },
+    "KXETHD-26SEP2400-T2434.99": {
+      "floor_strike": 2434.99,
+      "strike_type": "greater"
+    },
+    "KXETHD-26SEP2400-T2914.99": {
+      "floor_strike": 2914.99,
+      "strike_type": "greater"
+    },
+    "KXETHD-26SEP2400-T2429.99": {
+      "floor_strike": 2429.99,
+      "strike_type": "greater"
+    },
+    "KXETHD-26SEP2400-T2919.99": {
+      "floor_strike": 2919.99,
+      "strike_type": "greater"
+    },
+    "KXETHD-26SEP2400-T2424.99": {
+      "floor_strike": 2424.99,
+      "strike_type": "greater"
+    }
+  }
+}

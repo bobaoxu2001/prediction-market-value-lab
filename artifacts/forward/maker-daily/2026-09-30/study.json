@@ -1,0 +1,214 @@
+{
+  "strategy_version": "1.1.0",
+  "universe": "artifacts/forward/universe-study-frozen.json",
+  "universe_frozen_at": "2026-09-19T08:45:56.009526+00:00",
+  "series": [
+    "KXGOLDH",
+    "KXKBOGAME",
+    "KXLOLMAP",
+    "KXMLBF5",
+    "KXMLBF5SPREAD",
+    "KXMLBHIT",
+    "KXMLBHR",
+    "KXMLBHRR",
+    "KXMLBKS",
+    "KXMLBRBI",
+    "KXMLBSB",
+    "KXMLBSPREAD",
+    "KXMLBTB",
+    "KXMLBTEAMTOTAL",
+    "KXMLBTOTAL",
+    "KXRAIN",
+    "KXTEMPCHIHS",
+    "KXTEMPLAXHS",
+    "KXTEMPMIAH",
+    "KXTEMPNYCHS",
+    "KXWTAMATCH"
+  ],
+  "planned_sessions": 20,
+  "session_seconds": 1800.0,
+  "interval_seconds": 10.0,
+  "events_per_session": 8,
+  "sessions": [
+    {
+      "session": 1,
+      "started_at": "2026-09-30T02:10:01.366265+00:00",
+      "ended_at": "2026-09-30T02:40:19.691748+00:00",
+      "date": "2026-09-30",
+      "events": [
+        "KXMLBTOTAL-26SEP292000BOSNYY",
+        "KXMLBSPREAD-26SEP292000BOSNYY",
+        "KXRAIN-26SEP29",
+        "KXMLBHR-26SEP292000BOSNYY",
+        "KXMLBHR-26SEP292200CHCSD",
+        "KXMLBTOTAL-26SEP292200CHCSD",
+        "KXMLBSPREAD-26SEP292200CHCSD",
+        "KXMLBHIT-26SEP292000BOSNYY"
+      ],
+      "stats": {
+        "cycles": 161,
+        "snapshots": 1288,
+        "rejections": 0,
+        "rejection_reasons": {},
+        "trades": 24880,
+        "trade_budget_exhausted_cycles": 161,
+        "trade_polls_at_row_limit": 0,
+        "legs_captured": 29141,
+        "two_sided_legs": 13598,
+        "skew_bound_ms_p50": 591.7,
+        "skew_bound_ms_p95": 1397.8,
+        "skew_bound_ms_max": 4851.874
+      }
+    },
+    {
+      "session": 2,
+      "started_at": "2026-09-30T02:40:19.711631+00:00",
+      "ended_at": "2026-09-30T03:10:33.973947+00:00",
+      "date": "2026-09-30",
+      "events": [
+        "KXMLBTOTAL-26SEP292000BOSNYY",
+        "KXMLBSPREAD-26SEP292000BOSNYY",
+        "KXMLBHR-26SEP292200CHCSD",
+        "KXRAIN-26SEP29",
+        "KXMLBTOTAL-26SEP292200CHCSD",
+        "KXMLBHR-26SEP292000BOSNYY",
+        "KXMLBSPREAD-26SEP292200CHCSD",
+        "KXMLBTEAMTOTAL-26SEP292000BOSNYY"
+      ],
+      "stats": {
+        "cycles": 158,
+        "snapshots": 1264,
+        "rejections": 0,
+        "rejection_reasons": {},
+        "trades": 23453,
+        "trade_budget_exhausted_cycles": 158,
+        "trade_polls_at_row_limit": 0,
+        "legs_captured": 22278,
+        "two_sided_legs": 8558,
+        "skew_bound_ms_p50": 601.1,
+        "skew_bound_ms_p95": 1514.1,
+        "skew_bound_ms_max": 3505.06
+      }
+    },
+    {
+      "session": 3,
+      "started_at": "2026-09-30T03:10:33.995247+00:00",
+      "ended_at": "2026-09-30T03:40:51.719597+00:00",
+      "date": "2026-09-30",
+      "events": [
+        "KXMLBTOTAL-26SEP292000BOSNYY",
+        "KXMLBHR-26SEP292200CHCSD",
+        "KXMLBTOTAL-26SEP292200CHCSD",
+        "KXMLBHR-26SEP292000BOSNYY",
+        "KXRAIN-26SEP29",
+        "KXMLBSPREAD-26SEP292200CHCSD",
+        "KXMLBTEAMTOTAL-26SEP292000BOSNYY",
+        "KXMLBHIT-26SEP292000BOSNYY"
+      ],
+      "stats": {
+        "cycles": 172,
+        "snapshots": 1376,
+        "rejections": 0,
+        "rejection_reasons": {},
+        "trades": 21129,
+        "trade_budget_exhausted_cycles": 172,
+        "trade_polls_at_row_limit": 0,
+        "legs_captured": 31992,
+        "two_sided_legs": 6390,
+        "skew_bound_ms_p50": 497.5,
+        "skew_bound_ms_p95": 1107.6,
+        "skew_bound_ms_max": 3055.405
+      }
+    },
+    {
+      "session": 4,
+      "started_at": "2026-09-30T03:40:51.739746+00:00",
+      "ended_at": "2026-09-30T04:11:10.130615+00:00",
+      "date": "2026-09-30",
+      "events": [
+        "KXMLBTOTAL-26SEP292200CHCSD",
+        "KXMLBHR-26SEP292200CHCSD",
+        "KXMLBSPREAD-26SEP292200CHCSD",
+        "KXRAIN-26SEP29",
+        "KXWTAMATCH-26SEP28TJEKAL",
+        "KXMLBTEAMTOTAL-26SEP292200CHCSD",
+        "KXMLBKS-26SEP292200CHCSD",
+        "KXMLBHIT-26SEP292200CHCSD"
+      ],
+      "stats": {
+        "cycles": 175,
+        "snapshots": 1400,
+        "rejections": 0,
+        "rejection_reasons": {},
+        "trades": 21887,
+        "trade_budget_exhausted_cycles": 175,
+        "trade_polls_at_row_limit": 0,
+        "legs_captured": 29225,
+        "two_sided_legs": 11943,
+        "skew_bound_ms_p50": 446.1,
+        "skew_bound_ms_p95": 951.5,
+        "skew_bound_ms_max": 2870.27
+      }
+    },
+    {
+      "session": 5,
+      "started_at": "2026-09-30T04:11:10.155700+00:00",
+      "ended_at": "2026-09-30T04:41:23.886938+00:00",
+      "date": "2026-09-30",
+      "events": [
+        "KXMLBTOTAL-26SEP292200CHCSD",
+        "KXMLBSPREAD-26SEP292200CHCSD",
+        "KXMLBHR-26SEP292200CHCSD",
+        "KXRAIN-26SEP29",
+        "KXMLBTEAMTOTAL-26SEP292200CHCSD",
+        "KXWTAMATCH-26SEP28TJEKAL",
+        "KXWTAMATCH-26SEP28RUSTAG",
+        "KXWTAMATCH-26SEP28JOIKRA"
+      ],
+      "stats": {
+        "cycles": 179,
+        "snapshots": 1432,
+        "rejections": 0,
+        "rejection_reasons": {},
+        "trades": 26413,
+        "trade_budget_exhausted_cycles": 179,
+        "trade_polls_at_row_limit": 0,
+        "legs_captured": 17363,
+        "two_sided_legs": 5022,
+        "skew_bound_ms_p50": 400.4,
+        "skew_bound_ms_p95": 793.1,
+        "skew_bound_ms_max": 1765.342
+      }
+    },
+    {
+      "session": 6,
+      "started_at": "2026-09-30T04:41:23.907923+00:00",
+      "ended_at": "2026-09-30T05:39:35.856763+00:00",
+      "date": "2026-09-30",
+      "events": [
+        "KXMLBSPREAD-26SEP292200CHCSD",
+        "KXMLBTOTAL-26SEP292200CHCSD",
+        "KXWTAMATCH-26SEP28JOIKRA",
+        "KXRAIN-26SEP29",
+        "KXWTAMATCH-26SEP28TJEKAL",
+        "KXMLBTEAMTOTAL-26SEP292200CHCSD",
+        "KXWTAMATCH-26SEP28MCCYAS",
+        "KXMLBHIT-26SEP292200CHCSD"
+      ],
+      "stats": {
+        "cycles": 90,
+        "snapshots": 720,
+        "rejections": 0,
+        "rejection_reasons": {},
+        "trades": 16827,
+        "trade_budget_exhausted_cycles": 61,
+        "trade_polls_at_row_limit": 0,
+        "legs_captured": 10800,
+        "two_sided_legs": 1714,
+        "skew_bound_ms_p50": 370.1,
+        "skew_bound_ms_p95": 799.4,
+        "skew_bound_ms_max": 2470.484
+      }
+    }
+  ]
+}

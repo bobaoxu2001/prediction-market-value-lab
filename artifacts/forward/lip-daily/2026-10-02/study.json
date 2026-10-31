@@ -1,0 +1,24 @@
+{
+  "tag": "study",
+  "recorder_version": "lip-1.0.0",
+  "sim_version": "lip-sim-1.0.0",
+  "prereg_commit": "2afe10bceaccb9e2ce173e2a3b1c619c81d1fb71",
+  "code_commit": "5e28428a925d367813f580f4ab43aa4b26fb8cea",
+  "cadence_sha256": "694b6145b9c25a0af56e1556acacd3579dc3c2abbf62bcb70dab7c0194bcdb03",
+  "freeze_sha256": "b9a5776910fc8d97e291b7c518520e60348420f99e0dde297a5049b19acbbf7a",
+  "run_id": "2026-10-02-122500-56231",
+  "pid": 56244,
+  "day": "2026-10-02",
+  "started_at": "2026-10-02T13:26:07.894343+00:00",
+  "book_cadence_s": 1.0,
+  "tape_mode": "per_ticker",
+  "min_ts_honoured": true,
+  "total_cap": 100,
+  "window": {
+    "admission_from": "2026-10-02T12:25:00+00:00",
+    "window_start": "2026-10-02T12:30:00+00:00",
+    "window_end": "2026-10-03T00:45:00+00:00",
+    "drain_at": "2026-10-03T01:50:00+00:00",
+    "hard_stop": "2026-10-03T02:00:00+00:00"
+  }
+}

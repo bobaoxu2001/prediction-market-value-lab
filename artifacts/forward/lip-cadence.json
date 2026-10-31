@@ -1,0 +1,20 @@
+{
+  "shakedown_dir": "artifacts/forward/lip-shakedown/2026-09-25",
+  "minutes_in_window": 71.2,
+  "tape_limit": 1000,
+  "min_ts_honoured": true,
+  "tape_mode": "TAPE_PT",
+  "book_cadence_s": 1.0,
+  "evidence": {
+    "polls": 604,
+    "p95_pages_per_poll": 13,
+    "p95_cost_req_per_s": 6.5,
+    "page_cap_hits": 2,
+    "incomplete_polls": 2,
+    "audit_mismatches": 0,
+    "rate_limited": 0,
+    "rows_limit_1000": 1000,
+    "rows_older_than_min_ts": 0
+  },
+  "decided_at": "2026-09-30T12:26:27.930703+00:00"
+}

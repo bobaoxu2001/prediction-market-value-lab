@@ -1,0 +1,101 @@
+===== KXBTCD-26SEP2322 (recorder exit 0) =====
+--- analyze.py ---
+KXBTCD-26SEP2322 (BTC-USD)
+Coinbase proxy for the settlement average: 84,097.93 (48/60 seconds covered, range 84,087.99-84,115.95)
+our view of Coinbase lagged the exchange by 1.07s median, 2.41s max
+
+587 book sweeps in the last 10 minutes; 98 rungs judged, 2 too close to call on a proxy (83,999.99, 84,099.99)
+
+locked rungs offering the winning side at >= 0.01 net of fee: 0 sweep-observations on 0 rungs, 0 still there on the next sweep
+
+
+largest single takeable top-of-book profit per rung, summed: $0.00
+
+--- explore.py ---
+KXBTCD-26SEP2322: forward-filled proxy avg 84098.2 (60/60 s)
+  last 10 min: winning-side ask by move needed to flip
+    move  0.00-  0.05%  obs    122  no ask      0  min 0.6300  median 0.7200  <=0.98   122  <=0.97   122
+    move  0.05-  0.10%  obs    208  no ask      2  min 0.6900  median 0.8000  <=0.98   206  <=0.97   206
+    move  0.10-  0.20%  obs    520  no ask    115  min 0.7500  median 0.9600  <=0.98   345  <=0.97   287
+    move  0.20-  0.30%  obs    831  no ask    382  min 0.9400  median 0.9900  <=0.98   222  <=0.97   101
+    move  0.30-  0.50%  obs   1821  no ask   1818  min 0.9900  median 0.9900  <=0.98     0  <=0.97     0
+    move  0.50-  1.00%  obs   4726  no ask   4726  min None  median None  <=0.98     0  <=0.97     0
+    move  1.00-100.00%  obs  49268  no ask  49268  min None  median None  <=0.98     0  <=0.97     0
+    move 100.00-   inf%  obs     30  no ask     30  min None  median None  <=0.98     0  <=0.97     0
+  inside the averaging window: winning-side ask by move needed to flip
+    move  0.05-  0.10%  obs      2  no ask      2  min None  median None  <=0.98     0  <=0.97     0
+    move  0.10-  0.20%  obs     23  no ask     23  min None  median None  <=0.98     0  <=0.97     0
+    move  0.20-  0.30%  obs     44  no ask     44  min None  median None  <=0.98     0  <=0.97     0
+    move  0.30-  0.50%  obs     97  no ask     97  min None  median None  <=0.98     0  <=0.97     0
+    move  0.50-  1.00%  obs    262  no ask    262  min None  median None  <=0.98     0  <=0.97     0
+    move  1.00-100.00%  obs   5324  no ask   5324  min None  median None  <=0.98     0  <=0.97     0
+    move 100.00-   inf%  obs     30  no ask     30  min None  median None  <=0.98     0  <=0.97     0
+
+===== KXETHD-26SEP2322 (recorder exit 0) =====
+--- analyze.py ---
+only 25 window seconds covered - not enough to stand in for the index
+
+--- explore.py ---
+KXETHD-26SEP2322: forward-filled proxy avg 2674.28 (60/60 s)
+  last 10 min: winning-side ask by move needed to flip
+    move  0.05-  0.10%  obs     14  no ask      0  min 0.7400  median 0.7400  <=0.98    14  <=0.97    14
+    move  0.10-  0.20%  obs    600  no ask    117  min 0.7700  median 0.8900  <=0.98   474  <=0.97   446
+    move  0.20-  0.30%  obs    524  no ask    129  min 0.8700  median 0.9800  <=0.98   316  <=0.97   160
+    move  0.30-  0.50%  obs   1164  no ask    913  min 0.9600  median 0.9900  <=0.98    55  <=0.97    47
+    move  0.50-  1.00%  obs   3224  no ask   3224  min None  median None  <=0.98     0  <=0.97     0
+    move  1.00-100.00%  obs  52488  no ask  52488  min None  median None  <=0.98     0  <=0.97     0
+  inside the averaging window: winning-side ask by move needed to flip
+    move  0.10-  0.20%  obs     15  no ask     15  min None  median None  <=0.98     0  <=0.97     0
+    move  0.20-  0.30%  obs     37  no ask     37  min None  median None  <=0.98     0  <=0.97     0
+    move  0.30-  0.50%  obs     62  no ask     62  min None  median None  <=0.98     0  <=0.97     0
+    move  0.50-  1.00%  obs    176  no ask    176  min None  median None  <=0.98     0  <=0.97     0
+    move  1.00-100.00%  obs   5353  no ask   5353  min None  median None  <=0.98     0  <=0.97     0
+
+===== KXSOLD-26SEP2322 (recorder exit 0) =====
+--- analyze.py ---
+only 28 window seconds covered - not enough to stand in for the index
+
+--- explore.py ---
+KXSOLD-26SEP2322: forward-filled proxy avg 114.688 (60/60 s)
+  last 10 min: winning-side ask by move needed to flip
+    move  0.05-  0.10%  obs     66  no ask      0  min 0.6700  median 0.7400  <=0.98    66  <=0.97    66
+    move  0.10-  0.20%  obs    346  no ask     71  min 0.7400  median 0.9400  <=0.98   257  <=0.97   215
+    move  0.20-  0.30%  obs    611  no ask    183  min 0.8500  median 0.9800  <=0.98   385  <=0.97   183
+    move  0.30-  0.50%  obs   1070  no ask    800  min 0.9600  median 0.9800  <=0.98   144  <=0.97    90
+    move  0.50-  1.00%  obs   2431  no ask   2431  min None  median None  <=0.98     0  <=0.97     0
+    move  1.00-100.00%  obs  53985  no ask  53985  min None  median None  <=0.98     0  <=0.97     0
+  inside the averaging window: winning-side ask by move needed to flip
+    move  0.10-  0.20%  obs     12  no ask     12  min None  median None  <=0.98     0  <=0.97     0
+    move  0.20-  0.30%  obs     29  no ask     29  min None  median None  <=0.98     0  <=0.97     0
+    move  0.30-  0.50%  obs     57  no ask     57  min None  median None  <=0.98     0  <=0.97     0
+    move  0.50-  1.00%  obs    137  no ask    137  min None  median None  <=0.98     0  <=0.97     0
+    move  1.00-100.00%  obs   5606  no ask   5606  min None  median None  <=0.98     0  <=0.97     0
+
+===== KXXRPD-26SEP2322 (recorder exit 0) =====
+--- analyze.py ---
+only 27 window seconds covered - not enough to stand in for the index
+
+--- explore.py ---
+KXXRPD-26SEP2322: forward-filled proxy avg 1.48969 (60/60 s)
+  last 10 min: winning-side ask by move needed to flip
+    move  0.50-  1.00%  obs   1112  no ask    634  min 0.9600  median 0.9900  <=0.98   126  <=0.97   124
+    move  1.00-100.00%  obs  42592  no ask  42592  min None  median None  <=0.98     0  <=0.97     0
+    move 100.00-   inf%  obs    846  no ask    846  min None  median None  <=0.98     0  <=0.97     0
+  inside the averaging window: winning-side ask by move needed to flip
+    move  0.50-  1.00%  obs     40  no ask     40  min None  median None  <=0.98     0  <=0.97     0
+    move  1.00-100.00%  obs   3464  no ask   3464  min None  median None  <=0.98     0  <=0.97     0
+    move 100.00-   inf%  obs    846  no ask    846  min None  median None  <=0.98     0  <=0.97     0
+
+===== KXDOGED-26SEP2322 (recorder exit 0) =====
+--- analyze.py ---
+only 4 window seconds covered - not enough to stand in for the index
+
+--- explore.py ---
+KXDOGED-26SEP2322: forward-filled proxy avg 0.0926117 (60/60 s)
+  last 10 min: winning-side ask by move needed to flip
+    move  1.00-100.00%  obs  21315  no ask  21251  min 0.9800  median 0.9900  <=0.98    32  <=0.97     0
+    move 100.00-   inf%  obs  11410  no ask  11410  min None  median None  <=0.98     0  <=0.97     0
+  inside the averaging window: winning-side ask by move needed to flip
+    move  1.00-100.00%  obs   1520  no ask   1520  min None  median None  <=0.98     0  <=0.97     0
+    move 100.00-   inf%  obs   1780  no ask   1780  min None  median None  <=0.98     0  <=0.97     0
+

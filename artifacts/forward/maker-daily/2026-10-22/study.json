@@ -1,0 +1,428 @@
+{
+  "strategy_version": "1.1.0",
+  "universe": "artifacts/forward/universe-study-frozen.json",
+  "universe_frozen_at": "2026-09-19T08:45:56.009526+00:00",
+  "series": [
+    "KXGOLDH",
+    "KXKBOGAME",
+    "KXLOLMAP",
+    "KXMLBF5",
+    "KXMLBF5SPREAD",
+    "KXMLBHIT",
+    "KXMLBHR",
+    "KXMLBHRR",
+    "KXMLBKS",
+    "KXMLBRBI",
+    "KXMLBSB",
+    "KXMLBSPREAD",
+    "KXMLBTB",
+    "KXMLBTEAMTOTAL",
+    "KXMLBTOTAL",
+    "KXRAIN",
+    "KXTEMPCHIHS",
+    "KXTEMPLAXHS",
+    "KXTEMPMIAH",
+    "KXTEMPNYCHS",
+    "KXWTAMATCH"
+  ],
+  "planned_sessions": 20,
+  "session_seconds": 1800.0,
+  "interval_seconds": 10.0,
+  "events_per_session": 8,
+  "sessions": [
+    {
+      "session": 1,
+      "started_at": "2026-10-22T02:10:02.341271+00:00",
+      "ended_at": "2026-10-22T02:40:18.242144+00:00",
+      "date": "2026-10-22",
+      "events": [
+        "KXRAIN-26OCT21",
+        "KXMLBHR-26OCT232000TBMIL",
+        "KXWTAMATCH-26OCT20RUZDAY",
+        "KXWTAMATCH-26OCT20ANNSON",
+        "KXRAIN-26OCT22",
+        "KXWTAMATCH-26OCT21RYBKUD",
+        "KXWTAMATCH-26OCT21EALSHN",
+        "KXWTAMATCH-26OCT22KAWBEN"
+      ],
+      "stats": {
+        "cycles": 175,
+        "snapshots": 1400,
+        "rejections": 0,
+        "rejection_reasons": {},
+        "trades": 7186,
+        "trade_budget_exhausted_cycles": 175,
+        "trade_polls_at_row_limit": 0,
+        "legs_captured": 17325,
+        "two_sided_legs": 8225,
+        "skew_bound_ms_p50": 388.9,
+        "skew_bound_ms_p95": 999.4,
+        "skew_bound_ms_max": 3281.588
+      }
+    },
+    {
+      "session": 2,
+      "started_at": "2026-10-22T02:40:18.334281+00:00",
+      "ended_at": "2026-10-22T03:10:41.335722+00:00",
+      "date": "2026-10-22",
+      "events": [
+        "KXRAIN-26OCT21",
+        "KXWTAMATCH-26OCT20ANNSON",
+        "KXMLBHR-26OCT232000TBMIL",
+        "KXWTAMATCH-26OCT20RUZDAY",
+        "KXRAIN-26OCT22",
+        "KXWTAMATCH-26OCT21RYBKUD",
+        "KXWTAMATCH-26OCT21EALSHN",
+        "KXWTAMATCH-26OCT22KAWBEN"
+      ],
+      "stats": {
+        "cycles": 72,
+        "snapshots": 576,
+        "rejections": 0,
+        "rejection_reasons": {},
+        "trades": 10610,
+        "trade_budget_exhausted_cycles": 72,
+        "trade_polls_at_row_limit": 0,
+        "legs_captured": 7128,
+        "two_sided_legs": 3384,
+        "skew_bound_ms_p50": 426.6,
+        "skew_bound_ms_p95": 1007.6,
+        "skew_bound_ms_max": 2570.196
+      }
+    },
+    {
+      "session": 3,
+      "started_at": "2026-10-22T03:10:41.363938+00:00",
+      "ended_at": "2026-10-22T03:41:02.917154+00:00",
+      "date": "2026-10-22",
+      "events": [
+        "KXRAIN-26OCT21",
+        "KXWTAMATCH-26OCT20RUZDAY",
+        "KXWTAMATCH-26OCT20ANNSON",
+        "KXMLBHR-26OCT232000TBMIL",
+        "KXRAIN-26OCT22",
+        "KXWTAMATCH-26OCT21RYBKUD",
+        "KXWTAMATCH-26OCT21EALSHN",
+        "KXWTAMATCH-26OCT22KAWBEN"
+      ],
+      "stats": {
+        "cycles": 176,
+        "snapshots": 1408,
+        "rejections": 0,
+        "rejection_reasons": {},
+        "trades": 12435,
+        "trade_budget_exhausted_cycles": 176,
+        "trade_polls_at_row_limit": 0,
+        "legs_captured": 17424,
+        "two_sided_legs": 8064,
+        "skew_bound_ms_p50": 394.2,
+        "skew_bound_ms_p95": 1056.3,
+        "skew_bound_ms_max": 2563.56
+      }
+    },
+    {
+      "session": 4,
+      "started_at": "2026-10-22T03:41:03.027647+00:00",
+      "ended_at": "2026-10-22T04:53:26.472301+00:00",
+      "date": "2026-10-22",
+      "events": [
+        "KXWTAMATCH-26OCT20ANNSON",
+        "KXRAIN-26OCT21",
+        "KXMLBHR-26OCT232000TBMIL",
+        "KXRAIN-26OCT22",
+        "KXWTAMATCH-26OCT21RYBKUD",
+        "KXWTAMATCH-26OCT21EALSHN",
+        "KXWTAMATCH-26OCT22KAWBEN",
+        "KXMLBSPREAD-26OCT232000TBMIL"
+      ],
+      "stats": {
+        "cycles": 113,
+        "snapshots": 904,
+        "rejections": 0,
+        "rejection_reasons": {},
+        "trades": 8346,
+        "trade_budget_exhausted_cycles": 113,
+        "trade_polls_at_row_limit": 0,
+        "legs_captured": 11639,
+        "two_sided_legs": 5555,
+        "skew_bound_ms_p50": 328.9,
+        "skew_bound_ms_p95": 643.5,
+        "skew_bound_ms_max": 1787.959
+      }
+    },
+    {
+      "session": 5,
+      "started_at": "2026-10-22T04:53:26.608578+00:00",
+      "ended_at": "2026-10-22T06:05:02.473369+00:00",
+      "date": "2026-10-22",
+      "events": [
+        "KXRAIN-26OCT21",
+        "KXWTAMATCH-26OCT20STOUCH",
+        "KXWTAMATCH-26OCT21EALSHN",
+        "KXMLBHR-26OCT232000TBMIL",
+        "KXRAIN-26OCT22",
+        "KXWTAMATCH-26OCT21RYBKUD",
+        "KXWTAMATCH-26OCT21JOVPAO",
+        "KXWTAMATCH-26OCT22KAWBEN"
+      ],
+      "stats": {
+        "cycles": 171,
+        "snapshots": 1368,
+        "rejections": 0,
+        "rejection_reasons": {},
+        "trades": 10826,
+        "trade_budget_exhausted_cycles": 171,
+        "trade_polls_at_row_limit": 0,
+        "legs_captured": 16929,
+        "two_sided_legs": 7433,
+        "skew_bound_ms_p50": 366.7,
+        "skew_bound_ms_p95": 833.9,
+        "skew_bound_ms_max": 1973.788
+      }
+    },
+    {
+      "session": 6,
+      "started_at": "2026-10-22T06:05:02.506541+00:00",
+      "ended_at": "2026-10-22T06:35:23.926550+00:00",
+      "date": "2026-10-22",
+      "events": [
+        "KXWTAMATCH-26OCT20STOUCH",
+        "KXWTAMATCH-26OCT21JOVPAO",
+        "KXRAIN-26OCT21",
+        "KXWTAMATCH-26OCT21EALSHN",
+        "KXRAIN-26OCT22",
+        "KXMLBHR-26OCT232000TBMIL",
+        "KXWTAMATCH-26OCT21RYBKUD",
+        "KXWTAMATCH-26OCT22KAWBEN"
+      ],
+      "stats": {
+        "cycles": 168,
+        "snapshots": 1344,
+        "rejections": 0,
+        "rejection_reasons": {},
+        "trades": 14423,
+        "trade_budget_exhausted_cycles": 168,
+        "trade_polls_at_row_limit": 0,
+        "legs_captured": 11928,
+        "two_sided_legs": 6278,
+        "skew_bound_ms_p50": 450.3,
+        "skew_bound_ms_p95": 1424.5,
+        "skew_bound_ms_max": 6842.938
+      }
+    },
+    {
+      "session": 7,
+      "started_at": "2026-10-22T06:35:23.982542+00:00",
+      "ended_at": "2026-10-22T07:05:52.894942+00:00",
+      "date": "2026-10-22",
+      "events": [
+        "KXRAIN-26OCT21",
+        "KXWTAMATCH-26OCT21EALSHN",
+        "KXRAIN-26OCT22",
+        "KXMLBHR-26OCT232000TBMIL",
+        "KXWTAMATCH-26OCT21RYBKUD",
+        "KXWTAMATCH-26OCT22KAWBEN",
+        "KXWTAMATCH-26OCT20LINSIN",
+        "KXWTAMATCH-26OCT22YAZABU"
+      ],
+      "stats": {
+        "cycles": 168,
+        "snapshots": 1344,
+        "rejections": 0,
+        "rejection_reasons": {},
+        "trades": 7736,
+        "trade_budget_exhausted_cycles": 168,
+        "trade_polls_at_row_limit": 0,
+        "legs_captured": 11928,
+        "two_sided_legs": 6267,
+        "skew_bound_ms_p50": 441.0,
+        "skew_bound_ms_p95": 1339.4,
+        "skew_bound_ms_max": 4293.754
+      }
+    },
+    {
+      "session": 8,
+      "started_at": "2026-10-22T07:05:53.000649+00:00",
+      "ended_at": "2026-10-22T07:36:43.227575+00:00",
+      "date": "2026-10-22",
+      "events": [
+        "KXWTAMATCH-26OCT20LINSIN",
+        "KXWTAMATCH-26OCT22KAWBEN",
+        "KXWTAMATCH-26OCT21EALSHN",
+        "KXRAIN-26OCT22",
+        "KXMLBHR-26OCT232000TBMIL",
+        "KXWTAMATCH-26OCT21RYBKUD",
+        "KXMLBSPREAD-26OCT232000TBMIL",
+        "KXMLBTOTAL-26OCT232000TBMIL"
+      ],
+      "stats": {
+        "cycles": 65,
+        "snapshots": 520,
+        "rejections": 0,
+        "rejection_reasons": {},
+        "trades": 4776,
+        "trade_budget_exhausted_cycles": 65,
+        "trade_polls_at_row_limit": 0,
+        "legs_captured": 5070,
+        "two_sided_legs": 3185,
+        "skew_bound_ms_p50": 409.9,
+        "skew_bound_ms_p95": 1091.5,
+        "skew_bound_ms_max": 8691.361
+      }
+    },
+    {
+      "session": 9,
+      "started_at": "2026-10-22T07:36:43.249127+00:00",
+      "ended_at": "2026-10-22T08:07:39.680431+00:00",
+      "date": "2026-10-22",
+      "events": [
+        "KXWTAMATCH-26OCT20LINSIN",
+        "KXWTAMATCH-26OCT22KAWBEN",
+        "KXWTAMATCH-26OCT21EALSHN",
+        "KXRAIN-26OCT22",
+        "KXMLBHR-26OCT232000TBMIL",
+        "KXWTAMATCH-26OCT21RYBKUD",
+        "KXMLBSPREAD-26OCT232000TBMIL",
+        "KXMLBTOTAL-26OCT232000TBMIL"
+      ],
+      "stats": {
+        "cycles": 169,
+        "snapshots": 1352,
+        "rejections": 0,
+        "rejection_reasons": {},
+        "trades": 4776,
+        "trade_budget_exhausted_cycles": 169,
+        "trade_polls_at_row_limit": 0,
+        "legs_captured": 13182,
+        "two_sided_legs": 8281,
+        "skew_bound_ms_p50": 399.6,
+        "skew_bound_ms_p95": 848.4,
+        "skew_bound_ms_max": 3711.651
+      }
+    },
+    {
+      "session": 10,
+      "started_at": "2026-10-22T08:07:39.707246+00:00",
+      "ended_at": "2026-10-22T08:45:45.644921+00:00",
+      "date": "2026-10-22",
+      "events": [
+        "KXWTAMATCH-26OCT20LINSIN",
+        "KXWTAMATCH-26OCT22KAWBEN",
+        "KXWTAMATCH-26OCT21EALSHN",
+        "KXRAIN-26OCT22",
+        "KXMLBHR-26OCT232000TBMIL",
+        "KXWTAMATCH-26OCT21RYBKUD",
+        "KXMLBSPREAD-26OCT232000TBMIL",
+        "KXMLBTOTAL-26OCT232000TBMIL"
+      ],
+      "stats": {
+        "cycles": 55,
+        "snapshots": 438,
+        "rejections": 2,
+        "rejection_reasons": {
+          "REQUEST_FAILED": 2
+        },
+        "trades": 4776,
+        "trade_budget_exhausted_cycles": 55,
+        "trade_polls_at_row_limit": 0,
+        "legs_captured": 4286,
+        "two_sided_legs": 2691,
+        "skew_bound_ms_p50": 387.5,
+        "skew_bound_ms_p95": 1647.1,
+        "skew_bound_ms_max": 12720.377
+      }
+    },
+    {
+      "session": 11,
+      "started_at": "2026-10-22T08:45:45.667060+00:00",
+      "ended_at": "2026-10-22T09:16:08.584261+00:00",
+      "date": "2026-10-22",
+      "events": [
+        "KXWTAMATCH-26OCT20LINSIN",
+        "KXWTAMATCH-26OCT22KAWBEN",
+        "KXWTAMATCH-26OCT21EALSHN",
+        "KXRAIN-26OCT22",
+        "KXMLBHR-26OCT232000TBMIL",
+        "KXWTAMATCH-26OCT21RYBKUD",
+        "KXMLBSPREAD-26OCT232000TBMIL",
+        "KXMLBTOTAL-26OCT232000TBMIL"
+      ],
+      "stats": {
+        "cycles": 172,
+        "snapshots": 1376,
+        "rejections": 0,
+        "rejection_reasons": {},
+        "trades": 6020,
+        "trade_budget_exhausted_cycles": 172,
+        "trade_polls_at_row_limit": 0,
+        "legs_captured": 13416,
+        "two_sided_legs": 8056,
+        "skew_bound_ms_p50": 406.6,
+        "skew_bound_ms_p95": 1049.6,
+        "skew_bound_ms_max": 3879.019
+      }
+    },
+    {
+      "session": 12,
+      "started_at": "2026-10-22T09:16:08.618808+00:00",
+      "ended_at": "2026-10-22T09:46:29.018243+00:00",
+      "date": "2026-10-22",
+      "events": [
+        "KXWTAMATCH-26OCT21EALSHN",
+        "KXRAIN-26OCT22",
+        "KXMLBHR-26OCT232000TBMIL",
+        "KXWTAMATCH-26OCT21RYBKUD",
+        "KXMLBSPREAD-26OCT232000TBMIL",
+        "KXMLBTOTAL-26OCT232000TBMIL",
+        "KXMLBF5-26OCT232000TBMIL",
+        "KXMLBKS-26OCT232000TBMIL"
+      ],
+      "stats": {
+        "cycles": 72,
+        "snapshots": 576,
+        "rejections": 0,
+        "rejection_reasons": {},
+        "trades": 7146,
+        "trade_budget_exhausted_cycles": 72,
+        "trade_polls_at_row_limit": 0,
+        "legs_captured": 6696,
+        "two_sided_legs": 4608,
+        "skew_bound_ms_p50": 415.3,
+        "skew_bound_ms_p95": 970.2,
+        "skew_bound_ms_max": 3264.154
+      }
+    },
+    {
+      "session": 13,
+      "started_at": "2026-10-22T09:46:29.066302+00:00",
+      "ended_at": "2026-10-22T10:21:01.987982+00:00",
+      "date": "2026-10-22",
+      "events": [
+        "KXWTAMATCH-26OCT21EALSHN",
+        "KXMLBHR-26OCT232000TBMIL",
+        "KXRAIN-26OCT22",
+        "KXWTAMATCH-26OCT21RYBKUD",
+        "KXMLBSPREAD-26OCT232000TBMIL",
+        "KXMLBTOTAL-26OCT232000TBMIL",
+        "KXRAIN-26OCT23",
+        "KXTEMPMIAH-26OCT2206"
+      ],
+      "stats": {
+        "cycles": 1,
+        "snapshots": 1,
+        "rejections": 7,
+        "rejection_reasons": {
+          "REQUEST_FAILED": 7
+        },
+        "trades": 0,
+        "trade_budget_exhausted_cycles": 1,
+        "trade_polls_at_row_limit": 0,
+        "legs_captured": 2,
+        "two_sided_legs": 2,
+        "skew_bound_ms_p50": 404.2,
+        "skew_bound_ms_p95": 404.2,
+        "skew_bound_ms_max": 404.177
+      }
+    }
+  ]
+}

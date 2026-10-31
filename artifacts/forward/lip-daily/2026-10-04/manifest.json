@@ -1,0 +1,1168 @@
+{
+ "coverage": {
+  "book_gaps": {
+   "count": 726,
+   "largest_seconds": 1664.0,
+   "recovered": 725,
+   "runs": [
+    [
+     307,
+     317
+    ],
+    [
+     1516,
+     1521
+    ],
+    [
+     2115,
+     2126
+    ],
+    [
+     3317,
+     3322
+    ],
+    [
+     3921,
+     3926
+    ],
+    [
+     4525,
+     4537
+    ],
+    [
+     5127,
+     5136
+    ],
+    [
+     5731,
+     5735
+    ],
+    [
+     6333,
+     6342
+    ],
+    [
+     7539,
+     7543
+    ],
+    [
+     7546,
+     7546
+    ],
+    [
+     8143,
+     8154
+    ],
+    [
+     8744,
+     8755
+    ],
+    [
+     9000,
+     9001
+    ],
+    [
+     9345,
+     9350
+    ],
+    [
+     9950,
+     9961
+    ],
+    [
+     10552,
+     10561
+    ],
+    [
+     11155,
+     11160
+    ],
+    [
+     12363,
+     12368
+    ],
+    [
+     14170,
+     14175
+    ],
+    [
+     15379,
+     15384
+    ],
+    [
+     15984,
+     15989
+    ],
+    [
+     16589,
+     16598
+    ],
+    [
+     17193,
+     17198
+    ],
+    [
+     17798,
+     17807
+    ],
+    [
+     19002,
+     19012
+    ],
+    [
+     19607,
+     19611
+    ],
+    [
+     20808,
+     20818
+    ],
+    [
+     21413,
+     21418
+    ],
+    [
+     22018,
+     22029
+    ],
+    [
+     22619,
+     22623
+    ],
+    [
+     23224,
+     23228
+    ],
+    [
+     23828,
+     23837
+    ],
+    [
+     24433,
+     24437
+    ],
+    [
+     25642,
+     25651
+    ],
+    [
+     25653,
+     25653
+    ],
+    [
+     26247,
+     26256
+    ],
+    [
+     27456,
+     27461
+    ],
+    [
+     28056,
+     28066
+    ],
+    [
+     28068,
+     28068
+    ],
+    [
+     28656,
+     28661
+    ],
+    [
+     28714,
+     28714
+    ],
+    [
+     28717,
+     28717
+    ],
+    [
+     28720,
+     28720
+    ],
+    [
+     28723,
+     28723
+    ],
+    [
+     28725,
+     28725
+    ],
+    [
+     28728,
+     28728
+    ],
+    [
+     28731,
+     28731
+    ],
+    [
+     28733,
+     28733
+    ],
+    [
+     28736,
+     28736
+    ],
+    [
+     28739,
+     28739
+    ],
+    [
+     28741,
+     28741
+    ],
+    [
+     28744,
+     28744
+    ],
+    [
+     28747,
+     28747
+    ],
+    [
+     28749,
+     28749
+    ],
+    [
+     28752,
+     28752
+    ],
+    [
+     28755,
+     28755
+    ],
+    [
+     28758,
+     28758
+    ],
+    [
+     28760,
+     28760
+    ],
+    [
+     28762,
+     28762
+    ],
+    [
+     28766,
+     28766
+    ],
+    [
+     28768,
+     28768
+    ],
+    [
+     28771,
+     28771
+    ],
+    [
+     28773,
+     28773
+    ],
+    [
+     28776,
+     28776
+    ],
+    [
+     28779,
+     28779
+    ],
+    [
+     28782,
+     28782
+    ],
+    [
+     28784,
+     28784
+    ],
+    [
+     28787,
+     28787
+    ],
+    [
+     28789,
+     28789
+    ],
+    [
+     28792,
+     28792
+    ],
+    [
+     28794,
+     28794
+    ],
+    [
+     28797,
+     28797
+    ],
+    [
+     28800,
+     28800
+    ],
+    [
+     28803,
+     28803
+    ],
+    [
+     28805,
+     28805
+    ],
+    [
+     28808,
+     28808
+    ],
+    [
+     28810,
+     28810
+    ],
+    [
+     28813,
+     28813
+    ],
+    [
+     28816,
+     28816
+    ],
+    [
+     28818,
+     28818
+    ],
+    [
+     28821,
+     28821
+    ],
+    [
+     28824,
+     28824
+    ],
+    [
+     28827,
+     28827
+    ],
+    [
+     28829,
+     28829
+    ],
+    [
+     28831,
+     28831
+    ],
+    [
+     28834,
+     28834
+    ],
+    [
+     28837,
+     28837
+    ],
+    [
+     28840,
+     28840
+    ],
+    [
+     28842,
+     28842
+    ],
+    [
+     28845,
+     28845
+    ],
+    [
+     28848,
+     28848
+    ],
+    [
+     28850,
+     28850
+    ],
+    [
+     28853,
+     28853
+    ],
+    [
+     28856,
+     28856
+    ],
+    [
+     28858,
+     28858
+    ],
+    [
+     28861,
+     28861
+    ],
+    [
+     28864,
+     28864
+    ],
+    [
+     28867,
+     28867
+    ],
+    [
+     28869,
+     28869
+    ],
+    [
+     28872,
+     28872
+    ],
+    [
+     28874,
+     28874
+    ],
+    [
+     28877,
+     28877
+    ],
+    [
+     28880,
+     28880
+    ],
+    [
+     28883,
+     28883
+    ],
+    [
+     28885,
+     28885
+    ],
+    [
+     28888,
+     28888
+    ],
+    [
+     28890,
+     28890
+    ],
+    [
+     28893,
+     28893
+    ],
+    [
+     28896,
+     28896
+    ],
+    [
+     28899,
+     28899
+    ],
+    [
+     28901,
+     28901
+    ],
+    [
+     28904,
+     28904
+    ],
+    [
+     28906,
+     28906
+    ],
+    [
+     28909,
+     28909
+    ],
+    [
+     28912,
+     28912
+    ],
+    [
+     28914,
+     28914
+    ],
+    [
+     28917,
+     28917
+    ],
+    [
+     28920,
+     28920
+    ],
+    [
+     28922,
+     28922
+    ],
+    [
+     28925,
+     28925
+    ],
+    [
+     28928,
+     28928
+    ],
+    [
+     28931,
+     28931
+    ],
+    [
+     28933,
+     28933
+    ],
+    [
+     28936,
+     28936
+    ],
+    [
+     28938,
+     28938
+    ],
+    [
+     28941,
+     28941
+    ],
+    [
+     28944,
+     28944
+    ],
+    [
+     28947,
+     28947
+    ],
+    [
+     28949,
+     28949
+    ],
+    [
+     28952,
+     28952
+    ],
+    [
+     28955,
+     28955
+    ],
+    [
+     28957,
+     28957
+    ],
+    [
+     28959,
+     28959
+    ],
+    [
+     28963,
+     28963
+    ],
+    [
+     28965,
+     28965
+    ],
+    [
+     28968,
+     28968
+    ],
+    [
+     28970,
+     28970
+    ],
+    [
+     28972,
+     28972
+    ],
+    [
+     28975,
+     28975
+    ],
+    [
+     28978,
+     28978
+    ],
+    [
+     28981,
+     28981
+    ],
+    [
+     28984,
+     28984
+    ],
+    [
+     28986,
+     28986
+    ],
+    [
+     28989,
+     28989
+    ],
+    [
+     28991,
+     28991
+    ],
+    [
+     28994,
+     28994
+    ],
+    [
+     28996,
+     28996
+    ],
+    [
+     28999,
+     28999
+    ],
+    [
+     29002,
+     29002
+    ],
+    [
+     29005,
+     29005
+    ],
+    [
+     29007,
+     29007
+    ],
+    [
+     29010,
+     29010
+    ],
+    [
+     29013,
+     29013
+    ],
+    [
+     29015,
+     29015
+    ],
+    [
+     29018,
+     29018
+    ],
+    [
+     29021,
+     29021
+    ],
+    [
+     29023,
+     29023
+    ],
+    [
+     29026,
+     29026
+    ],
+    [
+     29029,
+     29029
+    ],
+    [
+     29032,
+     29032
+    ],
+    [
+     29034,
+     29034
+    ],
+    [
+     29036,
+     29036
+    ],
+    [
+     29039,
+     29039
+    ],
+    [
+     29042,
+     29042
+    ],
+    [
+     29044,
+     29044
+    ],
+    [
+     29047,
+     29047
+    ],
+    [
+     29049,
+     29049
+    ],
+    [
+     29052,
+     29052
+    ],
+    [
+     29055,
+     29055
+    ],
+    [
+     29058,
+     29058
+    ],
+    [
+     29061,
+     29061
+    ],
+    [
+     29063,
+     29063
+    ],
+    [
+     29066,
+     29066
+    ],
+    [
+     29068,
+     29068
+    ],
+    [
+     29071,
+     29071
+    ],
+    [
+     29073,
+     29073
+    ],
+    [
+     29077,
+     29077
+    ],
+    [
+     29079,
+     29079
+    ],
+    [
+     29082,
+     29082
+    ],
+    [
+     29084,
+     29084
+    ],
+    [
+     29087,
+     29087
+    ],
+    [
+     29090,
+     29090
+    ],
+    [
+     29093,
+     29093
+    ],
+    [
+     29095,
+     29095
+    ],
+    [
+     29098,
+     29098
+    ],
+    [
+     29100,
+     29100
+    ],
+    [
+     29103,
+     29103
+    ],
+    [
+     29106,
+     29106
+    ],
+    [
+     29109,
+     29109
+    ],
+    [
+     29111,
+     29111
+    ],
+    [
+     29113,
+     29113
+    ],
+    [
+     29116,
+     29116
+    ],
+    [
+     29119,
+     29119
+    ],
+    [
+     29122,
+     29122
+    ],
+    [
+     29125,
+     29125
+    ],
+    [
+     29127,
+     29127
+    ],
+    [
+     29130,
+     29130
+    ],
+    [
+     29133,
+     29133
+    ],
+    [
+     29135,
+     29135
+    ]
+   ],
+   "runs_truncated": true,
+   "total_seconds": 2732.0,
+   "unrecovered_seconds": 1664.0
+  },
+  "book_success_share": 0.9380498866213152,
+  "due_ticks": 44100,
+  "ok_ticks": 41368,
+  "ok_ticks_by_lane_from_books": {
+   "book-A": 41368
+  },
+  "ok_ticks_by_lane_recorded": {
+   "book-A": 41368
+  },
+  "tape": {
+   "complete": 60578,
+   "covered_seconds_in_window": null,
+   "covered_seconds_in_window_by_ticker": {
+    "KXAAAGASDGA-26OCT05-3.8350": 42427.8,
+    "KXAAAGASDMA-26OCT05-4.3100": 42423.132,
+    "KXAAAGASDOR-26OCT05-5.0100": 42428.465,
+    "KXAAAGASDTX-26OCT05-3.8950": 42381.131,
+    "KXAAAGASDVA-26OCT05-4.0900": 42373.109,
+    "KXACTBLUETOP-26OCT09-AELS": 23964.83,
+    "KXACTBLUETOP-26OCT09-ANIX": 42389.814,
+    "KXACTBLUETOP-26OCT09-JOSS": 18387.224,
+    "KXACTBLUETOP-26OCT09-JTAL": 23964.841,
+    "KXACTBLUETOP-26OCT09-MPEL": 18424.514,
+    "KXACTBLUETOP-26OCT09-SBRO": 23964.18,
+    "KXACTBLUETOP-26OCT09-TJAC": 23964.508,
+    "KXAMUSEMENTADS-26OCT06-T137": 42376.449,
+    "KXAMUSEMENTADS-26OCT06-T139": 42382.467,
+    "KXAMUSEMENTADS-26OCT06-T145": 42377.12,
+    "KXAPRPOTUS-26OCT09-37.5": 19260.565,
+    "KXAPRPOTUS-26OCT09-37.7": 42401.19,
+    "KXAPRPOTUS-26OCT09-38.0": 23082.528,
+    "KXAPRPOTUS-26OCT09-38.3": 23082.198,
+    "KXAPRPOTUS-26OCT09-38.6": 19291.979,
+    "KXAPRPOTUS-26OCT09-38.9": 42401.865,
+    "KXAPRPOTUS-26OCT09-39.2": 23082.522,
+    "KXAPRPOTUS-26OCT09-39.4": 19279.958,
+    "KXASPENMTNOPEN-27-22NOV26": 42421.125,
+    "KXASPENMTNOPEN-27-29NOV26": 42421.791,
+    "KXBABELMANDEBWEEKLY-26OCT04-T150": 24012.287,
+    "KXBABELMANDEBWEEKLY-26OCT04-T175": 42413.217,
+    "KXBABELMANDEBWEEKLY-26OCT04-T225": 18359.893,
+    "KXBABELMANDEBWEEKLY-26OCT11-T150": 26889.823,
+    "KXBABELMANDEBWEEKLY-26OCT11-T175": 18391.9,
+    "KXBABELMANDEBWEEKLY-26OCT11-T200": 23964.165,
+    "KXBABELMANDEBWEEKLY-26OCT11-T225": 42390.481,
+    "KXBABELMANDEBWEEKLY-26OCT11-T250": 18416.492,
+    "KXBIGSKYOPEN-27-13DEC26": 42420.459,
+    "KXBIGSKYOPEN-27-29NOV26": 42420.241,
+    "KXDIESELD-26OCT05-T6.295": 42429.839,
+    "KXDIESELD-26OCT05-T6.310": 42426.592,
+    "KXDIESELD-26OCT05-T6.330": 42427.153,
+    "KXDIESELD-26OCT05-T6.335": 42371.108,
+    "KXDIESELD-26OCT05-T6.350": 42432.505,
+    "KXEOWEEK-26OCT10-0": 42384.469,
+    "KXEOWEEK-26OCT10-1": 42385.136,
+    "KXEOWEEK-26OCT10-2": 34931.804,
+    "KXFOOTWEARADS-26OCT06-T72": 42433.807,
+    "KXFOOTWEARADS-26OCT06-T74": 42381.799,
+    "KXFOOTWEARADS-26OCT06-T78": 42431.161,
+    "KXFOOTWEARADS-26OCT06-T80": 42375.782,
+    "KXGENERICBALLOTVOTEHUB-26OCT09-T8.9": 42403.191,
+    "KXHORMUZMAX-26OCT04-OCT01": 18359.885,
+    "KXHORMUZMAX-26OCT04-OCT02": 24029.006,
+    "KXHORMUZMAX-26OCT04-OCT04": 24004.93,
+    "KXHORMUZMAX-26OCT04-SEP28": 18359.88,
+    "KXHORMUZMAX-26OCT11-OCT05": 18411.81,
+    "KXHORMUZMAX-26OCT11-OCT06": 26889.157,
+    "KXHORMUZMAX-26OCT11-OCT07": 23964.851,
+    "KXHORMUZMAX-26OCT11-OCT10": 42399.187,
+    "KXHORMUZMAX-26OCT11-OCT11": 18377.193,
+    "KXHORMUZPEAK-26OCT04-T14": 26472.982,
+    "KXHORMUZPEAK-26OCT04-T4": 42416.559,
+    "KXHORMUZPEAK-26OCT04-T8": 15903.903,
+    "KXHORMUZPEAK-26OCT11-T10": 20242.024,
+    "KXHORMUZPEAK-26OCT11-T12": 22134.533,
+    "KXHORMUZPEAK-26OCT11-T4": 20240.689,
+    "KXHORMUZPEAK-26OCT11-T6": 22134.232,
+    "KXHORMUZPEAK-26OCT11-T8": 20247.376,
+    "KXHORMUZWEEKLY-26OCT04-T100": 18359.553,
+    "KXHORMUZWEEKLY-26OCT04-T15": 23993.585,
+    "KXHORMUZWEEKLY-26OCT04-T20": 42415.225,
+    "KXHORMUZWEEKLY-26OCT04-T25": 42411.221,
+    "KXHORMUZWEEKLY-26OCT11-T20": 23964.848,
+    "KXHORMUZWEEKLY-26OCT11-T40": 18376.522,
+    "KXHORMUZWEEKLY-26OCT11-T45": 18380.537,
+    "KXHORMUZWEEKLY-26OCT11-T50": 23964.175,
+    "KXMAMDANIEO-26OCT03-T0": 7407.147,
+    "KXMLBSEASONGAMES-27-0": 42379.123,
+    "KXMLBSEASONGAMES-27-1215": 42429.181,
+    "KXNFLFFPTSLADDER-26OCT04GBTB-GBCWATSON9": 29330.538,
+    "KXNFLFFPTSLADDER-26OCT05ATLNO-ATLDLONDON5": 42422.455,
+    "KXNFLFFPTSLADDER-26OCT05ATLNO-ATLKPITTS8": 42424.462,
+    "KXNFLFFPTSLADDER-26OCT05ATLNO-NOCOLAVE12": 42380.461,
+    "KXNFLLADDERREC-26OCT05ATLNO-ATLBROBINSON7": 42433.154,
+    "KXNFLLADDERREC-26OCT05ATLNO-ATLDLONDON5": 42378.46,
+    "KXNFLLADDERREC-26OCT05ATLNO-ATLKPITTS8": 42431.83,
+    "KXNFLLADDERRECYDS-26OCT05ATLNO-ATLBROBINSON7": 42425.13,
+    "KXNFLLADDERRECYDS-26OCT05ATLNO-ATLDLONDON5": 42379.8,
+    "KXNFLLADDERRECYDS-26OCT05ATLNO-NOCOLAVE12": 42375.115,
+    "KXNFLLADDERRECYDS-26OCT05ATLNO-NODVELE14": 42383.137,
+    "KXNFLLADDERRSHYDS-26OCT05ATLNO-ATLBROBINSON7": 42434.503,
+    "KXPANAMAWEEKLY-26OCT04-T200": 42414.555,
+    "KXPANAMAWEEKLY-26OCT04-T225": 42410.549,
+    "KXPANAMAWEEKLY-26OCT04-T250": 18359.893,
+    "KXPANAMAWEEKLY-26OCT04-T275": 24021.653,
+    "KXPANAMAWEEKLY-26OCT11-T225": 19268.594,
+    "KXPANAMAWEEKLY-26OCT11-T250": 23081.859,
+    "KXPANAMAWEEKLY-26OCT11-T275": 42404.526,
+    "KXRT-CLA-80": 29242.232,
+    "KXRT-DIG-20": 42373.775,
+    "KXRT-DIG-60": 13089.571,
+    "KXRT-GOD-45": 42430.469,
+    "KXRT-SOC-60": 29264.931,
+    "KXRT-SOC-80": 13089.896,
+    "KXRT-VER-65": 29275.615,
+    "KXRT-YOUC-99": 13090.23,
+    "KXSPORTGOODSADS-26OCT06-T122": 42423.791,
+    "KXSUEZWEEKLY-26OCT04-T260": 23994.945,
+    "KXSUEZWEEKLY-26OCT04-T280": 18359.316,
+    "KXSUEZWEEKLY-26OCT04-T290": 18359.544,
+    "KXSUEZWEEKLY-26OCT04-T300": 24029.678,
+    "KXSUEZWEEKLY-26OCT11-T260": 18423.185,
+    "KXSUEZWEEKLY-26OCT11-T270": 23964.49,
+    "KXSUEZWEEKLY-26OCT11-T280": 18395.912,
+    "KXSUEZWEEKLY-26OCT11-T290": 42398.516,
+    "KXSUEZWEEKLY-26OCT11-T300": 23964.504,
+    "KXTRUMPACT-26SEP27-T3": 7505.213,
+    "KXTRUMPACT-26SEP27-T4": 7499.243,
+    "KXTRUMPACT-26SEP27-T6": 7463.79,
+    "KXTRUMPACT-26SEP27-T7": 7503.211,
+    "KXTRUMPAPPROVE-26OCT04-E37.9": 9405.884,
+    "KXTRUMPAPPROVE-26OCT04-E38.1": 9381.194,
+    "KXTRUMPAPPROVE-26OCT04-E38.3": 9411.902,
+    "KXTRUMPAPPROVE-26OCT04-U37.9": 9395.865,
+    "KXTRUMPAPPROVE-26OCT05-A38.5": 34863.139,
+    "KXTRUMPAPPROVE-26OCT05-E38.0": 34863.474,
+    "KXTRUMPAPPROVE-26OCT05-E38.2": 34862.819,
+    "KXTRUMPAPPROVE-26OCT05-E38.3": 32949.485,
+    "KXTRUMPAPPROVE-26OCT05-E38.5": 32949.146,
+    "KXTRUMPPHOTO-26OCT04-2": 42371.784,
+    "KXTRUMPPHOTO-26OCT04-4": 42377.791,
+    "KXTRUMPPHOTO-26OCT04-5": 42372.445,
+    "KXTRUMPPHOTO-26OCT04-6": 42374.444,
+    "KXTRUMPPHOTO-26OCT04-7": 42425.795,
+    "KXTRUMPVH-26OCT09-T36.9": 22134.869,
+    "KXVHGCB-26OCT04-E8.5": 32924.542,
+    "KXVHGCB-26OCT04-E8.7": 32910.474,
+    "KXVHGCB-26OCT04-E8.9": 32909.138,
+    "KXVHGCB-26OCT04-U8.5": 32923.87,
+    "KXVHGCB-26OCT05-A9.1": 34862.9
+   },
+   "covered_seconds_median": 32909.138,
+   "covered_seconds_min": 7407.147,
+   "feeds": 137,
+   "incomplete": 589,
+   "mode": "per_ticker",
+   "page_cap_hits": 0,
+   "pages": 60578,
+   "polls": 61167,
+   "window_seconds": 44100.0
+  },
+  "window_ticks": 44100
+ },
+ "day": "2026-10-04",
+ "expected": {
+  "admission_from": "2026-10-04T12:25:00+00:00",
+  "drain_at": "2026-10-05T01:50:00+00:00",
+  "expected_duration_s": 48300.0,
+  "hard_stop": "2026-10-05T02:00:00+00:00",
+  "window_end": "2026-10-05T00:45:00+00:00",
+  "window_start": "2026-10-04T12:30:00+00:00"
+ },
+ "faults": {
+  "books": {
+   "connection": 1,
+   "dns": 8,
+   "http_429": 3,
+   "other": 139
+  },
+  "control": {
+   "dns": 15,
+   "other": 7
+  },
+  "control_or_final_errors": 22,
+  "rate_limited": 8,
+  "restarts": 0,
+  "slept_seconds": 7065.0,
+  "status": {
+   "dns": 5
+  },
+  "tape": {
+   "dns": 8,
+   "http_429": 1,
+   "other": 580
+  },
+  "wall_jumps": [
+   {
+    "from": 1791159435.629758,
+    "jump_s": 486.525,
+    "to": 1791159927.157297
+   },
+   {
+    "from": 1791159967.21543,
+    "jump_s": 143.394,
+    "to": 1791160115.611783
+   },
+   {
+    "from": 1791160157.295271,
+    "jump_s": 453.071,
+    "to": 1791160615.369569
+   },
+   {
+    "from": 1791160655.427007,
+    "jump_s": 3585.181,
+    "to": 1791164245.90238
+   },
+   {
+    "from": 1791164290.958105,
+    "jump_s": 2396.829,
+    "to": 1791166692.788861
+   }
+  ]
+ },
+ "identity": {
+  "book_cadence_s": 1.0,
+  "cadence_sha256": "694b6145b9c25a0af56e1556acacd3579dc3c2abbf62bcb70dab7c0194bcdb03",
+  "code_commit": "5e28428a925d367813f580f4ab43aa4b26fb8cea",
+  "freeze_manifest_sha256_now": "b9a5776910fc8d97e291b7c518520e60348420f99e0dde297a5049b19acbbf7a",
+  "freeze_sha256": "b9a5776910fc8d97e291b7c518520e60348420f99e0dde297a5049b19acbbf7a",
+  "prereg_commit": "2afe10bceaccb9e2ce173e2a3b1c619c81d1fb71",
+  "recorder_version": "lip-1.0.0",
+  "run_id": "2026-10-04-122501-59905",
+  "sim_version": "lip-sim-1.0.0",
+  "study_json_sha256": "4f62c16de3adaf09243fdecc09b991cd57b00de2d125aa8a090738cb7cb46034",
+  "tag": "study",
+  "tape_mode": "per_ticker"
+ },
+ "integrity": {
+  "burst_lanes": {
+   "tape": 159
+  },
+  "data_digest": "7b9d4d6954fecfa176b09cc2616b15528ee4c1487047cf9fbf9d247ad4a2b185",
+  "duplicate_book_reads": 0,
+  "duplicate_trade_ids": 0,
+  "error": "",
+  "first_book_sent_at": 1791116997.188327,
+  "last_book_sent_at": 1791164290.830965,
+  "max_requests_per_minute": {
+   "book-A": 61,
+   "control": 19,
+   "status": 4,
+   "tape": 159
+  },
+  "read_to": "health.json",
+  "streams": {
+   "audit": {
+    "digest": "9ed4df95bbdc5627b10784f8e177c77264ade9f2d565fc9915b23a21ec15e633",
+    "rows": 284
+   },
+   "books": {
+    "digest": "1b16f915aa3908d058b568736749ed955ef3d7f213920214e9f82539a77dc189",
+    "rows": 41521
+   },
+   "clock": {
+    "digest": "b31db8cc7b01c04c0af23f1f8101ef322869284b6ca7dd7f6389f6ca2bded6c6",
+    "rows": 72
+   },
+   "lanes": {
+    "digest": "af446350e5cd4fdee034e6ee7afe54ea438f48a75a866cf3e1189b78fd454597",
+    "rows": 2387
+   },
+   "markets": {
+    "digest": "09225ad7d05a50e71ec9c1830c589c05009e762c6d6a8e5379edea7fbd216e10",
+    "rows": 1007
+   },
+   "programs": {
+    "digest": "aa8a753f5ffc0b7fd56e28e6aff7def9d220613f6fcc50ee290ce75564ad4656",
+    "rows": 192
+   },
+   "series": {
+    "digest": "9debe1a2e87fd0f073504325302dcd8195e84801fa5e0b1b144ad24f06d0066e",
+    "rows": 74
+   },
+   "status": {
+    "digest": "9370592b58978deac06a187bb5bc79d622b79507d1eceb987a4f55f36bd99e2c",
+    "rows": 1268
+   },
+   "tape_polls": {
+    "digest": "31c34f17b11d251f4dfd6056df3f117275c04ea5d7d4fa4216b327057c698710",
+    "rows": 61167
+   },
+   "trades": {
+    "digest": "0b8ca78e0a9c3b4069a2085cd224eed9119d8bd00bab80d6ee0e512ff595718d",
+    "rows": 734
+   },
+   "universe": {
+    "digest": "71ad7246ba9b4e79e59aaa6899ccaf92605c55bc69d7f7d3cb16cc54219a84d4",
+    "rows": 2525
+   }
+  },
+  "tape_continuity_breaks": 0,
+  "tape_first_min_ts": 1791116931,
+  "tape_last_newest": 1791159302.216593,
+  "verified": true,
+  "verified_until": null
+ },
+ "lifecycle": {
+  "alive_seconds": 49991.024,
+  "ended_at": "2026-10-05T02:18:12.992893+00:00",
+  "exit_code": 0,
+  "last_heartbeat": {
+   "at": "2026-10-05T02:18:13.029563+00:00",
+   "pid": 59918,
+   "state": "closed"
+  },
+  "restarts": 0,
+  "run_status": "SUCCESS",
+  "started_at": "2026-10-04T12:25:01.968595+00:00",
+  "startup_delay_s": 1.969,
+  "termination": "closed",
+  "wrapper_runs": [
+   {
+    "day": "2026-10-04",
+    "event": "start",
+    "run_id": "2026-10-04-122501-59905",
+    "started_at": "2026-10-04T12:25:01Z",
+    "wrapper_pid": 59905
+   },
+   {
+    "day": "2026-10-04",
+    "ended_at": "2026-10-05T02:18:13Z",
+    "event": "end",
+    "exit_code": 0,
+    "reason": "recorded",
+    "recorder_pid": "59918",
+    "run_id": "2026-10-04-122501-59905",
+    "started_at": "2026-10-04T12:25:01Z",
+    "status": "SUCCESS",
+    "wrapper_pid": 59905
+   }
+  ]
+ },
+ "manifest_version": 1,
+ "qualification": {
+  "counted_day": true,
+  "ok_ticks": 41368,
+  "rule": "COUNTED if ok_ticks >= 0.80 x window_ticks at the recorded book cadence (pre-registration, Amendment 2 item 6 and Amendment 3.1); shakedowns never count",
+  "share": 0.9380498866213152,
+  "source": "health.json",
+  "status": "COUNTED",
+  "tag": "study",
+  "threshold": 0.8,
+  "window_ticks": 44100
+ },
+ "study": "lip-shadow"
+}
