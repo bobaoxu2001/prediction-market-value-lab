@@ -360,14 +360,14 @@ def _payload_failures() -> int:
 
 def _archive_report(
     *, since: datetime, now: datetime, observed_published: Iterable[datetime]
-) -> tuple[dict[str, Any], dict[str, int], dict[str, int]]:
+) -> tuple[dict[str, Any], dict[str, int], dict[str, int], set[str]]:
     """Archive growth, books per market, and books per issuance window."""
     from pmvl_shared.config import DEFAULT_SQLITE_PATH
 
     archive = ResearchArchive(default_archive_path(DEFAULT_SQLITE_PATH.parent.parent))
     stats = archive.stats().as_dict()
     if not archive.path.exists():
-        return stats, {}, {}
+        return stats, {}, {}, set()
 
     published = [p for p in observed_published if p is not None]
     windows = windows_between(since, now, observed_published_at=published)
