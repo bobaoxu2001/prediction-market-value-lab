@@ -43,14 +43,14 @@ def upgrade() -> None:
         batch.add_column(
             sa.Column(
                 "research_eligible", sa.Boolean(),
-                nullable=False, server_default=sa.text("0"),
+                nullable=False, server_default=sa.false(),
             )
         )
         batch.add_column(sa.Column("defect_class", sa.String(length=64),
                                    nullable=False, server_default=""))
         # --- lineage for a re-derived correction -------------------------
         batch.add_column(sa.Column("rederived_from_raw", sa.Boolean(),
-                                   nullable=False, server_default=sa.text("0")))
+                                   nullable=False, server_default=sa.false()))
         batch.add_column(sa.Column("source_raw_sha256", sa.String(length=80),
                                    nullable=False, server_default=""))
         batch.add_column(sa.Column("original_observation_id", sa.Integer(),

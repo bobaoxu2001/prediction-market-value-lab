@@ -55,9 +55,11 @@ _GZIP_FIELDS = frozenset(
 # from turning one cold start into an unbounded decompression.
 MAX_COMPRESSED_SIZE_BYTES = 128 * 1024 * 1024
 MAX_UNCOMPRESSED_SIZE_BYTES = 512 * 1024 * 1024
-# Must match the alembic head in db/migrations/versions; the publication
-# gate rejects any snapshot built at a different revision.
-CURRENT_SNAPSHOT_SCHEMA_REVISION = "8c41f0d7ab29"
+# The writer revision must match the alembic head in db/migrations/versions.
+CURRENT_SNAPSHOT_SCHEMA_REVISION = "e6b41c78d92f"
+# The shipped parent remains readable through the market-detail projection. This
+# is a bounded compatibility list, never permission to trust arbitrary revisions.
+SUPPORTED_SNAPSHOT_SCHEMA_REVISIONS = ("8c41f0d7ab29", CURRENT_SNAPSHOT_SCHEMA_REVISION)
 
 ManifestInput: TypeAlias = Mapping[str, Any] | str | os.PathLike[str]
 
@@ -424,13 +426,14 @@ def _sqlite_manifest_contract_problems(
     path: Path,
     manifest: Mapping[str, Any],
     *,
-    accepted_revisions: tuple[str, ...] = (CURRENT_SNAPSHOT_SCHEMA_REVISION,),
+    accepted_revisions: tuple[str, ...] = SUPPORTED_SNAPSHOT_SCHEMA_REVISIONS,
 ) -> list[str]:
     """Bind manifest schema and terminal job claims to the verified SQLite bytes.
 
     ``accepted_revisions`` exists for exactly one caller: the publication
-    pipeline seeding a run from the previously published parent. Everything else
-    must fail closed on the single current revision, and does by default.
+    pipeline seeding a run from the previously published parent. Serving accepts
+    only the current revision and the explicitly supported shipped parent;
+    unknown revisions still fail closed.
     """
 
     encoded_path = quote(str(path.resolve()), safe="/")
@@ -843,16 +846,15 @@ def resolve_snapshot_path(
     Without it every migration deadlocks publication: the published parent is at
     revision N, the code expects N+1, seeding rejects the parent, and the only
     component that can publish an artefact at N+1 is the pipeline that just
-    refused to start. Serving paths must NOT pass this - a snapshot at the wrong
-    revision is genuinely unservable, and that check is why this defaults to
-    False.
+    refused to start. Serving paths must NOT pass this - a snapshot outside the
+    bounded supported revisions is unservable, so this defaults to False.
     """
 
     manifest_file = _path(manifest_path)
     legacy_path = _path(legacy_raw_path)
     data = _load_manifest(manifest_file)
 
-    accepted: tuple[str, ...] = (CURRENT_SNAPSHOT_SCHEMA_REVISION,)
+    accepted: tuple[str, ...] = SUPPORTED_SNAPSHOT_SCHEMA_REVISIONS
     if accept_parent_revision:
         declared = data.get("schema_revision") or data.get("schema_version")
         if isinstance(declared, str) and declared:
