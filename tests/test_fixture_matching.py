@@ -54,6 +54,11 @@ POLY_RULES = (
     "this market will resolve 50-50."
 )
 
+# The rule text describes a historical September contest. Its timing fields must
+# describe that same row, even when the suite runs months or years later. Quote
+# observation timestamps can still use utcnow() for the independent freshness gates.
+FIXTURE_REFERENCE = datetime(2026, 9, 11, 21, 15, tzinfo=UTC)
+
 
 def kalshi_game(
     side: str = "San Diego",
@@ -75,9 +80,9 @@ def kalshi_game(
         status=MarketStatus.OPEN,
         accepting_orders=True,
         strike_type="structured",
-        expected_resolution_time=utcnow() + timedelta(hours=6),
-        close_time=utcnow() + timedelta(days=4),
-        event_occurrence_time=utcnow() + timedelta(hours=5),
+        expected_resolution_time=FIXTURE_REFERENCE + timedelta(hours=6),
+        close_time=FIXTURE_REFERENCE + timedelta(days=4),
+        event_occurrence_time=FIXTURE_REFERENCE + timedelta(hours=5),
         volume_24h=Decimal("900000"),
     )
 
@@ -103,8 +108,8 @@ def poly_game(
         outcomes=outcomes if outcomes is not None else [a, b],
         yes_token_id="111",
         no_token_id="222",
-        expected_resolution_time=utcnow() + timedelta(hours=6),
-        close_time=utcnow() + timedelta(hours=6),
+        expected_resolution_time=FIXTURE_REFERENCE + timedelta(hours=6),
+        close_time=FIXTURE_REFERENCE + timedelta(hours=6),
         volume_24h=Decimal("700000"),
     )
 
