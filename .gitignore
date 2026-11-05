@@ -25,6 +25,15 @@ out/
 *.tsbuildinfo
 
 # --- data ---
+#
+# The research archive is deliberately unbounded and deliberately untracked. It
+# preserves the full order-book ladders, trade prints and raw payloads that the
+# PRODUCT snapshot must prune to stay under its 40 MiB ceiling. Two stores with
+# opposite requirements: one bounded and committed, one durable and local.
+# Back it up separately - nothing in git will do it for you.
+data/research-archive.db
+data/research-archive.db-*
+data/payloads/
 data/*.db
 data/*.db-wal
 data/*.db-shm
@@ -42,6 +51,21 @@ data/processed/**
 #
 # The committed template is docs/founding-pilot-customers.template.md.
 private/
+
+# Belt and braces for the outreach research folder.
+#
+# `founding-trader/` sat at the repository root, untracked but NOT ignored, so
+# it appeared in every `git status` as an available `??` entry and one `git add
+# -A` would have committed a prospect ledger with names, contact details and
+# outreach history into a public repository - where deletion does not remove it.
+#
+# The folder now lives under `private/` and is covered by the rule above. These
+# patterns exist because being untracked is not a protection: it is the state
+# immediately before being tracked. If any tool or habit recreates the folder at
+# the old path, it stays ignored.
+/founding-trader/
+**/customer_ledger.csv
+**/*outreach_log*.md
 
 # --- os / editor ---
 .DS_Store

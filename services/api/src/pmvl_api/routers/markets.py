@@ -460,8 +460,20 @@ def market_detail(
     ]
 
     matches = []
-    for match in db.scalars(
-        select(MarketMatch).where(
+    # Read only this response's contract. Frozen snapshots can predate additive
+    # verdict columns; loading the whole ORM entity makes even this unchanged
+    # detail response fail. No missing verdict is inferred as verified here.
+    for match in db.execute(
+        select(
+            MarketMatch.market_a_id,
+            MarketMatch.market_b_id,
+            MarketMatch.match_confidence,
+            MarketMatch.rule_compatibility,
+            MarketMatch.time_compatibility,
+            MarketMatch.source_compatibility,
+            MarketMatch.polarity_inverted,
+            MarketMatch.mismatch_reasons,
+        ).where(
             or_(MarketMatch.market_a_id == market_id, MarketMatch.market_b_id == market_id)
         )
     ):

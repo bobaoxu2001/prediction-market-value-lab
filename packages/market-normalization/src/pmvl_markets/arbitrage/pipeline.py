@@ -22,6 +22,7 @@ from ..db_models import ArbitrageOpportunity, Event, Market, MarketMatch, PriceS
 from ..ingest.runner import _market_from_row
 from ..ingest.store import latest_orderbook, orderbook_from_snapshot
 from ..matching.candidates import generate_candidates
+from ..matching.equivalence import EquivalenceScore, EquivalenceVerdict, score_equivalence
 from ..matching.histogram import DemotionHistogram
 from ..matching.verify import MatchVerdict, verify_match
 from .complete_set import scan_complete_set
@@ -39,6 +40,9 @@ class ArbitrageReport:
     markets_examined: int = 0
     matches_verified: int = 0
     matches_identical: int = 0
+    #: Pairs that additionally had cancellation handling confirmed on both venues -
+    #: the only ones that may back a guaranteed cross-venue arbitrage claim.
+    matches_strict_equivalent: int = 0
     #: Why candidate pairs failed to reach equivalence. Zero cross-platform matches is
     #: either a finding about the venues or a gap in rule parsing, and those look
     #: identical from the outside - this is what tells them apart.
@@ -53,6 +57,7 @@ class ArbitrageReport:
             "markets_examined": self.markets_examined,
             "matches_verified": self.matches_verified,
             "matches_identical": self.matches_identical,
+            "matches_strict_equivalent": self.matches_strict_equivalent,
             "demotion_histogram": self.demotion_histogram,
             "opportunities": self.opportunities,
             "by_label": self.by_label,
@@ -119,12 +124,29 @@ def refresh_matches(
     *,
     max_pairs: int = 4000,
     histogram_out: DemotionHistogram | None = None,
-) -> list[tuple[MarketMatch, MatchVerdict]]:
+) -> list[tuple[MarketMatch, MatchVerdict, EquivalenceScore]]:
     """Generate, verify and persist cross-platform matches.
 
     Matches are upserted rather than appended so re-running does not accumulate
-    duplicate pairings, and so a pair that *stops* being compatible (because a venue
-    edited its rules) has its verdict updated rather than leaving a stale claim.
+    duplicate pairings, and so a pair that *stops* being compatible - because a venue
+    edited its rules, or because the parser now reads a term it used to miss - has
+    its stored verdict **overwritten** rather than leaving a stale claim behind.
+
+    Invalidation is the part that is easy to get wrong. A pair that verifies as
+    incompatible used to be skipped before the persisted row was touched, so the
+    previous ``identical`` survived on the row and kept feeding the other venue's
+    price in as an independent prior. Two paths now invalidate:
+
+    * a pair that is still generated as a candidate but verifies incompatible has
+      its row rewritten with the rejecting verdict;
+    * a pair that is no longer generated as a candidate at all, while both of its
+      markets were in scope for this run, is rejected too - candidate generation
+      declining to propose it is itself a change of mind about the pairing.
+
+    Each surviving match is returned with its :class:`EquivalenceScore`, because the
+    monotone ``RuleCompatibility`` level cannot express the distinction that decides
+    a risk-free claim: whether both venues were confirmed to handle cancellation the
+    same way.
     """
     by_platform: dict[Platform, list[NormalizedMarket]] = defaultdict(list)
     id_by_key: dict[str, int] = {}
@@ -139,8 +161,9 @@ def refresh_matches(
         return []
 
     candidates = generate_candidates(kalshi, polymarket)[:max_pairs]
-    stored: list[tuple[MarketMatch, MatchVerdict]] = []
+    stored: list[tuple[MarketMatch, MatchVerdict, EquivalenceScore]] = []
     histogram = histogram_out if histogram_out is not None else DemotionHistogram()
+    seen_pairs: set[tuple[int, int]] = set()
 
     for candidate in candidates:
         verdict = verify_match(candidate)
@@ -148,13 +171,15 @@ def refresh_matches(
         # informative ones: they are what distinguishes "these venues do not list the
         # same contracts" from "the parser cannot read the rules".
         histogram.add(verdict)
-        if verdict.rule_compatibility == RuleCompatibility.INCOMPATIBLE:
-            continue
         key_a, key_b = candidate.key
         market_a_id = id_by_key.get(key_a)
         market_b_id = id_by_key.get(key_b)
         if market_a_id is None or market_b_id is None:
             continue
+        seen_pairs.add((market_a_id, market_b_id))
+
+        score = score_equivalence(candidate, verdict)
+        incompatible = verdict.rule_compatibility == RuleCompatibility.INCOMPATIBLE
 
         row = session.scalar(
             select(MarketMatch).where(
@@ -163,6 +188,11 @@ def refresh_matches(
             )
         )
         if row is None:
+            if incompatible:
+                # Nothing was ever claimed about this pair, so there is nothing to
+                # withdraw. Storing a rejection row per non-match would write a row
+                # for most of the candidate space.
+                continue
             row = MarketMatch(
                 market_a_id=market_a_id,
                 market_b_id=market_b_id,
@@ -179,18 +209,69 @@ def refresh_matches(
         row.resolution_hash_a = verdict.resolution_hash_a
         row.resolution_hash_b = verdict.resolution_hash_b
         row.mismatch_reasons = verdict.mismatch_reasons
+        row.equivalence_verdict = score.verdict.value
+        row.equivalence_components = [
+            {"name": c.name, "result": c.result.value, "detail": c.detail}
+            for c in score.components
+        ]
         row.verified_by = "deterministic"
         row.llm_assisted = False
         row.updated_at = utcnow()
-        stored.append((row, verdict))
+        if incompatible:
+            # The row is kept, but rewritten as a rejection so every reader - the
+            # scanner, the independent-prior query, the API - sees the withdrawal.
+            continue
+        stored.append((row, verdict, score))
+
+    _invalidate_unproposed(session, in_scope=set(id_by_key.values()), seen=seen_pairs)
 
     session.flush()
     log.info(
-        "verified %d cross-platform matches (%d identical)",
+        "verified %d cross-platform matches (%d identical, %d strict-equivalent)",
         len(stored),
-        sum(1 for _, v in stored if v.rule_compatibility == RuleCompatibility.IDENTICAL),
+        sum(1 for _, v, _ in stored if v.rule_compatibility == RuleCompatibility.IDENTICAL),
+        sum(
+            1 for _, _, s in stored
+            if s.verdict is EquivalenceVerdict.VERIFIED_EQUIVALENT_STRICT
+        ),
     )
     return stored
+
+
+def _invalidate_unproposed(
+    session: Session, *, in_scope: set[int], seen: set[tuple[int, int]]
+) -> int:
+    """Withdraw stored matches that candidate generation no longer proposes.
+
+    Scoped to pairs where *both* markets were examined in this run. A pair whose
+    markets have simply closed or fallen out of horizon was not re-examined, and
+    rewriting it would destroy the audit trail of a verdict that was correct when it
+    was made. A pair that was examined and not proposed is a different thing: the
+    matcher looked and declined, so the old claim no longer holds.
+    """
+    if not in_scope:
+        return 0
+    rows = session.scalars(
+        select(MarketMatch).where(
+            MarketMatch.market_a_id.in_(in_scope),
+            MarketMatch.market_b_id.in_(in_scope),
+            MarketMatch.rule_compatibility != RuleCompatibility.INCOMPATIBLE.value,
+        )
+    ).all()
+    withdrawn = 0
+    for row in rows:
+        if (row.market_a_id, row.market_b_id) in seen:
+            continue
+        row.rule_compatibility = RuleCompatibility.INCOMPATIBLE.value
+        row.equivalence_verdict = EquivalenceVerdict.REJECTED.value
+        row.mismatch_reasons = list(row.mismatch_reasons or []) + [
+            "withdrawn: candidate generation no longer proposes this pair"
+        ]
+        row.updated_at = utcnow()
+        withdrawn += 1
+    if withdrawn:
+        log.info("withdrew %d stored matches no longer proposed as candidates", withdrawn)
+    return withdrawn
 
 
 def _threshold_families(
@@ -267,20 +348,28 @@ def run_arbitrage_scan(
     )
     report.matches_verified = len(matches)
     report.matches_identical = sum(
-        1 for _, v in matches if v.rule_compatibility == RuleCompatibility.IDENTICAL
+        1 for _, v, _ in matches if v.rule_compatibility == RuleCompatibility.IDENTICAL
+    )
+    report.matches_strict_equivalent = sum(
+        1 for _, _, s in matches
+        if s.verdict is EquivalenceVerdict.VERIFIED_EQUIVALENT_STRICT
     )
     report.demotion_histogram = histogram.as_dict()
     log.info("cross-platform matching: %s", histogram.diagnosis)
 
     by_id = {row.id: (row, market, book) for row, market, book in triples}
-    for match_row, verdict in matches:
+    for match_row, _verdict, score in matches:
         left = by_id.get(match_row.market_a_id)
         right = by_id.get(match_row.market_b_id)
         if left is None or right is None:
             continue
         try:
+            # The *score*, not the bare verdict. A MatchVerdict carries no component
+            # breakdown, so the scanner would have to assume cancellation handling is
+            # unknown and could never label a pair executable - which made the
+            # guaranteed-arbitrage path unreachable through this pipeline.
             result = scan_cross_platform(
-                left[1], left[2], right[1], right[2], verdict,
+                left[1], left[2], right[1], right[2], score,
                 market_a_id=left[0].id, market_b_id=right[0].id, match_id=match_row.id,
             )
         except Exception as exc:  # noqa: BLE001
@@ -333,11 +422,12 @@ def run_arbitrage_scan(
                 f"unknown, so completeness of the basket cannot be established"
             )
             continue
-        if len(members) < known_outcomes:
+        if len(members) != known_outcomes:
+            shape = "priced" if len(members) < known_outcomes else "holds"
             report.errors.append(
-                f"multi_outcome event {event_id} skipped: priced {len(members)} of "
-                f"{known_outcomes} venue-reported outcomes; a partial basket is not a "
-                f"complete set"
+                f"multi_outcome event {event_id} skipped: {shape} {len(members)} of "
+                f"{known_outcomes} venue-reported outcomes; a basket that does not "
+                f"match the venue's own count is not a complete set"
             )
             continue
 
@@ -392,7 +482,7 @@ def run_arbitrage_scan(
             counts["logical_constraint"] += 1
 
     # ---- 5. stale quotes ---------------------------------------------------
-    for match_row, verdict in matches:
+    for match_row, verdict, _score in matches:
         left = by_id.get(match_row.market_a_id)
         right = by_id.get(match_row.market_b_id)
         if left is None or right is None:

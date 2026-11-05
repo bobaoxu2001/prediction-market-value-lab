@@ -316,6 +316,182 @@ def prune(
     _emit(jobs.job_prune(keep_days=keep_days), as_json=as_json)
 
 
+@app.command("collect-forecasts")
+@_skip_guard
+def collect_forecasts(as_json: bool = typer.Option(False, "--json")) -> None:
+    """Collect NWS gridpoint forecasts. This is the product carrying published_at."""
+    import asyncio
+
+    _emit(asyncio.run(jobs.job_forecast_observations()), as_json=as_json)
+
+
+@app.command("collect-observations")
+@_skip_guard
+def collect_observations(
+    limit_per_station: int = typer.Option(36, help="observations requested per station"),
+    as_json: bool = typer.Option(False, "--json"),
+) -> None:
+    """Collect settlement-station observations. Research collection only."""
+    import asyncio
+
+    _emit(asyncio.run(jobs.job_station_observations(limit_per_station=limit_per_station)),
+          as_json=as_json)
+
+
+@app.command("collect-books")
+@_skip_guard
+def collect_books(
+    max_seconds: int = typer.Option(
+        0, help="bound the in-window capture loop; 0 means until the window ends"
+    ),
+    as_json: bool = typer.Option(False, "--json"),
+) -> None:
+    """Archive weather orderbooks, faster inside an NWS issuance window."""
+    import asyncio
+
+    _emit(asyncio.run(jobs.job_research_books(max_seconds=max_seconds)), as_json=as_json)
+
+
+@app.command("collect-trades")
+@_skip_guard
+def collect_trades(as_json: bool = typer.Option(False, "--json")) -> None:
+    """Archive weather trade prints. Raw archival only; nothing reads them."""
+    import asyncio
+
+    _emit(asyncio.run(jobs.job_research_trades()), as_json=as_json)
+
+
+@app.command("map-stations")
+@_skip_guard
+def map_stations(as_json: bool = typer.Option(False, "--json")) -> None:
+    """Populate markets.settlement_station_id from the venue's settlement rules."""
+    _emit(jobs.job_map_settlement_stations(), as_json=as_json)
+
+
+@app.command("station-audit")
+def station_audit(as_json: bool = typer.Option(False, "--json")) -> None:
+    """Compare the five places a settlement station is described."""
+    from sqlalchemy import select
+
+    from pmvl_shared.db import session_scope
+
+    from pmvl_markets.alpha.station_audit import audit_stations, render, summarise
+    from pmvl_markets.db_models import Market, SourceObservationRow
+    from pmvl_markets.normalize.weather_stations import RESEARCH_SERIES_PREFIX
+    from pmvl_markets.probability.categories.weather import _STATIONS
+
+    with session_scope() as db:
+        rows = [
+            (r.series_ticker or "", r.settlement_station_id or "",
+             r.settlement_rules_raw or "", r.platform_market_id)
+            for r in db.scalars(
+                select(Market).where(
+                    Market.series_ticker.like(f"{RESEARCH_SERIES_PREFIX}%")
+                )
+            ).all()
+        ]
+        gridpoints: dict[str, set[str]] = {}
+        for station, location in db.execute(
+            select(
+                SourceObservationRow.settlement_station_id,
+                SourceObservationRow.source_location,
+            ).distinct()
+        ):
+            if station and location:
+                gridpoints.setdefault(station, set()).add(location)
+
+    report = summarise(
+        audit_stations(
+            model_stations=_STATIONS,
+            market_rows=rows,
+            observed_gridpoints={k: sorted(v) for k, v in gridpoints.items()},
+        )
+    )
+    if as_json:
+        _emit(report, as_json=True)
+        return
+    for line in render(report):
+        console.print(line)
+
+
+@app.command("collection-health")
+def collection_health(
+    days: int = typer.Option(1, help="lookback window in days"),
+    as_json: bool = typer.Option(False, "--json"),
+    persist: bool = typer.Option(False, "--persist", help="append a snapshot"),
+    history: bool = typer.Option(False, "--history", help="show retained snapshots"),
+) -> None:
+    """Daily collection-health report. Reports coverage; computes no returns."""
+    if history:
+        from pmvl_shared.research_archive import ResearchArchive, default_archive_path
+
+        archive = ResearchArchive(default_archive_path("."))
+        with archive.connect() as con:
+            rows = archive.health_history(con, limit=30)
+        if as_json:
+            _emit({"history": rows}, as_json=True)
+            return
+        console.print("[bold]retained collection-health snapshots[/bold]")
+        for row in rows:
+            mark = "PASS" if row["all_gates_passing"] else "FAIL"
+            console.print(
+                f"  {row['snapshot_date']}  [{mark}]  obs/station-day="
+                f"{row['observations_per_station_day']}  books={row['archived_books']}"
+                f"  trades={row['archived_trades']}  best_window={row['best_window_books']}"
+                f"  unmapped={row['unmapped_markets']}"
+            )
+        return
+    if persist:
+        _emit(jobs.job_collection_health(), as_json=as_json)
+        return
+    from pmvl_markets.alpha.collection_health import build_report, render
+
+    from pmvl_shared.db import session_scope
+
+    with session_scope() as db:
+        report = build_report(db, days=days)
+    if as_json:
+        _emit(report, as_json=True)
+        return
+    for line in render(report):
+        console.print(line)
+
+
+@app.command("alpha-readiness")
+def alpha_readiness(as_json: bool = typer.Option(False, "--json")) -> None:
+    """How far the alpha engine is from evaluating a strategy on real history.
+
+    Deliberately a readiness report and not a result. The infrastructure exists;
+    the point-in-time data does not yet. Printing a strategy result computed on
+    what is currently in the database would be printing a number about demo
+    rows, which is the most misleading thing this repository could publish.
+    """
+    from pmvl_shared.db import session_scope
+
+    from pmvl_markets.alpha.readiness import assess_readiness
+
+    with session_scope() as db:
+        report = assess_readiness(db).as_dict()
+
+    if as_json:
+        _emit(report, as_json=True)
+        return
+
+    console.print(f"[bold]{report['verdict']}[/bold]")
+    console.print(report["headline"])
+    console.print("")
+    for name, value in report["counts"].items():
+        console.print(f"  {name:34s} {value}")
+    if report["blockers"]:
+        console.print("\n[yellow]Blockers:[/yellow]")
+        for blocker in report["blockers"]:
+            console.print(f"  - {blocker}")
+    if report["next_steps"]:
+        console.print("\n[cyan]Next:[/cyan]")
+        for step in report["next_steps"]:
+            console.print(f"  - {step}")
+
+
 @app.command()
 def status() -> None:
     """Show job health and row counts."""
@@ -440,3 +616,103 @@ def schedule() -> None:
 
 if __name__ == "__main__":
     app()
+
+
+@app.command("model-vs-market-readiness")
+def model_vs_market_readiness(
+    as_json: bool = typer.Option(False, "--json"),
+    data_dir: str = typer.Option("data", help="directory holding the two stores"),
+    allow_approximation: bool = typer.Option(
+        False,
+        "--allow-approximation",
+        help="admit MODELLING_APPROXIMATION parity (requires explicit policy)",
+    ),
+) -> None:
+    """Whether a Model-vs-Market dataset can be built, and what blocks it.
+
+    Read-only against both stores. Reports evidence and exclusion counts rather
+    than a bare verdict, and separates defect-class exclusions (a bug) from
+    shortfall-class ones (data has not arrived) - they look identical from a row
+    count and need opposite responses.
+
+    Computes no returns, no PnL and no alpha claim.
+    """
+    import subprocess
+    from pathlib import Path
+
+    from pmvl_markets.research.dataset import build_report, render
+
+    commit = ""
+    try:
+        commit = subprocess.run(
+            ["git", "rev-parse", "--short", "HEAD"],
+            capture_output=True, text=True, check=False,
+        ).stdout.strip()
+    except OSError:
+        pass
+
+    from pmvl_markets.research.build import build_cohort, target_dates_with_labels
+    from pmvl_markets.research.dataset import MIN_EVENTS_FOR_CALIBRATION, cohort_gates
+
+    root = Path(data_dir)
+    report = build_report(data_dir=root, code_commit=commit)
+
+    # Assemble every day for which a FINAL settlement bulletin exists.
+    merged: dict[str, Any] = {}
+    totals = {"contract_observations": 0, "unique_markets": 0}
+    events: set[str] = set()
+    adm_events: set[str] = set()
+    adm_rows = 0
+    parity: dict[str, int] = {}
+    exclusions: dict[str, int] = {}
+    for day in target_dates_with_labels(root):
+        cohort = build_cohort(data_dir=root, target_date=day)
+        summary = cohort.summary(allow_approximation=allow_approximation)
+        totals["contract_observations"] += summary["contract_observations"]
+        totals["unique_markets"] += summary["unique_markets"]
+        events.update(o.event_key for o in cohort.observations)
+        for observation in cohort.admissible(allow_approximation):
+            adm_events.add(observation.event_key)
+            adm_rows += 1
+        for key, n in summary["by_parity"].items():
+            parity[key] = parity.get(key, 0) + n
+        for key, n in summary["exclusions"].items():
+            exclusions[key] = exclusions.get(key, 0) + n
+    merged = {
+        **totals,
+        "independent_settlement_events": len(events),
+        "admissible_contract_observations": adm_rows,
+        "admissible_independent_events": len(adm_events),
+        "by_parity": dict(sorted(parity.items())),
+        "exclusions": dict(sorted(exclusions.items(), key=lambda kv: -kv[1])),
+    }
+    gates = cohort_gates(merged, allow_approximation=allow_approximation)
+    authorized = all(ok for _, ok, _ in gates)
+
+    payload = report.as_dict()
+    payload["cohort"] = merged
+    payload["gates"] = [
+        {"gate": name, "passing": ok, "evidence": why} for name, ok, why in gates
+    ]
+    payload["phase_4c1_authorized"] = authorized
+    if as_json:
+        _emit(payload, as_json=True)
+        return
+
+    console.print(render(report, with_verdict=False))
+    console.print("--- FIRST ADMISSIBLE COHORT ---")
+    console.print(f"  contract observations           {merged['contract_observations']:>6}")
+    console.print(f"  unique markets                  {merged['unique_markets']:>6}")
+    console.print(f"  independent settlement events   {merged['independent_settlement_events']:>6}   <- inferential N")
+    console.print(f"  admissible contract rows        {adm_rows:>6}")
+    console.print(f"  admissible independent events   {len(adm_events):>6}")
+    console.print(f"  parity                          {merged['by_parity']}")
+    console.print(f"  exclusions                      {merged['exclusions']}")
+    console.print("")
+    console.print("--- PHASE 4C1 GATES ---")
+    for name, ok, why in gates:
+        console.print(f"  [{'PASS' if ok else 'FAIL'}] {name:<46} {why}")
+    console.print("")
+    console.print(
+        "PHASE 4C1 AUTHORIZED" if authorized else "PHASE 4C1 NOT AUTHORIZED"
+    )

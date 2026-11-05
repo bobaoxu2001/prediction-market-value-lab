@@ -23,13 +23,20 @@ Costs charged beyond fees and slippage:
 
 from __future__ import annotations
 
+from dataclasses import dataclass
 from decimal import Decimal
 
 from pmvl_shared.config import get_settings
 from pmvl_shared.timeutil import humanize_seconds
 from pmvl_shared.enums import ArbitrageKind, ArbitrageLabel, RuleCompatibility, Side
 from pmvl_shared.money import ONE, ZERO, quantize_usd, safe_div
-from pmvl_shared.schemas import ArbitrageResult, ArbLeg, NormalizedMarket, OrderBook
+from pmvl_shared.schemas import (
+    ArbitrageResult,
+    ArbLeg,
+    NormalizedMarket,
+    OrderBook,
+    outcome_label,
+)
 from pmvl_shared.timeutil import age_seconds, hours_until, utcnow
 
 from ..matching.equivalence import EquivalenceScore, EquivalenceVerdict
@@ -97,6 +104,16 @@ def scan_cross_platform(
     return best
 
 
+def _leg_name(market: NormalizedMarket, side: Side) -> str:
+    """How to name a leg in a headline: the side, plus the outcome when it has one.
+
+    "polymarket YES" is ambiguous on a market whose outcomes are two team names, and
+    an inverted pair produces the genuinely confusing "kalshi YES / polymarket YES".
+    Naming the outcome makes the two legs read as the opposite sides they are.
+    """
+    label = outcome_label(market, side)
+    return f"{side.value.upper()} {label}" if label else side.value.upper()
+
 def _flip(side: Side) -> Side:
     return Side.NO if side == Side.YES else Side.YES
 
@@ -154,75 +171,44 @@ def _scan_orientation(
     if top_a + top_b >= ONE:
         return None
 
-    sets, gross_cost = _walk_matched_pair(
+    # The pair-walk decides which sizes are worth *considering* - it stops once the
+    # two asks sum to $1 - and every boundary it crosses is then priced in full.
+    # Taking only the largest gross-profitable size and dropping the result when it
+    # fails on net discards genuine arbitrage: a cheap prefix followed by expensive
+    # depth is gross-profitable all the way out, and the expensive tail swamps an
+    # edge that the prefix alone would have captured.
+    candidates = _walk_pair_boundaries(
         book_a, side_a, book_b, side_b, max_sets=max_sets
     )
-    if sets <= 0:
+    if not candidates:
         return None
 
-    # Both legs are priced through the multi-leg simulator so the fill detail comes
-    # from one place, and so the BINDING leg is identified. The pair-walk above
-    # decides how many sets are worth buying (it stops once the two asks sum to $1);
-    # the simulator then reports what each leg actually achieves at that size and
-    # what, if anything, is left unfilled.
-    basket = simulate_basket(
-        [
-            LegRequest(label=f"{market_a.platform.value}:{side_a.value}", book=book_a, side=side_a),
-            LegRequest(label=f"{market_b.platform.value}:{side_b.value}", book=book_b, side=side_b),
-        ],
-        sets,
-    )
-    if basket.executable_units <= 0:
+    priced: _PricedPair | None = None
+    for candidate in candidates:
+        attempt = _price_pair(
+            market_a, book_a, side_a, market_b, book_b, side_b,
+            candidate, settings,
+        )
+        if attempt is None:
+            continue
+        if priced is None or attempt.net_profit > priced.net_profit:
+            priced = attempt
+    if priced is None or priced.net_profit <= 0:
         return None
-    # A basket that cannot fill both legs at the walked size is not a smaller
-    # arbitrage - it is a naked position on whichever leg did fill. Size down to what
-    # both legs support rather than reporting an edge that needs an unfillable leg.
-    sets = basket.executable_units
 
-    quote_a = executable_quote(book_a, side_a, sets)
-    quote_b = executable_quote(book_b, side_b, sets)
-    if quote_a is None or quote_b is None:
-        return None
-    gross_cost = basket.total_cost
-
-    fee_a = taker_fee(
-        market_a.platform, sets, quote_a.average_price,
-        rate=market_a.fee_rate, fee_type=market_a.fee_type,
-    )
-    fee_b = taker_fee(
-        market_b.platform, sets, quote_b.average_price,
-        rate=market_b.fee_rate, fee_type=market_b.fee_type,
-    )
-
-    slippage = (
-        market_a.tick_size * Decimal(settings.slippage_ticks)
-        + market_b.tick_size * Decimal(settings.slippage_ticks)
-    ) * sets
-
-    transfer = (
-        transfer_cost_per_contract(market_a.platform, sets)
-        + transfer_cost_per_contract(market_b.platform, sets)
-    ) * sets
-
-    # The legs settle at different times if the venues resolve at different times;
-    # charge capital cost against the later of the two.
-    later_resolution = max(
-        [t for t in (market_a.expected_resolution_time, market_b.expected_resolution_time) if t],
-        default=None,
-    )
-    capital = (
-        capital_cost_per_contract(quote_a.average_price + quote_b.average_price, later_resolution)
-        * sets
-    )
-
-    # Execution risk: the two legs cannot fill atomically across venues.
-    execution_risk = settings.cross_platform_execution_risk_usd * sets
-
-    total_cost = gross_cost + fee_a + fee_b + slippage + transfer + capital + execution_risk
-    payout = sets * ONE
-    net_profit = payout - total_cost
-    if net_profit <= 0:
-        return None
+    sets = priced.sets
+    basket = priced.basket
+    quote_a, quote_b = priced.quote_a, priced.quote_b
+    gross_cost = priced.gross_cost
+    fee_a, fee_b = priced.fee_a, priced.fee_b
+    slippage = priced.slippage
+    transfer = priced.transfer
+    capital = priced.capital
+    execution_risk = priced.execution_risk
+    total_cost = priced.total_cost
+    payout = priced.payout
+    net_profit = priced.net_profit
+    later_resolution = priced.later_resolution
 
     # Minimum-edge gate, tiered by venue span and liquidity.
     #
@@ -297,8 +283,8 @@ def _scan_orientation(
         kind=ArbitrageKind.CROSS_PLATFORM,
         label=label,
         title=(
-            f"{market_a.platform.value} {side_a.value.upper()} / "
-            f"{market_b.platform.value} {side_b.value.upper()}: {market_a.title[:80]}"
+            f"{market_a.platform.value} {_leg_name(market_a, side_a)} / "
+            f"{market_b.platform.value} {_leg_name(market_b, side_b)}: {market_a.title[:80]}"
         ),
         legs=[
             ArbLeg(
@@ -311,6 +297,7 @@ def _scan_orientation(
                 size_available=quote_a.filled_size,
                 fee_per_contract=quantize_usd(safe_div(fee_a, sets)),
                 token_id=market_a.yes_token_id if side_a == Side.YES else market_a.no_token_id,
+                outcome_label=outcome_label(market_a, side_a),
             ),
             ArbLeg(
                 platform=market_b.platform,
@@ -322,6 +309,7 @@ def _scan_orientation(
                 size_available=quote_b.filled_size,
                 fee_per_contract=quantize_usd(safe_div(fee_b, sets)),
                 token_id=market_b.yes_token_id if side_b == Side.YES else market_b.no_token_id,
+                outcome_label=outcome_label(market_b, side_b),
             ),
         ],
         gross_edge_per_set=quantize_usd(ONE - per_set_gross),
@@ -354,6 +342,105 @@ def _scan_orientation(
         },
         match_id=match_id,
         provenance=market_a.provenance,
+    )
+
+
+@dataclass(frozen=True)
+class _PricedPair:
+    """One candidate size with its complete cost stack.
+
+    Built so the sizing search and the reported result are computed by exactly the
+    same arithmetic; a search that used a cheaper approximation could pick a size the
+    report then prices differently.
+    """
+
+    sets: Decimal
+    basket: object
+    quote_a: object
+    quote_b: object
+    gross_cost: Decimal
+    fee_a: Decimal
+    fee_b: Decimal
+    slippage: Decimal
+    transfer: Decimal
+    capital: Decimal
+    execution_risk: Decimal
+    total_cost: Decimal
+    payout: Decimal
+    net_profit: Decimal
+    later_resolution: object
+
+
+def _price_pair(
+    market_a: NormalizedMarket,
+    book_a: OrderBook,
+    side_a: Side,
+    market_b: NormalizedMarket,
+    book_b: OrderBook,
+    side_b: Side,
+    sets: Decimal,
+    settings,  # noqa: ANN001
+) -> _PricedPair | None:
+    """Full cost stack for buying ``sets`` matched pairs, or None if unfillable."""
+    # Both legs are priced through the multi-leg simulator so the fill detail comes
+    # from one place, and so the BINDING leg is identified. A basket that cannot fill
+    # both legs at this size is not a smaller arbitrage - it is a naked position on
+    # whichever leg did fill - so the size is reduced to what both legs support.
+    basket = simulate_basket(
+        [
+            LegRequest(label=f"{market_a.platform.value}:{side_a.value}", book=book_a, side=side_a),
+            LegRequest(label=f"{market_b.platform.value}:{side_b.value}", book=book_b, side=side_b),
+        ],
+        sets,
+    )
+    if basket.executable_units <= 0:
+        return None
+    sets = basket.executable_units
+
+    quote_a = executable_quote(book_a, side_a, sets)
+    quote_b = executable_quote(book_b, side_b, sets)
+    if quote_a is None or quote_b is None:
+        return None
+
+    gross_cost = basket.total_cost
+    fee_a = taker_fee(
+        market_a.platform, sets, quote_a.average_price,
+        rate=market_a.fee_rate, fee_type=market_a.fee_type,
+    )
+    fee_b = taker_fee(
+        market_b.platform, sets, quote_b.average_price,
+        rate=market_b.fee_rate, fee_type=market_b.fee_type,
+    )
+    slippage = (
+        market_a.tick_size * Decimal(settings.slippage_ticks)
+        + market_b.tick_size * Decimal(settings.slippage_ticks)
+    ) * sets
+    transfer = (
+        transfer_cost_per_contract(market_a.platform, sets)
+        + transfer_cost_per_contract(market_b.platform, sets)
+    ) * sets
+
+    # The legs settle at different times if the venues resolve at different times;
+    # charge capital cost against the later of the two.
+    later_resolution = max(
+        [t for t in (market_a.expected_resolution_time, market_b.expected_resolution_time) if t],
+        default=None,
+    )
+    capital = (
+        capital_cost_per_contract(quote_a.average_price + quote_b.average_price, later_resolution)
+        * sets
+    )
+    # Execution risk: the two legs cannot fill atomically across venues.
+    execution_risk = settings.cross_platform_execution_risk_usd * sets
+
+    total_cost = gross_cost + fee_a + fee_b + slippage + transfer + capital + execution_risk
+    payout = sets * ONE
+    return _PricedPair(
+        sets=sets, basket=basket, quote_a=quote_a, quote_b=quote_b,
+        gross_cost=gross_cost, fee_a=fee_a, fee_b=fee_b, slippage=slippage,
+        transfer=transfer, capital=capital, execution_risk=execution_risk,
+        total_cost=total_cost, payout=payout, net_profit=payout - total_cost,
+        later_resolution=later_resolution,
     )
 
 
@@ -398,3 +485,52 @@ def _walk_matched_pair(
                 left_b = levels_b[j].size
 
     return sets, cost
+
+
+def _walk_pair_boundaries(
+    book_a: OrderBook,
+    side_a: Side,
+    book_b: OrderBook,
+    side_b: Side,
+    *,
+    max_sets: Decimal,
+) -> list[Decimal]:
+    """Cumulative sizes at each matched-ladder boundary, cheapest pairs first.
+
+    Net profit is piecewise-linear in size between these boundaries, so its maximum
+    lies at one of them and evaluating them all is exact rather than a heuristic.
+    Costs with a fixed component - Kalshi ceils its fee to the whole cent on the
+    whole order - are not linear in size either, which is a second reason the best
+    size cannot be extrapolated from a single evaluation.
+    """
+    levels_a = list(book_a.asks(side_a))
+    levels_b = list(book_b.asks(side_b))
+    if not levels_a or not levels_b:
+        return []
+
+    i = j = 0
+    left_a = levels_a[0].size
+    left_b = levels_b[0].size
+    sets = ZERO
+    boundaries: list[Decimal] = []
+
+    while i < len(levels_a) and j < len(levels_b) and sets < max_sets:
+        if levels_a[i].price + levels_b[j].price >= ONE:
+            break
+        take = min(left_a, left_b, max_sets - sets)
+        if take <= 0:
+            break
+        sets += take
+        boundaries.append(sets)
+        left_a -= take
+        left_b -= take
+        if left_a <= 0:
+            i += 1
+            if i < len(levels_a):
+                left_a = levels_a[i].size
+        if left_b <= 0:
+            j += 1
+            if j < len(levels_b):
+                left_b = levels_b[j].size
+
+    return boundaries

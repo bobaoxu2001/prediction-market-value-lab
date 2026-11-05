@@ -23,7 +23,13 @@ from pmvl_shared.config import get_settings
 from pmvl_shared.timeutil import humanize_seconds
 from pmvl_shared.enums import ArbitrageKind, ArbitrageLabel, RuleCompatibility, Side
 from pmvl_shared.money import ZERO, quantize_usd
-from pmvl_shared.schemas import ArbitrageResult, ArbLeg, NormalizedMarket, OrderBook
+from pmvl_shared.schemas import (
+    ArbLeg,
+    ArbitrageResult,
+    NormalizedMarket,
+    OrderBook,
+    outcome_label,
+)
 from pmvl_shared.timeutil import age_seconds, utcnow
 
 #: Minimum move on the leading venue to count as "the market has repriced".
@@ -120,6 +126,7 @@ def detect_stale_quote(
                 market_id=laggard.market_id,
                 title=laggard.market.title,
                 side=side,
+                outcome_label=outcome_label(laggard.market, side),
                 price=entry,
                 size_available=available,
             ),
@@ -129,6 +136,7 @@ def detect_stale_quote(
                 market_id=leader.market_id,
                 title=leader.market.title,
                 side=side,
+                outcome_label=outcome_label(leader.market, side),
                 price=leader.current_mid,
                 size_available=ZERO,
             ),

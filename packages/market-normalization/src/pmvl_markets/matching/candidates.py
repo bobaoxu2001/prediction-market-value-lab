@@ -24,6 +24,7 @@ from pmvl_shared.schemas import NormalizedMarket
 from pmvl_shared.timeutil import ensure_utc
 
 from ..normalize.text import TitleFeatures, extract_features, jaccard
+from .fixtures import Fixture, extract_fixture, fixtures_agree
 
 log = get_logger(__name__)
 
@@ -48,6 +49,17 @@ class MatchCandidate:
     token_similarity: float
     entity_overlap: float
     shared_tokens: tuple[str, ...]
+    #: Set when the pair was proposed because both markets resolve on the *same
+    #: head-to-head contest*, established structurally rather than by word overlap.
+    #: The two venues title a game incompatibly - Kalshi names the outcome
+    #: ("San Diego wins"), Polymarket the matchup ("San Diego Padres vs. San
+    #: Francisco Giants") - so token similarity between a real pair is around 0.29
+    #: and no amount of threshold tuning proposes them without this.
+    fixture: tuple[Fixture, Fixture] | None = None
+    #: Whether the two markets pay out on *opposite* competitors, which is the
+    #: orientation a cross-venue hedge needs. Derived from the fixture, not from a
+    #: comparator, because a moneyline has no comparator to invert.
+    fixture_polarity_inverted: bool = False
 
     @property
     def key(self) -> tuple[str, str]:
@@ -171,11 +183,83 @@ def generate_candidates(
         scored.sort(key=lambda c: c.prescreen_score, reverse=True)
         candidates.extend(scored[:max_candidates_per_market])
 
+    # Merge in the structural proposer, preferring its annotation where both
+    # proposers found the same pair. Dropping the fixture version as a duplicate
+    # would silently discard the identity evidence and leave the verifier judging a
+    # sports pair on word overlap - which is exactly what it cannot do.
+    by_key = {c.key: c for c in generate_fixture_candidates(markets_a, markets_b, features=features)}
+    total_fixture = len(by_key)
+    merged = [by_key.pop(c.key, c) for c in candidates]
+    merged.extend(by_key.values())
+
     log.info(
-        "generated %d cross-platform candidate pairs from %d x %d markets",
-        len(candidates), len(markets_a), len(markets_b),
+        "generated %d cross-platform candidate pairs from %d x %d markets "
+        "(%d carry a fixture identity)",
+        len(merged), len(markets_a), len(markets_b), total_fixture,
     )
-    return candidates
+    return merged
+
+
+def generate_fixture_candidates(
+    markets_a: Sequence[NormalizedMarket],
+    markets_b: Sequence[NormalizedMarket],
+    *,
+    features: dict[str, TitleFeatures] | None = None,
+) -> list[MatchCandidate]:
+    """Propose pairs that resolve on the same head-to-head contest.
+
+    A second, structural proposer alongside the token-similarity one. Word overlap
+    cannot bridge the venues' sports naming: a real Kalshi/Polymarket moneyline pair
+    scores 0.286, under the 0.28 blocking floor only by luck and under the 0.35 the
+    verifier wants. Sports is the largest overlap between the two venues, so without
+    this the scanner is blind to most of what the two venues actually both list.
+
+    Bucketed by the contest date, which is required for a fixture match anyway: it
+    keeps the comparison to the handful of games on one day, and it is the guard that
+    stops the Monday and Tuesday games of the same series pairing with each other.
+    """
+    fixtures_b: dict[object, list[tuple[NormalizedMarket, Fixture]]] = defaultdict(list)
+    for market in markets_b:
+        fixture = extract_fixture(market)
+        if fixture is not None:
+            fixtures_b[fixture.scheduled].append((market, fixture))
+    if not fixtures_b:
+        return []
+
+    features = features if features is not None else {}
+
+    def feature_for(market: NormalizedMarket) -> TitleFeatures:
+        key = f"{market.platform.value}:{market.platform_market_id}"
+        if key not in features:
+            features[key] = extract_features(
+                market.title, subtitle=market.subtitle, description=market.description[:600]
+            )
+        return features[key]
+
+    out: list[MatchCandidate] = []
+    for market in markets_a:
+        fixture_a = extract_fixture(market)
+        if fixture_a is None:
+            continue
+        for other, fixture_b in fixtures_b.get(fixture_a.scheduled, ()):
+            agree, inverted = fixtures_agree(fixture_a, fixture_b)
+            if not agree:
+                continue
+            fa, fb = feature_for(market), feature_for(other)
+            out.append(
+                MatchCandidate(
+                    market_a=market,
+                    market_b=other,
+                    features_a=fa,
+                    features_b=fb,
+                    token_similarity=jaccard(fa.tokens, fb.tokens),
+                    entity_overlap=jaccard(set(fa.entities[:8]), set(fb.entities[:8])),
+                    shared_tokens=tuple(sorted(fa.tokens & fb.tokens)),
+                    fixture=(fixture_a, fixture_b),
+                    fixture_polarity_inverted=inverted,
+                )
+            )
+    return out
 
 
 def split_by_platform(

@@ -17,9 +17,16 @@ from pmvl_shared.config import get_settings
 from pmvl_shared.timeutil import humanize_seconds
 from pmvl_shared.enums import ArbitrageKind, ArbitrageLabel, RuleCompatibility, Side
 from pmvl_shared.money import ONE, ZERO, quantize_usd, safe_div
-from pmvl_shared.schemas import ArbitrageResult, ArbLeg, NormalizedMarket, OrderBook
+from pmvl_shared.schemas import (
+    ArbLeg,
+    ArbitrageResult,
+    NormalizedMarket,
+    OrderBook,
+    outcome_label,
+)
 from pmvl_shared.timeutil import age_seconds, utcnow
 
+from ..pricing.execution import capital_cost_per_contract, transfer_cost_per_contract
 from ..pricing.fees import taker_fee
 from ..pricing.orderbook import executable_quote
 
@@ -48,14 +55,15 @@ def scan_complete_set(
     if yes_top + no_top >= ONE:
         return None
 
-    sets, gross_cost = _walk_matched(book, max_sets=max_sets)
-    if sets <= 0:
+    sets = _best_net_size(market, book, max_sets=max_sets, settings=settings)
+    if sets is None or sets <= 0:
         return None
 
     yes_quote = executable_quote(book, Side.YES, sets)
     no_quote = executable_quote(book, Side.NO, sets)
     if yes_quote is None or no_quote is None:
         return None
+    gross_cost = yes_quote.notional + no_quote.notional
 
     yes_fee = taker_fee(
         market.platform, sets, yes_quote.average_price,
@@ -69,8 +77,6 @@ def scan_complete_set(
     # Slippage: one tick of latency padding per leg.
     slippage = market.tick_size * Decimal(settings.slippage_ticks) * Decimal("2") * sets
     # Both legs are on the same venue, so a single transfer covers the position.
-    from ..pricing.execution import capital_cost_per_contract, transfer_cost_per_contract
-
     transfer = transfer_cost_per_contract(market.platform, sets) * sets
     # The capital for the pair is locked until the market's own resolution, the
     # same cost the cross-platform scanner charges against its later leg.
@@ -129,6 +135,7 @@ def scan_complete_set(
                 size_available=yes_quote.filled_size,
                 fee_per_contract=quantize_usd(safe_div(yes_fee, sets)),
                 token_id=market.yes_token_id,
+                outcome_label=outcome_label(market, Side.YES),
             ),
             ArbLeg(
                 platform=market.platform,
@@ -140,6 +147,7 @@ def scan_complete_set(
                 size_available=no_quote.filled_size,
                 fee_per_contract=quantize_usd(safe_div(no_fee, sets)),
                 token_id=market.no_token_id,
+                outcome_label=outcome_label(market, Side.NO),
             ),
         ],
         gross_edge_per_set=quantize_usd(ONE - per_set_gross),
@@ -168,22 +176,100 @@ def scan_complete_set(
     )
 
 
-def _walk_matched(book: OrderBook, *, max_sets: Decimal) -> tuple[Decimal, Decimal]:
+def _net_profit_at(
+    market: NormalizedMarket, book: OrderBook, sets: Decimal, settings
+) -> Decimal | None:  # noqa: ANN001
+    """Net profit for buying exactly ``sets`` complete sets, or None if unfillable.
+
+    Kept separate from :func:`scan_complete_set` so the sizing search and the
+    reported result are computed by the same arithmetic and cannot drift apart.
+    """
+    yes_quote = executable_quote(book, Side.YES, sets)
+    no_quote = executable_quote(book, Side.NO, sets)
+    if yes_quote is None or no_quote is None:
+        return None
+    if yes_quote.filled_size < sets or no_quote.filled_size < sets:
+        return None
+
+    gross_cost = yes_quote.notional + no_quote.notional
+    fees = taker_fee(
+        market.platform, sets, yes_quote.average_price,
+        rate=market.fee_rate, fee_type=market.fee_type,
+    ) + taker_fee(
+        market.platform, sets, no_quote.average_price,
+        rate=market.fee_rate, fee_type=market.fee_type,
+    )
+    slippage = market.tick_size * Decimal(settings.slippage_ticks) * Decimal("2") * sets
+    transfer = transfer_cost_per_contract(market.platform, sets) * sets
+    capital = (
+        capital_cost_per_contract(
+            yes_quote.average_price + no_quote.average_price,
+            market.expected_resolution_time,
+        )
+        * sets
+    )
+    return sets * ONE - (gross_cost + fees + slippage + transfer + capital)
+
+
+def _best_net_size(
+    market: NormalizedMarket, book: OrderBook, *, max_sets: Decimal, settings
+) -> Decimal | None:  # noqa: ANN001
+    """The size that maximises **net** profit, not the largest gross-profitable one.
+
+    Sizing on gross economics and only then subtracting costs discards real
+    arbitrage. With a ladder of $0.30 x 100 followed by $0.49 x 9,900, every pair up
+    to 10,000 sets is gross-profitable, so the gross walk returns 10,000 - at which
+    size the expensive tail swamps the edge and the whole opportunity is dropped. The
+    profitable 100-set prefix was there the entire time.
+
+    Net profit is piecewise-linear in size between ladder boundaries, so its maximum
+    lies at one of them and evaluating the boundaries is exact, not a heuristic.
+    Costs with a fixed component (Kalshi ceils its fee to the cent on the whole
+    order) are not linear, which is a further reason not to extrapolate from one
+    size.
+    """
+    best_size: Decimal | None = None
+    best_profit = ZERO
+    for candidate in _candidate_sizes(book, max_sets=max_sets):
+        profit = _net_profit_at(market, book, candidate, settings)
+        if profit is None or profit <= best_profit:
+            continue
+        best_profit = profit
+        best_size = candidate
+    return best_size
+
+
+def _candidate_sizes(book: OrderBook, *, max_sets: Decimal) -> list[Decimal]:
+    """Cumulative sizes at each matched-ladder boundary, cheapest pairs first.
+
+    The walk still stops where a matched pair reaches $1, because buying past that
+    point cannot help under any cost model.
+    """
+    sizes, _ = _walk_matched(book, max_sets=max_sets, boundaries_out=True)
+    return sizes  # type: ignore[return-value]
+
+
+def _walk_matched(
+    book: OrderBook, *, max_sets: Decimal, boundaries_out: bool = False
+) -> tuple[Decimal, Decimal] | tuple[list[Decimal], Decimal]:
     """Walk YES and NO ask ladders together while the pair stays under $1.
 
     Returns ``(sets, gross_cost)``. Stops as soon as the next matched pair would cost
-    $1 or more - buying past that point destroys the guarantee.
+    $1 or more - buying past that point destroys the guarantee. With
+    ``boundaries_out`` it returns the cumulative size at every step instead, which is
+    the candidate set the net-profit search evaluates.
     """
     yes_levels = list(book.yes_asks)
     no_levels = list(book.no_asks)
     if not yes_levels or not no_levels:
-        return ZERO, ZERO
+        return ([], ZERO) if boundaries_out else (ZERO, ZERO)
 
     i = j = 0
     yes_left = yes_levels[0].size
     no_left = no_levels[0].size
     sets = ZERO
     cost = ZERO
+    boundaries: list[Decimal] = []
 
     while i < len(yes_levels) and j < len(no_levels) and sets < max_sets:
         pair_price = yes_levels[i].price + no_levels[j].price
@@ -194,6 +280,7 @@ def _walk_matched(book: OrderBook, *, max_sets: Decimal) -> tuple[Decimal, Decim
             break
         sets += take
         cost += take * pair_price
+        boundaries.append(sets)
         yes_left -= take
         no_left -= take
         if yes_left <= 0:
@@ -205,4 +292,6 @@ def _walk_matched(book: OrderBook, *, max_sets: Decimal) -> tuple[Decimal, Decim
             if j < len(no_levels):
                 no_left = no_levels[j].size
 
+    if boundaries_out:
+        return boundaries, cost
     return sets, cost

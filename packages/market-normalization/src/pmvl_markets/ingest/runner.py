@@ -8,10 +8,11 @@ opportunity, and spending the rate-limit budget on it starves the ones that can.
 from __future__ import annotations
 
 import asyncio
+from collections import defaultdict
 from dataclasses import dataclass, field
 from datetime import datetime
 from decimal import Decimal
-from typing import Any, Sequence
+from typing import Any, Collection, Sequence
 
 from pmvl_shared.config import get_settings
 from pmvl_shared.enums import Category, MarketStatus, Platform
@@ -19,6 +20,10 @@ from pmvl_shared.logging_setup import get_logger
 from pmvl_shared.schemas import NormalizedMarket, OrderBook
 from pmvl_shared.timeutil import horizons_for, utcnow
 
+from ..alpha.issuance import within_window_horizon
+from sqlalchemy import func, select
+
+from ..db_models import Market
 from ..providers.kalshi import KalshiProvider
 from ..providers.polymarket import PolymarketProvider
 from .store import (
@@ -42,6 +47,10 @@ class IngestReport:
     by_platform: dict[str, int] = field(default_factory=dict)
     errors: list[str] = field(default_factory=list)
     provider_stats: dict[str, Any] = field(default_factory=dict)
+    #: What the research archive did, when one was supplied. Empty on the
+    #: product-only path, so an absent archive reads as absent rather than as a
+    #: pass that wrote nothing.
+    archive: dict[str, Any] = field(default_factory=dict)
 
     def as_dict(self) -> dict[str, Any]:
         return {
@@ -53,6 +62,7 @@ class IngestReport:
             "by_platform": self.by_platform,
             "errors": self.errors,
             "provider_stats": self.provider_stats,
+            "archive": self.archive,
         }
 
 
@@ -144,10 +154,21 @@ def select_for_orderbooks(
     limit: int,
     *,
     now: datetime | None = None,
+    matched_ids: Collection[str] | None = None,
 ) -> list[NormalizedMarket]:
     """Pick the markets worth spending an orderbook request on.
 
-    The budget is split into **two reserves**, filled in order.
+    The budget is split into **three reserves**, filled in order.
+
+    *Match reserve* comes first and holds the markets named in ``matched_ids`` -
+    the legs of cross-venue pairs already verified as settling on the same terms.
+    It is first because it is the only reserve whose product needs a book on two
+    venues simultaneously: the cross-platform scanner prices a Kalshi leg against a
+    Polymarket leg, and one leg alone buys nothing. The other two reserves rank each
+    venue independently by liquidity, so the chance of both halves of a pair winning
+    their own venue's draw is small, and a verified match would routinely arrive with
+    one book and one empty side. Both venues' selections read the same match set, so
+    taking a leg here takes its partner there.
 
     *Scoring reserve* (the majority) keeps the original behaviour exactly: ordered
     by ``orderbook_priority``, so a market that can be scored outranks one that
@@ -252,6 +273,17 @@ def select_for_orderbooks(
             else:
                 take(market)
 
+    # Matched legs first. Deliberately exempt from the per-series cap: a pair is
+    # two specific contracts, not a series to be sampled, and dropping one half
+    # because its series quota was spent leaves the other half useless.
+    match_budget = int(limit * settings.orderbook_match_share)
+    if matched_ids and match_budget > 0:
+        wanted = set(matched_ids)
+        legs = [m for m in tradeable if m.platform_market_id in wanted]
+        legs.sort(key=coverage_priority)
+        for market in legs[:match_budget]:
+            take(market)
+
     # The coverage reserve is expressed as the share of the budget it may not be
     # squeezed below, so the scoring pass is capped at the remainder.
     coverage_reserve = int(limit * settings.orderbook_coverage_share)
@@ -285,6 +317,9 @@ async def fetch_platform(
     *,
     market_limit: int,
     orderbook_limit: int,
+    matched_ids: Collection[str] | None = None,
+    matched_markets: Sequence[NormalizedMarket] = (),
+    backfill_event_tickers: Sequence[str] = (),
 ) -> tuple[list[NormalizedMarket], dict[str, OrderBook], list[Any], list[str]]:
     """Fetch markets, events and prioritised orderbooks for one venue."""
     errors: list[str] = []
@@ -314,6 +349,20 @@ async def fetch_platform(
         except Exception as exc:  # noqa: BLE001
             errors.append(f"{provider.platform.value} nested events: {exc}")
 
+        # Events referenced by markets already ingested but never fetched. The
+        # multi-outcome scanner needs the venue's own outcome count before it will
+        # price a basket, so a missing event row is not a cosmetic gap: it silently
+        # removes those events from that scanner entirely.
+        if backfill_event_tickers:
+            try:
+                filled = await provider.get_events_by_ticker(backfill_event_tickers)
+                seen_events = {e.platform_event_id for e in events}
+                events.extend(
+                    e for e in filled if e.platform_event_id not in seen_events
+                )
+            except Exception as exc:  # noqa: BLE001
+                errors.append(f"{provider.platform.value} event backfill: {exc}")
+
         # Flat time-ordered listing picks up near-dated markets whose events fell
         # outside the event page budget.
         try:
@@ -339,7 +388,18 @@ async def fetch_platform(
         except Exception as exc:  # noqa: BLE001
             errors.append(f"{provider.platform.value} events: {exc}")
 
-    targets = select_for_orderbooks(markets, orderbook_limit)
+    # A matched leg is only selectable if it appears in this cycle's market page,
+    # and the venues list far more markets than one page returns - so a pair that was
+    # verified last cycle could keep missing its book purely because its market did
+    # not come back in the listing. The already-known rows are unioned in from the
+    # database so the reserve can always reach both halves of a pair.
+    known = {m.platform_market_id for m in markets}
+    pool = list(markets) + [
+        m for m in matched_markets if m.platform_market_id not in known
+    ]
+    targets = select_for_orderbooks(
+        pool, orderbook_limit, matched_ids=matched_ids
+    )
     if targets:
         try:
             raw_books = await provider.get_orderbooks(targets)
@@ -352,6 +412,104 @@ async def fetch_platform(
             log.error("orderbook fetch failed for %s: %s", provider.platform.value, exc)
 
     return markets, books, events, errors
+
+
+def matched_market_ids(session) -> set[str]:  # noqa: ANN001 - sqlalchemy Session
+    """Platform market ids that are a leg of a still-valid cross-venue match.
+
+    Withdrawn matches are excluded by the ``rule_compatibility`` filter, so a pair
+    that stopped matching stops consuming book budget on the next cycle rather than
+    holding a reserved slot indefinitely.
+
+    Ids are returned unqualified by venue because each venue's selection only ever
+    sees its own markets, and the two venues' ticker spaces do not collide in
+    practice. A stray collision would at worst fetch one extra book.
+    """
+    from sqlalchemy import or_, select as sa_select
+
+    from ..db_models import Market, MarketMatch
+
+    rows = session.execute(
+        sa_select(Market.platform_market_id)
+        .join(
+            MarketMatch,
+            or_(
+                MarketMatch.market_a_id == Market.id,
+                MarketMatch.market_b_id == Market.id,
+            ),
+        )
+        .where(
+            MarketMatch.rule_compatibility != "incompatible",
+            Market.status == MarketStatus.OPEN.value,
+        )
+        .distinct()
+    ).scalars().all()
+    return set(rows)
+
+
+def unlinked_event_tickers(
+    session,  # noqa: ANN001 - sqlalchemy Session
+    *,
+    per_platform: int = 150,
+) -> dict[Platform, list[str]]:
+    """Event tickers referenced by in-scope markets that have no event row yet.
+
+    Ranked by traded volume and capped, because this is one request per ticker and
+    the backlog is tens of thousands. The cap means a cycle closes the most valuable
+    gaps rather than all of them; successive cycles work down the list as the
+    already-filled ones drop out of this query.
+    """
+    out: dict[Platform, list[str]] = {}
+    rows = session.execute(
+        select(
+            Market.platform,
+            Market.platform_event_id,
+            func.max(Market.volume_24h).label("volume"),
+        )
+        .where(
+            Market.status == MarketStatus.OPEN.value,
+            Market.event_id.is_(None),
+            Market.platform_event_id.is_not(None),
+            Market.platform_event_id != "",
+        )
+        .group_by(Market.platform, Market.platform_event_id)
+        .order_by(func.max(Market.volume_24h).desc())
+    ).all()
+
+    for platform_value, ticker, _volume in rows:
+        try:
+            platform = Platform(platform_value)
+        except ValueError:
+            continue
+        bucket = out.setdefault(platform, [])
+        if len(bucket) < per_platform:
+            bucket.append(ticker)
+    return out
+
+
+def hydrate_matched_markets(
+    session, matched_ids: Collection[str]  # noqa: ANN001 - sqlalchemy Session
+) -> dict[Platform, list[NormalizedMarket]]:
+    """Load the stored rows for matched legs, grouped by venue.
+
+    Read back from the database rather than relying on this cycle's listing. A
+    verified pair is worth a book on both sides even when one of its markets happens
+    not to be on the page the venue returned, and that is the common case: the venues
+    list several times more open markets than one fetch retrieves.
+    """
+    if not matched_ids:
+        return {}
+    out: dict[Platform, list[NormalizedMarket]] = defaultdict(list)
+    rows = session.scalars(
+        select(Market).where(
+            Market.platform_market_id.in_(list(matched_ids)),
+            Market.status == MarketStatus.OPEN.value,
+        )
+    ).all()
+    for row in rows:
+        market = _market_from_row(row)
+        out[market.platform].append(market)
+    return dict(out)
 
 
 async def run_ingest(
@@ -375,6 +533,12 @@ async def run_ingest(
     if Platform.POLYMARKET in wanted:
         providers.append(PolymarketProvider())
 
+    # Legs of pairs already verified as settling identically. Passed to both venues
+    # so a match that is worth pricing gets a book on *both* sides in the same cycle.
+    matched_ids = matched_market_ids(session)
+    matched_by_platform = hydrate_matched_markets(session, matched_ids)
+    unlinked = unlinked_event_tickers(session)
+
     try:
         # Both venues are fetched concurrently; they share no rate-limit budget.
         results = await asyncio.gather(
@@ -383,6 +547,9 @@ async def run_ingest(
                     p,
                     market_limit=market_limit // max(1, len(providers)),
                     orderbook_limit=orderbook_limit // max(1, len(providers)),
+                    matched_ids=matched_ids,
+                    matched_markets=matched_by_platform.get(p.platform, ()),
+                    backfill_event_tickers=unlinked.get(p.platform, ()),
                 )
                 for p in providers
             ),
@@ -466,15 +633,33 @@ async def refresh_orderbooks(
     session,  # noqa: ANN001
     *,
     limit: int | None = None,
+    archive=None,  # noqa: ANN001
+    window_anchor: str = "",
+    research_only: bool = False,
+    max_hours_to_resolution: float | None = None,
 ) -> IngestReport:
     """Re-fetch books for already-ingested markets without re-listing markets.
 
     Used by the high-frequency scheduler job: market metadata changes slowly, but
     a quote from five minutes ago is not an executable price.
+
+    ``archive`` is optional so the product path is unchanged when it is absent.
+    When supplied, research-universe books are appended to it with their full
+    ladders - see :mod:`pmvl_markets.alpha.archiving` for why that has to happen
+    here rather than later.
+
+    ``research_only`` narrows the fetch to the research universe. It exists for
+    the 30-second issuance window and is what makes that cadence achievable: a
+    full-board refresh is ~125 Kalshi requests, which at the client's rate limit
+    takes longer than the 30-second period it is supposed to fit inside. The
+    window exists to watch weather books around a forecast publication, so
+    fetching the rest of the board during it costs the cadence and buys nothing.
     """
     from sqlalchemy import select
 
+    from ..alpha.archiving import archive_books
     from ..db_models import Market
+    from ..normalize.weather_stations import is_research_market
 
     settings = get_settings()
     limit = limit or settings.ingest_orderbook_limit
@@ -491,7 +676,18 @@ async def refresh_orderbooks(
     by_platform: dict[Platform, list[NormalizedMarket]] = {}
     for row in rows:
         market = _market_from_row(row)
-        if not horizons_for(market.expected_resolution_time):
+        if research_only:
+            if not is_research_market(market.series_ticker, market.category.value):
+                continue
+            if max_hours_to_resolution is not None and not within_window_horizon(
+                market.expected_resolution_time,
+                horizon_hours=max_hours_to_resolution,
+            ):
+                continue
+        elif not horizons_for(market.expected_resolution_time):
+            # The ranking horizon filter is a product concern. A research market
+            # settling outside it is still one this study wants captured, so the
+            # research path deliberately does not apply it.
             continue
         by_platform.setdefault(market.platform, []).append(market)
 
@@ -505,18 +701,94 @@ async def refresh_orderbooks(
         id_map = load_market_id_map(session)
         share = max(1, limit // max(1, len(providers)))
         for platform, provider in providers.items():
-            targets = select_for_orderbooks(by_platform[platform], share)
+            targets = (
+                by_platform[platform]
+                if research_only
+                else select_for_orderbooks(by_platform[platform], share)
+            )
             if not targets:
                 continue
             try:
                 raw = await provider.get_orderbooks(targets)
+                # Stamped the instant the venue's response is in hand, before
+                # anything is written. This is `poll_completed_at`, and it is the
+                # only thing `available_at` may be derived from.
+                #
+                # Letting it default inside `archive_books` instead made it the
+                # archive-WRITE time, which silently folds the duration of
+                # `store_orderbooks` into every availability timestamp. The
+                # direction is safe - later, never earlier, so it cannot create
+                # look-ahead - but the magnitude is a variable the collector
+                # controls, and it is not reproducible from the poll. Cadence is
+                # measured off these timestamps, so the write duration was being
+                # reported as part of the sampling interval.
+                poll_completed_at = utcnow()
             except Exception as exc:  # noqa: BLE001
                 report.errors.append(f"{platform.value} orderbooks: {exc}")
                 continue
             books = {f"{platform.value}:{t}": b for t, b in raw.items()}
-            report.orderbooks_written += store_orderbooks(
-                session, books, id_map, max_levels=settings.orderbook_depth
-            )
+            if not research_only:
+                # A research-only pass archives; it does not write the product
+                # store.
+                #
+                # It used to do both, and at window cadence that is 30s x 84
+                # markets = ~2,900 captures a day, each ~24 levels: about 5.8M
+                # product rows a day, none of which the product can use. The
+                # snapshot builder keeps only the LATEST book per market, so
+                # every earlier row is written, retained at a 30-day policy, and
+                # then discarded at build time.
+                #
+                # Measured consequence: the operational database reached 664 MiB
+                # with 6.0M orderbook_levels rows, writes began blocking past
+                # the 30s busy timeout, and collection stalled for nearly two
+                # hours behind `database is locked`. The archive is unaffected -
+                # it holds the full ladder for every capture, permanently, which
+                # is the copy research actually reads.
+                #
+                # The product store keeps getting its current book from the
+                # regular orderbook refresh on its own cadence.
+                report.orderbooks_written += store_orderbooks(
+                    session, books, id_map, max_levels=settings.orderbook_depth
+                )
+            # Append research-universe books to the archive at collection time.
+            #
+            # This is the only moment the FULL ladder exists and is not yet
+            # subject to the product prune. `store_orderbooks` truncates to
+            # `orderbook_depth`, and the snapshot builder then deletes every book
+            # except the latest per market - permanently, because the pipeline
+            # re-seeds from the published artefact. A book time series cannot
+            # exist in the product database at all.
+            if archive is not None:
+                by_key = {
+                    f"{platform.value}:{m.platform_market_id}": m
+                    for m in by_platform[platform]
+                }
+                archived = archive_books(
+                    archive,
+                    books,
+                    by_key,
+                    available_at=poll_completed_at,
+                    window_anchor=window_anchor,
+                )
+                # Accumulated, not assigned. The loop runs once per platform and
+                # a bare assignment left the report showing whichever platform
+                # happened to be last - which for a weather-only archive is the
+                # one that wrote nothing, so a working archiver reported zero.
+                previous = report.archive
+                merged = archived.as_dict()
+                if previous:
+                    for key in ("books_archived", "levels_archived",
+                                "books_duplicate", "markets_seen",
+                                "skipped_not_research"):
+                        merged[key] = previous.get(key, 0) + merged.get(key, 0)
+                    merged["errors"] = (
+                        list(previous.get("errors", [])) + merged["errors"]
+                    )[:10]
+                    windows = dict(previous.get("by_window", {}))
+                    for anchor, count in merged["by_window"].items():
+                        windows[anchor] = windows.get(anchor, 0) + count
+                    merged["by_window"] = windows
+                report.archive = merged
             report.provider_stats[platform.value] = provider.stats
     finally:
         await asyncio.gather(

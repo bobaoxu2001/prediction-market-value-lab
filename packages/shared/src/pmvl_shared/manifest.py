@@ -93,6 +93,14 @@ class SnapshotManifest:
     workflow_run_id: str = ""
     workflow_run_attempt: str = ""
     built_at: datetime | None = None
+    #: What the retention policy did to this artefact: the budgets in force, the
+    #: bytes reclaimed per step, and whether the market ladder engaged.
+    #:
+    #: Recorded because "why is this market not in the snapshot?" is a question
+    #: with two very different answers - it was never renderable, or it lost a
+    #: size budget - and without this block the only way to tell them apart is
+    #: to re-run the build against a database that no longer exists.
+    retention: dict[str, Any] = field(default_factory=dict)
 
     @property
     def deployable(self) -> bool:
@@ -146,6 +154,7 @@ class SnapshotManifest:
             "workflow_run_id": self.workflow_run_id,
             "workflow_run_attempt": self.workflow_run_attempt,
             "built_at": iso(self.built_at or self.generated_at),
+            "retention": self.retention,
         }
 
     def write(self, path: Path) -> None:

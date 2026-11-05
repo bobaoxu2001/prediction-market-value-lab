@@ -131,6 +131,34 @@ class Market(Base, TimestampMixin):
     source_timezone: Mapped[str] = mapped_column(String(64), nullable=False, default="UTC")
 
     settlement_source: Mapped[str] = mapped_column(Text, nullable=False, default="")
+    #: The station a weather contract settles on, e.g. "KNYC" for Central Park.
+    #:
+    #: Its own column, never inferred from a forecast grid cell. The gridpoint
+    #: the model reads is a ~2.5km area; the contract settles on one instrument.
+    #: Conflating them produced an 8F error here once already, and a persistent
+    #: per-station offset is indistinguishable from a tradeable divergence.
+    settlement_station_id: Mapped[str] = mapped_column(
+        String(32), nullable=False, default="", index=True
+    )
+    #: The venue's named settlement product code, e.g. "CLINYC".
+    #:
+    #: NWS Climatological Report identifiers. More precise than the prose, and
+    #: the thing that survives a re-wording: Kalshi moved from "Central Park,
+    #: New York" to "New York City (CLINYC)" in August 2026 and the code is what
+    #: makes the two recognisably the same product.
+    settlement_product_code: Mapped[str] = mapped_column(
+        String(32), nullable=False, default="", index=True
+    )
+    #: Who the venue says reports the settlement value, normalised.
+    #:
+    #: Moved from the National Weather Service directly to The Weather Company as
+    #: relay. Recorded per market so a change is observable rather than
+    #: retrospectively inferred - the underlying CLI product is the same, but a
+    #: vendor relay has its own timing and revision behaviour and that is a
+    #: research question this column makes askable.
+    settlement_source_vendor: Mapped[str] = mapped_column(
+        String(64), nullable=False, default="", index=True
+    )
     settlement_rules_raw: Mapped[str] = mapped_column(Text, nullable=False, default="")
     settlement_rules_normalized: Mapped[str] = mapped_column(Text, nullable=False, default="")
     #: Deterministic digest of the normalized rule terms; equal hashes are a
@@ -312,6 +340,17 @@ class MarketMatch(Base, TimestampMixin):
     mismatch_reasons: Mapped[list | None] = mapped_column(JSONColumn, nullable=True)
     verified_by: Mapped[str] = mapped_column(String(32), nullable=False, default="deterministic")
     llm_assisted: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
+    #: The public equivalence verdict, which is what decides whether this pair may
+    #: back a guaranteed-arbitrage claim. ``rule_compatibility`` above is the
+    #: monotone internal level; it cannot express that payout terms agree while
+    #: void handling was never confirmed, and that distinction is the difference
+    #: between a hedge and an arbitrage.
+    equivalence_verdict: Mapped[str] = mapped_column(
+        String(32), nullable=False, default="REJECTED"
+    )
+    #: Per-component attribution behind the verdict, so a reader can see *which*
+    #: term failed rather than only that something did.
+    equivalence_components: Mapped[list | None] = mapped_column(JSONColumn, nullable=True)
 
 
 # ------------------------------------------------------------------ market data
@@ -763,8 +802,480 @@ class JobRun(Base):
     #: the active-run uniqueness above is enforceable at the database level.
     idempotency_key: Mapped[str | None] = mapped_column(String(32), nullable=True)
     started_at: Mapped[datetime] = _utc_col(nullable=False)
+    #: Last time the run proved it was alive. Distinct from ``started_at``
+    #: because age is not liveness: ``research_books`` legitimately runs for a
+    #: whole issuance window, so any age-based staleness bound wide enough not to
+    #: evict a healthy run is also wide enough to let a dead one block the job
+    #: for the rest of that window. Only long-running loop jobs set this; NULL
+    #: means "this job is short, judge it by age".
+    heartbeat_at: Mapped[datetime | None] = _utc_col(nullable=True)
     finished_at: Mapped[datetime | None] = _utc_col(nullable=True)
     duration_seconds: Mapped[float | None] = mapped_column(Float, nullable=True)
     records_written: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
     error: Mapped[str] = mapped_column(Text, nullable=False, default="")
     details: Mapped[dict | None] = mapped_column(JSONColumn, nullable=True)
+
+
+# ------------------------------------------------------- point-in-time research
+class SourceObservationRow(Base):
+    """One externally-derived observation, with every timestamp kept apart.
+
+    The raw layer of the point-in-time feature store. Everything the alpha
+    research path reads about the outside world comes from here, and the reason
+    it is a separate table rather than a column on ``markets`` is that a market
+    row holds *the current value* while research needs *every value and when each
+    became knowable*.
+
+    Four timestamps, none of them redundant:
+
+    * ``event_time`` - when the measured thing happened;
+    * ``observed_at`` - when the source published it;
+    * ``available_at`` - when THIS system could first have used it. The only
+      column a backtest may compare against a decision time;
+    * ``ingested_at`` - when the row was written. Debugging only: a backfill
+      writes an old observation with a new ``ingested_at``, and treating that as
+      availability would make history look knowable.
+
+    Collapsing these into one "timestamp" is how look-ahead is written by
+    accident, and the accident has no symptom - the backtest simply looks better.
+
+    Append-only. A revised figure is a NEW row with a later ``available_at``,
+    which is what makes "what did we know on the 20th?" answerable without any
+    special handling for revisions.
+    """
+
+    __tablename__ = "source_observations"
+    __table_args__ = (
+        # One row per (market, source, kind, availability). A re-poll that sees
+        # an unchanged value must not accumulate duplicates, and two genuinely
+        # different observations cannot collide because their availability
+        # differs.
+        UniqueConstraint(
+            "market_id",
+            "source_id",
+            "kind",
+            "available_at",
+            name="uq_source_obs_identity",
+        ),
+        Index("ix_srcobs_market_kind_avail", "market_id", "kind", "available_at"),
+        Index("ix_srcobs_kind_avail", "kind", "available_at"),
+    )
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    market_id: Mapped[int] = mapped_column(
+        ForeignKey("markets.id", ondelete="CASCADE"), nullable=False, index=True
+    )
+    #: Stable identity of the source, not a display name. The independence
+    #: machinery keys on this: two feeds restating one NWS gridpoint are one
+    #: source, and counting them as two inflates every agreement measure.
+    source_id: Mapped[str] = mapped_column(String(64), nullable=False)
+    kind: Mapped[str] = mapped_column(String(48), nullable=False)
+
+    #: Numeric value, when the observation is one. Money keeps it Decimal-exact.
+    value: Mapped[Decimal | None] = mapped_column(Money, nullable=True)
+    #: Non-numeric payloads (a category, a status string) and structured extras.
+    value_json: Mapped[dict | None] = mapped_column(JSONColumn, nullable=True)
+
+    event_time: Mapped[datetime | None] = _utc_col(nullable=True)
+    observed_at: Mapped[datetime | None] = _utc_col(nullable=True)
+    available_at: Mapped[datetime] = _utc_col(nullable=False)
+    ingested_at: Mapped[datetime] = _utc_col(nullable=False)
+
+    source_endpoint: Mapped[str] = mapped_column(Text, nullable=False, default="")
+    source_payload_hash: Mapped[str] = mapped_column(String(64), nullable=False, default="")
+    parser_version: Mapped[str] = mapped_column(String(32), nullable=False, default="")
+    provenance: Mapped[str] = mapped_column(
+        String(16), nullable=False, default=DataProvenance.LIVE, index=True
+    )
+
+    # --- source-to-market timing -------------------------------------------
+    #
+    # These exist to measure the interval the whole source-lag hypothesis is
+    # about: between the source publishing and the market moving. They are
+    # NEVER used for admissibility - `available_at` alone decides what a past
+    # decision could see, because it is the only one that describes when THIS
+    # system could have acted.
+    #
+    # Substituting `published_at` for `available_at` would let a backtest trade
+    # on information at the instant NWS issued it, hours before any poll ran.
+
+    #: Which product within the source. "gridpoint_forecast", "observations",
+    #: "cli_daily" - a source is not one feed and the products have different
+    #: revision behaviour.
+    source_product: Mapped[str] = mapped_column(String(64), nullable=False, default="")
+
+    #: When the SOURCE published it, from the upstream payload. NULL when the
+    #: product does not carry one - never defaulted to the poll time, which
+    #: would report zero lag for every observation whose lag is unknown.
+    published_at: Mapped[datetime | None] = _utc_col(nullable=True)
+    #: When the source says it generated the product, where distinct from
+    #: publication.
+    source_generated_at: Mapped[datetime | None] = _utc_col(nullable=True)
+
+    #: The poll that produced this row. `poll_completed_at` is what
+    #: `available_at` is derived from; `poll_started_at` bounds the interval in
+    #: which the value could have changed under us.
+    poll_started_at: Mapped[datetime | None] = _utc_col(nullable=True)
+    poll_completed_at: Mapped[datetime | None] = _utc_col(nullable=True)
+
+    #: The interval a forecast is FOR, distinct from when it was made. A daily
+    #: maximum is valid over a local day, and that window is not recoverable
+    #: from `event_time` alone.
+    forecast_valid_start: Mapped[datetime | None] = _utc_col(nullable=True)
+    forecast_valid_end: Mapped[datetime | None] = _utc_col(nullable=True)
+
+    #: Where the SOURCE measured, e.g. an NWS grid cell "OKX/33,37".
+    source_location: Mapped[str] = mapped_column(String(128), nullable=False, default="")
+    #: Where the CONTRACT settles, e.g. "KNYC". Deliberately a separate column:
+    #: a gridpoint forecast cell is not the settlement station, and treating
+    #: them as equivalent already produced an 8F error in this repository.
+    settlement_station_id: Mapped[str] = mapped_column(
+        String(32), nullable=False, default=""
+    )
+
+    #: Revision chain, so a corrected figure is a new row that knows what it
+    #: replaced rather than an update that erases it.
+    revision_id: Mapped[str] = mapped_column(String(64), nullable=False, default="")
+    supersedes_revision_id: Mapped[str | None] = mapped_column(String(64), nullable=True)
+
+    #: Upstream model cycle (00/06/12/18Z) where reliably identifiable. Empty
+    #: when it is not - this is a control for participants reading raw model
+    #: output before the derived product publishes, and a guessed value would
+    #: destroy the control.
+    model_run_cycle: Mapped[str] = mapped_column(String(16), nullable=False, default="")
+
+    #: Content-addressed reference to the immutable raw payload.
+    raw_payload_ref: Mapped[str] = mapped_column(Text, nullable=False, default="")
+    collector_version: Mapped[str] = mapped_column(String(32), nullable=False, default="")
+
+    #: Which timestamps the upstream product does not provide, and why.
+    #:
+    #: Recorded explicitly so a NULL is a documented fact about the source
+    #: rather than an unexplained gap that a later reader might "repair".
+    timestamp_absence: Mapped[dict | None] = mapped_column(JSONColumn, nullable=True)
+    #: Established by auditing the row against its own immutable raw payload -
+    #: not inferred from commit time, which cannot distinguish them: the same
+    #: job wrote both correct and defective rows, and which is which depends on
+    #: the market's weather day.
+    validity_status: Mapped[str] = mapped_column(
+        String(40), nullable=False, default="UNKNOWN"
+    )
+    #: Fails closed. A row whose eligibility has never been established is
+    #: excluded, because "not checked" is not "fine".
+    research_eligible: Mapped[bool] = mapped_column(
+        Boolean, nullable=False, default=False
+    )
+    defect_class: Mapped[str] = mapped_column(String(64), nullable=False, default="")
+    #: Set on a correction derived from the archived payload. Such a row is NOT
+    #: feature backfill: every value in it existed in a document retrieved at
+    #: the original availability instant.
+    rederived_from_raw: Mapped[bool] = mapped_column(
+        Boolean, nullable=False, default=False
+    )
+    source_raw_sha256: Mapped[str] = mapped_column(
+        String(80), nullable=False, default=""
+    )
+    original_observation_id: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    derivation_logic_version: Mapped[str] = mapped_column(
+        String(40), nullable=False, default=""
+    )
+
+
+class DailyClimateObservationRow(Base):
+    """The daily maximum these contracts actually settle on.
+
+    Distinct from ``station_observations``, which holds hourly readings. The
+    hourly maximum and the CLI daily maximum are usually equal and are not the
+    same quantity: CLI applies its own quality control, uses the local calendar
+    day, and can be corrected after publication. Deriving a settlement label
+    from hourly data because CLI is missing is the exact substitution this table
+    exists to make unnecessary.
+
+    Two fields carry most of the weight.
+
+    ``is_final`` - a CLI is issued twice daily and only the early-morning one
+    covers a completed day. The afternoon issuance reports the maximum *so far*
+    and says so. A preliminary maximum used as a label biases every outcome
+    downward, worst on hot afternoons, which is exactly when a threshold
+    contract sits near its strike.
+
+    ``observation_date`` - read from the product's own summary line, never from
+    its issuance time. The bulletin issued at 06:14 UTC on the 26th summarises
+    the 25th, and reading issuance as observation date shifts every label by a
+    day: invisible in aggregate, fatal to a per-day join.
+
+    Append-only. A revised report is a new row with a later ``available_at``;
+    nothing is ever overwritten, so a label can be reconstructed as it stood at
+    any past instant.
+    """
+
+    __tablename__ = "daily_climate_observations"
+    __table_args__ = (
+        # One row per (station, day, report-version, availability). A re-poll of
+        # an unchanged bulletin must not create a second row, and a genuine
+        # revision must not replace the first.
+        UniqueConstraint(
+            "station_id", "observation_date", "raw_payload_hash", "available_at",
+            name="uq_daily_climate_identity",
+        ),
+        Index("ix_dailyclimate_station_date", "station_id", "observation_date"),
+        Index("ix_dailyclimate_available", "available_at"),
+    )
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    station_id: Mapped[str] = mapped_column(String(16), nullable=False)
+    #: CLIPHL, CLINYC, ... The settlement product, recorded so a label can be
+    #: traced to the exact bulletin a contract's rules name.
+    product_code: Mapped[str] = mapped_column(String(16), nullable=False)
+    #: Local calendar day summarised, from the product's own summary line.
+    observation_date: Mapped[str] = mapped_column(String(10), nullable=False)
+    daily_max_f: Mapped[float | None] = mapped_column(Float, nullable=True)
+    daily_min_f: Mapped[float | None] = mapped_column(Float, nullable=True)
+    #: False for the afternoon partial-day issuance. Only final rows may label.
+    is_final: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
+    #: Verbatim "as of" text when preliminary, for the audit trail.
+    valid_as_of: Mapped[str] = mapped_column(String(64), nullable=False, default="")
+    #: When the office issued the bulletin.
+    published_at: Mapped[datetime | None] = _utc_col(nullable=True)
+    #: When THIS system finished the poll that returned it. The only timestamp
+    #: that may gate admissibility.
+    available_at: Mapped[datetime] = _utc_col(nullable=False)
+    ingested_at: Mapped[datetime | None] = _utc_col(nullable=True)
+    #: True when the row came from an archival sweep rather than live polling.
+    #: A backfilled bulletin is valid settlement truth and is NOT evidence that
+    #: the value was available to us at the historical instant it describes.
+    is_backfill: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
+    source_product_id: Mapped[str] = mapped_column(String(64), nullable=False, default="")
+    source_endpoint: Mapped[str] = mapped_column(String(255), nullable=False, default="")
+    raw_payload_hash: Mapped[str] = mapped_column(String(64), nullable=False, default="")
+    raw_payload_ref: Mapped[str] = mapped_column(String(255), nullable=False, default="")
+    collector_version: Mapped[str] = mapped_column(String(32), nullable=False, default="")
+    parser_version: Mapped[str] = mapped_column(String(32), nullable=False, default="")
+    provenance: Mapped[str] = mapped_column(String(16), nullable=False, default="live")
+
+
+class StationObservationRow(Base):
+    """Actual observed conditions at a contract's settlement station.
+
+    Required to separate the two things a source-lag study will otherwise
+    conflate:
+
+        forecast error   - the forecast was wrong
+        market lag       - the market was slow to price a correct forecast
+
+    Without observations there is no way to tell them apart, and the study's
+    headline result is whichever of the two happens to dominate.
+
+    It also captures the intraday path. For a daily-maximum contract the
+    realised maximum becomes a hard floor as the day progresses - usually
+    settled by mid-afternoon local - so a forecast-only model degrades through
+    the day in a way that correlates perfectly with time-to-expiry. That
+    pattern looks exactly like an alpha regime and is not one.
+
+    Append-only. A corrected observation is a new row with a later
+    `available_at`, never an update.
+    """
+
+    __tablename__ = "station_observations"
+    __table_args__ = (
+        UniqueConstraint(
+            "station_id", "observation_time", "available_at",
+            name="uq_station_obs_identity",
+        ),
+        Index("ix_stationobs_station_time", "station_id", "observation_time"),
+        Index("ix_stationobs_available", "available_at"),
+    )
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    #: The settlement station, e.g. "KNYC". Not a grid cell, not a city name.
+    station_id: Mapped[str] = mapped_column(String(32), nullable=False, index=True)
+    #: Which product reported it: "observations", "cli_daily".
+    source_product: Mapped[str] = mapped_column(String(64), nullable=False, default="")
+
+    #: When the measurement was taken.
+    observation_time: Mapped[datetime] = _utc_col(nullable=False)
+    published_at: Mapped[datetime | None] = _utc_col(nullable=True)
+    available_at: Mapped[datetime] = _utc_col(nullable=False)
+    ingested_at: Mapped[datetime] = _utc_col(nullable=False)
+
+    temperature_f: Mapped[Decimal | None] = mapped_column(Money, nullable=True)
+    #: Whatever else the product reported, kept so a future factor is not
+    #: limited to the one field today's parser cared about.
+    measurements: Mapped[dict | None] = mapped_column(JSONColumn, nullable=True)
+
+    #: True when this row is a venue-relevant daily summary rather than a
+    #: point observation - the CLI product is what Kalshi settles on.
+    is_daily_summary: Mapped[bool] = mapped_column(
+        Boolean, nullable=False, default=False
+    )
+    revision_id: Mapped[str] = mapped_column(String(64), nullable=False, default="")
+    supersedes_revision_id: Mapped[str | None] = mapped_column(String(64), nullable=True)
+
+    source_endpoint: Mapped[str] = mapped_column(Text, nullable=False, default="")
+    raw_payload_hash: Mapped[str] = mapped_column(String(64), nullable=False, default="")
+    raw_payload_ref: Mapped[str] = mapped_column(Text, nullable=False, default="")
+    collector_version: Mapped[str] = mapped_column(String(32), nullable=False, default="")
+    parser_version: Mapped[str] = mapped_column(String(32), nullable=False, default="")
+    #: Which timestamps this product does not provide, and why.
+    #:
+    #: Parity with ``source_observations``. The NWS observations product carries
+    #: no publication time at all - ``published_at`` is NULL on every row - and
+    #: without this column that NULL is an unexplained gap a later reader might
+    #: "repair" by substituting the observation time or the poll time. Both would
+    #: be fabrications, and the second would report zero source lag.
+    timestamp_absence: Mapped[dict | None] = mapped_column(JSONColumn, nullable=True)
+    provenance: Mapped[str] = mapped_column(
+        String(16), nullable=False, default=DataProvenance.LIVE, index=True
+    )
+
+
+class PollAttemptRow(Base):
+    """Every scheduled collection attempt, including the ones that failed.
+
+    A missing observation and a missing *collection* are different facts with
+    opposite implications. "The source did not update" is information about the
+    world; "our collector was down" is information about us, and a research
+    dataset that cannot distinguish them will attribute the second to the first.
+
+    It also makes missingness auditable. Collector downtime is not
+    missing-at-random - it correlates with deploys, load, and quite possibly
+    with the volatile periods a strategy most wants to observe - so the gaps
+    have to be visible before anybody reasons about coverage.
+    """
+
+    __tablename__ = "poll_attempts"
+    __table_args__ = (
+        Index("ix_pollattempt_source_started", "source_id", "started_at"),
+        Index("ix_pollattempt_target", "target", "started_at"),
+    )
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    source_id: Mapped[str] = mapped_column(String(64), nullable=False, index=True)
+    source_product: Mapped[str] = mapped_column(String(64), nullable=False, default="")
+    #: What was being polled: a station, a grid cell, a market ticker.
+    target: Mapped[str] = mapped_column(String(256), nullable=False, default="")
+
+    started_at: Mapped[datetime] = _utc_col(nullable=False)
+    completed_at: Mapped[datetime | None] = _utc_col(nullable=True)
+    duration_ms: Mapped[int | None] = mapped_column(Integer, nullable=True)
+
+    success: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
+    http_status: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    #: Classified, not free text, so failure modes can be counted.
+    error_type: Mapped[str] = mapped_column(String(48), nullable=False, default="")
+    error_detail: Mapped[str] = mapped_column(Text, nullable=False, default="")
+    retry_count: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    #: True when the response was served from the client's cache rather than
+    #: the network. A cached response has an `available_at` that describes an
+    #: earlier poll, and treating it as fresh would understate observed lag.
+    served_from_cache: Mapped[bool] = mapped_column(
+        Boolean, nullable=False, default=False
+    )
+
+    collector_version: Mapped[str] = mapped_column(String(32), nullable=False, default="")
+    endpoint: Mapped[str] = mapped_column(Text, nullable=False, default="")
+    provenance: Mapped[str] = mapped_column(
+        String(16), nullable=False, default=DataProvenance.LIVE, index=True
+    )
+
+
+class ShadowDecisionRow(Base):
+    """A decision published before its outcome was known. Never rewritten.
+
+    The only evidence this system can produce that is neither a backtest nor a
+    live trade. Its entire value rests on being unrewritable, so:
+
+    * ``content_hash`` is a digest over the decision's own identity fields, and
+      an audit recomputes it. A row whose content has drifted is *reported*, not
+      repaired - repairing it would delete the only trace that it moved.
+    * there is no result column. Outcomes are appended to
+      ``shadow_outcomes``, because a decision with a mutable result field is one
+      that can be edited after the fact with no way for a reader to tell.
+
+    The failure this prevents is drift, not fraud: a backfilling migration, a
+    rerun that "corrects" a stale profile, a fix that recomputes an old signal
+    under the current factor version. Each is individually reasonable and each
+    destroys what the record was for. ``recommendation_snapshots`` made the same
+    choice for the same reason.
+    """
+
+    __tablename__ = "shadow_decisions"
+    __table_args__ = (
+        UniqueConstraint("decision_id", name="uq_shadow_decision_id"),
+        Index("ix_shadow_strategy_time", "strategy", "decision_time"),
+        Index("ix_shadow_market_time", "market_key", "decision_time"),
+    )
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    #: Deterministic: same decision, same identifier. A duplicate publish is
+    #: detected rather than creating a second copy under a new name.
+    decision_id: Mapped[str] = mapped_column(String(64), nullable=False, index=True)
+    strategy: Mapped[str] = mapped_column(String(64), nullable=False)
+    strategy_version: Mapped[str] = mapped_column(String(32), nullable=False)
+    market_key: Mapped[str] = mapped_column(String(320), nullable=False)
+    decision_time: Mapped[datetime] = _utc_col(nullable=False)
+    #: "proposed" or "no_trade". Refusals are recorded too: a strategy that
+    #: declines 400 times and trades 3 is a different object from one that
+    #: trades 3 out of 3, and only the recorded refusals distinguish them.
+    status: Mapped[str] = mapped_column(String(16), nullable=False)
+    side: Mapped[str] = mapped_column(String(8), nullable=False)
+    liquidity: Mapped[str] = mapped_column(String(8), nullable=False)
+
+    model_probability: Mapped[Decimal] = mapped_column(Money, nullable=False)
+    model_probability_low: Mapped[Decimal] = mapped_column(Money, nullable=False)
+    model_probability_high: Mapped[Decimal] = mapped_column(Money, nullable=False)
+    conservative_probability: Mapped[Decimal] = mapped_column(Money, nullable=False)
+    executable_probability: Mapped[Decimal] = mapped_column(Money, nullable=False)
+
+    alpha_expected_move: Mapped[Decimal] = mapped_column(Money, nullable=False)
+    alpha_confidence: Mapped[Decimal] = mapped_column(Money, nullable=False)
+
+    proposed_price: Mapped[Decimal | None] = mapped_column(Money, nullable=True)
+    proposed_size: Mapped[Decimal | None] = mapped_column(Money, nullable=True)
+    expected_edge_per_contract: Mapped[Decimal] = mapped_column(Money, nullable=False)
+
+    #: The latest availability the decision was permitted to see. A later audit
+    #: checks that claim against the observation rows.
+    information_cutoff: Mapped[datetime] = _utc_col(nullable=False)
+
+    outcome_model_version: Mapped[str] = mapped_column(String(64), nullable=False, default="")
+    alpha_model_version: Mapped[str] = mapped_column(String(64), nullable=False, default="")
+    factor_versions: Mapped[dict | None] = mapped_column(JSONColumn, nullable=True)
+    #: The full feature vector as computed - values AND refusals. A vector that
+    #: dropped its gaps could not report why coverage was thin.
+    feature_values: Mapped[dict | None] = mapped_column(JSONColumn, nullable=True)
+    #: The source observations behind it, values and all four timestamps.
+    source_values: Mapped[dict | None] = mapped_column(JSONColumn, nullable=True)
+    rationale: Mapped[list | None] = mapped_column(JSONColumn, nullable=True)
+
+    content_hash: Mapped[str] = mapped_column(String(64), nullable=False)
+    published_at: Mapped[datetime] = _utc_col(nullable=False)
+    provenance: Mapped[str] = mapped_column(
+        String(16), nullable=False, default=DataProvenance.LIVE, index=True
+    )
+
+
+class ShadowOutcomeRow(Base):
+    """Something that happened after a shadow decision. Appended, never merged.
+
+    Its own row with its own timestamp, pointing at a decision by ID. The
+    decision does not gain a result field, and this table is the reason it does
+    not have to.
+    """
+
+    __tablename__ = "shadow_outcomes"
+    __table_args__ = (
+        Index("ix_shadow_outcome_decision", "decision_id", "observed_at"),
+    )
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    decision_id: Mapped[str] = mapped_column(String(64), nullable=False, index=True)
+    #: "fill", "settlement", "horizon_price", ...
+    kind: Mapped[str] = mapped_column(String(32), nullable=False)
+    observed_at: Mapped[datetime] = _utc_col(nullable=False)
+    value: Mapped[Decimal | None] = mapped_column(Money, nullable=True)
+    detail: Mapped[dict | None] = mapped_column(JSONColumn, nullable=True)
+    recorded_at: Mapped[datetime] = _utc_col(nullable=False)
+    provenance: Mapped[str] = mapped_column(
+        String(16), nullable=False, default=DataProvenance.LIVE, index=True
+    )

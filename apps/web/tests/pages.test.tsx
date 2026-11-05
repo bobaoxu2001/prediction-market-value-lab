@@ -18,10 +18,11 @@ import {
   PILOT_PRICE_USD,
 } from "@/lib/pilot";
 import {
-  BUSINESS_MAILING_ADDRESS,
   DATA_CONTROLLER,
   DISPUTE_VENUE,
   GOVERNING_JURISDICTION,
+  LEGAL_NOTICE_METHOD,
+  LEGAL_NOTICE_METHOD_SHORT,
   MINIMUM_AGE,
   REFUND_POLICY_SENTENCES,
   SELLER_LEGAL_NAME,
@@ -575,7 +576,11 @@ describe("legal pages", () => {
     const { default: Terms } = await import("@/app/(site)/terms/page");
     const terms = render(<Terms />).container.textContent ?? "";
     expect(terms).toContain(SELLER_LEGAL_NAME);
-    expect(terms).toContain(BUSINESS_MAILING_ADDRESS);
+    // The notices clause must still SAY something. Removing a private address
+    // and leaving a blank where a reader expects a term is a different defect
+    // from publishing one, and this is what stops the fix becoming that.
+    expect(terms).toContain(LEGAL_NOTICE_METHOD_SHORT);
+    expect(terms).toContain(LEGAL_NOTICE_METHOD);
     expect(terms).toContain(GOVERNING_JURISDICTION);
     expect(terms).toContain(DISPUTE_VENUE);
     expect(terms).toContain(String(MINIMUM_AGE));

@@ -524,7 +524,18 @@ function LegTable({
               <td>
                 <PlatformChip platform={leg.platform} />
               </td>
-              <td className="uppercase">{leg.side}</td>
+              {/*
+                * The side alone is ambiguous on a market whose outcomes are two
+                * team names: "NO" on a Phillies-vs-Braves market means Atlanta,
+                * and the same market shows as YES in a polarity-inverted pair.
+                * Naming the outcome is what stops a reader buying the wrong side.
+                */}
+              <td>
+                <span className="uppercase">{leg.side}</span>
+                {leg.outcome_label ? (
+                  <span className="ml-1.5 text-ink-muted">{leg.outcome_label}</span>
+                ) : null}
+              </td>
               <td className="num">{cents(leg.price)}</td>
               <td className="num">{Number(leg.size_available).toFixed(0)}</td>
               <td className="num">{cents(leg.fee_per_contract)}</td>

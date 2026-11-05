@@ -106,6 +106,19 @@ class Settings(BaseSettings):
     #:
     #: Set to 0 to restore the previous scoring-only allocation.
     orderbook_coverage_share: float = Field(default=0.4, ge=0.0, le=1.0)
+    #: Share of the budget reserved for markets that are one leg of a verified
+    #: cross-venue match.
+    #:
+    #: Cross-venue arbitrage is the only product here that needs a book on **two**
+    #: venues at once, and the other two reserves pick each venue independently by
+    #: volume. Two independent liquidity draws rarely land on both halves of the
+    #: same pair, so a verified match usually had a book on one leg and nothing on
+    #: the other - and a pair that cannot be priced on both legs cannot be scanned
+    #: at all. The scanner was therefore starved by the fetch plan rather than by
+    #: the market. This reserve is filled first, and because both venues' selections
+    #: consult the same match set, taking a leg on one venue takes its partner on
+    #: the other.
+    orderbook_match_share: float = Field(default=0.2, ge=0.0, le=1.0)
     orderbook_depth: int = Field(default=25)
     #: Markets below this 24h dollar volume are ingested but never ranked, because a
     #: quote nobody trades against is not an executable price.

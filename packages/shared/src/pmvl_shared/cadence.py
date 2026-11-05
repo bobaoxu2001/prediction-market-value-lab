@@ -220,6 +220,54 @@ CADENCES: tuple[Cadence, ...] = (
         cron="daily at 04:30 UTC",
         stall_after_seconds=26 * 3600,
     ),
+    # --- research collection -------------------------------------------------
+    #
+    # These write the point-in-time archive. Their cadences are research
+    # requirements, not product ones: a station-day needs >=20 observations and
+    # an issuance window needs >=40 book captures, and neither is achievable at
+    # the product's hourly publisher interval. `effective_cadence_seconds`
+    # reports that honestly rather than printing the desired number.
+    Cadence(
+        "forecast_observations",
+        "NWS gridpoint forecast collection (carries published_at)",
+        interval_seconds=900,
+    ),
+    Cadence(
+        "station_observations",
+        "Settlement-station observation collection",
+        interval_seconds=1800,
+    ),
+    Cadence(
+        "research_books",
+        "Weather orderbook archiving (30s inside NWS issuance windows)",
+        interval_seconds=60,
+    ),
+    Cadence(
+        "research_trades",
+        "Weather trade-print archiving",
+        interval_seconds=600,
+    ),
+    Cadence(
+        "daily_climate",
+        "NWS Climatological Report (CLI) daily maximum - the settlement label",
+        # Hourly. The bulletin is issued twice a day, but the final one for a
+        # completed day lands in the early local morning and can be revised, so
+        # polling hourly picks up a correction the same day rather than the next.
+        interval_seconds=3600,
+        stall_after_seconds=3 * 3600,
+    ),
+    Cadence(
+        "collection_health",
+        "Daily collection-health snapshot",
+        cron="daily at 23:50 UTC",
+        stall_after_seconds=26 * 3600,
+    ),
+    Cadence(
+        "map_stations",
+        "Settlement-station mapping refresh",
+        cron="daily at 05:00 UTC",
+        stall_after_seconds=26 * 3600,
+    ),
 )
 
 CADENCE_BY_JOB: dict[str, Cadence] = {c.job_name: c for c in CADENCES}

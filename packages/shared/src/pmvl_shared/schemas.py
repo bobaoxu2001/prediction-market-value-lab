@@ -364,6 +364,24 @@ class ValueCandidate(StrictModel):
     provenance: DataProvenance = DataProvenance.LIVE
 
 
+#: Outcome names that carry no information beyond the side itself.
+_PLAIN_OUTCOMES = {"yes", "no", ""}
+
+
+def outcome_label(market: "NormalizedMarket", side: Side) -> str:
+    """The venue's own name for ``side`` on this market, or "" when it has none.
+
+    Polymarket lists a game as two named outcomes, index 0 being the YES token, so
+    YES and NO denote specific teams rather than a proposition. Kalshi's binary
+    markets are genuinely Yes/No and return "".
+    """
+    outcomes = [str(o).strip() for o in (market.outcomes or [])]
+    if len(outcomes) != 2:
+        return ""
+    if {o.lower() for o in outcomes} <= _PLAIN_OUTCOMES:
+        return ""
+    return outcomes[0] if side == Side.YES else outcomes[1]
+
 class ArbLeg(StrictModel):
     platform: Platform
     platform_market_id: str
@@ -374,6 +392,17 @@ class ArbLeg(StrictModel):
     size_available: Decimal
     fee_per_contract: Decimal = Decimal("0")
     token_id: str | None = None
+    #: The venue's own name for the outcome this leg buys, when it has one.
+    #:
+    #: A Polymarket game market's outcomes are two team names, so "YES" and "NO"
+    #: name opposite teams depending on which market it is - and half of all
+    #: cross-venue fixture pairs are polarity-inverted, so the same market appears
+    #: as YES in one opportunity and NO in another. Without this, a reader
+    #: resolving "NO" the obvious way buys the wrong side and is unhedged.
+    #:
+    #: Empty when the venue's outcomes are just Yes/No and the side already says
+    #: everything there is to say.
+    outcome_label: str = ""
 
 
 class ArbitrageResult(StrictModel):
